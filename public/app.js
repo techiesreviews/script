@@ -2265,7 +2265,7 @@ function renderAgent() {
   act.dataset.state = agent.state === "elsewhere" ? "off" : agent.state;
   const name = prettyName(agent.info?.name);
   $("#agentBtnLabel").textContent = agent.state === "on" ? name : agent.state === "waiting" ? "Waiting for MCP" : agent.state === "elsewhere" ? "Open in another tab" : "Connect your agent";
-  btn.title = agent.state === "elsewhere" ? "Open in another tab" : "";
+  btn.title = agent.state === "elsewhere" ? "Open in another tab" : agent.state === "on" ? name : "";
   $("#mcpActionText").textContent = agent.state === "on" ? "Disconnect MCP" : agent.state === "elsewhere" ? "Use this tab" : "Wait for MCP";
   $("#mcpCopy").hidden = agent.state === "on" || agent.state === "elsewhere";
   const rows = $("#agentRows");

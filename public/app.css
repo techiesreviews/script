@@ -112,18 +112,18 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .tb:not(.tb--ink):enabled:hover { background: var(--hover); }
   .tb--ink:hover { background: color-mix(in oklch, var(--ink) 88%, var(--bg)); }
 }
+/* A connected agent's name is cut off with an ellipsis (its full name is in the tooltip). The fixed labels are never cut off. */
+.agent-btn[data-state="on"] .lbl { max-inline-size: 7rem; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
 /* Labels go first, so the actions fit in their half of the bar and the switch stays centred.
-   Hidden labels stay readable for screen readers; the plug icon shows next to the status dot. */
+   Hidden labels stay readable for screen readers; the plug icon shows next to the status dot at every width. */
 @container app (width < 68rem) {
   .voice-btn, .agent-btn { position: relative; }
   .voice-btn .lbl, .agent-btn .lbl { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
   .agent-btn > svg { display: block; }
 }
-@container app (width < 52rem) { .agent-btn .status-dot { display: none; } }
-.agent-btn .lbl { max-inline-size: 7rem; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
 @container app (width < 46rem) { .doc__meta { display: none; } }
 @container app (width < 36rem) {
-  .tb .lbl { display: none; }
+  .tb .lbl:not(.voice-btn .lbl, .agent-btn .lbl) { display: none; }
   .tb:has(.lbl) { padding-inline: 0.5rem; }
 }
 
