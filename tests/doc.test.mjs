@@ -7,6 +7,7 @@ import {
   makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, locate, checkAnswer,
   prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS,
   PARTS, matchParts, slashCommand, shiftHeadings, numberAt, insertPart,
+  slashAllowed, cutCommand, withoutCommand, lineToReplace,
 } from "../public/doc.js";
 
 const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
@@ -574,10 +575,14 @@ test("renumbering: a part at the start, in the middle and at the end; names, sep
   doc = parse(SCRIPT3);
   insertPart(doc, at(doc, "Not spoken.").id, "recap");
   assert.equal(serialize(doc), SCRIPT3.replace(/\n$/, "") + "\n\n## 4 · Recap\n\n\n");
-  // No numbered heading yet (a new script): 1.
+  // A fresh script (no headings, no spoken text yet): 1.
+  doc = parse("# New\n");
+  insertPart(doc, at(doc, "New").id, "hook");
+  assert.equal(serialize(doc), "# New\n\n## 1 · Hook\n\n\n");
+  // Spoken text without a heading above it: the heading goes above that text, unnumbered, so it stays spoken.
   doc = parse("# New\n\nFirst line.\n");
   insertPart(doc, at(doc, "First line.").id, "hook");
-  assert.equal(serialize(doc), "# New\n\nFirst line.\n\n## 1 · Hook\n\n\n");
+  assert.equal(serialize(doc), "# New\n\n## Hook\n\nFirst line.\n\n\n");
   // CRLF stays CRLF, also in the moved headings.
   doc = parse(SCRIPT3.replace(/\n/g, "\r\n"));
   insertPart(doc, at(doc, "Hello.").id, "point");
@@ -595,14 +600,14 @@ test("renumbering: a part at the start, in the middle and at the end; names, sep
 
 test("part templates: the exact Markdown each one inserts, and where the caret goes", () => {
   const made = (id) => {
-    const doc = parse("# T\n\nLine.\n");
+    const doc = parse("# T\n\n## 1 · Start\n\nLine.\n");
     const r = insertPart(doc, at(doc, "Line.").id, id);
     const caret = doc.blocks.find((b) => b.id === r.caret.id);
-    return [serialize(doc).slice("# T\n\nLine.".length), caret.type, contentOf(caret).slice(0, r.caret.offset)];
+    return [serialize(doc).slice("# T\n\n## 1 · Start\n\nLine.".length), caret.type, contentOf(caret).slice(0, r.caret.offset)];
   };
-  assert.deepEqual(made("hook"), ["\n\n## 1 · Hook\n\n\n", "para", ""]);
-  assert.deepEqual(made("call-to-action"), ["\n\n## 1 · Call to action\n\n\n", "para", ""]);
-  assert.deepEqual(made("section"), ["\n\n## 1 · \n\n\n", "heading", "1 · "]);
+  assert.deepEqual(made("hook"), ["\n\n## 2 · Hook\n\n\n", "para", ""]);
+  assert.deepEqual(made("call-to-action"), ["\n\n## 2 · Call to action\n\n\n", "para", ""]);
+  assert.deepEqual(made("section"), ["\n\n## 2 · \n\n\n", "heading", "2 · "]);
   assert.deepEqual(made("on-screen"), ["\n\n[ON SCREEN: ]\n", "note", "[ON SCREEN: "]);
   assert.deepEqual(made("silent"), ["\n\n[SILENT: ]\n", "note", "[SILENT: "]);
   assert.deepEqual(made("divider"), ["\n\n---\n\n\n", "para", ""]);
@@ -631,4 +636,89 @@ test("the / filter and where / opens a menu", () => {
   assert.equal(slashCommand("https://example.com", 8), null);
   assert.equal(slashCommand("word/", 5), null);
   assert.equal(slashCommand("/re now", 7), null); // a space after the command ends it
+});
+
+/* ---------- Step C5 review: spoken text stays spoken, the whole command, raw blocks, saves, replaced lines ---------- */
+const spokenOf = (doc) => outline(doc).sections.filter((x) => x.spoken).flatMap((x) => x.blocks.map((b) => contentOf(b)));
+const frontOf = (doc) => outline(doc).front.map((b) => contentOf(b));
+
+test("a part never makes spoken text stop being spoken; unnumbered scripts get unnumbered headings", () => {
+  for (const [md, where] of [
+    ["# T\n\nFirst line.\n", "First line."],
+    ["# T\n\nFirst line.\n\nSecond line.\n", "First line."],
+    ["# T\n\n## Intro\n\nA.\n\n## Body\n\nB.\n", "A."],
+    ["# T\n\n## Intro\n\nA.\n\n## Body\n\nB.\n", "B."],
+    ["# T\n\n## 1 · Hook\n\nA.\n\n## Notes\n\nN.\n", "A."],
+    ["# T\n\nLead.\n\n## 1 · Hook\n\nA.\n", "Lead."],
+    [SCRIPT3, "It breaks."],
+  ]) {
+    for (const id of PARTS.filter((p) => p.kind !== "broll").map((p) => p.id)) {
+      const doc = parse(md);
+      const was = spokenOf(doc).filter((t) => t.trim());
+      insertPart(doc, at(doc, where).id, id);
+      const now = spokenOf(doc);
+      for (const t of was) assert.ok(now.includes(t), `${id} after "${where}" in ${JSON.stringify(md)}: "${t}" is no longer spoken`);
+      for (const t of was) assert.ok(!frontOf(doc).includes(t), `${id}: "${t}" moved into front`);
+    }
+  }
+  // The script's own style: "## Hook" between unnumbered headings, "## 2 · Hook" between numbered ones.
+  const plain = parse("# T\n\n## Intro\n\nA.\n\n## Body\n\nB.\n");
+  insertPart(plain, at(plain, "A.").id, "hook");
+  assert.equal(serialize(plain), "# T\n\n## Intro\n\nA.\n\n## Hook\n\n\n\n## Body\n\nB.\n");
+  const first = parse("# T\n\nFirst line.\n");
+  insertPart(first, at(first, "First line.").id, "section");
+  assert.deepEqual(outline(first).front.map((b) => b.type), ["title"]);
+  // "## 2026 plans" counts as numbered, as parseHeading already reads it, and moves up like the others.
+  const year = parse("# T\n\n## 2026 plans\n\nA.\n");
+  insertPart(year, at(year, "T").id, "hook");
+  assert.equal(serialize(year), "# T\n\n## 2026 · Hook\n\n\n\n## 2027 plans\n\nA.\n");
+});
+
+test("the whole command word counts with the caret inside it; no menu in raw blocks or the title", () => {
+  assert.deepEqual(slashCommand("/recap", 4), { start: 0, end: 6, query: "recap" });
+  assert.deepEqual(slashCommand("Text /on-screen more", 8), { start: 5, end: 15, query: "on-screen" });
+  assert.deepEqual(slashCommand("/re", 3), { start: 0, end: 3, query: "re" });
+  assert.equal(slashCommand("/recap", 0), null);
+  const doc = parse("# T\n\nPara\n\n[ON SCREEN: x]\n\n## 1 · Hook\n\n```\n/p a path\n```\n\n- list /p\n\n| a | /p |\n|---|---|\n");
+  assert.deepEqual(doc.blocks.map((b) => [b.type, slashAllowed(b)]), [["title", false], ["para", true], ["note", true], ["heading", true], ["raw", false], ["raw", false], ["raw", false]]);
+  assert.equal(slashAllowed(null), false);
+});
+
+test("withoutCommand: what a save writes while the menu is open; the document itself is not changed", () => {
+  const doc = parse("# T\r\n\r\nSome text /on\r\n\r\n/recap\r\n\r\nMiddle /pro here\r\n");
+  const before = serialize(doc);
+  const b = (t) => doc.blocks.find((x) => contentOf(x).startsWith(t)).id;
+  assert.equal(serialize(withoutCommand(doc, { id: b("Some"), start: 10, end: 13 })), "# T\r\n\r\nSome text\r\n\r\n/recap\r\n\r\nMiddle /pro here\r\n");
+  assert.equal(serialize(withoutCommand(doc, { id: b("Middle"), start: 7, end: 11 })), "# T\r\n\r\nSome text /on\r\n\r\n/recap\r\n\r\nMiddle  here\r\n");
+  assert.equal(serialize(withoutCommand(doc, { id: b("/recap"), start: 0, end: 6 })), "# T\r\n\r\nSome text /on\r\n\r\n\r\n\r\nMiddle /pro here\r\n");
+  assert.equal(serialize(doc), before);
+  assert.deepEqual(cutCommand("Some text /on", { start: 10, end: 13 }), { content: "Some text", at: 9 });
+  assert.deepEqual(cutCommand("Line\n/on\nnext", { start: 5, end: 8 }), { content: "Line\n\nnext", at: 5 });
+  assert.deepEqual(cutCommand("A /x b", { start: 2, end: 4 }), { content: "A  b", at: 2 });
+});
+
+test("a line that held only the command is replaced by the part, unless it has an open ask; at the start too", () => {
+  let doc = parse("# T\n\n## 1 · Hook\n\nA.\n\nB.\n");
+  const a = at(doc, "A.");
+  setContent(doc, a.id, "");
+  const id = lineToReplace(doc, a.id, []);
+  assert.equal(id, a.id);
+  insertPart(doc, a.id, "point", { replaceId: id });
+  assert.equal(serialize(doc), "# T\n\n## 1 · Hook\n\n## 2 · Point\n\n\n\nB.\n");
+  // An open ask on the line keeps it; a line with text, or the only block, is never replaced.
+  doc = parse("# T\n\nx\n\nB.\n");
+  const x = at(doc, "x");
+  setContent(doc, x.id, "");
+  assert.equal(lineToReplace(doc, x.id, [{ blockId: x.id, status: "waiting" }]), null);
+  assert.equal(lineToReplace(doc, x.id, [{ blockId: x.id, status: "kept" }]), x.id);
+  assert.equal(lineToReplace(doc, at(doc, "B.").id, []), null);
+  const only = parse("x\n");
+  setContent(only, only.blocks[0].id, "");
+  assert.equal(lineToReplace(only, only.blocks[0].id, []), null);
+  // Block 0: the part goes at the start.
+  doc = parse("x\n\n## 1 · Hook\n\nA.\n");
+  const first = doc.blocks[0];
+  setContent(doc, first.id, "");
+  insertPart(doc, first.id, "intro", { replaceId: lineToReplace(doc, first.id, []) });
+  assert.equal(serialize(doc), "## 1 · Intro\n\n\n\n## 2 · Hook\n\nA.\n");
 });

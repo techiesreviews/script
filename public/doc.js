@@ -569,12 +569,41 @@ export function matchParts(query, { spokenLine = false } = {}) {
   const q = String(query ?? "").toLowerCase();
   return PARTS.filter((p) => (p.kind !== "broll" || spokenLine) && (!q || partKeys(p).some((k) => k.startsWith(q))));
 }
-/** The "/" command just before the caret: { start, end, query }, or null. "/" counts at the start of a line or
- *  after a space, never inside a word ("and/or", "https://"). */
+/** The "/" command at the caret: { start, end, query }, or null. "/" counts at the start of a line or after a
+ *  space, never inside a word ("and/or", "https://"). With the caret inside the command, the whole command word
+ *  counts (letters, digits and "-" after the caret too), so picking removes all of it. */
 export function slashCommand(content, offset) {
-  const before = String(content ?? "").slice(0, offset);
+  const text = String(content ?? "");
+  const before = text.slice(0, offset);
   const m = before.match(/(^|\s)\/([\p{L}\p{N}-]*)$/u);
-  return m ? { start: m.index + m[1].length, end: before.length, query: m[2] } : null;
+  if (!m) return null;
+  const rest = text.slice(before.length).match(/^[\p{L}\p{N}-]*/u)[0];
+  return { start: m.index + m[1].length, end: before.length + rest.length, query: m[2] + rest };
+}
+/** Where "/" may open the menu: not in the title, and not in raw blocks (lists, tables, code), where "/" is text. */
+export const slashAllowed = (block) => !!block && block.type !== "title" && block.type !== "raw";
+/** cutCommand(content, cmd) → { content, at }: the text without the command. A command that ended the line also
+ *  takes the one space before it ("Some text /on" → "Some text"). `at` is where the command was. */
+export function cutCommand(content, { start, end }) {
+  const text = String(content ?? "");
+  const atEnd = end >= text.length || text[end] === "\n";
+  const from = atEnd && start > 0 && text[start - 1] === " " ? start - 1 : start;
+  return { content: text.slice(0, from) + text.slice(end), at: from };
+}
+/** withoutCommand(doc, { id, start, end }) → a copy of the document without the "/" command (what a save writes
+ *  while the menu is open). `doc` itself is not changed. */
+export function withoutCommand(doc, cmd) {
+  const copy = cloneDoc(doc);
+  const b = blockById(copy, cmd?.id);
+  if (b) setContent(copy, b.id, cutCommand(contentOf(b), cmd).content);
+  return copy;
+}
+/** The line a part replaces: the block where only the command was typed, when it is now an empty para without an
+ *  open ask and not the only block. Otherwise null, and the part goes after it. */
+export function lineToReplace(doc, id, asks = []) {
+  const b = blockById(doc, id);
+  if (!b || b.type !== "para" || contentOf(b).trim() || doc.blocks.length <= 1) return null;
+  return asks.some((a) => a.blockId === id && OPEN_STATUSES.includes(a.status)) ? null : id;
 }
 
 const NUM_RE = /^(\s*)(\d+)/;
@@ -598,22 +627,57 @@ export function numberAt(doc, at) {
   for (let i = at; i < doc.blocks.length; i++) { const n = num(doc.blocks[i]); if (n) return Number(n); }
   return 1;
 }
-/**
- * insertPart(doc, afterId, partId) → { caret: { id, offset } } with the part's blocks inserted after `afterId`
- * (or at the start when null). Spoken parts: "## N · Name" (the later numbered headings move up by one) and an
- * empty para. On screen / Silent note: the note, caret inside the brackets. Divider: "---" and an empty para.
- */
-export function insertPart(doc, afterId, partId) {
-  const part = PARTS.find((p) => p.id === partId);
-  if (!part || part.kind === "broll") return null;
-  if (part.kind === "spoken") {
-    const at = afterId == null ? 0 : indexOf(doc, afterId) + 1;
+// Ids of the blocks outline() reads as spoken (front matter is never spoken).
+const spokenIds = (doc) => new Set(outline(doc).sections.filter((x) => x.spoken).flatMap((x) => x.blocks.map((b) => b.id)));
+function addSpoken(doc, afterId, part, numbered) {
+  const spoken = spokenIds(doc);
+  let at = afterId == null ? 0 : indexOf(doc, afterId) + 1;
+  // Text above the caret with no heading over it would turn into front matter: the heading goes above that text.
+  if (!doc.blocks.slice(0, at).some((b) => b.type === "heading")) {
+    const first = doc.blocks.findIndex((b, i) => i < at && spoken.has(b.id));
+    if (first >= 0) at = first;
+  }
+  const moved = at < (afterId == null ? 0 : indexOf(doc, afterId) + 1);
+  let content = part.named ? "" : part.name;
+  if (numbered) {
     const n = numberAt(doc, at);
     shiftHeadings(doc, at, 1);
-    const content = `${n} · ${part.named ? "" : part.name}`;
-    const head = insertBlock(doc, afterId, "heading", content);
-    const para = insertBlock(doc, head.id, "para", "");
-    return { caret: part.named ? { id: head.id, offset: content.length } : { id: para.id, offset: 0 } };
+    content = `${n} · ${content}`;
+  }
+  const head = insertBlock(doc, at === 0 ? null : doc.blocks[at - 1].id, "heading", content);
+  const para = insertBlock(doc, moved ? afterId : head.id, "para", "");
+  return { caret: part.named ? { id: head.id, offset: content.length } : { id: para.id, offset: 0 } };
+}
+/**
+ * insertPart(doc, afterId, partId, { replaceId }) → { caret: { id, offset } } with the part's blocks inserted after
+ * `afterId` (or at the start when null). replaceId (see lineToReplace): that empty line is removed and the part takes
+ * its place. Spoken parts: a heading and an empty para. The heading is numbered "## N · Name" (later numbered
+ * headings move up by one) when the script already numbers its headings or is still fresh (no headings, no spoken
+ * text); otherwise "## Name", in the script's own style. A part never makes spoken text stop being spoken.
+ * On screen / Silent note: the note, caret inside the brackets. Divider: "---" and an empty para.
+ */
+export function insertPart(doc, afterId, partId, { replaceId = null } = {}) {
+  const part = PARTS.find((p) => p.id === partId);
+  if (!part || part.kind === "broll") return null;
+  if (replaceId && blockById(doc, replaceId)) {
+    const i = indexOf(doc, replaceId);
+    removeBlock(doc, replaceId);
+    afterId = i > 0 ? doc.blocks[i - 1].id : null;
+  }
+  if (part.kind === "spoken") {
+    const before = spokenIds(doc);
+    const heads = doc.blocks.filter((b) => b.type === "heading");
+    const fresh = !heads.length && !doc.blocks.some((b) => before.has(b.id) && b.type === "para" && contentOf(b).trim());
+    const numbered = heads.some((h) => NUM_RE.test(contentOf(h))) || fresh;
+    for (const n of numbered ? [true, false] : [false]) {
+      const copy = cloneDoc(doc);
+      const res = addSpoken(copy, afterId, part, n);
+      const after = spokenIds(copy);
+      if ([...before].every((id) => after.has(id)) || !n) {
+        doc.blocks = copy.blocks;
+        return res;
+      }
+    }
   }
   const block = insertBlock(doc, afterId, typeOf(part.text), part.text);
   if (part.kind === "divider") return { caret: { id: insertBlock(doc, block.id, "para", "").id, offset: 0 } };

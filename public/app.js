@@ -2545,14 +2545,14 @@ function slashAtCaret() {
   if (!sel.rangeCount || !sel.isCollapsed) return null;
   const caret = getCaret();
   const b = caret && byId(caret.id);
-  if (!b || b.type === "title") return null;
+  if (!D.slashAllowed(b)) return null;
   const content = D.contentOf(b);
   const cmd = D.slashCommand(content, caret.offset);
   return cmd ? { id: b.id, content, ...cmd } : null;
 }
 // B-roll is offered on a spoken line that has words besides the command.
 const slashOnSpokenLine = (cmd) => canAddBroll() && B.spokenBlocks(state.doc).some((x) => x.id === cmd.id)
-  && /[\p{L}\p{N}]/u.test(cmd.content.slice(0, cmd.start) + cmd.content.slice(cmd.end));
+  && /[\p{L}\p{N}]/u.test(D.cutCommand(cmd.content, cmd).content);
 function updateSlash(typed) {
   const cmd = slashAtCaret();
   if (!cmd) { slash.dismissed = null; return closeSlash(); }
@@ -2570,7 +2570,10 @@ function renderSlash() {
   slashMenu.innerHTML = slash.items.map((p, i) => `${i && p.kind !== "spoken" && slash.items[i - 1].kind === "spoken" ? '<div class="slash-menu__sep" role="separator"></div>' : ""}`
     + `<div class="slash-menu__item" role="option" id="slash-${p.id}" data-part="${p.id}" aria-selected="${i === slash.active}">${esc(p.name)}</div>`).join("");
   slashMenu.hidden = false;
-  blockNode(slash.id)?.setAttribute("aria-activedescendant", `slash-${slash.items[slash.active].id}`);
+  const el = blockNode(slash.id);
+  if (el) {
+    for (const [k, v] of [["role", "combobox"], ["aria-controls", "slashMenu"], ["aria-expanded", "true"], ["aria-autocomplete", "list"], ["aria-activedescendant", `slash-${slash.items[slash.active].id}`]]) el.setAttribute(k, v);
+  }
   slashMenu.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
   positionSlash();
 }
@@ -2589,7 +2592,8 @@ function closeSlash() {
   if (!slash.open) return;
   slash.open = false;
   slashMenu.hidden = true;
-  blockNode(slash.id)?.removeAttribute("aria-activedescendant");
+  const el = blockNode(slash.id);
+  if (el) for (const k of ["role", "aria-controls", "aria-expanded", "aria-autocomplete", "aria-activedescendant"]) el.removeAttribute(k);
   scheduleSave();
 }
 // Picking removes the command and inserts the part, all in one undo step.
@@ -2602,36 +2606,27 @@ function pickSlash(partId) {
   if (!b || D.contentOf(b).slice(start, start + 1) !== "/") return;
   state.preCaret = { id, offset: end };
   checkpoint("part", id);
-  const content = D.contentOf(b);
-  D.setContent(state.doc, id, content.slice(0, start) + content.slice(end));
-  moveAsks(id, id, end, start - end);
+  const cut = D.cutCommand(D.contentOf(b), { start, end });
+  D.setContent(state.doc, id, cut.content);
+  moveAsks(id, id, end, cut.at - end);
   reanchorBlock(id);
   if (part.kind === "broll") {
-    renderAll({ id, offset: start });
+    renderAll({ id, offset: cut.at });
     changed();
     const text = D.contentOf(byId(id));
     const words = D.snapToWords(text, 0, text.length);
     return openShotCard({ mode: "add", sel: [{ id, start: words.start, end: words.end }], anchor: () => blockNode(id) });
   }
   // A line that held only the command gives its place to the part.
-  let after = id;
-  const cur = byId(id);
-  if (cur?.type === "para" && !D.contentOf(cur).trim() && state.doc.blocks.length > 1 && !state.asks.some((a) => a.blockId === id && isOpen(a))) {
-    const i = state.doc.blocks.indexOf(cur);
-    after = i > 0 ? state.doc.blocks[i - 1].id : null;
-    D.removeBlock(state.doc, id);
-  }
-  const res = D.insertPart(state.doc, after, part.id);
+  const replaceId = D.lineToReplace(state.doc, id, state.asks);
+  if (replaceId && replaceId === state.hint) state.hint = null;
+  const res = D.insertPart(state.doc, id, part.id, { replaceId });
   renderAll(res.caret);
   changed();
 }
 // What a save writes: the script without an open "/" command.
 function saveText() {
-  if (!slash.open || !state.doc) return D.serialize(state.doc);
-  const doc = D.cloneDoc(state.doc);
-  const b = D.blockById(doc, slash.id);
-  if (b) { const c = D.contentOf(b); D.setContent(doc, slash.id, c.slice(0, slash.start) + c.slice(slash.end)); }
-  return D.serialize(doc);
+  return D.serialize(slash.open && state.doc ? D.withoutCommand(state.doc, slash) : state.doc);
 }
 scriptEl.addEventListener("input", (e) => { if (!e.isComposing) updateSlash(true); });
 scriptEl.addEventListener("compositionend", () => updateSlash(true));
