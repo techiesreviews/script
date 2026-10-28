@@ -66,8 +66,10 @@ try {
   check(sent.ws.protocol === "script-editor-room", "the room answers with the script-editor-room subprotocol", sent.ws.protocol);
 
   const g1a = plainAdapter(), g2a = plainAdapter();
-  const g1 = client({ role: "guest", room: creds.room, key: creds.key, name: "Ana", adapter: g1a });
-  const g2 = client({ role: "guest", room: creds.room, key: creds.key, name: "Ben", adapter: g2a });
+  // What each guest hears from the host's app: the shared asks (step D2).
+  const shared = { g1: [], g2: [] };
+  const g1 = client({ role: "guest", room: creds.room, key: creds.key, name: "Ana", adapter: g1a, on: { message: (m) => shared.g1.push(m) } });
+  const g2 = client({ role: "guest", room: creds.room, key: creds.key, name: "Ben", adapter: g2a, on: { message: (m) => shared.g2.push(m) } });
   check(await until(() => g1.status === "live" && g2.status === "live"), "two guests join", `${g1.status} ${g2.status}`);
   check(g1a.text() === ha.text() && g2a.text() === ha.text(), "guests get the script", g1a.text());
   const gs = opened.find((o) => o.protos.length === 3);
@@ -114,6 +116,13 @@ try {
   // A guest's ask reaches the host (answers come with step D2).
   g2.send({ type: "ask", ask: { id: "smoke-ask", action: "simpler", quote: "second line" } });
   check(await until(() => asks.some((m) => m.type === "ask" && m.ask?.id === "smoke-ask" && m.from === g2.pid)), "a guest's ask reaches the host", JSON.stringify(asks));
+  // The host shares the ask, then the agent's answer, with everyone (as the editor's adapter does).
+  const ask = { id: "smoke-ask", scope: "selection", action: "simpler", status: "waiting", by: { id: "guest:ben", name: "Ben" } };
+  host.sendAll({ type: "asks", asks: [ask] });
+  host.sendAll({ type: "asks", asks: [{ ...ask, status: "answered", answer: { kind: "replace", text: "Shorter line." }, answeredBy: { id: "agent:smoke", name: "Smoke" } }] });
+  const answered = (list) => list.some((m) => m.type === "asks" && m.asks[0]?.answer?.text === "Shorter line.");
+  check(await until(() => answered(shared.g1) && answered(shared.g2)), "an answer reaches everyone", JSON.stringify(shared.g1.slice(-1)));
+  check(shared.g1.filter((m) => m.type === "asks").length === 2, "in order, once each", shared.g1.length);
 
   // Stop sharing: guests see the end, and the link no longer opens the room.
   host.stop();

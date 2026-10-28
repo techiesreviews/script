@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as D from "../public/doc.js";
-import { readBlocks, applyToDoc, docFromSnapshot, docMeta, validAttrs, validBlocks } from "../public/together-adapter.js";
+import { readBlocks, applyToDoc, docFromSnapshot, docMeta, validAttrs, validBlocks, guestAsk, guestId, mayAct, shareAsks, fitAsks, agentCaret } from "../public/together-adapter.js";
 import { diff, validOps } from "../public/together/ops.js";
 
 const sample = readFileSync(new URL("../public/samples/demo-good-script.md", import.meta.url), "utf8");
@@ -87,14 +87,71 @@ test("adapter: blocks from someone else keep a blank line between them, so the f
   assert.ok(!validBlocks([...odd, b("n", "para", "")], odd));
 });
 
-test("adapter: a D1 guest's \"/\" is never held back; a host's command is, until it is text", () => {
+test("adapter: a "/" command is held back from the others for the host and guests alike, until it is text", () => {
   const cmd = { id: "b1", start: 4, end: 7, query: "ho" };
-  assert.equal(D.slashHold({ guest: true, open: true, focused: true, cmd, matches: 3 }), false);
-  assert.equal(D.slashHold({ guest: true, focused: true, cmd, matches: 3 }), false);
   assert.equal(D.slashHold({ open: true }), true);
   assert.equal(D.slashHold({ focused: true, cmd, matches: 1 }), true, "about to open the menu");
+  assert.equal(D.slashHold({ guest: true, focused: true, cmd, matches: 1 }), true, "guests too (step D2)");
   assert.equal(D.slashHold({ focused: true, cmd, matches: 0 }), false, "no part matches: it is text");
   assert.equal(D.slashHold({ focused: false, cmd, matches: 1 }), false, "the person left the script");
   assert.equal(D.slashHold({ focused: true, cmd, dismissed: { id: "b1", start: 4 }, matches: 1 }), false, "dismissed with Escape");
   assert.equal(D.slashHold({ focused: true, cmd: null }), false);
+});
+
+/* ---------- Asks in a shared script (step D2) ---------- */
+const script = () => D.parse("# Title\n\n## 1 · Hook\n\nWe start here. Then we go on.\n\n[ON SCREEN: a note]\n");
+const paraOf = (doc) => doc.blocks.find((b) => b.type === "para");
+
+test("adapter: the host takes a guest's ask only when it fits its script", () => {
+  const doc = script(), p = paraOf(doc);
+  const ok = guestAsk(doc, { blockId: p.id, start: 3, end: 8, quote: "start", action: "simpler" });
+  assert.deepEqual(ok, { blockId: p.id, start: 3, end: 8, action: "simpler" });
+  // The guest's place may be a little off (its own typing not in yet): the quote is found nearby.
+  assert.deepEqual(guestAsk(doc, { blockId: p.id, start: 0, quote: "start", action: "shorter" }), { blockId: p.id, start: 3, end: 8, action: "shorter" });
+  assert.deepEqual(guestAsk(doc, { blockId: p.id, start: 3, quote: "start", action: "ask", instruction: "  Make it funny " }).instruction, "Make it funny");
+  assert.equal(guestAsk(doc, { blockId: p.id, start: 3, quote: "start", action: "ask", instruction: " " }), null, "an empty Ask");
+  assert.equal(guestAsk(doc, { blockId: p.id, start: 3, quote: "gone", action: "simpler" }), null, "a quote not in the script");
+  assert.equal(guestAsk(doc, { blockId: "nope", start: 3, quote: "start", action: "simpler" }), null);
+  for (const action of ["voice", "plan", "sketch", "eval"]) assert.equal(guestAsk(doc, { blockId: p.id, start: 3, quote: "start", action }), null, action);
+  assert.ok(guestAsk(doc, { blockId: p.id, start: 3, quote: "start", action: "broll" }), "Suggest B-roll on a spoken line");
+  const note = doc.blocks.find((b) => b.type === "note");
+  assert.equal(guestAsk(doc, { blockId: note.id, start: 1, quote: "ON SCREEN", action: "broll" }), null, "no B-roll on a note");
+});
+
+test("adapter: only the person who asked, and the host, may Keep or Undo", () => {
+  const ask = { by: { id: guestId("abc123abc123"), name: "Ana" } };
+  assert.ok(mayAct(ask, { host: true, id: "someone" }));
+  assert.ok(mayAct(ask, { id: guestId("abc123abc123") }));
+  assert.ok(!mayAct(ask, { id: guestId("other") }));
+  assert.ok(!mayAct({ by: { id: "lex" } }, { id: "" }));
+});
+
+test("adapter: a guest places the host's asks in its own copy, and the agent's caret follows them", () => {
+  const doc = script(), p = paraOf(doc);
+  const now = new Date("2026-10-28T12:00:00Z");
+  const a1 = D.makeAsk(doc, { blockId: p.id, start: 3, end: 8, action: "simpler", by: { id: "lex", name: "Lex" }, now });
+  const a2 = D.makeAsk(doc, { blockId: p.id, start: 15, end: 29, action: "shorter", by: { id: guestId("abc123abc123"), name: "Ana" }, now });
+  const done = { ...D.makeAsk(doc, { blockId: p.id, start: 0, end: 2, action: "facts", by: { id: "lex" }, now }), status: "kept" };
+  const shared = shareAsks([a1, a2, done]);
+  assert.deepEqual(shared.map((a) => a.id), [a1.id, a2.id], "only open asks are shared");
+  assert.notEqual(shared[0], a1, "copies");
+  // The guest typed in front of the quotes: they are found again.
+  const guest = D.cloneDoc(doc);
+  D.setContent(guest, p.id, "Yes. " + D.contentOf(p));
+  const placed = fitAsks(shareAsks([a1, a2]), guest);
+  assert.deepEqual(placed.map((a) => [a.start, a.end]), [[8, 13], [20, 34]]);
+  D.setContent(guest, p.id, "Something else.");
+  assert.equal(fitAsks(shareAsks([a1, a2]), guest).length, 0, "asks whose text is gone are left out");
+  // The agent's caret: none while waiting, at the end of the text while taken, at the change while answered.
+  assert.equal(agentCaret([a1], doc), null);
+  a1.status = "taken"; a1.takenBy = { id: "agent:claude-code", name: "Claude Code" };
+  assert.deepEqual(agentCaret([a1, a2], doc), { pid: "agent", kind: "agent", name: "Claude Code (agent)", colour: 0, blockId: p.id, offset: 8 });
+  a2.status = "answered"; a2.answer = { kind: "replace", text: "Go on." }; a2.answeredBy = { id: "agent:x", name: "Claude" };
+  assert.equal(agentCaret([a1, a2], doc).offset, 8, "the ask it works on wins");
+  a1.status = "kept";
+  assert.deepEqual([agentCaret([a1, a2], doc).offset, agentCaret([a1, a2], doc).name], [29, "Claude (agent)"]);
+  a2.status = "undone";
+  assert.equal(agentCaret([a1, a2], doc), null, "gone after Keep or Undo");
+  a2.status = "answered"; a2.answer = { kind: "broll", changes: [] };
+  assert.equal(agentCaret([a2], doc), null, "B-roll suggestions live beside the lines");
 });

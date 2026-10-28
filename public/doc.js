@@ -599,10 +599,9 @@ export function withoutCommand(doc, cmd) {
   return copy;
 }
 /** In a shared script, is the "/" command at the caret held back from the others? Yes while the parts menu is open,
- *  or about to open (a command with matching parts, not dismissed, in the focused script). Never for a guest in
- *  step D1: there "/" is plain text and goes out at once. */
-export function slashHold({ guest = false, open = false, focused = false, cmd = null, dismissed = null, matches = 0 } = {}) {
-  if (guest) return false;
+ *  or about to open (a command with matching parts, not dismissed, in the focused script). The same for the host and
+ *  for guests (step D2): the command text is never sent before a part is picked. */
+export function slashHold({ open = false, focused = false, cmd = null, dismissed = null, matches = 0 } = {}) {
   if (open) return true;
   if (!focused || !cmd) return false;
   if (dismissed && dismissed.id === cmd.id && dismissed.start === cmd.start) return false;

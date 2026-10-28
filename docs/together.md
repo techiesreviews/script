@@ -1,6 +1,6 @@
 # Working together (Share to edit)
 
-The host shares a script with a link; guests type a name and edit it live, each with their own caret. The host's tab is the source of truth and its file stays the only copy: the room passes messages and stores no script text. Step D1 is built (rooms, carets, Share to edit, guest limits); D2 adds guests' asks, the agent's caret and B-roll for guests.
+The host shares a script with a link; guests type a name and edit it live, each with their own caret. The host's tab is the source of truth and its file stays the only copy: the room passes messages and stores no script text. Step D1 built the rooms, carets, Share to edit and the guest limits; D2 adds guests' asks, the agent's caret, B-roll and `/` parts for guests.
 
 ## Pieces
 
@@ -52,7 +52,9 @@ The room stamps `from` on everything a guest sends and lets guests send only `he
 | host → all | `{ type: "people", people: [{ pid, name, colour, kind }] }` |
 | anyone → others | `{ type: "caret", c: { blockId, offset, selEnd? } }`, at most 15 a second |
 | host → room | `{ type: "end" }`; the room also ends 30 s after the host's tab closed |
-| guest → host | `{ type: "ask", ask }` (D1 relays it; D2 answers it) |
+| guest → host | `{ type: "ask", ask: { blockId, start, quote, action, instruction? } }` a new ask; `{ type: "ask", id, act: "keep" \| "undo" \| "dismiss" }` on the guest's own ask |
+| host → all | `{ type: "asks", asks }` every open ask with its answer, when they change (and to a guest that joins) |
+| host → all | `{ type: "broll", broll: { status, name, text, flags } }` the B-roll list, when it changes (also in the snapshot's `meta.broll`) |
 
 The host transforms a guest's batch against every version after its `base`, applies it, gives it the next version and sends it to everyone. A `base` older than the host's log (500 versions) gets a snapshot. A guest transforms what arrives against its batch in flight and its unsent changes. Carets follow every operation; the author's caret goes to the end of their change.
 
@@ -75,10 +77,10 @@ adapter = {
   validAttrs?(attrs, partial), // check attrs from guests
   validBlocks?(blocks, before), // check the document after a guest's batch (changed blocks only)
 }
-on = { status(s), people(list), carets(), message(msg), changed() }
+on = { status(s), people(list), carets(), message(msg), changed(), joined(pid) }
 status: connecting | live | away | ended | refused | full
 room.local()  room.caret(c)  room.undoMine()  room.undoFor(pid)  room.canUndo(pid)  room.stop()
-room.peopleList()  room.caretList()  room.send(msg)
+room.peopleList()  room.caretList()  room.send(msg)  room.sendAll(msg)  room.sendTo(pid, msg)   // the last two: host
 ```
 
 `createCarets({ container, element: (blockId) => el, onUndo, icon })` draws `caretList()` with `set(list)`; call `draw()` after your editor re-renders.
@@ -86,9 +88,13 @@ room.peopleList()  room.caretList()  room.send(msg)
 ## The script editor's rules
 
 - Text edits still go through `doc.js`: `changed()` calls `room.local()`, which diffs the document; remote operations are applied to `state.doc` with `applyToDoc` and the app redraws, re-anchors asks and auto-saves as before.
-- Guests can't save, export, link B-roll, use the agent, make asks (D2), use `/` parts (D2) or share. A guest's tab never connects its own agent. Opening another script stops sharing; reading the same file again from disk does not.
+- Guests can't save, export, link, add, change or remove B-roll, Keep/Undo B-roll suggestions or sketches, run the "Sounds like me" check, use an agent of their own, or share. A guest's tab never connects its own agent. Opening another script stops sharing; reading the same file again from disk does not.
+- **Asks (D2).** A guest's ask (the edit bar, "Suggest B-roll" included) goes to the host, which finds its quote again, adds it with `by: { id: "guest:<client>", name }`, hands it to its agent and shares every open ask with everyone. Answers show for everyone; Keep, Undo and ✕ show only for the person who asked and the host, and a guest's press is done by the host. While the room is not live, a guest's asks and presses wait and are sent when it is.
+- **The agent's caret (D2)** is worked out from the shared asks in every tab: "<agent name> (agent)" with the model icon, at the end of the asked text while the ask is taken, at the change while its answer shows, gone after Keep or Undo. The host sees it also when not sharing. It joins the avatars while sharing.
+- **B-roll (D2).** Guests get the list text and the Check flags and show tags, frames, the Storyboard and suggestions as the host does; a click on a frame only lights it. Each person picks their own Script/Storyboard view.
+- **`/` parts (D2)** work for guests: the part and the renumbering reach the host as block operations, and the command text is held back (`slashHold`) until a part is picked, as for the host.
 - Guests see the host's name ("Host" until the host has joined a room with a name).
 
 ## How the Native Site Editor would plug in
 
-Copy `public/together/` and `worker/room.js`. Write an adapter whose blocks are its editable regions (`text` = their plain text, `attrs` = whatever it needs to rebuild them), call `room.local()` after each edit, and give `createCarets` a container and an `element(blockId)` lookup. Its agents' carets are people with `kind: "agent"`, sent by the host with `{ type: "all", msg: { type: "caret", from, c } }` (D2).
+Copy `public/together/` and `worker/room.js`. Write an adapter whose blocks are its editable regions (`text` = their plain text, `attrs` = whatever it needs to rebuild them), call `room.local()` after each edit, and give `createCarets` a container and an `element(blockId)` lookup. Asks and other shared state ride on app messages (`sendAll`, `sendTo`, `on.message`, `on.joined`); an agent's caret can be worked out from them, as here, and drawn as a caret with `kind: "agent"`.

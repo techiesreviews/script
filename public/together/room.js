@@ -12,6 +12,9 @@ export const PROTOCOL = "script-editor-room";
 export const CARET_MS = Math.ceil(1000 / 15); // at most 15 caret messages a second
 export const COLOURS = 6;
 export const LOG_MAX = 500;
+// Messages that change what the person sees wait while an input method composes (the app's own "ask", "asks" and
+// "broll" messages too).
+const WAIT_WHILE_BUSY = new Set(["op", "snapshot", "catchup", "refused", "ask", "asks", "broll"]);
 const GROUP_MS = 1500; // typing with pauses shorter than this is one change for Undo
 const PING_MS = 30_000;
 const MINE_MAX = 100;
@@ -37,7 +40,9 @@ export const protocols = ({ room, key, hostKey }) => [PROTOCOL, `r.${room}`, `k.
 /**
  * new RoomClient({ role: "host" | "guest", room, key, hostKey?, url, name, adapter, on })
  *   adapter: { read(), apply(ops, { by }), meta(), load({ blocks, meta }), caret?(), held?(), busy?(), validAttrs?(attrs, partial), validBlocks?(blocks, before) }
- *   on: { status(s), people(list), carets(), message(msg), changed() }
+ *   on: { status(s), people(list), carets(), message(msg), changed(), joined(pid) }
+ *   Apps add their own messages: the host sends them with sendAll / sendTo, a guest with send({ type: "ask", … }) (the
+ *   room passes only "ask" from a guest to the host); they arrive through on.message.
  *   status: connecting | live | away (connection lost, or the host is away) | ended | refused | full (final: the last three)
  */
 export class RoomClient {
@@ -125,7 +130,7 @@ export class RoomClient {
     try { msg = JSON.parse(data); } catch { return; }
     if (!msg || typeof msg.type !== "string" || msg.type === "pong") return;
     // While the person composes text (an input method), changes wait so the composition is not broken.
-    if (this.adapter.busy?.() && (msg.type === "op" || msg.type === "snapshot" || msg.type === "catchup" || msg.type === "refused")) { this.queue.push(msg); return; }
+    if (this.adapter.busy?.() && WAIT_WHILE_BUSY.has(msg.type)) { this.queue.push(msg); return; }
     this.retry = 0;
     if (this.role === "host") this.hostMessage(msg);
     else this.guestMessage(msg);
@@ -326,6 +331,7 @@ export class RoomClient {
         this.catchUp(msg.from, msg.v);
         this.setPeople([...this.people.values()]);
         this.sendPeople();
+        this.on.joined?.(msg.from);
         return;
       }
       case "leave":
@@ -348,6 +354,9 @@ export class RoomClient {
     if (colour >= COLOURS) colour = this.people.size % COLOURS;
     return { pid, name: String(name || "Guest").slice(0, 40), colour, kind: "person" };
   }
+  /** Host: send an app message to every guest, or to one. */
+  sendAll(msg) { return this.role === "host" && this.send({ type: "all", msg }); }
+  sendTo(pid, msg) { return this.role === "host" && this.send({ type: "to", to: pid, msg }); }
   publicPeople() { return this.peopleList().map(({ me, client, ...p }) => p); }
   sendPeople() { this.send({ type: "all", msg: { type: "people", people: this.publicPeople() } }); }
   // A guest that comes back with a version still in the log gets what it missed; otherwise a snapshot.

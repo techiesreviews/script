@@ -217,9 +217,9 @@ async function session(blocks) {
   const ha = plainAdapter(blocks);
   const host = new RoomClient({ role: "host", ...creds, url: "ws://x/api/room", name: "Lex", adapter: ha, WebSocketImpl: WS, timers, backoffMs: 5 }).start();
   await settle();
-  const guest = async (name) => {
+  const guest = async (name, on = {}) => {
     const a = plainAdapter();
-    const c = new RoomClient({ role: "guest", room: creds.room, key: creds.key, url: "ws://x/api/room", name, adapter: a, WebSocketImpl: WS, timers, backoffMs: 5 }).start();
+    const c = new RoomClient({ role: "guest", room: creds.room, key: creds.key, url: "ws://x/api/room", name, adapter: a, WebSocketImpl: WS, timers, backoffMs: 5, on }).start();
     await settle();
     return { a, c };
   };
@@ -519,6 +519,45 @@ test("together: a refused that arrives while an input method composes waits in t
   g.c.resume();
   assert.equal(g.a.text(), "Kept Hello.");
   assert.ok(!g.c.pending?.ops.some((o) => o.ins === " Big"));
+  host.stop();
+});
+
+test("together: app messages: the host tells a joining guest, sends to all or one; a guest's ask reaches the host", async () => {
+  const { host, guest } = await session([para("p1", "Hello.")]);
+  const fromGuests = [];
+  host.on.message = (m) => fromGuests.push(m);
+  host.on.joined = (pid) => host.sendTo(pid, { type: "asks", asks: ["for you"] });
+  const aGot = [], bGot = [];
+  const a = await guest("Ana", { message: (m) => aGot.push(m) });
+  aGot.length = 0;
+  const b = await guest("Ben", { message: (m) => bGot.push(m) });
+  await settle(20);
+  assert.ok(bGot.some((m) => m.type === "asks" && m.asks[0] === "for you"), "the joining guest is told");
+  assert.ok(!aGot.some((m) => m.type === "asks"), "and nobody else");
+  host.sendAll({ type: "broll", broll: { status: "none" } });
+  await settle(20);
+  assert.ok(aGot.some((m) => m.type === "broll") && bGot.some((m) => m.type === "broll"));
+  a.c.send({ type: "ask", ask: { action: "simpler" } });
+  await settle(20);
+  assert.equal(fromGuests.at(-1).from, a.c.pid);
+  assert.equal(a.c.sendAll({ type: "x" }), false, "only the host sends to all");
+  host.stop();
+});
+
+test("together: asks and B-roll from the host wait while an input method composes", async () => {
+  const { host, guest } = await session([para("p1", "Hello.")]);
+  const g = await guest("Ana");
+  const got = [];
+  g.c.on.message = (m) => got.push(m.type);
+  g.a.busyNow = true;
+  host.sendAll({ type: "asks", asks: [] });
+  host.sendAll({ type: "broll", broll: { status: "none" } });
+  await settle(20);
+  assert.deepEqual(got, []);
+  assert.deepEqual(g.c.queue.map((m) => m.type), ["asks", "broll"]);
+  g.a.busyNow = false;
+  g.c.resume();
+  assert.deepEqual(got, ["asks", "broll"]);
   host.stop();
 });
 

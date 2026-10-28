@@ -2,6 +2,7 @@
 // and wires Share to edit, joining with a name, the people in the top bar and other people's carets.
 // The room itself (public/together/) knows nothing about scripts; see docs/together.md.
 import * as D from "./doc.js";
+import * as B from "./broll.js";
 import { RoomClient, newRoom, parseLink } from "./together/room.js";
 import { applyOp, movePoint } from "./together/ops.js";
 import { createCarets, colourVar } from "./together/carets.js";
@@ -74,7 +75,61 @@ export function applyToDoc(doc, ops, each = () => {}) {
   }
   return doc;
 }
-export const docMeta = (doc, name) => ({ name, tail: doc.tail, eol: doc.eol });
+export const docMeta = (doc, name, broll = null) => ({ name, tail: doc.tail, eol: doc.eol, ...(broll ? { broll } : {}) });
+
+/* ---------- Asks in a shared script (step D2, pure: no DOM) ---------- */
+// The host keeps the asks: guests send theirs to the host, which checks them, adds them, hands them to its agent and
+// shares every open ask (with its answer) with everyone. Only the person who asked, and the host, may Keep or Undo.
+export const GUEST_ACTIONS = ["like", "simpler", "shorter", "explain", "facts", "ask", "broll"];
+export const guestId = (client) => `guest:${client}`;
+/** A guest's new ask as the host takes it: its quote found again in the host's script near the guest's place.
+ *  Returns { blockId, start, end, action, instruction? } or null. */
+export function guestAsk(doc, a) {
+  if (!doc || !a || typeof a !== "object" || !GUEST_ACTIONS.includes(a.action)) return null;
+  const b = typeof a.blockId === "string" ? D.blockById(doc, a.blockId) : null;
+  if (!b || typeof a.quote !== "string" || !a.quote.trim() || a.quote.length > D.LIMITS.text || !Number.isInteger(a.start) || a.start < 0) return null;
+  const typed = typeof a.instruction === "string" ? a.instruction.trim() : "";
+  if (a.action === "ask" && (!typed || typed.length > D.LIMITS.instruction)) return null;
+  if (a.action === "broll" && !B.spokenBlocks(doc).some((x) => x.id === b.id)) return null;
+  const r = D.reanchor({ start: a.start, quote: a.quote }, D.contentOf(b));
+  return r ? { blockId: b.id, start: r.start, end: r.end, action: a.action, ...(a.action === "ask" ? { instruction: typed } : {}) } : null;
+}
+/** May this person Keep, Undo or cancel this ask? The person who asked, and the host. */
+export const mayAct = (ask, { host = false, id = "" } = {}) => host || (!!id && ask?.by?.id === id);
+/** What the host shares: the open asks, copied. */
+export const shareAsks = (asks) => structuredClone(asks.filter((a) => D.OPEN_STATUSES.includes(a.status)));
+/** A guest places the host's asks in its own copy of the script: each quote is found again near its place. An ask
+ *  whose text is not here (yet) is left out; B-roll suggestions stay, as they live beside the lines. */
+export function fitAsks(asks, doc) {
+  const out = [];
+  for (const a of Array.isArray(asks) ? asks : []) {
+    if (!a || typeof a.id !== "string" || !D.OPEN_STATUSES.includes(a.status)) continue;
+    if (a.scope === "selection") {
+      const b = D.blockById(doc, a.blockId);
+      const r = b && D.reanchor(a, D.contentOf(b));
+      if (r) Object.assign(a, r);
+      else if (a.answer?.kind !== "broll") continue;
+    } else if (a.scope === "script" && a.answer?.kind === "marks") {
+      for (const m of a.answer.marks) {
+        if (m.state !== "open") continue;
+        const b = D.blockById(doc, m.blockId);
+        const r = b && D.reanchor(m, D.contentOf(b));
+        if (r) Object.assign(m, r); else m.state = "gone";
+      }
+    }
+    out.push(a);
+  }
+  return out;
+}
+/** The agent's caret, from the asks: at the end of the asked text while the agent works on it, at the change while
+ *  its answer is shown; gone after Keep or Undo. The newest such ask wins. */
+export function agentCaret(asks, doc) {
+  const sel = asks.filter((a) => a.scope === "selection" && D.blockById(doc, a.blockId));
+  const a = sel.filter((x) => x.status === "taken").at(-1) || sel.filter((x) => x.status === "answered" && x.answer && x.answer.kind !== "broll").at(-1);
+  if (!a) return null;
+  const who = String((a.status === "taken" ? a.takenBy : a.answeredBy)?.name || "Agent").trim().slice(0, 60) || "Agent";
+  return { pid: "agent", kind: "agent", name: `${who} (agent)`, colour: 0, blockId: a.blockId, offset: a.end };
+}
 export function docFromSnapshot({ blocks, meta }) {
   const doc = { blocks: [], tail: typeof meta?.tail === "string" && /^\s{0,200}$/.test(meta.tail) ? meta.tail : "\n", eol: meta?.eol === "\r\n" ? "\r\n" : "\n" };
   const make = scriptIO(doc).make;
@@ -86,19 +141,25 @@ export function docFromSnapshot({ blocks, meta }) {
 
 /* ---------- The app side ---------- */
 /**
- * createTogether(app): app = { doc(), name(), me, setName(name), held(), selection(), restore(sel), element(id),
- *   applied(ops, sel), loadGuest(doc, name), guestEnded(status), joinFailed(status), sharing(on), renderTop(), renderDots(),
+ * createTogether(app): app = { doc(), name(), me, held(), selection(), restore(sel), element(id), applied(ops, sel),
+ *   loadGuest(doc, name, broll), guestEnded(status), joinFailed(status), sharing(on), renderTop(), renderDots(),
+ *   asks(), setRoomAsks(asks), guestAsk(spec, by), guestAct(id, act, byId), brollShare(), setRoomBroll(b),
  *   sheet, scriptEl, icon(name) }
  */
 export function createTogether(app) {
-  let room = null, composing = false, last = "";
+  let room = null, composing = false, last = "", shared = { asks: "", broll: "" };
+  const outbox = []; // a guest's asks and Keep/Undo while the room is not live: sent when it is
   const $ = (s) => document.querySelector(s);
   const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/room`;
+  const isGuest = () => room?.role === "guest";
+  const myId = () => (isGuest() ? guestId(room.client) : app.me.id);
+  const agent = () => (app.doc() ? agentCaret(app.asks(), app.doc()) : null);
+  const caretList = () => [...(room ? room.caretList() : []), ...[agent()].filter(Boolean)];
   const carets = createCarets({
     container: app.sheet,
     element: (id) => app.element(id),
     onUndo: (pid) => room?.undoFor(pid),
-    icon: (n) => app.icon(n === "agent" ? "plug" : n),
+    icon: (n) => app.icon(n),
   });
 
   app.scriptEl.addEventListener("compositionstart", () => { composing = true; });
@@ -106,8 +167,8 @@ export function createTogether(app) {
 
   const adapter = {
     read: () => readBlocks(app.doc()),
-    meta: () => docMeta(app.doc(), app.name()),
-    load: (snap) => app.loadGuest(docFromSnapshot(snap), String(snap.meta?.name || "script.md").slice(0, 120)),
+    meta: () => docMeta(app.doc(), app.name(), app.brollShare()),
+    load: (snap) => app.loadGuest(docFromSnapshot(snap), String(snap.meta?.name || "script.md").slice(0, 120), snap.meta?.broll ?? null),
     caret: () => { const s = app.selection(); return s ? { blockId: s.id, offset: s.focus } : null; },
     held: () => app.held(),
     busy: () => composing,
@@ -127,17 +188,48 @@ export function createTogether(app) {
     },
   };
 
+  // What the host shares besides the text: the open asks and the B-roll list, each sent again only when it changed.
+  const asksMsg = () => ({ type: "asks", asks: shareAsks(app.asks()) });
+  const brollMsg = () => ({ type: "broll", broll: app.brollShare() });
+  function sync() {
+    if (!room || room.role !== "host" || room.stopped) return;
+    const a = asksMsg(), b = brollMsg();
+    const as = JSON.stringify(a.asks), bs = JSON.stringify(b.broll);
+    if (as !== shared.asks) { shared.asks = as; room.sendAll(a); }
+    if (bs !== shared.broll) { shared.broll = bs; room.sendAll(b); }
+  }
+  function flushOutbox() {
+    while (outbox.length && room?.status === "live" && room.send(outbox[0])) outbox.shift();
+  }
+
   const on = {
     status(s) {
       if (s === "ended" || s === "refused" || s === "full") {
         if (room?.role === "guest") { if (room.synced) app.guestEnded(s); else app.joinFailed(s); }
         else { share.set(false); app.sharing(false); }
         room = null;
+        outbox.length = 0;
       }
+      if (s === "live") flushOutbox();
       render();
     },
     people: () => render(),
-    carets: () => { carets.set(room ? room.caretList() : []); app.renderDots(); renderPeople(); },
+    carets: () => { carets.set(caretList()); app.renderDots(); renderPeople(); },
+    joined: (pid) => { room.sendTo(pid, asksMsg()); room.sendTo(pid, brollMsg()); },
+    message(msg) {
+      if (room?.role === "host" && msg.type === "ask") {
+        const p = room.people.get(msg.from);
+        if (!p?.client) return;
+        const by = { id: guestId(p.client), name: p.name };
+        if (msg.ask) { const spec = guestAsk(app.doc(), msg.ask); if (spec) app.guestAsk(spec, by); }
+        else if (typeof msg.id === "string" && ["keep", "undo", "dismiss"].includes(msg.act)) app.guestAct(msg.id, msg.act, by.id);
+      } else if (isGuest() && msg.type === "asks" && app.doc()) {
+        app.setRoomAsks(fitAsks(msg.asks, app.doc()));
+        render();
+      } else if (isGuest() && msg.type === "broll") {
+        app.setRoomBroll(msg.broll);
+      }
+    },
   };
 
   /* Share to edit (host) */
@@ -148,6 +240,7 @@ export function createTogether(app) {
       if (!app.doc()) return null;
       if (!room) {
         const name = app.me.name && app.me.name !== "You" ? app.me.name : "Host";
+        shared = { asks: "", broll: "" };
         room = new RoomClient({ role: "host", ...newRoom(), url: wsUrl(), name, adapter, on }).start();
         app.sharing(true);
         render();
@@ -164,12 +257,14 @@ export function createTogether(app) {
     },
   });
 
-  /* People in the top bar: you, then the others. Clicking one scrolls to their caret. */
+  /* People in the top bar: you, then the others (and the agent while it has a caret). Clicking one scrolls to their caret. */
   function renderPeople() {
     const el = $("#people");
-    const list = room?.peopleList() || [];
+    const a = room ? agent() : null;
+    const list = [...(room?.peopleList() || []), ...(a ? [{ pid: "agent", name: a.name, kind: "agent", colour: 0, me: false }] : [])];
     el.hidden = list.length < 2;
-    const sig = JSON.stringify(list.map((p) => [p.pid, p.name, p.colour, p.me, room?.carets.has(p.pid)]));
+    const has = (pid) => pid === "agent" || !!room?.carets.has(pid);
+    const sig = JSON.stringify(list.map((p) => [p.pid, p.name, p.colour, p.me, has(p.pid)]));
     if (sig === last) return;
     const had = new Set([...el.children].map((c) => c.dataset.who));
     last = sig;
@@ -179,20 +274,21 @@ export function createTogether(app) {
     more.textContent = `+${others - 2}`;
     more.title = list.filter((p) => !p.me).slice(2).map((p) => p.name).join(", ");
     more.setAttribute("aria-label", `${others - 2} more: ${more.title}`);
-    el.replaceChildren(...[...list].sort((a, b) => b.me - a.me).map((p) => {
-      const a = document.createElement(p.me ? "span" : "button");
-      a.className = p.me ? "avatar avatar--me" : "avatar";
-      a.textContent = Array.from(p.name.trim() || "?")[0].toUpperCase();
-      a.title = p.me ? `${p.name} (you)` : p.name;
+    el.replaceChildren(...[...list].sort((x, y) => y.me - x.me).map((p) => {
+      const b = document.createElement(p.me ? "span" : "button");
+      b.className = p.me ? "avatar avatar--me" : "avatar";
+      if (p.kind === "agent") b.innerHTML = app.icon("agent");
+      else b.textContent = Array.from(p.name.trim() || "?")[0].toUpperCase();
+      b.title = p.me ? `${p.name} (you)` : p.name;
       if (!p.me) {
-        a.type = "button";
-        a.dataset.who = p.pid;
-        a.style.setProperty("--c", colourVar(p));
-        a.setAttribute("aria-label", `Go to ${p.name}`);
-        a.disabled = !room?.carets.has(p.pid);
-        if (had.size && !had.has(p.pid)) a.dataset.new = "";
+        b.type = "button";
+        b.dataset.who = p.pid;
+        b.style.setProperty("--c", colourVar(p));
+        b.setAttribute("aria-label", `Go to ${p.name}`);
+        b.disabled = !has(p.pid);
+        if (had.size && !had.has(p.pid)) b.dataset.new = "";
       }
-      return a;
+      return b;
     }), ...(others > 2 ? [more] : []));
   }
   $("#people").addEventListener("click", (e) => {
@@ -203,14 +299,15 @@ export function createTogether(app) {
 
   function render() {
     renderPeople();
-    carets.set(room ? room.caretList() : []);
+    carets.set(caretList());
     app.renderTop();
     app.renderDots();
   }
+  const guestSend = (msg) => { outbox.push(msg); flushOutbox(); };
 
   return {
     get active() { return !!room && !room.stopped; },
-    get guest() { return room?.role === "guest"; },
+    get guest() { return isGuest(); },
     get room() { return room; },
     /** Guest: join the room in the link with a name. */
     join(link, name) {
@@ -220,7 +317,9 @@ export function createTogether(app) {
     },
     /** Host: stop sharing (opening another script, for example). */
     stop() { if (room && room.role === "host") { room.stop(); share.set(false); } },
-    local() { room?.local(); },
+    /** After every change: the text goes to the room, and the host shares its asks and B-roll when they changed. */
+    local() { room?.local(); sync(); },
+    sync,
     caret() {
       if (!room || room.stopped) return;
       const s = app.selection();
@@ -228,11 +327,17 @@ export function createTogether(app) {
     },
     /** Ctrl/Cmd+Z in a room undoes only your own changes. */
     undo() { return room?.undoMine() ?? false; },
-    redraw() { carets.draw(); },
-    /** Coloured dots for the people whose caret is in these blocks (the section list). */
+    /** Redraw the carets (people's and the agent's) after the script re-rendered or the asks changed. */
+    redraw() { carets.set(caretList()); if (room) renderPeople(); },
+    /** May I Keep, Undo or cancel this ask? */
+    may: (ask) => mayAct(ask, { host: !isGuest(), id: myId() }),
+    /** Guest: a new ask for the host, or Keep / Undo / dismiss on my own ask. */
+    ask: (spec) => guestSend({ type: "ask", ask: spec }),
+    act: (id, act) => guestSend({ type: "ask", id, act }),
+    /** Coloured dots for the people (and the agent) whose caret is in these blocks (the section list). */
     dots(ids) {
-      if (!room) return "";
-      return room.caretList().filter((c) => ids.has(c.blockId)).map((c) => `<span class="pdot pdot--person" style="--c: ${colourVar(c)}" title="${String(c.name).replace(/[&<>"']/g, "")}"></span>`).join("");
+      const list = room ? caretList() : [];
+      return list.filter((c) => ids.has(c.blockId)).map((c) => `<span class="pdot pdot--person" style="--c: ${colourVar(c)}" title="${String(c.name).replace(/[&<>"']/g, "")}"></span>`).join("");
     },
     /** Show the share button only to the host's side, with a script open. */
     renderShare(open, guest) { $("#share").hidden = !open || guest; },

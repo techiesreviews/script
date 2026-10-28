@@ -2,7 +2,7 @@
 import * as D from "./doc.js";
 import * as Q from "./save-queue.js";
 import * as B from "./broll.js";
-import { createTogether, parseLink } from "./together-adapter.js";
+import { createTogether, parseLink, fitAsks } from "./together-adapter.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -41,6 +41,7 @@ const ICONS = {
   suggest: '<rect x="3" y="7" width="14" height="13" rx="2"/><path d="M7 7v13M3 11.5h4M3 15.5h4"/><path d="M19.5 2.5v5M17 5h5"/>',
   share: '<path d="M16 5l3 3-3 3"/><path d="M19 8h-6a6 6 0 0 0-6 6v4"/>',
   link: '<path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/>',
+  agent: '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/>', // the model icon in the agent's caret
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest" };
@@ -257,6 +258,8 @@ function decorationsFor(id) {
   return out;
 }
 
+// In a shared script only the person who asked, and the host, may Keep, Undo or cancel an ask.
+const may = (ask) => !state.guest || !!together?.may(ask);
 function fillBlock(el, b) {
   const content = D.contentOf(b);
   const decos = decorationsFor(b.id);
@@ -274,7 +277,7 @@ function fillBlock(el, b) {
       const c = h("span", "checked", { "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
       c.textContent = quote;
       const n = h("span", "note", { contenteditable: "false", "data-skip": "", "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
-      n.innerHTML = `${icon(d.ask.answer.tone === "look" ? "flag" : "check")}<span></span><button type="button" class="note__x" aria-label="Done">${icon("x")}</button>`;
+      n.innerHTML = `${icon(d.ask.answer.tone === "look" ? "flag" : "check")}<span></span>${may(d.ask) ? `<button type="button" class="note__x" aria-label="Done">${icon("x")}</button>` : ""}`;
       n.querySelector("span").textContent = d.ask.answer.text;
       nodes.push(c, n);
       chips++;
@@ -294,7 +297,8 @@ function fillBlock(el, b) {
         c.append(from, ins);
       }
       const bar = h("span", "change__bar", { "data-skip": "" });
-      bar.innerHTML = `<span class="change__what">${icon(ACT_ICON[d.ask.action])}<span></span></span><button type="button" class="undo">${icon("undo")}Undo</button><button type="button" class="keep">${icon("check")}Keep</button>`;
+      // Keep and Undo for the person who asked, and the host (step D2); everyone else sees the change.
+      bar.innerHTML = `<span class="change__what">${icon(ACT_ICON[d.ask.action])}<span></span></span>${may(d.ask) ? `<button type="button" class="undo">${icon("undo")}Undo</button><button type="button" class="keep">${icon("check")}Keep</button>` : ""}`;
       bar.querySelector(".change__what span").textContent = actName(d.ask);
       c.append(bar);
       nodes.push(c);
@@ -304,7 +308,7 @@ function fillBlock(el, b) {
       s.textContent = quote;
       const chip = h("span", "ask-chip", { contenteditable: "false", "data-skip": "", "data-deco": "", "data-ask": d.ask.id });
       if (d.ask.status === "taken") { s.dataset.taken = ""; chip.dataset.taken = ""; }
-      chip.innerHTML = `${icon(ACT_ICON[d.ask.action])}<span></span><span class="ask-chip__dot"></span><button type="button" class="ask-chip__x" aria-label="Cancel">${icon("x")}</button>`;
+      chip.innerHTML = `${icon(ACT_ICON[d.ask.action])}<span></span><span class="ask-chip__dot"></span>${may(d.ask) ? `<button type="button" class="ask-chip__x" aria-label="Cancel">${icon("x")}</button>` : ""}`;
       chip.querySelector("span").textContent = actName(d.ask);
       nodes.push(s, chip);
       chips++;
@@ -440,8 +444,9 @@ $("#toc").addEventListener("click", (e) => {
 function renderTop() {
   const open = !!state.doc;
   $("#docInfo").hidden = !open;
-  // A guest edits text only: no export, agent, voice check, B-roll views or sharing (step D1).
-  for (const id of ["exportBtn", "voiceBtn", "agentBtn", "viewSwitch"]) $("#" + id).hidden = !open || state.guest;
+  // A guest has no export, agent, voice check or sharing; each person picks their own Script/Storyboard view.
+  for (const id of ["exportBtn", "voiceBtn", "agentBtn"]) $("#" + id).hidden = !open || state.guest;
+  $("#viewSwitch").hidden = !open;
   together?.renderShare(open, state.guest);
   $("#docSwitch").disabled = state.guest;
   $("#empty").hidden = open;
@@ -858,13 +863,14 @@ function placeBar(r) {
   bar.style.setProperty("--bar-y", y + "px");
 }
 function showBar() {
-  if (state.guest) return hideBar(); // guests' asks come with step D2
+  if (state.locked) return hideBar();
   if (bar.contains(document.activeElement) || !shotCard.hidden) return;
   const s = currentSelection();
   if (!s) { hideBar(); return; }
   barSel = s;
   const spoken = spokenSelection(s.range).length > 0;
   $("#addBroll").disabled = !canAddBroll() || !spoken;
+  $("#addBroll").hidden = state.guest; // guests can't add shots; "Suggest B-roll" is an ask like any other
   $('#editBar [data-act="broll"]').disabled = !spoken;
   const n = D.countWords(s.quote);
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
@@ -897,16 +903,21 @@ function makeAsk(action, typed = "") {
     if (!r) return hideBar();
     ({ start, end } = r);
   }
-  // The newest ask wins where two overlap.
-  for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === s.id && isOpen(a) && !isBrollAnswer(a) && a.start < end && a.end > start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
-  }
-  const ask = D.makeAsk(state.doc, { blockId: s.id, start, end, action, instruction: action === "ask" ? typed : undefined, by: me });
-  state.asks.push(ask);
-  emit("created", ask);
   hideBar();
   getSelection().removeAllRanges();
-  renderBlock(s.id);
+  // A guest's ask goes to the host, which adds it for everyone and hands it to its agent.
+  if (state.guest) return void together.ask({ blockId: s.id, start, end, quote: content.slice(start, end), action, instruction: typed });
+  return addAsk({ blockId: s.id, start, end, action, typed, by: me });
+}
+function addAsk({ blockId, start, end, action, typed = "", by }) {
+  // The newest ask wins where two overlap.
+  for (const a of state.asks) {
+    if (a.scope === "selection" && a.blockId === blockId && isOpen(a) && !isBrollAnswer(a) && a.start < end && a.end > start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
+  }
+  const ask = D.makeAsk(state.doc, { blockId, start, end, action, instruction: action === "ask" ? typed : undefined, by });
+  state.asks.push(ask);
+  emit("created", ask);
+  renderBlock(blockId, getCaret());
   changed();
   offerAsks();
   return ask;
@@ -1018,12 +1029,16 @@ scriptEl.addEventListener("click", (e) => {
   if (!btn || btn.closest(".shot-frame")) return;
   e.preventDefault();
   const id = btn.closest("[data-ask]")?.dataset.ask;
-  if (btn.classList.contains("keep")) keepAnswer(id);
-  else if (btn.classList.contains("note__x")) {
-    const ask = state.asks.find((a) => a.id === id);
-    if (ask && isOpen(ask)) { closeAsk(ask, "kept"); renderBlock(ask.blockId, getCaret()); changed(); }
-  } else undoAnswer(id);
+  const act = btn.classList.contains("keep") ? "keep" : btn.classList.contains("note__x") ? "dismiss" : "undo";
+  if (state.guest) return together.act(id, act); // the host keeps or undoes it, for everyone
+  doAsk(id, act);
 });
+function doAsk(id, act) {
+  if (act === "keep") return keepAnswer(id);
+  if (act === "undo") return undoAnswer(id);
+  const ask = state.asks.find((a) => a.id === id);
+  if (ask && isOpen(ask)) { closeAsk(ask, "kept"); renderBlock(ask.blockId, getCaret()); changed(); }
+}
 // Keep the caret where it is when pressing a chip or bar button.
 scriptEl.addEventListener("pointerdown", (e) => { if (e.target.closest(".change__bar button, .note__x, .ask-chip__x")) e.preventDefault(); });
 
@@ -1069,6 +1084,7 @@ function openCard(m) {
   $("#vcWhy span").textContent = found.mark.why || D.ACTIONS.voice.name;
   $("#vcTry").textContent = found.mark.rewrite;
   $("#vcUse").hidden = !found.mark.rewrite;
+  $("#vcKeep").parentElement.hidden = state.guest; // the host's "Sounds like me" check: only the host acts on it
   card.hidden = false;
   positionCard(m);
 }
@@ -1710,7 +1726,7 @@ function closeBroll() {
 }
 async function loadBroll() {
   const token = ++broll.token;
-  if (!state.doc || state.guest) return; // guests see the host's B-roll with step D2
+  if (!state.doc || state.guest) return; // guests get the host's list (setRoomBroll)
   // "none" must mean "no list linked", so the list counts as loading while its link is looked up.
   broll.status = "loading";
   let link = await idbGet(brollKey());
@@ -1781,6 +1797,7 @@ function brollTouched() {
 function renderBroll() {
   renderBrollMarks();
   renderBoard();
+  together?.sync(); // the host shares the list with guests when it changed
   const ok = broll.status === "ok";
   for (const b of $$('#exportMenu [data-export="broll"], #exportMenu [data-export="storyboard"]')) b.disabled = !ok;
   for (const n of $$('#exportMenu [data-note="broll"]')) n.hidden = ok;
@@ -1797,7 +1814,7 @@ function frameImg(s, label) {
 }
 function keepBar(s) {
   const ask = sketchAsk();
-  if (!pendingSketch(s.id)) return "";
+  if (!pendingSketch(s.id) || state.guest) return ""; // guests see the sketch; the host keeps or undoes it
   return `<span class="change__bar frame__bar" data-ask="${esc(ask.id)}">${broll.problem[s.id] ? `<span class="frame__problem" title="${esc(broll.problem[s.id])}">Not saved</span>` : ""}<button type="button" class="undo" data-act="undo" data-b="${esc(s.id)}">${icon("undo")}Undo</button><button type="button" class="keep" data-act="keep" data-b="${esc(s.id)}"${broll.saving[s.id] ? " disabled" : ""}>${icon("check")}Keep</button></span>`;
 }
 // Re-rendering keeps the keyboard where it was (the same frame, or the same button in it).
@@ -1878,7 +1895,7 @@ function lightShot(id, scroll) {
   if (!s) return;
   const on = scroll || broll.lit !== id;
   broll.lit = on ? id : null;
-  if (on && s.check) { s.check = false; syncFlags(); }
+  if (on && s.check && !state.guest) { s.check = false; syncFlags(); } // the host's "Check" flags are shared
   renderBroll();
   if (!on) return;
   const first = wrapOf(covered(s)[0]);
@@ -1899,6 +1916,7 @@ scriptEl.addEventListener("click", (e) => {
   // A click lights the shot and opens its card to change or remove it; a click while its card is open puts both away.
   // After Cancel or Escape the shot stays lit, and one click opens the card again.
   const id = t.dataset.b;
+  if (state.guest) return lightShot(id, false); // guests can't change shots: a click only lights it
   if (!shotCard.hidden && sc.mode === "edit" && sc.id === id) { closeShotCard(); if (broll.lit === id) lightShot(id, false); return; }
   if (broll.lit !== id) lightShot(id, false);
   openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
@@ -1981,7 +1999,7 @@ function setView(v) {
   scrollTo({ top: board ? 0 : ui.scriptY });
 }
 function renderView() {
-  const board = ui.view === "board" && !!state.doc && !state.guest;
+  const board = ui.view === "board" && !!state.doc;
   $("#layout").dataset.view = board ? "board" : "";
   for (const b of $$("#viewSwitch button")) b.setAttribute("aria-pressed", String(b.dataset.view === (board ? "board" : "script")));
   renderBoard();
@@ -1997,6 +2015,7 @@ const FILTERS = [
   ["screen", "Screen", (s) => s.kind === "screen"],
 ];
 function boardHead() {
+  if (state.guest) return broll.status === "ok" ? `<div class="board__file">${icon("film")}<span class="board__name">${esc(broll.link?.name || "B-roll list")}</span></div>` : "";
   const show = B.boardHeadState(broll.link, broll.status);
   const more = planAction() + keepAllAction();
   if (show.link) return `<button class="board__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>${more}`;
@@ -2049,6 +2068,7 @@ $("#board").addEventListener("click", (e) => {
   const act = e.target.closest("[data-act]");
   if (act) {
     const a = act.dataset.act;
+    if (state.guest && a !== "filter") return; // guests only look at the list
     if (a === "link") linkBroll();
     else if (a === "unlink") unlinkBroll();
     else if (a === "allow") { const t = ++broll.token; readBroll(t, true); }
@@ -2071,7 +2091,7 @@ $("#board").addEventListener("click", (e) => {
   // Back to the script, with this shot's lines lit and its card open.
   setView("script");
   lightShot(jump.dataset.b, true);
-  openShotCard({ mode: "edit", id: jump.dataset.b, anchor: shotFrameAnchor(jump.dataset.b) });
+  if (!state.guest) openShotCard({ mode: "edit", id: jump.dataset.b, anchor: shotFrameAnchor(jump.dataset.b) });
 });
 
 /* ---------- Sketch asks: the agent draws the missing frames, the person keeps or undoes each ---------- */
@@ -2271,7 +2291,7 @@ function spokenSelection(range) {
   }
   return out;
 }
-const canAddBroll = () => broll.status === "ok" || broll.status === "none";
+const canAddBroll = () => !state.guest && (broll.status === "ok" || broll.status === "none");
 
 const shotCard = $("#shotCard");
 const sc = { mode: "add", id: null, sel: null, anchor: null, kind: "broll", busy: false };
@@ -2452,6 +2472,7 @@ function refreshSuggestions() {
   if (sig !== addsSig) { addsSig = sig; renderBroll(); }
 }
 function suggestBar(x) {
+  if (state.guest) return ""; // guests see suggestions; the host keeps or undoes them
   const k = esc(x.key);
   return `<span class="change__bar suggest__bar">${broll.problem[x.key] ? '<span class="suggest__problem">Not saved</span>' : ""}`
     + `<button type="button" class="undo" data-act="s-undo" data-s="${k}">${icon("undo")}Undo</button>`
@@ -2584,7 +2605,6 @@ function slashAtCaret() {
 const slashOnSpokenLine = (cmd) => canAddBroll() && B.spokenBlocks(state.doc).some((x) => x.id === cmd.id)
   && /[\p{L}\p{N}]/u.test(D.cutCommand(cmd.content, cmd).content);
 function updateSlash(typed) {
-  if (state.guest) return closeSlash(); // guests get the "/" parts with step D2
   const cmd = slashAtCaret();
   if (!cmd) { slash.dismissed = null; return closeSlash(); }
   // After Escape the typed text stays text until this command is gone.
@@ -2660,7 +2680,7 @@ function pickSlash(partId) {
 // In a shared script, a "/" command is held back from the others from its first character: the menu opens after the
 // change is reported, so this asks what updateSlash is about to do.
 function slashHeld() {
-  if (state.guest || slash.open) return D.slashHold({ guest: state.guest, open: slash.open });
+  if (slash.open) return true;
   const focused = scriptEl.contains(document.activeElement);
   const cmd = focused ? slashAtCaret() : null;
   const matches = cmd ? D.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) }).length : 0;
@@ -3022,8 +3042,58 @@ function afterRoomOps(ops, sel) {
   restoreSelection(sel);
   changed();
 }
+/* Asks and B-roll in a shared script (step D2): the host keeps them, guests see them as the host does. */
+// Host: a guest's ask, already checked and found in this script (together-adapter.js guestAsk).
+function guestAsk(spec, by) {
+  if (!state.doc || !byId(spec.blockId)) return;
+  addAsk({ blockId: spec.blockId, start: spec.start, end: spec.end, action: spec.action, typed: spec.instruction || "", by });
+}
+// Host: Keep, Undo or dismiss from the guest who asked. B-roll suggestions stay with the host.
+function guestAct(id, act, askerId) {
+  const ask = state.asks.find((a) => a.id === id);
+  if (!ask || !isOpen(ask) || ask.scope !== "selection" || isBrollAnswer(ask) || ask.by?.id !== askerId) return;
+  if (act === "keep" && ask.status !== "answered") return;
+  doAsk(id, act);
+}
+// Guest: the host's open asks, already placed in this copy (fitAsks). Only blocks whose asks changed are drawn again.
+function setRoomAsks(asks) {
+  const perBlock = (list) => {
+    const m = new Map();
+    for (const a of list) {
+      const ids = a.scope === "selection" ? [a.blockId] : (a.answer?.marks || []).map((x) => x.blockId);
+      const sig = JSON.stringify([a.id, a.status, a.start, a.end, a.answer, a.action, a.by?.id]);
+      for (const id of ids) m.set(id, (m.get(id) || "") + sig);
+    }
+    return m;
+  };
+  const brollSig = (list) => JSON.stringify(list.filter((a) => a.scope === "broll" || isBrollAnswer(a)));
+  const before = perBlock(state.asks), after = perBlock(asks), brollBefore = brollSig(state.asks);
+  state.asks = asks;
+  const caret = getCaret();
+  for (const id of new Set([...before.keys(), ...after.keys()])) if (before.get(id) !== after.get(id) && byId(id)) renderBlock(id, caret);
+  renderTocDots();
+  renderVoice();
+  if (brollSig(asks) !== brollBefore) renderBroll();
+  else refreshSuggestions();
+}
+// Host: the B-roll list as guests get it (in the snapshot and after each change).
+function brollShare() {
+  return broll.status === "ok" ? { status: "ok", name: broll.link?.name || "B-roll list", text: broll.text, flags: brollFlags() || {} } : { status: "none" };
+}
+// Guest: the host's B-roll list, shown as the host shows it (no file, no changes from here).
+function setRoomBroll(b) {
+  if (!state.guest || !state.doc) return;
+  if (b?.status === "ok" && typeof b.text === "string") {
+    broll.link = { name: String(b.name || "B-roll list").slice(0, 120), shared: true };
+    broll.flags = b.flags && typeof b.flags === "object" ? { ...b.flags } : {};
+    adoptBroll(b.text);
+  } else {
+    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null });
+    renderBroll();
+  }
+}
 // A guest gets the host's script (the first time, and again after a fresh snapshot).
-function loadGuest(doc, name) {
+function loadGuest(doc, name, sharedBroll = null) {
   const first = !state.guest || !state.doc;
   const sel = first ? null : localSelection();
   hideBar();
@@ -3031,12 +3101,15 @@ function loadGuest(doc, name) {
   if (first) closeBroll();
   Object.assign(state, {
     guest: true, locked: false, doc, name, handle: null, savedText: D.serialize(doc), savedAt: 0, saveError: "",
-    needsPermission: false, conflict: false, undo: [], redo: [], lastStep: null, asks: [], pendingDraft: null, hint: null,
+    needsPermission: false, conflict: false, undo: [], redo: [], lastStep: null, pendingDraft: null, hint: null,
+    // A fresh snapshot keeps the host's asks, placed again in the new copy; the first one starts with none.
+    asks: first ? [] : fitAsks(state.asks, doc),
   });
   hideBanner();
   renderTop();
   renderAll();
   renderDerived();
+  if (sharedBroll) setRoomBroll(sharedBroll);
   if (sel) restoreSelection(sel);
   if (first) scrollTo({ top: 0 });
 }
@@ -3085,6 +3158,12 @@ together = createTogether({
   sharing: () => { state.undo = []; state.redo = []; state.lastStep = null; },
   renderTop: () => renderTop(),
   renderDots: () => { if (state.doc) renderTocDots(); },
+  asks: () => state.asks,
+  setRoomAsks,
+  guestAsk,
+  guestAct,
+  brollShare,
+  setRoomBroll,
   sheet: $(".sheet"),
   scriptEl,
   icon,
