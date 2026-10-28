@@ -346,6 +346,16 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
    the agent's name tag. A new one arrives a little stronger. */
 .agent-change { border-radius: 3px; background: light-dark(color-mix(in oklch, var(--agent) 13%, transparent), color-mix(in oklch, var(--agent) 17%, transparent)); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 @media (prefers-reduced-motion: no-preference) { .agent-change[data-new] { animation: agent-in 900ms var(--ease-out); } }
+
+/* Links (step G): the words with a faint dotted underline, like the prompter. "[", "](" and the address show only
+   while the caret is at or in the link (data-open), quietly, so they can be edited. */
+.md-link__words { text-decoration: underline dotted color-mix(in oklch, currentColor 45%, transparent); text-decoration-thickness: 1px; text-underline-offset: 0.22em; }
+.md-link:not([data-open]) .md-link__mark { display: none; }
+.md-link__mark { color: var(--faint); overflow-wrap: anywhere; }
+@media (hover: hover) and (pointer: fine) {
+  .md-link__words:hover { text-decoration-color: var(--accent); }
+  .script[data-mod] .md-link__words { cursor: pointer; }
+}
 @keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
 
 /* A note in place (check facts) */
@@ -502,7 +512,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 @media (prefers-reduced-motion: no-preference) {
   .menu-action[data-state="waiting"] .status-dot, .voice-btn[data-state="waiting"] .status-dot { animation: pulse 1.2s ease-in-out infinite; }
 }
-.voice-btn .status-dot { display: none; }
+.voice-btn .status-dot, .menu-action--job .status-dot { display: none; }
+.menu-action--job[data-state="waiting"] .status-dot { display: block; }
 .voice-btn[data-state="waiting"] .status-dot { display: block; background: var(--accent); opacity: 1; }
 
 /* ---------- Front matter: details folded away under the title ---------- */

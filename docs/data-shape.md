@@ -16,7 +16,7 @@ Block    { id: string, type: "title" | "heading" | "note" | "raw" | "para", text
 
 ## Ask
 
-An ask is one request to the person's own agent. It is made from the edit bar (`scope: "selection"`) or from "Sounds like me" (`scope: "script"`).
+An ask is one request to the person's own agent. It is made from the edit bar (`scope: "selection"`) or from "Sounds like me" and "Find links in the script" (`scope: "script"`).
 
 ```js
 Ask {
@@ -24,7 +24,7 @@ Ask {
   blockId?, start?, end?, quote?,      // selection only: offsets in the block's content, and the selected text
   context?,                            // the block's content when the ask was made
   section?,                            // the heading text of the block's section
-  action: "like" | "simpler" | "shorter" | "explain" | "facts" | "ask" | "voice",
+  action: "like" | "simpler" | "shorter" | "explain" | "facts" | "ask" | "voice" | "links",
   instruction,                         // the standard instruction, or the typed Ask text
   by: { id, name },                    // who asked
   createdAt,                           // ISO time
@@ -33,6 +33,7 @@ Ask {
   answer?, answeredBy?: { id, name },
   change?: { text, removed, at, ctx? } // step F: a replace or add that went straight in, while it is marked;
                                        // ctx = { index, before, after } where it is kept or shared (below)
+  from?,                               // step G: one paragraph's links from a whole-script "Find links" (its id)
 }
 ```
 
@@ -46,6 +47,7 @@ Standard instructions (`ACTIONS` in `doc.js`):
 | explain | Add one or two plain sentences that explain how this works. |
 | facts | Check names, numbers and dates against what you know or can look up. Answer with a note. |
 | voice | Mark lines in the spoken text that sound generic or AI-like, with a one-line reason and a rewrite in the speaker's voice. |
+| links | Find the tools, sites and sources this text mentions and link each one to its official page: the maker's own site, the exact docs page or the original source. Never a search page, a shortener or an affiliate link. Skip a mention when you are not sure of the page. Answer with kind "links": each quote copied word for word from the spoken text. |
 
 Answers (an optional `message` of at most 200 characters fits any kind):
 
@@ -54,6 +56,7 @@ Answers (an optional `message` of at most 200 characters fits any kind):
 { kind: "add", text }                             // goes straight into the text after the quote (step F)
 { kind: "note", text, tone: "ok" | "look" }       // a note chip, dismissed with ✕
 { kind: "marks", marks: [{ quote, why, rewrite }] }  // script scope only: dashed underlines with a voice card
+{ kind: "links", links: [{ quote, url }] }        // "Find links" (a selection or the whole script) and free asks: straight in (step G)
 ```
 
 **Straight in (step F, Lex 2026-10-28).** A `replace` or `add` answer on a selection goes into the text at once, as one change (one Ctrl/Cmd+Z step when alone; in a shared script the host's tab applies it and sends it under the agent's name, `by: "agent"`). The ask becomes `kept`, its `start`/`end` cover the changed text, and `change = { text, removed, at }` holds the new text, what it replaced (`""` for an add) and when (`at`, ms). While that text is untouched it is lightly tinted in the agent colour and the agent's caret sits at the newest such change; Undo on its name tag puts `removed` back in place of `text` and makes the ask `undone`. The mark follows edits around it (`public/changes.js`); an edit inside it, a new ask on it, or Ctrl/Cmd+Z of that step ends it (`change` is dropped; the ask stays `kept`, or becomes `undone` for Ctrl/Cmd+Z). **One paragraph:** a replace or add stays inside its block. Blank lines in its text become one space (single line breaks stay; in a heading or the title every line break becomes a space). A text that would turn the block into another kind (a `## ` or `- ` at its start, brackets around a para, a note losing its brackets) goes in on one line without the marks at its start (`#`, `-`, `*`, `+`, `_`, `>`, `|`, `` ` ``, `~`, `[`, `<`, `1.`) and a `]` at its end; when it still can't keep its type, the tab refuses the answer and tells the agent so. So every such answer is marked and has Undo (going in unmarked is only a safety net). A change of only spaces gets no mark. The answer's `message` shows under the line while the change is marked.
@@ -69,6 +72,20 @@ Mark { quote, why, rewrite, blockId, start, end, state: "open" | "kept" | "used"
 `open` shows the dashed underline. "Keep mine" sets `kept`; "Use this" sets `used` and makes a new **selection-scope ask with `action: "voice"`** at the mark's place, already `answered` with `{ kind: "replace", text: rewrite }`, which goes straight in like any replace (step F), with Undo on the agent's name tag. A mark whose quote disappears after an edit becomes `gone`. The script ask is `kept` once no mark is open.
 
 Life of an ask: `waiting` → `taken` (an agent picked it up with `wait_for_asks`; an ask taken more than two minutes ago without an answer is offered again) → `answered` (a note) → `kept` or `undone`; a replace or add is `kept` as soon as it is in the text, and `undone` when the person undoes it. The person can cancel a waiting ask (`cancelled`). Anchors follow edits: the editor keeps `start`/`end` and the `quote`; after an edit in that block it finds the quote nearest the old offset, or cancels the ask when the quote is gone. Open asks (`waiting`, `taken`, `answered`) and marked changes are kept in memory and in the browser's local storage with the draft, never in the file; after a reload a marked change comes back only at its exact place (`change.ctx`, above).
+
+## Links (step G)
+
+Lex (2026-10-28): a link in the script opens by itself in the prompter. The format is the prompter's (`techies-prompter/src/core.mjs`), read in `public/links.js`:
+
+- `[words](https://full-address)` inside a spoken line: the words are spoken, the address opens. Only `https://` and `http://`; the words hold no brackets; the address may hold one level of brackets (Wikipedia).
+- `- Label: https://full-address` as a line of its own (a raw block, or a line inside a para): a prompter link line. The first one right under a heading opens when the section starts.
+- Not in reminders or headings. A para that starts with a link (`[The docs](https://…) say…`) stays a spoken para even when it ends with `]`.
+
+The file keeps the Markdown exactly; so do the editor's text model, the asks' offsets, carets and the room. Only the display changes: in a para a link shows as its words with a faint dotted underline, and `[`, `](` and the address are hidden while the caret is outside it; with the caret at or in it, or a selection touching it, all of it shows. A caret put on the edge of a closed link goes just outside it. Ctrl/Cmd+click opens the address in a new tab; its title shows the address.
+
+- **Exports.** `exportPrompter` never splits a sentence inside a link, and passes link lines through in their place (from paras and from raw blocks; the rest of a raw block stays out). `exportCamera`, `stats` and the edit bar's word count use only the words (`spokenText`: links become their words, link lines go).
+- **The agent's links.** "Find links" in the edit bar's More menu makes a selection ask (`action: "links"`, guests too); "Find links in the script" in the agent menu makes a script ask (host only), whose `spokenText` the agent reads. The answer is `{ kind: "links", links: [{ quote, url }] }`, at most 30, each `quote` at most 500 characters and `url` a full `https://`/`http://` address of at most 2000 (no spaces, no `javascript:` or `data:`; `safeUrl`, checked by the Worker and the tab). Each quote's first unlinked occurrence in the asked text (whole words, inside the selection or in a spoken para) becomes `[quote](url)`. Quotes not found, already linked (or in a link line), or only in headings and reminders are skipped and listed back to the agent; with none left the tab refuses the answer and the ask stays open.
+- **Straight in.** On a selection the links are one change like a replace (step F): `kept` at once, `change.text` runs from the first new link to the last, Undo puts the words back. On the whole script every para that gets links is its own marked change with an ask of its own (`scope: "selection"`, `action: "links"`, `from: <script ask id>`, the same `by`, already `kept`), so marks, Undo on the agent's name tag (one para at a time), drafts and guests work as in step F; the script ask is `kept`. The landing is one Ctrl/Cmd+Z step when alone: its `land` is `{ id: <script ask>, status, also: [<paras' asks>] }` and turns them all undone (or kept again on redo).
 
 ## B-roll list and sketches (step C)
 

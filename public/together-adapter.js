@@ -83,7 +83,7 @@ export const docMeta = (doc, name, broll = null) => ({ name, tail: doc.tail, eol
 // The host keeps the asks: guests send theirs to the host, which checks them, adds them, hands them to its agent and
 // shares every open ask (with its answer) with everyone, and every kept change that is still marked (step F). Only
 // the person who asked, and the host, may Keep or Undo.
-export const GUEST_ACTIONS = ["like", "simpler", "shorter", "explain", "facts", "ask", "broll"];
+export const GUEST_ACTIONS = ["like", "simpler", "shorter", "explain", "facts", "ask", "broll", "links"];
 /** A guest's new ask as the host takes it: its quote found again in the host's script near the guest's place.
  *  Returns { blockId, start, end, action, instruction? } or null. */
 export function guestAsk(doc, a) {
@@ -282,6 +282,7 @@ export function createTogether(app) {
   const carets = createCarets({
     container: app.sheet,
     element: (id) => app.element(id),
+    rangeAt: app.rangeAt, // where the text shows (a closed link hides its Markdown)
     // The agent's Undo is the app's (its marked change, alone or shared); people's go through the room.
     onUndo: (pid) => (pid === "agent" ? app.undoAgent(agent()?.askId) : room?.undoFor(pid)),
     icon: (n) => app.icon(n),

@@ -7,11 +7,15 @@
 // without the marks at its start (and a "]" at its end). An answer that still can't keep the type is refused.
 // Kept with a draft or shared with guests, a change carries ctx = { index, before, after }: its block's place and
 // up to CTX characters around it. It is placed again only where that matches exactly; otherwise it shows no mark.
+// Links (step G): a "links" answer goes in the same way, as one change; its mark runs from the first new link to the
+// last. On the whole script each paragraph that gets links has its own marked change, as an ask of its own made
+// from the script ask (`from`), so every mark and Undo works as above; the landing is still one Ctrl/Cmd+Z step.
 // Pure: no DOM. The editor (app.js) calls these and draws the mark; the room carries the text like any change.
 import * as D from "./doc.js";
+import * as L from "./links.js";
 import { diff, movePoint } from "./together/ops.js";
 
-export const STRAIGHT_IN = ["replace", "add"];
+export const STRAIGHT_IN = ["replace", "add", "links"];
 /** A kept answer whose change is still marked (its text untouched since it went in). */
 export const isMarked = (a) => !!a && a.scope === "selection" && a.status === "kept" && !!a.change && typeof a.change.text === "string" && a.change.text.trim() !== "";
 /** Does this answer go straight into the text? */
@@ -45,16 +49,46 @@ export function fitText(content, ask, type) {
 }
 /** Does this answer fit its ask's block without changing its type (for the agent's answer_ask)? */
 export function fits(doc, ask, answer) {
-  if (!goesStraightIn(ask, answer)) return true;
+  if (!goesStraightIn(ask, answer) || answer.kind === "links") return true;
   const b = D.blockById(doc, ask.blockId);
   const r = b && D.reanchor(ask, D.contentOf(b));
   return !r || fitText(D.contentOf(b), { ...ask, ...r, answer }, b.type) !== null;
 }
-/** What the tab tells the agent after answer_ask, per kind. */
-export function answerResult(kind) {
+/** What the tab tells the agent after answer_ask, per kind. For links: how many went in, and the quotes skipped. */
+export function answerResult(kind, { linked = 0, skipped = [] } = {}) {
   if (kind === "note") return "Shown to the person.";
   if (kind === "marks") return "Shown to the person. They choose Keep or Undo.";
+  if (kind === "links") return `Done: ${linked} ${linked === 1 ? "link is" : "links are"} in the text now. The person can undo them.${skippedText(skipped)}`;
   return "Done: the change is in the text now. The person can undo it.";
+}
+const skippedText = (skipped) => (skipped.length ? ` Skipped: ${skipped.map((x) => `${JSON.stringify(x.quote)} (${x.why})`).join("; ")}.` : "");
+/** The agent's answer_ask error when none of its links could go in. */
+export const noLinksError = (skipped) => `No link went in.${skippedText(skipped)} Quote words exactly as they are in the asked text, outside links, headings and reminders.`;
+
+// Blocks a whole-script "Find links" may link: the spoken paragraphs; the other blocks only explain a skip.
+function scriptSegments(doc) {
+  const spoken = new Set(D.outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para").map((b) => b.id)));
+  const segments = [], others = [];
+  for (const b of doc.blocks) {
+    const content = D.contentOf(b);
+    if (spoken.has(b.id)) segments.push({ id: b.id, content, from: 0, to: content.length });
+    else if (b.type !== "para") others.push(content);
+  }
+  return { segments, others };
+}
+/** What a links answer would do now, without changing anything: { segments, skipped } (L.planLinks). The selection's
+ *  quote must still be there (else null). */
+export function planFor(doc, ask, answer = ask.answer) {
+  if (ask.scope === "script") {
+    const { segments, others } = scriptSegments(doc);
+    return L.planLinks(segments, answer.links, { others });
+  }
+  const b = D.blockById(doc, ask.blockId);
+  const r = b && D.reanchor(ask, D.contentOf(b));
+  if (!r) return null;
+  const content = D.contentOf(b);
+  const segment = b.type === "para" ? [{ id: b.id, content, from: r.start, to: r.end }] : [];
+  return L.planLinks(segment, answer.links, { others: b.type === "para" ? [] : [content] });
 }
 
 /**
@@ -68,6 +102,7 @@ export function answerResult(kind) {
 export function land(doc, ask, now = Date.now()) {
   const b = D.blockById(doc, ask.blockId);
   if (!b || !goesStraightIn(ask, ask.answer)) return null;
+  if (ask.answer.kind === "links") return landLinks(doc, ask, now);
   const content = D.contentOf(b), type = b.type;
   // The quote must still be there (found again near its place); otherwise nothing changes.
   const r = D.reanchor(ask, content);
@@ -87,6 +122,53 @@ export function land(doc, ask, now = Date.now()) {
   const inPlace = !result.changed && !result.created.length && b.type === type && D.contentOf(b) === res.content;
   const mark = inPlace && res.content.slice(from, to).trim() ? { start: from, end: to, change: { text: res.content.slice(from, to), removed, at: now } } : null;
   return { blockId: b.id, at, delta, result, mark };
+}
+// One plan segment into its block: { at, delta, result, mark } (null when the block would change its type).
+function landSegment(doc, seg, now) {
+  const b = D.blockById(doc, seg.id);
+  if (!b || !keepsType(seg.content, b.type)) return null;
+  const old = D.contentOf(b);
+  const end = seg.to + seg.delta;
+  const result = D.setContent(doc, b.id, seg.content);
+  const mark = { start: seg.from, end, change: { text: seg.content.slice(seg.from, end), removed: old.slice(seg.from, seg.to), at: now } };
+  return { blockId: b.id, at: seg.to, delta: seg.delta, result, mark };
+}
+// A links answer on a selection: one change in its block, marked from the first new link to the last.
+function landLinks(doc, ask, now) {
+  const plan = planFor(doc, ask);
+  const seg = plan?.segments[0];
+  if (!seg) return null;
+  const res = landSegment(doc, seg, now);
+  if (!res) return null;
+  ask.status = "kept";
+  ask.answer = { ...ask.answer, links: seg.links };
+  return { ...res, skipped: plan.skipped };
+}
+/**
+ * A links answer on the whole script: every spoken paragraph that gets links changes, each as its own marked change
+ * with an ask of its own (a selection "links" ask from this one: `from`, the same `by` and agent, already kept), so
+ * Undo on the agent's name tag takes them back one paragraph at a time. The script ask becomes kept.
+ * Returns { parts: [{ ask, blockId, at, delta, result }], skipped } or null (nothing changes) when no link can go in.
+ */
+export function landScript(doc, ask, now = Date.now()) {
+  if (ask.scope !== "script" || ask.answer?.kind !== "links") return null;
+  const plan = planFor(doc, ask);
+  const segs = plan.segments.filter((seg) => keepsType(seg.content, D.blockById(doc, seg.id)?.type));
+  if (!segs.length) return null;
+  const parts = [];
+  for (const seg of segs) {
+    const res = landSegment(doc, seg, now);
+    const part = {
+      id: D.newId(10), scope: "selection", action: "links", from: ask.id, instruction: ask.instruction, by: ask.by, createdAt: ask.createdAt,
+      status: "kept", blockId: seg.id, quote: res.mark.change.text, section: D.sectionOfBlock(doc, seg.id),
+      answer: { kind: "links", links: seg.links }, ...(ask.answeredBy ? { answeredBy: ask.answeredBy } : {}),
+    };
+    setMark(part, res.mark);
+    parts.push({ ask: part, blockId: res.blockId, at: res.at, delta: res.delta, result: res.result });
+  }
+  ask.status = "kept";
+  ask.answer = { ...ask.answer, links: segs.flatMap((s) => s.links) };
+  return { parts, skipped: plan.skipped };
 }
 export function setMark(ask, mark) {
   if (!mark) return;
@@ -186,13 +268,14 @@ export function place(ask, doc, { byIndex = false } = {}) {
  * (unmarked: Ctrl/Cmd+Z owns it now), Ctrl/Cmd+Z of a tag Undo makes it kept (unmarked). Returns `back`, what the
  * opposite step says, and `closed`, the ask whose status changed (to announce), or null.
  */
+// A whole-script links landing names its script ask and the paragraphs' asks (`also`); they all change together.
 export function landStep(asks, land) {
   const ask = land && asks.find((a) => a.id === land.id && (a.status === "kept" || a.status === "undone"));
   if (!ask) return { back: null, closed: null };
-  const back = { id: ask.id, status: ask.status };
+  const also = (land.also || []).map((id) => asks.find((a) => a.id === id && (a.status === "kept" || a.status === "undone"))).filter(Boolean);
+  const back = { id: ask.id, status: ask.status, ...(land.also ? { also: land.also } : {}) };
   if (ask.status === land.status) return { back, closed: null };
-  delete ask.change;
-  ask.status = land.status;
+  for (const a of [ask, ...also]) { delete a.change; a.status = land.status; }
   return { back, closed: ask };
 }
 

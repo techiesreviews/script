@@ -24,7 +24,7 @@ test("the voice and agent labels stay readable for screen readers", () => {
 });
 
 // Step E: the shorter edit bar. Its controls, its two menus, and the phone rule that keeps every accessible name.
-test("the edit bar: Shorter, Simpler, Sound like me, More ▾, B-roll ▾ (or a guest's Suggest B-roll) and Ask", () => {
+test("the edit bar: Shorter, Simpler, Sound like me, More ▾ (Explain, Check facts, Find links), B-roll ▾ (or a guest's Suggest B-roll) and Ask", () => {
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   const css = readFileSync(new URL("../public/app.css", import.meta.url), "utf8");
   const barHtml = html.slice(html.indexOf('<div class="edit-bar" id="editBar"'), html.indexOf('<div class="slash-menu"'));
@@ -32,7 +32,7 @@ test("the edit bar: Shorter, Simpler, Sound like me, More ▾, B-roll ▾ (or a 
   assert.ok(order.every((i, n) => i >= 0 && (n === 0 || i > order[n - 1])), `order: ${order}`);
   assert.match(barHtml, /<button[^>]*id="suggestBroll"[^>]*hidden/);
   const menu = (id) => barHtml.slice(barHtml.indexOf(`id="${id}"`), barHtml.indexOf("</div>", barHtml.indexOf(`id="${id}"`)));
-  assert.deepEqual([...menu("moreMenu").matchAll(/data-act="(\w+)"/g)].map((m) => m[1]), ["explain", "facts"]);
+  assert.deepEqual([...menu("moreMenu").matchAll(/data-act="(\w+)"/g)].map((m) => m[1]), ["explain", "facts", "links"]);
   assert.match(menu("brollMenu"), /id="addBroll"/);
   assert.match(menu("brollMenu"), /data-act="broll"/);
   for (const [btn, target] of [["moreBtn", "moreMenu"], ["brollBtn", "brollMenu"]]) {

@@ -1,3 +1,10 @@
+ok POST /api/agent-token gives a token with its birth time inside
+ok GET /api/agent-token gets 405
+ok POST /api/agent-token from another site gets 403
+ok a token 9 hours old: the relay closes the tab with 4003
+ok a token 9 hours old: /mcp gets 401
+ok a token 1 hour in the future: the relay closes the tab with 4003
+ok a token 1 hour in the future: /mcp gets 401
 ok unknown token gets 401
 ok no token gets 401
 ok GET /mcp gets 405
@@ -13,15 +20,24 @@ ok wait_for_asks returns the new ask
 ok answer_ask reaches the tab
 ok tab received the answer
 ok over-long text is refused before the tab
-ok list_asks shows the answered status
+ok list_asks shows the replace as kept at once
 ok wait_for_asks returns the B-roll ask
 ok answer_broll: the tab refuses a quote that is not in the script
 ok answer_broll: a screen recording with how is refused before the tab
 ok answer_broll reaches the tab
 ok tab received the B-roll changes
 ok list_asks shows each B-roll change's state
+ok wait_for_asks returns the Find links ask
+ok answer_ask links: javascript: is refused before the tab
+ok answer_ask links: data: is refused before the tab
+ok answer_ask links: an address without https:// is refused before the tab
+ok answer_ask links: more than 30 are refused before the tab
+ok answer_ask links reaches the tab, with the skipped quote listed back
+ok tab received the links
+ok list_asks shows the links as kept at once
 ok wait_for_asks says no asks yet after its wait
 ok an older tab is closed with 4001
 ok a revoked token gets 401
+ok a revoked token stays refused for a new tab
 ok with no tab, tools say the editor is not open
 RESULT: ok smoke

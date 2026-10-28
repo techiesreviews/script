@@ -1,5 +1,6 @@
 // The script document: parse, serialize, edit, export and ask anchoring.
 // Pure module: no DOM, no network. Imported by the app and by the tests.
+import { textLinks, isLinkLine, spokenText, safeUrl, LINK_LIMITS } from "./links.js";
 
 /* ---------- Actions and their standard instructions ---------- */
 export const ACTIONS = {
@@ -12,14 +13,15 @@ export const ACTIONS = {
   voice: { name: "Sounds like me", instruction: "Mark lines in the spoken text that sound generic or AI-like, with a one-line reason and a rewrite in the speaker's voice." },
   broll: { name: "Suggest B-roll", instruction: "Suggest 1–3 B-roll shots for these lines with answer_broll, only where a picture helps the viewer. Each add has a short \"What to show\", a short \"How to make it\" (none for a screen recording) and quote: the exact spoken text it goes over." },
   plan: { name: "Plan B-roll", instruction: "Go through the whole script and suggest B-roll with answer_broll: adds, changes and removals, at most 20 in all, without repeating shots that are already there (get_script returns them). Each add quotes the exact spoken text it goes over." },
+  links: { name: "Find links", instruction: "Find the tools, sites and sources this text mentions and link each one to its official page: the maker's own site, the exact docs page or the original source. Never a search page, a shortener or an affiliate link. Skip a mention when you are not sure of the page. Answer with kind \"links\": each quote copied word for word from the spoken text." },
   sketch: { name: "Ask for sketches", instruction: "Draw a simple storyboard sketch for each listed B-roll shot: an SVG line drawing with viewBox 0 0 260 140, using only g, path, rect, circle, ellipse, line, polyline, polygon and text, with class s (ink line), l (soft line), o (orange accent) or mv (dashed orange movement). No colours, styles or images. Send each one with sketch_shot." },
 };
 export const OPEN_STATUSES = ["waiting", "taken", "answered"];
 export const WORDS_PER_MINUTE = 160;
 export const MESSAGE_MAX = 200;
 // Limits for answers from an agent (shared with the Worker's tool schemas).
-export const LIMITS = { askId: 40, shotId: 20, text: 4000, message: MESSAGE_MAX, marks: 20, quote: 500, why: 160, rewrite: 1000, instruction: 500, voiceGuide: 20 * 1024 };
-export const ANSWER_KINDS = ["replace", "add", "note", "marks"];
+export const LIMITS = { askId: 40, shotId: 20, text: 4000, message: MESSAGE_MAX, marks: 20, quote: 500, why: 160, rewrite: 1000, instruction: 500, voiceGuide: 20 * 1024, links: LINK_LIMITS.links, url: LINK_LIMITS.url };
+export const ANSWER_KINDS = ["replace", "add", "note", "marks", "links"];
 
 /* ---------- Ids ---------- */
 const ID_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -58,7 +60,8 @@ export function typeOf(text, titleSeen = false) {
   if (single && TITLE_RE.test(text)) return titleSeen ? "raw" : "title";
   if (single && HEADING_RE.test(text)) return "heading";
   const t = text.trim();
-  if (/^\[[\s\S]*\]$/.test(t)) return "note";
+  // A reminder is in brackets; a line that starts with a "[words](https://…)" link is spoken (as the prompter reads it).
+  if (/^\[[\s\S]*\]$/.test(t) && !/^\[[^[\]]*\]\(https?:\/\//i.test(t)) return "note";
   const first = text.split(/\r?\n/, 1)[0];
   if (RAW_RE.test(first) || RULE_RE.test(first)) return "raw";
   return "para";
@@ -323,14 +326,36 @@ export function titleOf(doc) {
 const collapse = (s) => s.replace(/[ \t]*\r?\n[ \t]*/g, " ").replace(/\s+/g, " ").trim();
 const spokenParas = (doc) => outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para"));
 
+// The camera script shows only the spoken words: a link's words without its address, no link lines.
 export function exportCamera(doc) {
-  const paras = spokenParas(doc).map((b) => collapse(contentOf(b))).filter(Boolean);
+  const paras = spokenParas(doc).map((b) => collapse(spokenText(contentOf(b)))).filter(Boolean);
   return paras.length ? paras.join("\n\n") + "\n" : "";
 }
 
-// One sentence per line. Splits after . ! ? … (and closing quotes) before a capital, digit or opening quote.
+// One sentence per line. Splits after . ! ? … (and closing quotes) before a capital, digit or opening quote, never
+// inside a "[words](https://…)" link: the prompter gets every link whole.
+const SENTENCE_GAP = /(?<=[.!?…]["'”’)\]]*)\s+(?=["'“‘(\[]?[\p{Lu}\p{N}])/gu;
 export function sentences(text) {
-  return collapse(text).split(/(?<=[.!?…]["'”’)\]]*)\s+(?=["'“‘(\[]?[\p{Lu}\p{N}])/u).filter(Boolean);
+  const t = collapse(text), links = textLinks(t), out = [];
+  let at = 0;
+  for (const m of t.matchAll(SENTENCE_GAP)) {
+    if (links.some((l) => m.index > l.start && m.index < l.end)) continue;
+    out.push(t.slice(at, m.index));
+    at = m.index + m[0].length;
+  }
+  out.push(t.slice(at));
+  return out.filter(Boolean);
+}
+// A spoken para for the prompter: its sentences, with its link lines ("- Label: https://…") passed through in place.
+function paraLines(content) {
+  const out = [];
+  let run = [];
+  const flush = () => { if (run.length) out.push(...sentences(run.join("\n"))); run = []; };
+  for (const line of content.split("\n")) {
+    if (isLinkLine(line)) { flush(); out.push(line.trim()); } else run.push(line);
+  }
+  flush();
+  return out;
 }
 
 function noteLines(content) {
@@ -352,8 +377,13 @@ export function exportPrompter(doc) {
     for (const b of s.blocks) {
       const c = contentOf(b);
       if (!c.trim()) continue;
-      if (b.type === "para") out.push("", ...sentences(c));
+      if (b.type === "para") out.push("", ...paraLines(c));
       else if (b.type === "note") out.push("", ...noteLines(c));
+      else if (b.type === "raw") {
+        // Lists, tables and code stay out of the prompter; their link lines go in, in their place.
+        const links = c.split("\n").filter(isLinkLine).map((l) => l.trim());
+        if (links.length) out.push("", ...links);
+      }
     }
   }
   return out.join("\n") + "\n";
@@ -388,7 +418,7 @@ export function formatDuration(seconds) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 export function stats(doc) {
-  const words = spokenParas(doc).reduce((n, b) => n + countWords(contentOf(b)), 0);
+  const words = spokenParas(doc).reduce((n, b) => n + countWords(spokenText(contentOf(b))), 0);
   const seconds = Math.round((words / WORDS_PER_MINUTE) * 60);
   return { words, seconds, spoken: formatDuration(seconds) };
 }
@@ -467,6 +497,12 @@ export function cleanAnswer(ask, answer) {
   const str = (v) => (typeof v === "string" ? v : "");
   const message = str(answer.message).trim().slice(0, MESSAGE_MAX);
   const extra = message ? { message } : {};
+  // Links (step G): on a "Find links" ask (the selection or the whole script) and on a free ask.
+  if (answer.kind === "links") {
+    if (!linksFit(ask) || !Array.isArray(answer.links)) return null;
+    const links = answer.links.slice(0, LIMITS.links).map((l) => ({ quote: str(l?.quote).trim(), url: str(l?.url) })).filter((l) => l.quote && safeUrl(l.url));
+    return links.length ? { kind: "links", links, ...extra } : null;
+  }
   if (ask.scope === "script") {
     if (answer.kind !== "marks" || !Array.isArray(answer.marks)) return null;
     const marks = answer.marks
@@ -518,15 +554,20 @@ export function moveAsks(asks, fromId, toId, fromStart, shift) {
 
 // Check an agent's answer_ask arguments against the ask and the script.
 // Returns { answer } ready for receiveAnswer, or { error } with a short reason for the agent.
+// Which asks a "links" answer fits: "Find links" (a selection or the whole script) and a free ask on a selection.
+const linksFit = (ask) => ask.action === "links" ? ask.scope === "selection" || ask.scope === "script" : ask.scope === "selection" && ask.action === "ask";
 export function checkAnswer(ask, args, doc) {
   if (!ask) return { error: "Unknown ask. Call list_asks or wait_for_asks for current ask ids." };
   if (ask.scope === "broll") return { error: ask.action === "plan" ? "This is a \"Plan B-roll\" ask. Answer it with answer_broll." : "This ask is for B-roll sketches. Answer it with sketch_shot, one call per shot." };
   if (ask.scope === "selection" && ask.action === "broll") return { error: "This is a \"Suggest B-roll\" ask. Answer it with answer_broll." };
   if (ask.status !== "waiting" && ask.status !== "taken") return { error: `This ask is finished (${ask.status}).` };
   const a = args && typeof args === "object" ? args : {};
-  if (!ANSWER_KINDS.includes(a.kind)) return { error: "kind must be replace, add, note or marks." };
+  if (!ANSWER_KINDS.includes(a.kind)) return { error: "kind must be replace, add, note, marks or links." };
+  if (ask.scope === "script" && ask.action === "links" && a.kind !== "links") return { error: "This is the whole-script \"Find links\" ask. Answer with kind \"links\"." };
+  if (a.kind === "links" && !linksFit(ask)) return { error: "links answers fit \"Find links\" asks and free asks. Use replace, add or note." };
   if (a.kind === "marks" && ask.scope !== "script") return { error: "marks answers only fit the \"Sounds like me\" script check. Use replace, add or note." };
-  if (a.kind !== "marks" && ask.scope === "script") return { error: "This is the \"Sounds like me\" script check. Answer with kind \"marks\"." };
+  if (a.kind !== "marks" && a.kind !== "links" && ask.scope === "script") return { error: "This is the \"Sounds like me\" script check. Answer with kind \"marks\"." };
+  if (a.kind === "marks" && ask.action !== "voice") return { error: "marks answers only fit the \"Sounds like me\" script check." };
   const tooLong = (v, n, name) => (typeof v === "string" && v.length > n ? `${name} is longer than ${n} characters.` : "");
   const err = tooLong(a.text, LIMITS.text, "text") || tooLong(a.message, LIMITS.message, "message");
   if (err) return { error: err };
@@ -540,6 +581,15 @@ export function checkAnswer(ask, args, doc) {
     }
     const missing = a.marks.filter((m) => !findQuote(doc, m.quote)).map((m) => m.quote.slice(0, 80));
     if (missing.length) return { error: `These quotes are not in the script word for word: ${missing.map((q) => JSON.stringify(q)).join(", ")}` };
+  } else if (a.kind === "links") {
+    if (!Array.isArray(a.links) || !a.links.length) return { error: "links must be a list of { quote, url }." };
+    if (a.links.length > LIMITS.links) return { error: `At most ${LIMITS.links} links.` };
+    for (const [i, l] of a.links.entries()) {
+      const e = !l || typeof l.quote !== "string" || !l.quote.trim() ? `Link ${i + 1} needs a quote: words copied exactly from the spoken text.`
+        : tooLong(l.quote, LIMITS.quote, `Link ${i + 1}'s quote`)
+        || (typeof l.url !== "string" || !safeUrl(l.url) ? `Link ${i + 1}'s url must be a full https:// address (at most ${LIMITS.url} characters, no spaces).` : "");
+      if (e) return { error: e };
+    }
   } else if (a.kind !== "note" && (typeof a.text !== "string" || !a.text.trim())) {
     return { error: `A ${a.kind} answer needs text.` };
   } else if (a.kind === "note" && (typeof a.text !== "string" || !a.text.trim())) {

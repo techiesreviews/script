@@ -62,6 +62,15 @@ function onTabMessage(m) {
   if (m.tool === "answer_ask") {
     const a = asks.find((x) => x.id === m.args.askId);
     if (!a || (a.status !== "waiting" && a.status !== "taken")) return reply(m.id, { error: "Unknown ask." });
+    // Like the editor (step G): links go in where the quote is in the asked text; the others are skipped.
+    if (m.args.kind === "links") {
+      const linked = m.args.links.filter((l) => a.quote.includes(l.quote)), skipped = m.args.links.filter((l) => !a.quote.includes(l.quote));
+      if (!linked.length) return reply(m.id, { error: "No link went in." });
+      a.status = "kept";
+      a.answer = { kind: "links", links: linked };
+      received.answers.push(m.args);
+      return reply(m.id, { result: `Done: ${linked.length} ${linked.length === 1 ? "link is" : "links are"} in the text now. The person can undo them.${skipped.length ? ` Skipped: ${skipped.map((l) => `${JSON.stringify(l.quote)} (not found word for word in the asked text)`).join("; ")}.` : ""}` });
+    }
     // Like the editor (step F): a replace or add goes straight into the text and the ask is kept at once.
     const inText = m.args.kind === "replace" || m.args.kind === "add";
     a.status = inText ? "kept" : "answered";
@@ -181,6 +190,24 @@ try {
   check(received.broll[0]?.changes?.[0]?.what === "A friendly wave", "tab received the B-roll changes");
   const listed2 = await mcp("tools/call", { name: "list_asks", arguments: {} });
   check(JSON.parse(toolText(listed2) || "{}").asks?.[1]?.answer?.changes?.[0]?.state === "waiting", "list_asks shows each B-roll change's state", toolText(listed2));
+
+  // A "Find links" ask, answered with kind "links" (step G).
+  makeAsk("links", "Find the tools, sites and sources this text mentions and link each one to its official page.");
+  const linksAsk = await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 0 } });
+  check(JSON.parse(toolText(linksAsk) || "{}").asks?.[0]?.action === "links", "wait_for_asks returns the Find links ask", toolText(linksAsk));
+  const before = received.answers.length;
+  for (const [label, url] of [["javascript:", "javascript:alert(1)"], ["data:", "data:text/html,hi"], ["an address without https://", "example.com"]]) {
+    const bad = await mcp("tools/call", { name: "answer_ask", arguments: { askId: "ask2", kind: "links", links: [{ quote: "Hello", url }] } });
+    check(bad.body.result?.isError === true && received.answers.length === before, `answer_ask links: ${label} is refused before the tab`, toolText(bad));
+  }
+  const many = await mcp("tools/call", { name: "answer_ask", arguments: { askId: "ask2", kind: "links", links: Array(31).fill({ quote: "Hello", url: "https://example.com" }) } });
+  check(many.body.result?.isError === true && toolText(many).includes("At most 30"), "answer_ask links: more than 30 are refused before the tab", toolText(many));
+  const linked = await mcp("tools/call", { name: "answer_ask", arguments: { askId: "ask2", kind: "links", links: [{ quote: "Hello", url: "https://example.com/hello" }, { quote: "Goodbye", url: "https://example.com/bye" }] } });
+  check(!linked.body.result?.isError && toolText(linked).startsWith("Done: 1 link is in the text now.") && toolText(linked).includes("Skipped: \"Goodbye\""), "answer_ask links reaches the tab, with the skipped quote listed back", toolText(linked));
+  check(received.answers.at(-1)?.links?.[0]?.url === "https://example.com/hello", "tab received the links");
+  const listed3 = await mcp("tools/call", { name: "list_asks", arguments: {} });
+  const linksListed = JSON.parse(toolText(listed3) || "{}").asks?.[2];
+  check(linksListed?.status === "kept" && linksListed?.answer?.kind === "links", "list_asks shows the links as kept at once", toolText(listed3));
 
   const quiet = await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 1 } });
   check(toolText(quiet).includes("No asks yet"), "wait_for_asks says no asks yet after its wait", toolText(quiet));

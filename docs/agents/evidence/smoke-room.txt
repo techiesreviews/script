@@ -19,7 +19,9 @@ ok typing while the host is away arrives when it is back
 ok a caret reaches everyone
 ok the host's caret reaches the guests
 ok a guest's ask reaches the host
-ok an answer reaches everyone
+ok the agent's change reaches everyone
+ok as the agent's change, not the host's
+ok the kept ask with its marked change reaches everyone
 ok in order, once each
 ok stop sharing ends the room for guests
 ok an ended room refuses new joins

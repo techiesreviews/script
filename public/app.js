@@ -3,6 +3,7 @@ import * as D from "./doc.js";
 import * as Q from "./save-queue.js";
 import * as B from "./broll.js";
 import * as C from "./changes.js";
+import * as L from "./links.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
 
@@ -54,7 +55,7 @@ const ICONS = {
   "ai-sparkle": '<path class="i-fill" transform="scale(.09375)" d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/>',
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${Object.hasOwn(ICONS, n) ? ICONS[n] : ""}</svg>`;
-const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest" };
+const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest", links: "link" };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
 
@@ -186,6 +187,7 @@ function rangeAt(el, start, end) {
   return r;
 }
 function setCaretAt(el, offset) {
+  openLinks(el, offset, offset); // a link the caret is put at shows its Markdown before the caret lands
   const r = document.createRange();
   const [n, o] = pointAt(el, Math.max(0, offset));
   const lock = n.nodeType === 3 ? n.parentElement.closest('[contenteditable="false"]') : null;
@@ -270,6 +272,97 @@ function decorationsFor(id) {
   return out;
 }
 
+/* Links (step G): a "[words](https://…)" in a para shows as its words with a faint dotted underline. "[", "](" and the
+   address are hidden while the caret is outside the link; with the caret at or in it, or a selection touching it, the
+   link is open (data-open) and shows all of its Markdown. The text nodes are still the block's exact content, so
+   offsets, asks, carets and the room are unchanged. A link cut by a decoration's edge shows as plain Markdown. */
+const linksOf = (b) => (b.type === "para" ? L.textLinks(D.contentOf(b)) : []);
+function linkNodes(content, from, to, links) {
+  const nodes = [];
+  let at = from;
+  for (const l of links) {
+    if (l.start < at || l.end > to) continue;
+    if (l.start > at) nodes.push(document.createTextNode(content.slice(at, l.start)));
+    const a = h("span", "md-link", { "data-link": "", title: l.url });
+    a.dataset.href = l.url;
+    const head = h("span", "md-link__mark"), words = h("span", "md-link__words"), tail = h("span", "md-link__mark");
+    head.textContent = "[";
+    words.textContent = content.slice(l.words.start, l.words.end);
+    tail.textContent = content.slice(l.words.end, l.end);
+    a.append(head, words, tail);
+    nodes.push(a);
+    at = l.end;
+  }
+  if (to > at) nodes.push(document.createTextNode(content.slice(at, to)));
+  return nodes;
+}
+// The links as drawn: the ones inside one stretch of plain text or one decoration (an old before/after has none).
+function shownLinks(content, links, decos) {
+  const cuts = [0, content.length];
+  for (const d of decos) cuts.push(d.start, d.end);
+  const inChange = (l) => decos.some((d) => d.kind === "ask" && d.ask.status === "answered" && d.ask.answer.kind !== "note" && l.start < d.end && l.end > d.start);
+  return links.filter((l) => !cuts.some((c) => c > l.start && c < l.end) && !inChange(l));
+}
+// Where a link element starts in its block's content.
+function linkStart(el, a) {
+  const r = document.createRange();
+  r.selectNodeContents(a);
+  return offsetIn(el, r.startContainer, r.startOffset);
+}
+// Open the links in `el` that touch start…end (content offsets); close the others (start < 0: close all).
+// Returns the links that were closed and are open now, with their place: [{ a, start, end }].
+function openLinks(el, start, end) {
+  const opened = [];
+  for (const a of el.querySelectorAll(".md-link")) {
+    const s = linkStart(el, a), e = s + readContent(a).length;
+    const open = start >= 0 && start <= e && end >= s;
+    if (open && !a.hasAttribute("data-open")) opened.push({ a, start: s, end: e });
+    a.toggleAttribute("data-open", open);
+  }
+  return opened;
+}
+// After the selection moved: open the links it touches. A caret the person put on the edge of a closed link (where
+// its words begin or end) goes just outside it, so typing there adds to the line, not to the link's words.
+let composingLinks = false;
+function refreshLinks(snap = false) {
+  const sel = getSelection();
+  const r = sel.rangeCount ? sel.getRangeAt(0) : null;
+  for (const el of scriptEl.querySelectorAll(".block:has(.md-link)")) {
+    const s = r && r.intersectsNode(el) ? selectionIn(el) : null;
+    const opened = openLinks(el, s ? s.start : -1, s ? s.end : -1);
+    if (!snap || composingLinks || !s || s.start !== s.end || !sel.isCollapsed || opened.length !== 1) continue;
+    const { a, start, end } = opened[0], words = readContent(a.querySelector(".md-link__words")).length;
+    if (s.start === start + 1) setCaretAt(el, start);
+    else if (s.start === start + 1 + words) setCaretAt(el, end);
+  }
+}
+scriptEl.addEventListener("compositionstart", () => { composingLinks = true; });
+scriptEl.addEventListener("compositionend", () => { composingLinks = false; });
+// Ctrl/Cmd+click opens a link in a new tab; a plain click only places the caret.
+scriptEl.addEventListener("click", (e) => {
+  const a = e.target.closest?.(".md-link");
+  if (!a || !(e.ctrlKey || e.metaKey) || !L.safeUrl(a.dataset.href)) return;
+  e.preventDefault();
+  window.open(a.dataset.href, "_blank", "noopener,noreferrer");
+});
+// While Ctrl/Cmd is held, links show the pointer (they open on click).
+const modKey = (e) => scriptEl.toggleAttribute("data-mod", e.ctrlKey || e.metaKey);
+addEventListener("keydown", modKey);
+addEventListener("keyup", modKey);
+addEventListener("blur", () => scriptEl.removeAttribute("data-mod"));
+// Others' carets are drawn where the text shows: an offset inside a closed link's hidden Markdown sits at its words.
+function visibleRange(el, start, end = start) {
+  const clamp = (o) => {
+    for (const a of el.querySelectorAll(".md-link:not([data-open])")) {
+      const s = linkStart(el, a), w = readContent(a.querySelector(".md-link__words")).length;
+      if (o > s && o <= s + 1) return s + 1;
+      if (o > s + 1 + w && o < s + readContent(a).length) return s + 1 + w;
+    }
+    return o;
+  };
+  return rangeAt(el, clamp(start), clamp(end));
+}
+
 // When this tab got each of the agent's changes (its own clock): it shows a little stronger as it arrives.
 const arrived = new Map();
 // In a shared script only the person who asked, and the host, may Keep, Undo or cancel an ask.
@@ -277,25 +370,27 @@ const may = (ask) => !state.guest || !!together?.may(ask);
 function fillBlock(el, b) {
   const content = D.contentOf(b);
   const decos = decorationsFor(b.id);
+  const links = shownLinks(content, linksOf(b), decos);
   const nodes = [];
   let at = 0, chips = 0;
-  const text = (s) => s && nodes.push(document.createTextNode(s));
+  const text = (from, to) => nodes.push(...linkNodes(content, from, to, links));
+  const words = (m, d) => m.append(...linkNodes(content, d.start, d.end, links));
   for (const d of decos) {
-    text(content.slice(at, d.start));
+    text(at, d.start);
     const quote = content.slice(d.start, d.end);
     if (d.kind === "mark") {
       const m = h("mark", "voice", { tabindex: "0", "data-deco": "", "data-ask": d.ask.id, "data-mark": String(d.i) });
-      m.textContent = quote;
+      words(m, d);
       nodes.push(m);
     } else if (d.kind === "landed") {
       // The agent's change went straight in: a light tint in the agent's colour while it is untouched.
       const m = h("span", "agent-change", { "data-deco": "", "data-ask": d.ask.id });
       if ((arrived.get(d.ask.id) ?? 0) > Date.now() - 1500) m.dataset.new = "";
-      m.textContent = quote;
+      words(m, d);
       nodes.push(m);
     } else if (d.ask.status === "answered" && d.ask.answer.kind === "note") {
       const c = h("span", "checked", { "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
-      c.textContent = quote;
+      words(c, d);
       const n = h("span", "note", { contenteditable: "false", "data-skip": "", "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
       n.innerHTML = `${icon(d.ask.answer.tone === "look" ? "flag" : "check")}<span></span>${may(d.ask) ? `<button type="button" class="note__x" aria-label="Done">${icon("x")}</button>` : ""}`;
       n.querySelector("span").textContent = d.ask.answer.text;
@@ -326,7 +421,7 @@ function fillBlock(el, b) {
       chips++;
     } else {
       const s = h("span", "ask", { "data-deco": "", "data-ask": d.ask.id });
-      s.textContent = quote;
+      words(s, d);
       const chip = h("span", "ask-chip", { contenteditable: "false", "data-skip": "", "data-deco": "", "data-ask": d.ask.id });
       if (d.ask.status === "taken") { s.dataset.taken = ""; chip.dataset.taken = ""; }
       chip.innerHTML = `${icon(ACT_ICON[d.ask.action])}<span></span><span class="ask-chip__dot"></span>${may(d.ask) ? `<button type="button" class="ask-chip__x" aria-label="Cancel">${icon("x")}</button>` : ""}`;
@@ -336,7 +431,7 @@ function fillBlock(el, b) {
     }
     at = d.end;
   }
-  text(content.slice(at));
+  text(at, content.length);
   if (content.endsWith("\n")) nodes.push(h("br", "", { "data-skip": "", "data-deco": "" }));
   el.replaceChildren(...nodes);
   el._decos = decos.length;
@@ -363,7 +458,7 @@ function fillBlock(el, b) {
 
 // After typing: is the DOM still what the model would render?
 function domMatches(el, id) {
-  if (el.querySelector(":not(br):not([data-deco]):not([data-deco] *)")) return false;
+  if (el.querySelector(":not(br):not([data-deco]):not([data-deco] *):not([data-link]):not([data-link] *)")) return false;
   const brs = el.querySelectorAll("br:not([data-skip])");
   if (brs.length > 1 || (brs.length === 1 && el.lastChild !== brs[0])) return false;
   const decos = el.querySelectorAll(".ask, .checked, .change, .agent-change, mark.voice");
@@ -380,7 +475,13 @@ function domMatches(el, id) {
   }
   const content = D.contentOf(byId(id));
   if (content.endsWith("\n") !== !!el.querySelector("br[data-skip]")) return false;
-  return true;
+  // Every link drawn as the model reads it now: its place, its Markdown, its words and its address.
+  const links = shownLinks(content, linksOf(byId(id)), expected), shown = el.querySelectorAll(".md-link");
+  if (shown.length !== links.length) return false;
+  return links.every((l, i) => {
+    const a = shown[i], w = a.querySelector(".md-link__words");
+    return a.childElementCount === 3 && a.dataset.href === l.url && linkStart(el, a) === l.start && readContent(a) === content.slice(l.start, l.end) && !!w && readContent(w) === content.slice(l.words.start, l.words.end);
+  });
 }
 
 function renderBlock(id, caret = null) {
@@ -389,6 +490,7 @@ function renderBlock(id, caret = null) {
   if (el.dataset.type !== b.type) return renderAll(caret);
   fillBlock(el, b);
   if (caret && caret.id === id) setCaretAt(el, caret.offset);
+  refreshLinks();
   together?.redraw();
 }
 
@@ -425,6 +527,7 @@ function renderAll(caret = null) {
   renderVoice();
   renderBrollMarks();
   if (caret) placeCaret(caret.id, caret.offset);
+  refreshLinks();
   together?.redraw();
 }
 
@@ -922,7 +1025,7 @@ function showBar() {
   // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
   $("#brollBtn").hidden = state.guest;
   $("#suggestBroll").hidden = !state.guest;
-  const n = D.countWords(s.quote);
+  const n = D.countWords(L.spokenText(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
   placeBar(s.range);
@@ -988,7 +1091,7 @@ for (const m of barMenus) {
   });
 }
 let selTimer = 0;
-document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
+document.addEventListener("selectionchange", () => { refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
 addEventListener("resize", () => { if (document.activeElement === $("#askInput")) fitAsk(true); if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } positionShotCard(); });
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
@@ -1079,6 +1182,9 @@ export function receiveAnswer(askId, answer) {
     // A new text or an addition goes straight in (step F); a note shows beside its text.
     if (C.goesStraightIn(ask, clean)) { emit("answered", ask); landAnswer(ask); return true; }
     renderBlock(ask.blockId, getCaret());
+  } else if (clean.kind === "links") {
+    // The whole script's links (step G): nothing changes when none can go in, and the ask waits for another answer.
+    return landScriptLinks(ask, clean, validBy(answer.by));
   } else {
     clean.marks = clean.marks.map((m) => ({ ...m, ...(D.findQuote(state.doc, m.quote) || {}), state: "open" })).filter((m) => m.blockId);
     ask.answer = clean;
@@ -1110,11 +1216,24 @@ export function takeAsk(askId, by) {
 }
 export function requestVoiceCheck() {
   if (!state.doc || state.pendingDraft) return null;
-  for (const a of state.asks) if (a.scope === "script" && isOpen(a)) closeAsk(a, "cancelled");
+  for (const a of state.asks) if (a.scope === "script" && a.action === "voice" && isOpen(a)) closeAsk(a, "cancelled");
   const ask = D.makeAsk(state.doc, { scope: "script", action: "voice", by: me });
   state.asks.push(ask);
   emit("created", ask);
   renderAll(getCaret());
+  changed();
+  offerAsks();
+  return ask;
+}
+
+// "Find links" on the whole script (the host's, like the other whole-script jobs): its links go straight in.
+export function requestLinks() {
+  if (!state.doc || state.pendingDraft || state.guest) return null;
+  for (const a of state.asks) if (a.scope === "script" && a.action === "links" && isOpen(a)) closeAsk(a, "cancelled");
+  const ask = D.makeAsk(state.doc, { scope: "script", action: "links", by: me });
+  state.asks.push(ask);
+  emit("created", ask);
+  renderAgent();
   changed();
   offerAsks();
   return ask;
@@ -1179,6 +1298,38 @@ function landAnswer(ask) {
   else renderBlock(b.id, getCaret());
   changed();
 }
+// The whole script's links: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script), with a marked
+// change and Undo per paragraph (C.landScript).
+function landScriptLinks(ask, clean, by) {
+  together?.local();
+  const before = D.cloneDoc(state.doc);
+  const res = C.landScript(state.doc, { ...ask, answer: clean });
+  if (!res) return false;
+  ask.answer = { ...clean, links: res.parts.flatMap((p) => p.ask.answer.links) };
+  ask.answeredBy = by;
+  checkpoint("agent", res.parts[0].blockId, before);
+  if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "undone", also: res.parts.map((p) => p.ask.id) };
+  emit("answered", ask);
+  closeAsk(ask, "kept");
+  const now = Date.now();
+  for (const p of res.parts) {
+    moveAsks(p.blockId, p.blockId, p.at, p.delta);
+    followPieces(p.blockId, p.result);
+  }
+  followMarks(); // the agent's earlier changes follow these
+  for (const p of res.parts) {
+    if (by) p.ask.answeredBy = by;
+    arrived.set(p.ask.id, now);
+    state.asks.push(p.ask);
+    emit("kept", p.ask);
+  }
+  markBase();
+  together?.localAs("agent");
+  renderAll(getCaret());
+  renderAgent();
+  changed();
+  return true;
+}
 // Undo on the agent's name tag: its marked change goes back to what was there; its caret moves to the newest
 // change still marked, or leaves.
 function undoChange(ask) {
@@ -1237,7 +1388,7 @@ function settleVoice(ask) {
 }
 function renderVoice() {
   const open = state.asks.filter((a) => a.scope === "script" && a.status === "answered").flatMap((a) => a.answer.marks.filter((m) => m.state === "open"));
-  const waiting = state.asks.some((a) => a.scope === "script" && (a.status === "waiting" || a.status === "taken"));
+  const waiting = state.asks.some((a) => a.scope === "script" && a.action === "voice" && (a.status === "waiting" || a.status === "taken"));
   const btn = $("#voiceBtn");
   btn.dataset.state = waiting ? "waiting" : "";
   btn.disabled = !(state.doc && !state.pendingDraft && agent.state === "on");
@@ -3051,6 +3202,7 @@ const askForAgent = (a) => B.askForAgent(a, {
 function askForList(a) {
   const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, status: a.status, createdAt: a.createdAt };
   if (a.scope === "selection") Object.assign(out, { quote: a.quote, section: a.section });
+  if (a.from) out.from = a.from; // one paragraph's links from a whole-script "Find links"
   if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots.map((s) => ({ id: s.id, state: a.answer?.done?.[s.id] || (a.answer?.sketches?.[s.id] ? "shown" : "waiting") }));
   else if (a.answer?.kind === "broll") {
     out.answer = { kind: "broll", changes: a.answer.changes.map(({ op, id, kind, what, how, quote, state }) => ({ op, ...(id ? { id } : {}), ...(kind ? { kind } : {}), ...(what != null ? { what } : {}), ...(how != null ? { how } : {}), ...(quote ? { quote } : {}), state: state === "open" ? "waiting" : state })), ...(a.answer.message ? { message: a.answer.message } : {}) };
@@ -3100,6 +3252,13 @@ function handleCall({ id, tool, args = {} }) {
       const ask = state.asks.find((a) => a.id === args.askId);
       const checked = D.checkAnswer(ask, args, state.doc);
       if (checked.error) return send({ error: checked.error });
+      if (checked.answer.kind === "links") {
+        // Links (step G): the quotes that can't be linked are skipped and listed back; with none left, nothing changes.
+        const plan = C.planFor(state.doc, ask, checked.answer);
+        if (plan && !plan.segments.length) return send({ error: C.noLinksError(plan.skipped) });
+        if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: plan ? C.noLinksError(plan.skipped) : "The text this ask was about has changed, so the ask was cancelled." });
+        return send({ result: C.answerResult("links", { linked: ask.answer.links.length, skipped: plan.skipped }) });
+      }
       if (!C.fits(state.doc, ask, checked.answer)) return send({ error: STAYS_IN_PARAGRAPH });
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
       return send({ result: C.answerResult(checked.answer.kind) });
@@ -3145,6 +3304,9 @@ function renderAgent() {
     rows.querySelector(".agent-row__where").textContent = where;
   } else rows.replaceChildren();
   $("#voiceBtn").disabled = !(state.doc && !state.pendingDraft && agent.state === "on");
+  const links = $("#findLinks");
+  links.disabled = !(state.doc && !state.pendingDraft && agent.state === "on");
+  links.dataset.state = state.asks.some((a) => a.scope === "script" && a.action === "links" && (a.status === "waiting" || a.status === "taken")) ? "waiting" : "";
   renderVoiceGuide();
 }
 function renderVoiceGuide(problem = "") {
@@ -3209,6 +3371,7 @@ $("#agentMenu").addEventListener("toggle", (e) => {
   else if (!liveToken()) prefetchToken();
 });
 $("#voiceBtn").addEventListener("click", () => { if (agent.state === "on") requestVoiceCheck(); });
+$("#findLinks").addEventListener("click", () => { if (agent.state === "on") requestLinks(); });
 $("#voiceGuideOpen").addEventListener("click", () => $("#voiceGuideInput").click());
 $("#voiceGuideClear").addEventListener("click", () => { store.del("voiceGuide"); renderVoiceGuide(); });
 $("#voiceGuideInput").addEventListener("change", async (e) => {
@@ -3409,6 +3572,7 @@ together = createTogether({
   selection: localSelection,
   restore: restoreSelection,
   element: (id) => blockNode(id),
+  rangeAt: visibleRange,
   applied: afterRoomOps,
   loadGuest,
   guestEnded,

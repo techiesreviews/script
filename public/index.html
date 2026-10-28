@@ -36,6 +36,8 @@
       <div class="menu menu--agent" id="agentMenu" popover>
         <ul class="menu__agents" id="agentRows"></ul>
         <div class="menu__divider"></div>
+        <button class="menu-action menu-action--job" id="findLinks" type="button" disabled><span data-icon="link"></span><span class="menu-action__text">Find links in the script</span><span class="status-dot"></span></button>
+        <div class="menu__divider"></div>
         <div class="menu-row" id="voiceGuideRow"><span data-icon="wave"></span><span class="menu-row__text" id="voiceGuideText">Voice guide · <span id="voiceGuideName">none</span></span><button class="small-btn" type="button" id="voiceGuideOpen">Open…</button><button class="icon-btn" type="button" id="voiceGuideClear" aria-label="Remove the voice guide" hidden data-icon="x"></button></div>
         <div class="menu__divider"></div>
         <button class="menu-action" id="mcpAction" type="button" data-state="off"><span class="status-dot"></span><span class="menu-action__text" id="mcpActionText" aria-live="polite">Wait for MCP</span><span class="menu-action__copy" id="mcpCopy" aria-hidden="true" data-icon="copy"></span></button>
@@ -105,6 +107,7 @@
     <div class="menu bar-menu" id="moreMenu" role="menu" aria-labelledby="moreBtn" popover>
       <button class="menu-action" type="button" role="menuitem" data-act="explain"></button>
       <button class="menu-action" type="button" role="menuitem" data-act="facts"></button>
+      <button class="menu-action" type="button" role="menuitem" data-act="links"></button>
     </div>
     <button class="edit-bar__button" type="button" id="brollBtn" popovertarget="brollMenu" aria-haspopup="menu" aria-expanded="false"><span data-icon="film"></span>B-roll<span data-icon="chevron"></span></button>
     <div class="menu bar-menu" id="brollMenu" role="menu" aria-labelledby="brollBtn" popover>
