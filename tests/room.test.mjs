@@ -316,6 +316,42 @@ test("together: a change made for the agent goes out under its name; the host's 
   assert.equal(g.a.text(), ha.text());
 });
 
+test("together: a change for the agent goes out as the host's when a held structure change can't be kept apart, and as local() when not live", async () => {
+  const { host, ha, guest } = await session([para("p1", "We start here."), para("p2", "Second line.")]);
+  const g = await guest("Ana");
+  const by = [];
+  const seen = g.c.applyRemote.bind(g.c);
+  g.c.applyRemote = (o, who, next) => { by.push(who); return seen(o, who, next); };
+  // The host types a "/" command and Enter (held back: a structure change), then the agent's change lands.
+  ha.heldNow = true;
+  ha.type("p1", 0, "/po");
+  host.local();
+  ha.blocks.splice(1, 0, para("p3", ""));
+  host.local();
+  ha.blocks[2].text = "Next line.";
+  host.localAs("agent");
+  ha.heldNow = false;
+  host.local();
+  await settle(60);
+  assert.equal(g.a.text(), ha.text());
+  assert.ok(!by.includes("agent"), "not under the agent's name");
+  assert.ok(by.includes("host") && host.log.every((e) => e.by === "host"), "the change goes out as the host's");
+  // Not live (a guest's tab, or a stopped room): localAs is local().
+  let calls = 0;
+  const local = g.c.local.bind(g.c);
+  g.c.local = () => { calls++; return local(); };
+  g.c.localAs("agent");
+  assert.equal(calls, 1, "a guest's localAs is its local()");
+  host.stop();
+  const hostLocal = host.local.bind(host);
+  host.local = () => { calls++; return hostLocal(); };
+  ha.blocks[0].text = "Changed after the end.";
+  const logged = host.log.length;
+  host.localAs("agent");
+  assert.equal(calls, 2, "a stopped host's localAs is local()");
+  assert.equal(host.log.length, logged, "and nothing goes out");
+});
+
 test("together: guests get the script, type at the same time in one paragraph, and all end on the same text", async () => {
   const { host, ha, guest } = await session([para("p1", "We start here."), para("p2", "Second line.")]);
   const g1 = await guest("Ana"), g2 = await guest("Ben");

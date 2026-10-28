@@ -475,7 +475,8 @@ export function cleanAnswer(ask, answer) {
     return { kind: "marks", marks, ...extra };
   }
   if (answer.kind === "replace" || answer.kind === "add") {
-    const text = str(answer.text).replace(/\r\n?/g, "\n");
+    // The text stays in the asked paragraph: blank lines become one space (single line breaks stay).
+    const text = str(answer.text).replace(/\r\n?/g, "\n").replace(/[ \t]*\n(?:[ \t]*\n)+[ \t]*/g, " ");
     if (!text.trim()) return null;
     return { kind: answer.kind, text, ...extra };
   }

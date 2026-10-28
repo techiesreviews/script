@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleMcp, checkArgs, TOOLS, PROTOCOL_VERSIONS, NOT_OPEN, NO_ASKS, INSTRUCTIONS, checkToken, newToken, TOKEN_RE, MAX_AGE_MS, FUTURE_SLACK_MS, LEGACY_UNTIL } from "../worker/mcp.js";
+import { handleMcp, checkArgs, TOOLS, PROTOCOL_VERSIONS, NOT_OPEN, NO_ASKS, INSTRUCTIONS, WATCH_PROMPT, checkToken, newToken, TOKEN_RE, MAX_AGE_MS, FUTURE_SLACK_MS, LEGACY_UNTIL } from "../worker/mcp.js";
 
 const { token: TOKEN, born: BORN } = newToken();
 const BASE = "https://script-editor.example.workers.dev/mcp";
@@ -287,4 +287,10 @@ test("mcp: the agent hears that replace and add go into the text at once and can
   assert.doesNotMatch(answer, /chooses Keep or Undo/);
   assert.match(INSTRUCTIONS, /goes into the text at once/);
   assert.match(TOOLS.find((t) => t.name === "list_asks").description, /undone when the person undoes it/);
+  // The text stays in the asked paragraph; notes stay until dismissed.
+  assert.match(answer, /stay in the asked paragraph/);
+  assert.match(INSTRUCTIONS, /stays in the asked paragraph/);
+  assert.match(INSTRUCTIONS, /Notes stay beside the text until the person dismisses them/);
+  assert.doesNotMatch(INSTRUCTIONS, /notes[^.;]*keep or undo/i);
+  assert.match(WATCH_PROMPT, /inside the paragraph I asked about/);
 });

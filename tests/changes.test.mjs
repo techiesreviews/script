@@ -96,14 +96,60 @@ test("straight in: notes, the script-wide marks and B-roll don't go into the tex
   assert.equal(note.status, "answered");
 });
 
-test("straight in: an answer that makes new paragraphs still goes in, unmarked", () => {
+test("one paragraph: blank lines in an answer become one space; it stays in its block, marked and undoable", () => {
   const doc = script(), p = paras(doc)[0];
-  const ask = answered(doc, p.id, "We start here.", { kind: "add", text: "\n\nA new paragraph." });
+  const original = D.serialize(doc);
+  const ask = answered(doc, p.id, "We start here.", D.cleanAnswer({ scope: "selection" }, { kind: "add", text: "\n\nA new paragraph." }));
+  assert.equal(ask.answer.text, " A new paragraph.");
   const res = landIn(doc, [ask], ask, 1);
-  assert.equal(res.mark, null);
-  assert.equal(ask.status, "kept");
-  assert.ok(!C.isMarked(ask));
-  assert.ok(D.serialize(doc).includes("We start here.\n\nA new paragraph. Then we go on."));
+  assert.ok(res.mark && C.isMarked(ask), "marked, with Undo");
+  assert.equal(text(doc, p.id), "We start here. A new paragraph. Then we go on.");
+  assert.equal(doc.blocks.length, script().blocks.length, "no new block");
+  C.undo(doc, ask);
+  assert.equal(D.serialize(doc), original);
+  // Several blank lines in the middle become one space; single line breaks stay.
+  assert.equal(D.cleanAnswer({ scope: "selection" }, { kind: "replace", text: "One.\r\n\r\n \n\nTwo\nthree." }).text, "One. Two\nthree.");
+  const two = answered(doc, p.id, "start here", D.cleanAnswer({ scope: "selection" }, { kind: "replace", text: "go\nslowly" }));
+  landIn(doc, [two], two, 2);
+  assert.equal(text(doc, p.id), "We go\nslowly. Then we go on.");
+  assert.ok(C.isMarked(two));
+  assert.equal(D.blockById(doc, p.id).type, "para");
+});
+
+test("one paragraph: an answer that would change the block's type goes in on one line, without the marks at its start", () => {
+  const cases = [
+    ["We start here.", "## Big news.", "Big news. Then we go on."],
+    ["We start here.", "- one\n- two", "one - two Then we go on."],
+    ["We start here.", "# A title", "A title Then we go on."],
+    ["We start here. Then we go on.", "[ON SCREEN: a map]", "ON SCREEN: a map"],
+    ["We start here.", "1. First", "First Then we go on."],
+  ];
+  for (const [quote, given, want] of cases) {
+    const doc = script(), p = paras(doc)[0];
+    const ask = answered(doc, p.id, quote, { kind: "replace", text: given });
+    assert.ok(C.fits(doc, ask, ask.answer), given);
+    landIn(doc, [ask], ask, 1);
+    assert.equal(text(doc, p.id), want, given);
+    assert.equal(D.blockById(doc, p.id).type, "para", given);
+    assert.ok(C.isMarked(ask), given);
+    assert.equal(D.parse(D.serialize(doc)).blocks.length, script().blocks.length, given);
+  }
+  // In a heading a line break becomes a space.
+  const doc = script(), head = doc.blocks.find((b) => b.type === "heading");
+  const ask = answered(doc, head.id, "Hook", { kind: "replace", text: "Hook\nand more" });
+  landIn(doc, [ask], ask, 1);
+  assert.deepEqual([text(doc, head.id), D.blockById(doc, head.id).type, C.isMarked(ask)], ["1 · Hook and more", "heading", true]);
+  // A note that would lose its brackets can't keep its type: refused, nothing changes.
+  const doc2 = script(), note = doc2.blocks.find((b) => b.type === "note");
+  const was = D.serialize(doc2);
+  const bad = answered(doc2, note.id, "a note]", { kind: "replace", text: "x" });
+  assert.equal(C.fits(doc2, bad, bad.answer), false);
+  assert.equal(C.land(doc2, bad), null);
+  assert.equal(D.serialize(doc2), was);
+  // A text of only marks has nothing left: refused too.
+  const doc3 = script(), p3 = paras(doc3)[0];
+  const marks = answered(doc3, p3.id, "We start here.", { kind: "replace", text: "## " });
+  assert.equal(C.land(doc3, marks), null);
 });
 
 test("marks: follow edits before them, stay outside typing at their edges, vanish on an edit inside", () => {
@@ -176,13 +222,21 @@ test("shared: a guest's asked change is shared marked, undone by that guest or t
   const ana = { id: "a-ana", name: "Ana" };
   const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" }, ana);
   landIn(doc, [ask], ask, 5);
-  const shared = shareAsks([ask]);
+  const shared = shareAsks([ask], doc);
   assert.equal(shared.length, 1, "a marked change is shared like an open ask");
   assert.ok(C.isMarked(shared[0]));
-  // The guest typed in front of it: the mark is found again by its text.
+  assert.deepEqual(shared[0].change.ctx, { index: 2, before: "We ", after: ". Then we go on." });
+  // The guest's copy has it at its exact place.
   const guest = D.cloneDoc(doc);
+  const shown = fitAsks(structuredClone(shared), guest);
+  assert.deepEqual([shown[0].start, shown[0].end], [3, 8]);
+  // The guest typed in front of it: the host's place no longer matches, but the guest's own copy of the mark
+  // followed that typing exactly, so it stays there.
+  const beforeTyping = C.blocksOf(guest);
   D.setContent(guest, p.id, "Yes. " + text(doc, p.id));
-  const placed = fitAsks(shared, guest);
+  C.follow(shown, beforeTyping, C.blocksOf(guest));
+  assert.equal(fitAsks(structuredClone(shared), guest).length, 0, "not guessed from the text alone");
+  const placed = fitAsks(structuredClone(shared), guest, shown);
   assert.deepEqual([placed[0].start, placed[0].end], [8, 13]);
   const forAna = agentCaret(placed, guest, (a) => mayAct(a, { id: "a-ana" }));
   const forBen = agentCaret(placed, guest, (a) => mayAct(a, { id: "a-ben" }));
@@ -191,23 +245,131 @@ test("shared: a guest's asked change is shared marked, undone by that guest or t
   assert.ok(!guestMayAct(ask, "undo", "a-ben"));
   // Undone by the host for Ana: no longer shared.
   C.undo(doc, ask);
-  assert.equal(shareAsks([ask]).length, 0);
+  assert.equal(shareAsks([ask], doc).length, 0);
   assert.ok(!guestMayAct(ask, "undo", "a-ana"));
   // A change the guest's copy doesn't have is left out there.
   const other = answered(doc, p.id, "go on", { kind: "replace", text: "carry on" });
   landIn(doc, [other], other, 6);
-  assert.equal(fitAsks(shareAsks([other]), script()).length, 0);
+  assert.equal(fitAsks(shareAsks([other], doc), script()).length, 0);
 });
 
-test("after a reload: a marked change kept with the draft is found again by its text", () => {
+test("shared: a guest's copy with the same text elsewhere shows no mark rather than a wrong one", () => {
+  const doc = script(), [p, q] = paras(doc);
+  const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
+  landIn(doc, [ask], ask, 5);
+  const shared = shareAsks([ask], doc);
+  // The guest's copy doesn't have the change yet, but has "begin" in the same block and in another one.
+  const guest = D.cloneDoc(script());
+  guest.blocks.forEach((b, i) => { b.id = doc.blocks[i].id; });
+  D.setContent(guest, p.id, "Let us begin. We start here. Then we go on.");
+  D.setContent(guest, q.id, "We begin. Then we go on.");
+  assert.equal(fitAsks(structuredClone(shared), guest).length, 0);
+  // Its block gone in the guest's copy: no mark either, even where the same words and context are elsewhere.
+  const gone = D.cloneDoc(doc);
+  gone.blocks.forEach((b) => { if (b.id === p.id) b.id = "other"; });
+  assert.equal(fitAsks(structuredClone(shared), gone).length, 0);
+  // Without its place written down (an old host), no mark.
+  const bare = structuredClone(shared);
+  delete bare[0].change.ctx;
+  assert.equal(fitAsks(bare, D.cloneDoc(doc)).length, 0);
+});
+
+test("after a reload: a marked change kept with the draft comes back only at its exact place", () => {
   const doc = script(), p = paras(doc)[0];
   const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
   landIn(doc, [ask], ask, 1);
-  const saved = JSON.parse(JSON.stringify(ask));
+  const [saved] = JSON.parse(JSON.stringify(C.withContext([ask], doc)));
   const reopened = D.parse(D.serialize(doc)); // ids are new
-  assert.ok(C.place(saved, reopened));
+  assert.ok(C.place(saved, reopened, { byIndex: true }));
   const b = paras(reopened)[0];
   assert.deepEqual([saved.blockId, saved.start, saved.end], [b.id, 3, 8]);
   C.undo(reopened, saved);
   assert.equal(D.serialize(reopened), D.serialize(script()));
+});
+
+test("after a reload: with the same short text earlier, Undo changes back only the agent's copy", () => {
+  const doc = D.parse("# Title\n\nWe go now. Then we go on.\n\nA line to go.\n");
+  const p = paras(doc)[0];
+  const ask = answered(doc, p.id, "Then we go on.", { kind: "replace", text: "go" });
+  landIn(doc, [ask], ask, 1);
+  assert.equal(text(doc, p.id), "We go now. go");
+  const [saved] = JSON.parse(JSON.stringify(C.withContext([ask], doc)));
+  const reopened = D.parse(D.serialize(doc));
+  assert.ok(C.place(saved, reopened, { byIndex: true }));
+  assert.deepEqual([saved.start, saved.end], [11, 13], "the agent's copy, not the earlier \"go\"");
+  C.undo(reopened, saved);
+  assert.equal(D.serialize(reopened), "# Title\n\nWe go now. Then we go on.\n\nA line to go.\n");
+});
+
+test("after Discard: a file that lacks the agent's text shows no mark; an old draft without its place neither", () => {
+  const doc = script(), p = paras(doc)[0];
+  const ask = answered(doc, p.id, "Then we go on.", { kind: "replace", text: "go" });
+  landIn(doc, [ask], ask, 1);
+  const [saved] = JSON.parse(JSON.stringify(C.withContext([ask], doc)));
+  // The file on disk is the script from before the change: it has "go" in the same block, but not the agent's.
+  const file = script();
+  assert.equal(C.place(structuredClone(saved), file, { byIndex: true }), false);
+  // A file whose blocks moved: the block at the change's place is another one.
+  const moved = D.parse("# Title\n\nA new first line.\n\n## 1 · Hook\n\nWe start here. go\n");
+  assert.equal(C.place(structuredClone(saved), moved, { byIndex: true }), false);
+  // The file that has it (saved before the reload): placed.
+  assert.ok(C.place(structuredClone(saved), D.parse(D.serialize(doc)), { byIndex: true }));
+  const old = structuredClone(saved);
+  delete old.change.ctx;
+  assert.equal(C.place(old, D.parse(D.serialize(doc)), { byIndex: true }), false, "never guessed");
+  assert.equal(old.change, undefined, "no Undo either");
+});
+
+test("no empty undo step: a land or Undo that can't happen changes nothing", () => {
+  const doc = script(), p = paras(doc)[0];
+  const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
+  D.setContent(doc, p.id, "We stop. Then we go on.");
+  const was = D.serialize(doc);
+  assert.equal(C.land(doc, ask), null);
+  assert.equal(D.serialize(doc), was);
+  const doc2 = script(), q = paras(doc2)[0];
+  const ok = answered(doc2, q.id, "start here", { kind: "replace", text: "begin" });
+  landIn(doc2, [ok], ok, 1);
+  ok.end = ok.start + 2; // its text is no longer exactly there
+  const was2 = D.serialize(doc2);
+  assert.equal(C.undo(doc2, ok), null);
+  assert.equal(D.serialize(doc2), was2);
+});
+
+test("a change of only spaces gets no mark", () => {
+  const ask = { scope: "selection", status: "kept", blockId: "b", start: 0, end: 1, change: { text: " ", removed: "", at: 1 } };
+  assert.equal(C.isMarked(ask), false);
+  assert.equal(C.newestMarked([ask]), null);
+});
+
+test("Ctrl/Cmd+Z of a landing: undone; redo: kept, unmarked; Ctrl/Cmd+Z of a tag Undo: kept, unmarked", () => {
+  const doc = script(), p = paras(doc)[0];
+  const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
+  landIn(doc, [ask], ask, 1);
+  // The landing step, undone.
+  let step = C.landStep([ask], { id: ask.id, status: "undone" });
+  assert.deepEqual(step.back, { id: ask.id, status: "kept" }, "redo says kept");
+  assert.equal(step.closed, ask);
+  assert.deepEqual([ask.status, ask.change], ["undone", undefined]);
+  // Redone: kept, without a mark (Ctrl/Cmd+Z owns it now).
+  step = C.landStep([ask], step.back);
+  assert.deepEqual(step.back, { id: ask.id, status: "undone" });
+  assert.deepEqual([ask.status, C.isMarked(ask)], ["kept", false]);
+  // A tag Undo, then Ctrl/Cmd+Z of it: kept again, unmarked.
+  const two = answered(doc, paras(doc)[1].id, "second", { kind: "replace", text: "next" });
+  landIn(doc, [two], two, 2);
+  C.undo(doc, two);
+  step = C.landStep([ask, two], { id: two.id, status: "kept" });
+  assert.deepEqual([two.status, C.isMarked(two), step.back.status], ["kept", false, "undone"]);
+  // A step whose ask is in the same state, or gone, or open again, changes nothing.
+  assert.equal(C.landStep([two], { id: two.id, status: "kept" }).closed, null);
+  assert.deepEqual(C.landStep([], { id: "x", status: "kept" }), { back: null, closed: null });
+  assert.deepEqual(C.landStep([ask], null), { back: null, closed: null });
+});
+
+test("the tab's answer_ask result says what happened, per kind", () => {
+  assert.equal(C.answerResult("replace"), "Done: the change is in the text now. The person can undo it.");
+  assert.equal(C.answerResult("add"), "Done: the change is in the text now. The person can undo it.");
+  assert.equal(C.answerResult("note"), "Shown to the person.");
+  assert.equal(C.answerResult("marks"), "Shown to the person. They choose Keep or Undo.");
 });

@@ -114,16 +114,25 @@ export function guestMayAct(ask, act, askerId) {
 }
 /** May this person Keep, Undo or cancel this ask? The person who asked, and the host. */
 export const mayAct = (ask, { host = false, id = "" } = {}) => host || (!!id && ask?.by?.id === id);
-/** What the host shares: the open asks and the marked changes, copied. */
-export const shareAsks = (asks) => structuredClone(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)));
-/** A guest places the host's asks in its own copy of the script: each quote (a marked change: its new text) is
- *  found again near its place. An ask whose text is not here (yet) is left out; B-roll suggestions stay, as they
- *  live beside the lines. */
-export function fitAsks(asks, doc) {
+/** What the host shares: the open asks and the marked changes, copied; each marked change with its exact place in
+ *  the host's `doc` (C.withContext), so a guest finds that place or shows no mark. */
+export const shareAsks = (asks, doc) => C.withContext(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)), doc);
+/** A guest places the host's asks in its own copy of the script: each quote is found again near its place; a
+ *  marked change only at its exact place (C.place), or where this guest's own copy of it (`prev`, the asks shown
+ *  now) has followed it since, while its text is there. An ask whose text is not here (yet) is left out; B-roll
+ *  suggestions stay, as they live beside the lines. */
+export function fitAsks(asks, doc, prev = []) {
   const out = [];
   for (const a of Array.isArray(asks) ? asks : []) {
     if (!a || typeof a.id !== "string") continue;
-    if (C.isMarked(a)) { if (C.place(a, doc)) out.push(a); continue; }
+    if (C.isMarked(a)) {
+      const change = a.change;
+      if (C.place(a, doc)) { out.push(a); continue; }
+      const p = prev.find((x) => x.id === a.id && C.isMarked(x) && x.change.text === change.text && x.change.at === change.at);
+      const b = p && D.blockById(doc, p.blockId);
+      if (b && D.contentOf(b).slice(p.start, p.end) === change.text) out.push(Object.assign(a, { change, blockId: p.blockId, start: p.start, end: p.end }));
+      continue;
+    }
     if (!D.OPEN_STATUSES.includes(a.status)) continue;
     if (a.scope === "selection") {
       const b = D.blockById(doc, a.blockId);
@@ -284,7 +293,7 @@ export function createTogether(app) {
   const adapter = scriptAdapter(app, { busy: () => composing });
 
   // What the host shares besides the text: the open asks and the B-roll list, each sent again only when it changed.
-  const asksMsg = () => ({ type: "asks", asks: shareAsks(app.asks()) });
+  const asksMsg = () => ({ type: "asks", asks: shareAsks(app.asks(), app.doc()) });
   const brollMsg = () => ({ type: "broll", broll: app.brollShare() });
   function sync() {
     if (!room || room.role !== "host" || room.stopped) return;
@@ -327,7 +336,7 @@ export function createTogether(app) {
         const it = outbox.done(msg.ref);
         if (it?.msg.ask) app.askRefused(it.msg.ask, msg.reason === "taken" ? "taken" : "changed");
       } else if (isGuest() && msg.type === "asks" && app.doc()) {
-        app.setRoomAsks(fitAsks(msg.asks, app.doc()));
+        app.setRoomAsks(fitAsks(msg.asks, app.doc(), app.asks()));
         render();
       } else if (isGuest() && msg.type === "broll") {
         app.setRoomBroll(msg.broll);

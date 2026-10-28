@@ -270,6 +270,8 @@ function decorationsFor(id) {
   return out;
 }
 
+// When this tab got each of the agent's changes (its own clock): it shows a little stronger as it arrives.
+const arrived = new Map();
 // In a shared script only the person who asked, and the host, may Keep, Undo or cancel an ask.
 const may = (ask) => !state.guest || !!together?.may(ask);
 function fillBlock(el, b) {
@@ -288,7 +290,7 @@ function fillBlock(el, b) {
     } else if (d.kind === "landed") {
       // The agent's change went straight in: a light tint in the agent's colour while it is untouched.
       const m = h("span", "agent-change", { "data-deco": "", "data-ask": d.ask.id });
-      if (d.ask.change.at > Date.now() - 1500) m.dataset.new = "";
+      if ((arrived.get(d.ask.id) ?? 0) > Date.now() - 1500) m.dataset.new = "";
       m.textContent = quote;
       nodes.push(m);
     } else if (d.ask.status === "answered" && d.ask.answer.kind === "note") {
@@ -543,23 +545,24 @@ async function openPrompter() {
 }
 
 /* ---------- Undo and redo ---------- */
-function checkpoint(kind, id) {
+// `before`: the script as it was before the change, when the step is taken after it (only once it happened).
+function checkpoint(kind, id, before = null) {
   // In a shared script, undo follows each person's own changes instead (see together/room.js).
   if (together?.active) return;
   const now = Date.now(), last = state.lastStep;
   if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
-  state.undo.push({ doc: D.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
+  state.undo.push({ doc: before || D.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
   if (state.undo.length > UNDO_LIMIT) state.undo.shift();
   state.redo = [];
   state.lastStep = { kind, id, at: now };
 }
 function restore(snap, from, to) {
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
-  const ask = snap.land && state.asks.find((a) => a.id === snap.land.id && (a.status === "kept" || a.status === "undone"));
-  to.push({ doc: D.cloneDoc(state.doc), caret: getCaret(), ...(ask ? { land: { id: ask.id, status: ask.status } } : {}) });
+  const { back, closed } = C.landStep(state.asks, snap.land);
+  to.push({ doc: D.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
   state.doc = D.cloneDoc(snap.doc);
   state.lastStep = null;
-  if (ask && ask.status !== snap.land.status) { delete ask.change; closeAsk(ask, snap.land.status); }
+  if (closed) emit(closed.status, closed);
   reanchorAll();
   renderAll(snap.caret && byId(snap.caret.id) ? snap.caret : null);
   hideBar();
@@ -1158,11 +1161,13 @@ function landAnswer(ask) {
   const b = byId(ask.blockId);
   if (!b) return;
   together?.local(); // the host's own typing goes out first, under the host's name
-  checkpoint("agent", b.id);
-  // Ctrl/Cmd+Z of this step makes the ask undone again (restore).
-  if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "undone" };
+  const before = D.cloneDoc(state.doc);
   const res = C.land(state.doc, ask);
   if (!res) { closeAsk(ask, "cancelled"); renderBlock(b.id, getCaret()); changed(); return; }
+  // One Ctrl/Cmd+Z step, taken only now the change happened; undoing it makes the ask undone again (restore).
+  checkpoint("agent", b.id, before);
+  if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "undone" };
+  arrived.set(ask.id, Date.now());
   closeAsk(ask, "kept");
   moveAsks(b.id, b.id, res.at, res.delta);
   followPieces(b.id, res.result);
@@ -1180,10 +1185,11 @@ function undoChange(ask) {
   const b = byId(ask.blockId);
   if (!b || !C.isMarked(ask)) return;
   together?.local();
-  checkpoint("agent-undo", b.id);
-  if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "kept" };
+  const before = D.cloneDoc(state.doc);
   const res = C.undo(state.doc, ask);
   if (!res) { renderBlock(b.id, getCaret()); changed(); return; }
+  checkpoint("agent-undo", b.id, before);
+  if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "kept" };
   emit("undone", ask);
   moveAsks(b.id, b.id, res.at, res.delta);
   reanchorBlock(b.id);
@@ -1200,8 +1206,9 @@ function undoAgent(askId) {
 }
 function undoAnswer(askId) {
   const ask = state.asks.find((a) => a.id === askId);
+  if (!ask) return;
   if (C.isMarked(ask)) return undoChange(ask);
-  if (!ask || !isOpen(ask)) return;
+  if (!isOpen(ask)) return;
   closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled");
   renderBlock(ask.blockId, getCaret());
   changed();
@@ -1349,8 +1356,9 @@ const draftKey = (name = state.name) => `draft:${name}`;
 function persistDraft() {
   clearTimeout(draftTimer);
   if (!state.doc || state.pendingDraft || state.guest) return;
-  // Open asks, and the agent's changes still marked (so their mark and Undo come back after a reload).
-  const open = state.asks.filter((a) => isOpen(a) || C.isMarked(a));
+  // Open asks, and the agent's changes still marked, each with its exact place (so their mark and Undo come back
+  // after a reload only there).
+  const open = C.withContext(state.asks.filter((a) => isOpen(a) || C.isMarked(a)), state.doc);
   const dirty = isDirty();
   const flags = brollFlags();
   if (!dirty && !open.length && !flags) { store.del(draftKey()); return; }
@@ -1405,7 +1413,8 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
 function adoptAsks(asks) {
   if (!Array.isArray(asks)) return;
   for (const a of asks) {
-    if (C.isMarked(a)) { if (C.place(a, state.doc)) state.asks.push(a); continue; } // its new text, found again
+    // Its new text, only at its exact place in this script's block of the same place (ids are new); else no mark.
+    if (C.isMarked(a)) { if (C.place(a, state.doc, { byIndex: true })) state.asks.push(a); continue; }
     if (!a?.id || !isOpen(a)) continue;
     if (a.scope === "selection" && !byId(a.blockId)) {
       // Ids are new after a reload: find the quote again. B-roll suggestions stay even when it is gone.
@@ -1461,6 +1470,7 @@ function discardDraft() {
   const draft = state.pendingDraft;
   state.pendingDraft = null;
   hideBanner();
+  // The agent's marked changes come back only where the file itself has them, at their exact place (adoptAsks).
   if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || C.isMarked(a) || D.findQuote(state.doc, a.quote)));
   if (broll.status === "ok" || broll.status === "none") dropGoneSuggestions();
   store.del(draftKey());
@@ -2913,6 +2923,7 @@ slashMenu.addEventListener("click", (e) => { const it = e.target.closest("[data-
 /* ---------- Your own agent over MCP (live relay) ---------- */
 const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
 const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
+const STAYS_IN_PARAGRAPH = "This text would turn the asked paragraph into another kind of line (a heading, a list, a note). Send text that stays in the paragraph, with no new paragraphs.";
 const RETAKE_AFTER_MS = 2 * 60 * 1000;
 const NOT_HERE = "This tab is editing someone else's shared script. Your agent works only in your own scripts.";
 const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, waiters: [], copiedTimer: 0 };
@@ -3080,8 +3091,9 @@ function handleCall({ id, tool, args = {} }) {
       const ask = state.asks.find((a) => a.id === args.askId);
       const checked = D.checkAnswer(ask, args, state.doc);
       if (checked.error) return send({ error: checked.error });
+      if (!C.fits(state.doc, ask, checked.answer)) return send({ error: STAYS_IN_PARAGRAPH });
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
-      return send({ result: checked.answer.kind === "note" ? "Shown to the person." : checked.answer.kind === "marks" ? "Shown to the person. They choose Keep or Undo." : "Done: the change is in the text now. The person can undo it." });
+      return send({ result: C.answerResult(checked.answer.kind) });
     }
     if (tool === "answer_broll") {
       const ask = state.asks.find((a) => a.id === args.askId);
@@ -3294,13 +3306,16 @@ function setRoomAsks(asks) {
     const m = new Map();
     for (const a of list) {
       const ids = a.scope === "selection" ? [a.blockId] : (a.answer?.marks || []).map((x) => x.blockId);
-      const sig = JSON.stringify([a.id, a.status, a.start, a.end, a.answer, a.action, a.by?.id, a.change]);
+      const sig = JSON.stringify([a.id, a.status, a.start, a.end, a.answer, a.action, a.by?.id, a.change?.text, a.change?.at]);
       for (const id of ids) m.set(id, (m.get(id) || "") + sig);
     }
     return m;
   };
   const brollSig = (list) => JSON.stringify(list.filter((a) => a.scope === "broll" || isBrollAnswer(a)));
   const before = perBlock(state.asks), after = perBlock(asks), brollBefore = brollSig(state.asks);
+  // An ask this guest saw open whose change is now in the text arrived just now (this tab's clock).
+  const was = new Map(state.asks.map((a) => [a.id, a]));
+  for (const a of asks) if (C.isMarked(a) && was.has(a.id) && was.get(a.id).status !== "kept") arrived.set(a.id, Date.now());
   state.asks = asks;
   markBase();
   const caret = getCaret();
