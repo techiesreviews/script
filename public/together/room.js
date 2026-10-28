@@ -162,6 +162,7 @@ export class RoomClient {
       const ops = diff(this.shadow, this.live, this.adapter.caret?.());
       if (!ops.length) return;
       const pending = { seq: this.seq + 1, ops };
+      // Key order matters: the room reads type, base and seq from the start of an oversized frame (docs/together.md).
       if (!this.send({ type: "op", base: this.v, seq: pending.seq, ops })) return;
       this.seq = pending.seq;
       this.pending = pending;
@@ -489,6 +490,7 @@ export class RoomClient {
     this.setStatus("live");
     if (this.pending) {
       if (seen >= this.pending.seq) { this.confirmed = cloneBlocks(this.shadow); this.pending = null; }
+      // Key order matters (see flush).
       else if (!this.send({ type: "op", base: this.v, seq: this.pending.seq, ops: this.pending.ops })) return;
     }
     if (this.myCaret) this.caret(this.myCaret);
