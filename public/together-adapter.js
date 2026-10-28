@@ -3,6 +3,7 @@
 // The room itself (public/together/) knows nothing about scripts; see docs/together.md.
 import * as D from "./doc.js";
 import * as B from "./broll.js";
+import { agentBrand } from "./agent-brand.js";
 import { RoomClient, newRoom, parseLink } from "./together/room.js";
 import { applyOp, movePoint } from "./together/ops.js";
 import { createCarets, colourVar } from "./together/carets.js";
@@ -196,13 +197,14 @@ export function createAskDesk({ people, sendTo, doc, asks, add, act }) {
   };
 }
 /** The agent's caret, from the asks: at the end of the asked text while the agent works on it, at the change while
- *  its answer is shown; gone after Keep or Undo. The newest such ask wins. */
+ *  its answer is shown; gone after Keep or Undo. The newest such ask wins. It is named and drawn as its model
+ *  ("Claude" with Claude's logo; agent-brand.js), so guests work out the same from the shared asks. */
 export function agentCaret(asks, doc) {
   const sel = asks.filter((a) => a.scope === "selection" && D.blockById(doc, a.blockId));
   const a = sel.filter((x) => x.status === "taken").at(-1) || sel.filter((x) => x.status === "answered" && x.answer && x.answer.kind !== "broll").at(-1);
   if (!a) return null;
-  const who = String((a.status === "taken" ? a.takenBy : a.answeredBy)?.name || "Agent").trim().slice(0, 60) || "Agent";
-  return { pid: "agent", kind: "agent", name: `${who} (agent)`, colour: null, blockId: a.blockId, offset: a.end };
+  const { name, icon } = agentBrand(String((a.status === "taken" ? a.takenBy : a.answeredBy)?.name || "").slice(0, 200));
+  return { pid: "agent", kind: "agent", name, icon, colour: null, blockId: a.blockId, offset: a.end };
 }
 export function docFromSnapshot({ blocks, meta }) {
   const doc = { blocks: [], tail: typeof meta?.tail === "string" && /^\s{0,200}$/.test(meta.tail) ? meta.tail : "\n", eol: meta?.eol === "\r\n" ? "\r\n" : "\n" };
@@ -349,10 +351,10 @@ export function createTogether(app) {
   function renderPeople() {
     const el = $("#people");
     const a = room ? agent() : null;
-    const list = [...(room?.peopleList() || []), ...(a ? [{ pid: "agent", name: a.name, kind: "agent", colour: null, me: false }] : [])];
+    const list = [...(room?.peopleList() || []), ...(a ? [{ pid: "agent", name: a.name, icon: a.icon, kind: "agent", colour: null, me: false }] : [])];
     el.hidden = list.length < 2;
     const has = (pid) => pid === "agent" || !!room?.carets.has(pid);
-    const sig = JSON.stringify(list.map((p) => [p.pid, p.name, p.colour, p.me, has(p.pid)]));
+    const sig = JSON.stringify(list.map((p) => [p.pid, p.name, p.icon, p.colour, p.me, has(p.pid)]));
     if (sig === last) return;
     const had = new Set([...el.children].map((c) => c.dataset.who));
     last = sig;
@@ -365,7 +367,7 @@ export function createTogether(app) {
     el.replaceChildren(...[...list].sort((x, y) => y.me - x.me).map((p) => {
       const b = document.createElement(p.me ? "span" : "button");
       b.className = p.me ? "avatar avatar--me" : "avatar";
-      if (p.kind === "agent") b.innerHTML = app.icon("agent");
+      if (p.kind === "agent") b.innerHTML = app.icon(p.icon || "agent");
       else b.textContent = Array.from(p.name.trim() || "?")[0].toUpperCase();
       b.title = p.me ? `${p.name} (you)` : p.name;
       if (!p.me) {

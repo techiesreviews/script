@@ -29,7 +29,7 @@ Ask {
   by: { id, name },                    // who asked
   createdAt,                           // ISO time
   status: "waiting" | "taken" | "answered" | "kept" | "undone" | "cancelled",
-  takenAt?, takenBy?: { id, name },    // when and by which agent the ask was picked up
+  takenAt?, takenBy?: { id, name },    // when and by which agent the ask was picked up; id "agent:<clientInfo name>", name the model ("Claude", public/agent-brand.js)
   answer?, answeredBy?: { id, name }
 }
 ```
@@ -101,7 +101,7 @@ carets: { [pid]: { blockId, offset, selEnd? } }             // content offsets, 
 
 A person's id is `pid` (the plan called it `personId`): `"host"` for the host, a fresh id per connection for a guest; messages carry it as `from`, and an operation's author as `by`. Carets use the same block ids and content offsets as asks, so they follow edits the same way. Every ask has `by` and every answer `answeredBy`; each operation the host sends carries `by`, so Undo on a name tag undoes only that person's change. The file on disk stays plain Markdown: ids, people and carets live only in the session, and the room stores no script text.
 
-Asks in a shared script (step D2): the host keeps them. A guest's ask has `by: { id: <asker>, name }`, where `asker` is an opaque id the host made at random for that guest tab and tied to the hash of a private secret the tab sent (see docs/together.md); the host shares every open ask as it is in `state.asks`, and each guest places them in its own copy by their quotes. Only `by` and the host may Keep, Undo or dismiss. The agent's caret is not stored: every tab works it out from the asks (`takenBy` / `answeredBy` name, the ask's `end`).
+Asks in a shared script (step D2): the host keeps them. A guest's ask has `by: { id: <asker>, name }`, where `asker` is an opaque id the host made at random for that guest tab and tied to the hash of a private secret the tab sent (see docs/together.md); the host shares every open ask as it is in `state.asks`, and each guest places them in its own copy by their quotes. Only `by` and the host may Keep, Undo or dismiss. The agent's caret is not stored: every tab works it out from the asks (`takenBy` / `answeredBy` name, the ask's `end`). `agentBrand(name)` turns that name into the caret's name and logo (`{ name: "Claude", icon: "ai-claude" }`, an unknown agent keeps its name with `ai-sparkle`), so older names such as "Claude Code" map too.
 
 ## Files, recent scripts and the prompter link
 

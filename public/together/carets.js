@@ -2,7 +2,8 @@
 // never touched, so typing, the browser's own caret, spell check and input methods work as before.
 //
 //   const carets = createCarets({ container, element: (blockId) => el, onUndo: (pid) => … , icon });
-//   carets.set([{ pid, name, colour, kind, blockId, offset, selEnd?, undo }]);  carets.draw();  carets.focus(pid);
+//   carets.set([{ pid, name, colour, kind, icon?, blockId, offset, selEnd?, undo }]);  carets.draw();  carets.focus(pid);
+//   (`icon(key)` returns the svg markup for a key; an agent caret (kind "agent") shows `icon(p.icon || "agent")`.)
 //
 // `container` must be positioned (position: relative) and scroll with the text.
 
@@ -58,6 +59,8 @@ function caretBox(el, offset, rangeAt) {
 const firstLetter = (name) => Array.from(String(name || "?").trim() || "?")[0].toUpperCase();
 const restOf = (name) => Array.from(String(name || "").trim()).slice(1).join("");
 export const colourVar = (p) => (p.kind === "agent" ? "var(--agent)" : `var(--rc-${(Number(p.colour) % 6) + 1})`);
+/** The icon key in an agent's circle: its own (`p.icon`), else "agent". People show their first letter instead (""). */
+export const markIcon = (p) => (p.kind === "agent" ? String(p.icon || "agent") : "");
 
 export function createCarets({ container, element, rangeAt = textRange, onUndo, icon = () => "", colour = colourVar }) {
   const layer = document.createElement("div");
@@ -79,13 +82,14 @@ export function createCarets({ container, element, rangeAt = textRange, onUndo, 
     s.style.setProperty("--c", colour(p));
     s.setAttribute("aria-label", p.name);
     const flag = s.firstChild, agent = p.kind === "agent";
-    const key = `${p.name}|${agent}|${p.undo}`;
+    const mark = markIcon(p);
+    const key = `${p.name}|${agent}|${mark}|${p.undo}`;
     if (s.dataset.key === key) return;
     s.dataset.key = key;
     flag.toggleAttribute("data-letter", !agent);
-    const mark = flag.querySelector(".rc__mark");
-    if (agent) mark.innerHTML = icon("agent");
-    else { mark.replaceChildren(document.createElement("b")); mark.firstChild.textContent = firstLetter(p.name); }
+    const box = flag.querySelector(".rc__mark");
+    if (agent) box.innerHTML = icon(mark);
+    else { box.replaceChildren(document.createElement("b")); box.firstChild.textContent = firstLetter(p.name); }
     flag.querySelector(".rc__name").textContent = agent ? p.name : restOf(p.name);
     let undo = flag.querySelector(".rc__undo");
     if (p.undo && !undo) {

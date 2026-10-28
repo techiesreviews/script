@@ -185,11 +185,17 @@ test("adapter: a guest places the host's asks in its own copy, and the agent's c
   // The agent's caret: none while waiting, at the end of the text while taken, at the change while answered.
   assert.equal(agentCaret([a1], doc), null);
   a1.status = "taken"; a1.takenBy = { id: "agent:claude-code", name: "Claude Code" };
-  assert.deepEqual(agentCaret([a1, a2], doc), { pid: "agent", kind: "agent", name: "Claude Code (agent)", colour: null, blockId: p.id, offset: 8 });
-  a2.status = "answered"; a2.answer = { kind: "replace", text: "Go on." }; a2.answeredBy = { id: "agent:x", name: "Claude" };
+  // Named and drawn as its model, no "(agent)" (Lex, 2026-10-28); old asks named "Claude Code" map too.
+  assert.deepEqual(agentCaret([a1, a2], doc), { pid: "agent", kind: "agent", name: "Claude", icon: "ai-claude", colour: null, blockId: p.id, offset: 8 });
+  a2.status = "answered"; a2.answer = { kind: "replace", text: "Go on." }; a2.answeredBy = { id: "agent:x", name: "Codex" };
   assert.equal(agentCaret([a1, a2], doc).offset, 8, "the ask it works on wins");
   a1.status = "kept";
-  assert.deepEqual([agentCaret([a1, a2], doc).offset, agentCaret([a1, a2], doc).name], [29, "Claude (agent)"]);
+  assert.deepEqual([agentCaret([a1, a2], doc).offset, agentCaret([a1, a2], doc).name, agentCaret([a1, a2], doc).icon], [29, "Codex", "ai-openai"]);
+  a2.answeredBy = { id: "agent:my-tool", name: "My Tool" };
+  assert.deepEqual([agentCaret([a1, a2], doc).name, agentCaret([a1, a2], doc).icon], ["My Tool", "ai-sparkle"], "an unknown agent keeps its name, with the sparkle");
+  a2.answeredBy = null;
+  assert.deepEqual([agentCaret([a1, a2], doc).name, agentCaret([a1, a2], doc).icon], ["Agent", "ai-sparkle"]);
+  a2.answeredBy = { id: "agent:codex", name: "Codex" };
   a2.status = "undone";
   assert.equal(agentCaret([a1, a2], doc), null, "gone after Keep or Undo");
   a2.status = "answered"; a2.answer = { kind: "broll", changes: [] };

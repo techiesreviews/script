@@ -249,7 +249,7 @@ test("worker /api/relay: a good token reaches its relay with its birth time; a l
   assert.equal(calls.fetch[0].init.headers["X-Token-Born"], String(born));
 });
 
-// The Worker reads Date.now(); these pin the clock to either side of the switch-over.
+// The Worker reads Date.now(); these pin the clock to either side of the switch-over. Tests in this file run one at a time.
 async function at(time, fn) {
   const real = Date.now;
   Date.now = () => time;

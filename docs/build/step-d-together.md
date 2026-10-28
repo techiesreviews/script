@@ -27,7 +27,7 @@ Approved look and behaviour come from the chat workspace's `sites/script-editor-
   - A guest whose `base` is too old gets a fresh snapshot.
   - The host's file auto-save keeps working as before.
 - **Carets** send `{ personId, blockId, offset, selEnd? }` at most 15 times a second and are drawn with the `.rc` caret. The person's colour comes from a fixed palette with low chroma (orange stays reserved for the accent).
-- **The agent's caret:** while the agent works on an ask, an agent caret ("Claude (agent)", with the model icon in the circle) sits at the end of the asked text. While the answer is shown it stays at the change, and it leaves after Keep or Undo. Guests see it too.
+- **The agent's caret:** while the agent works on an ask, an agent caret named and drawn as its model ("Claude", "Codex", "ChatGPT"…, with the model's own logo in the circle and no "(agent)"; an unknown agent keeps its own name with a sparkle; Lex, 2026-10-28) sits at the end of the asked text. While the answer is shown it stays at the change, and it leaves after Keep or Undo. Guests see it too.
 
 ## Module boundary (for the Native Site Editor)
 

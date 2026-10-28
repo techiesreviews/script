@@ -50,6 +50,7 @@ ol, ul { padding: 0; list-style: none; }
 svg { display: block; }
 [hidden] { display: none !important; }
 svg.i { inline-size: 1em; block-size: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.i .i-fill { fill: currentColor; stroke: none; } /* the agents' logos are filled shapes */
 input, textarea, select { font-size: max(16px, 1rem); }
 button, a, [role="button"] { touch-action: manipulation; }
 button { font: inherit; color: inherit; user-select: none; -webkit-user-select: none; }
