@@ -391,7 +391,9 @@ export class RoomClient {
         if (client) {
           const tied = this.clientKeys.get(client);
           if (tied !== undefined && tied !== key) { this.sendTo(msg.from, { type: "join-refused" }); return; }
-          if (tied === undefined && key) this.clientKeys.set(client, key);
+          // A tab without a secret can't prove it is the same tab, so it never takes over a live entry.
+          if (!key && [...this.people].some(([pid, p]) => pid !== msg.from && p.client === client)) { this.sendTo(msg.from, { type: "join-refused" }); return; }
+          if (tied === undefined) this.clientKeys.set(client, key);
         }
         for (const [pid, p] of [...this.people]) {
           if (pid === msg.from || !client || p.client !== client) continue;

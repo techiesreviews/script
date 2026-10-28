@@ -220,9 +220,12 @@ async function session(blocks) {
   const ha = plainAdapter(blocks);
   const host = new RoomClient({ role: "host", ...creds, url: "ws://x/api/room", name: "Lex", adapter: ha, WebSocketImpl: WS, timers, backoffMs: 5 }).start();
   await settle();
-  const guest = async (name, on = {}) => {
+  const guest = async (name, on = {}, { client, secret } = {}) => {
     const a = plainAdapter();
-    const c = new RoomClient({ role: "guest", room: creds.room, key: creds.key, url: "ws://x/api/room", name, adapter: a, WebSocketImpl: WS, timers, backoffMs: 5, on }).start();
+    const c = new RoomClient({ role: "guest", room: creds.room, key: creds.key, url: "ws://x/api/room", name, adapter: a, WebSocketImpl: WS, timers, backoffMs: 5, on });
+    if (client !== undefined) c.client = client;
+    if (secret !== undefined) c.secret = secret;
+    c.start();
     await settle();
     return { a, c };
   };
@@ -693,4 +696,23 @@ test("together: links keep the key after #, and keys travel as subprotocols", ()
   assert.equal(parseLink("#room=abc&k=def"), null);
   assert.ok(!link.includes(r.hostKey));
   assert.deepEqual(protocols(r), ["script-editor-room", `r.${r.room}`, `k.${r.key}`, `h.${r.hostKey}`]);
+});
+
+test("together: a tab without a secret never takes over a live entry, and its client id stays tied", async () => {
+  const { host, guest } = await session([para("p1", "Hello.")]);
+  const first = await guest("Ana", {}, { secret: null });
+  await settle(20);
+  assert.equal(first.c.status, "live");
+  const client = first.c.client;
+  // A second tab with the same client id and no secret: refused while the first is here.
+  const copy = await guest("Eve", {}, { client, secret: null });
+  await settle(20);
+  assert.equal(copy.c.status, "refused");
+  assert.ok(host.people.has(first.c.pid), "the first tab keeps its entry");
+  // A tab with a secret can't claim a client id that was tied without one.
+  const withSecret = await guest("Mo", {}, { client });
+  await settle(20);
+  assert.equal(withSecret.c.status, "refused");
+  assert.ok(host.people.has(first.c.pid));
+  host.stop();
 });
