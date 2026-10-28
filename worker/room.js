@@ -110,11 +110,17 @@ export class Room {
     if (msg.type === "hello") {
       const name = cleanName(msg.name) || "Guest";
       ws.serializeAttachment({ ...me, name });
-      if (host) this.send(host, { type: "join", from: me.pid, name });
+      // `client` stays the same across the guest's reconnects; `v` is the last version it agreed on (or null).
+      const client = typeof msg.client === "string" && /^[A-Za-z0-9_-]{8,40}$/.test(msg.client) ? msg.client : null;
+      const v = Number.isInteger(msg.v) && msg.v >= 0 ? msg.v : null;
+      if (host) this.send(host, { type: "join", from: me.pid, name, client, v });
+      else this.send(ws, { type: "host", online: false });
     } else if (!me.name) {
       // Nothing else before the guest has said who they are.
     } else if (TO_HOST.has(msg.type)) {
+      // Never dropped quietly: without a host the guest hears so, keeps its change and sends it again later.
       if (host) this.send(host, { ...msg, from: me.pid });
+      else this.send(ws, { type: "host", online: false });
     } else if (msg.type === "caret") {
       const text = JSON.stringify({ type: "caret", from: me.pid, c: msg.c ?? null });
       if (host) this.send(host, text);

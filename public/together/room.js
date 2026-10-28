@@ -3,6 +3,9 @@
 //
 // The host's tab is the source of truth. It orders every change, gives it a version number and sends it to
 // everyone. A guest keeps at most one batch of changes in flight; the host's copy of it is its receipt.
+// A guest never drops its own changes: it sends only while the room is live, keeps the batch in flight and the
+// rest unsent across a lost connection or an away host, and on rejoining catches up from its last confirmed
+// version (or rebases onto a snapshot) before sending them again.
 import { diff, applyOps, transformOps, cloneBlocks, validOps, validCaret, movePoint, opEnd } from "./ops.js";
 
 export const PROTOCOL = "script-editor-room";
@@ -33,17 +36,21 @@ export const protocols = ({ room, key, hostKey }) => [PROTOCOL, `r.${room}`, `k.
 /* ---------- The client ---------- */
 /**
  * new RoomClient({ role: "host" | "guest", room, key, hostKey?, url, name, adapter, on })
- *   adapter: { read(), apply(ops, { by }), meta(), load({ blocks, meta }), caret?(), held?(), busy?(), validAttrs?(attrs, partial) }
- *   on: { status(s), people(list), carets(), message(msg), changed() }   status: connecting | live | away | ended | refused
+ *   adapter: { read(), apply(ops, { by }), meta(), load({ blocks, meta }), caret?(), held?(), busy?(), validAttrs?(attrs, partial), validBlocks?(blocks, before) }
+ *   on: { status(s), people(list), carets(), message(msg), changed() }
+ *   status: connecting | live | away (connection lost, or the host is away) | ended | refused | full (final: the last three)
  */
 export class RoomClient {
-  constructor({ role, room, key, hostKey = null, url, name = "", adapter, on = {}, WebSocketImpl = globalThis.WebSocket, now = () => Date.now(), timers = globalThis }) {
-    Object.assign(this, { role, room, key, hostKey: role === "host" ? hostKey : null, url, name, adapter, on, WS: WebSocketImpl, now, timers });
+  constructor({ role, room, key, hostKey = null, url, name = "", adapter, on = {}, WebSocketImpl = globalThis.WebSocket, now = () => Date.now(), timers = globalThis, backoffMs = 500 }) {
+    Object.assign(this, { role, room, key, hostKey: role === "host" ? hostKey : null, url, name, adapter, on, WS: WebSocketImpl, now, timers, backoffMs });
+    this.client = random(12); // stays the same across reconnects, so the host knows which batches it already has
     this.pid = role === "host" ? "host" : null;
     this.v = 0;
     this.shadow = null; // host: the agreed document; guest: the agreed document plus the batch in flight
+    this.confirmed = null; // guest: the agreed document at version v
     this.live = null; // what this tab shows, as blocks
-    this.log = []; // host: [{ v, ops, by }]
+    this.log = []; // host: [{ v, ops, by, client, seq }]
+    this.applied = new Map(); // host: client → the last seq it applied from that client
     this.pending = null; // guest: { seq, ops } in flight
     this.seq = 0;
     this.synced = false;
@@ -83,9 +90,11 @@ export class RoomClient {
       this.ws = null;
       if (e.code === 4004) return this.finish("ended");
       if (e.code === 4003) return this.finish("refused");
+      if (e.code === 4005) return this.finish("full");
       if (this.stopped) return;
+      this.joining = false;
       this.setStatus("away");
-      const delay = Math.min(15_000, 500 * 2 ** this.retry++) * (0.75 + Math.random() * 0.5);
+      const delay = Math.min(15_000, this.backoffMs * 2 ** this.retry++) * (0.75 + Math.random() * 0.5);
       this.reconnect = this.timers.setTimeout(() => this.connect(), delay);
     });
   }
@@ -148,12 +157,15 @@ export class RoomClient {
       this.shadow = cloneBlocks(this.live);
       this.commit(ops, "host");
     } else {
-      if (!this.synced || this.pending || this.resyncing) return;
+      // Only while the room is live; otherwise the changes stay unsent (live differs from shadow) until then.
+      if (!this.synced || this.pending || this.resyncing || this.status !== "live") return;
       const ops = diff(this.shadow, this.live, this.adapter.caret?.());
       if (!ops.length) return;
+      const pending = { seq: this.seq + 1, ops };
+      if (!this.send({ type: "op", base: this.v, seq: pending.seq, ops })) return;
+      this.seq = pending.seq;
+      this.pending = pending;
       this.shadow = cloneBlocks(this.live);
-      this.pending = { seq: ++this.seq, ops };
-      this.send({ type: "op", base: this.v, seq: this.seq, ops });
     }
   }
 
@@ -297,22 +309,24 @@ export class RoomClient {
   hostMessage(msg) {
     switch (msg.type) {
       case "welcome": {
+        // Back after a lost connection: the guests say hello again and catch up from their own versions.
         this.setStatus("live");
         const keep = [this.people.get("host")];
         for (const { pid, name } of msg.peers || []) keep.push(this.person(pid, name));
         this.setPeople(keep.filter(Boolean));
         this.local();
-        for (const p of this.people.keys()) if (p !== "host") this.snapshotTo(p);
         this.sendPeople();
         return;
       }
-      case "join":
-        this.people.set(msg.from, this.person(msg.from, msg.name));
+      case "join": {
+        const known = this.people.get(msg.from);
+        this.people.set(msg.from, { ...this.person(msg.from, msg.name), client: typeof msg.client === "string" ? msg.client : known?.client ?? null });
         this.local();
-        this.snapshotTo(msg.from);
+        this.catchUp(msg.from, msg.v);
         this.setPeople([...this.people.values()]);
         this.sendPeople();
         return;
+      }
       case "leave":
         this.people.delete(msg.from);
         this.setPeople([...this.people.values()]);
@@ -333,32 +347,47 @@ export class RoomClient {
     if (colour >= COLOURS) colour = this.people.size % COLOURS;
     return { pid, name: String(name || "Guest").slice(0, 40), colour, kind: "person" };
   }
-  sendPeople() { this.send({ type: "all", msg: { type: "people", people: this.peopleList().map(({ me, ...p }) => p) } }); }
+  publicPeople() { return this.peopleList().map(({ me, client, ...p }) => p); }
+  sendPeople() { this.send({ type: "all", msg: { type: "people", people: this.publicPeople() } }); }
+  // A guest that comes back with a version still in the log gets what it missed; otherwise a snapshot.
+  catchUp(pid, v) {
+    const oldest = this.log.length ? this.log[0].v - 1 : this.v;
+    if (!Number.isInteger(v) || v > this.v || v < oldest) return this.snapshotTo(pid);
+    const client = this.people.get(pid)?.client;
+    const carets = Object.fromEntries([...this.carets].filter(([p]) => p !== pid));
+    if (this.myCaret) carets.host = this.myCaret;
+    this.send({ type: "to", to: pid, msg: { type: "catchup", v: this.v, entries: this.log.filter((e) => e.v > v).map(({ v: ev, ops, by, client: c, seq }) => ({ v: ev, ops, by, client: c, seq })), seen: this.applied.get(client) ?? 0, people: this.publicPeople(), carets } });
+  }
   snapshotTo(pid) {
     if (!this.people.has(pid)) return;
     const carets = Object.fromEntries([...this.carets].filter(([p]) => p !== pid));
     if (this.myCaret) carets.host = this.myCaret;
-    this.send({ type: "to", to: pid, msg: { type: "snapshot", v: this.v, doc: { blocks: this.shadow, meta: this.adapter.meta() }, people: this.peopleList().map(({ me, ...p }) => p), carets } });
+    const seen = this.applied.get(this.people.get(pid)?.client) ?? 0;
+    this.send({ type: "to", to: pid, msg: { type: "snapshot", v: this.v, doc: { blocks: this.shadow, meta: this.adapter.meta() }, people: this.publicPeople(), carets, seen } });
   }
-  commit(ops, by, seq) {
+  commit(ops, by, client = null, seq = null) {
     this.v++;
-    this.log.push({ v: this.v, ops, by });
+    this.log.push({ v: this.v, ops, by, client, seq });
     if (this.log.length > LOG_MAX) this.log.shift();
-    this.send({ type: "all", msg: { type: "op", v: this.v, ops, by, ...(seq != null ? { seq } : {}) } });
+    if (client) this.applied.set(client, seq);
+    this.send({ type: "all", msg: { type: "op", v: this.v, ops, by, ...(client ? { client, seq } : {}) } });
   }
   guestOps({ from, base, seq, ops }) {
-    if (!this.people.has(from)) return;
+    const client = this.people.get(from)?.client;
+    if (!this.people.has(from) || !Number.isInteger(seq)) return;
+    if (client && seq <= (this.applied.get(client) ?? 0)) return; // a batch sent again that is already in
     const oldest = this.log.length ? this.log[0].v - 1 : this.v;
     if (!Number.isInteger(base) || base > this.v || base < oldest || !validOps(ops, this.adapter.validAttrs)) return this.snapshotTo(from);
     try {
       let g = ops;
       for (const e of this.log) if (e.v > base) [g] = transformOps(g, e.ops, false);
       const shadow = applyOps(cloneBlocks(this.shadow), g);
+      if (this.adapter.validBlocks && !this.adapter.validBlocks(shadow, this.shadow)) throw new Error("blocks");
       // The host's own changes not sent yet (a "/" command being typed) stay on top.
       const [gl] = transformOps(g, diff(this.shadow, this.live), true);
       const next = applyOps(cloneBlocks(this.live), gl);
       this.shadow = shadow;
-      this.commit(g, from, seq);
+      this.commit(g, from, client, seq);
       this.applyRemote(gl, from, next);
     } catch {
       this.snapshotTo(from);
@@ -370,52 +399,93 @@ export class RoomClient {
     switch (msg.type) {
       case "welcome":
         this.pid = msg.pid;
-        this.synced = false;
-        this.send({ type: "hello", name: this.name });
-        this.setStatus(msg.host ? "connecting" : "away");
+        if (msg.host) this.hello();
+        else this.setStatus("away");
         return;
       case "snapshot": return this.snapshot(msg);
-      case "op": return this.remoteOps(msg);
+      case "catchup": return this.catchup(msg);
+      case "op": return this.joining ? undefined : this.remoteOps(msg);
       case "people": return this.setPeople((msg.people || []).filter((p) => p && typeof p.pid === "string"));
       case "caret": return this.setCaret(msg.from, msg.c);
       case "host":
-        if (!msg.online) this.setStatus("away");
-        else if (this.synced) this.setStatus("live");
+        // The room tells a guest the host is away (also when it could not pass a change on); the guest keeps its
+        // changes and says hello again when the host is back.
+        if (!msg.online) { this.joining = false; this.setStatus("away"); }
+        else this.hello();
         return;
       default: this.on.message?.(msg);
     }
   }
-  snapshot({ v, doc, people, carets }) {
+  // Say who we are, with the last version we agreed on, so the host can send only what we missed.
+  hello() {
+    this.joining = true;
+    this.setStatus("connecting");
+    this.send({ type: "hello", name: this.name, client: this.client, v: this.confirmed ? this.v : null });
+  }
+  snapshot({ v, doc, people, carets, seen = 0 }) {
     if (!doc || !Array.isArray(doc.blocks)) return;
-    Object.assign(this, { v, pending: null, resyncing: false, synced: true, mine: [] });
+    const fresh = cloneBlocks(doc.blocks);
+    // Keep what this guest typed: rebase it onto the snapshot. The batch in flight counts as in when the host has it.
+    let live = fresh;
+    if (this.confirmed && this.live) {
+      const base = this.pending && seen >= this.pending.seq ? this.shadow : this.confirmed;
+      try {
+        const [mine] = transformOps(diff(base, this.live), diff(base, fresh), false);
+        live = applyOps(cloneBlocks(fresh), mine);
+      } catch { live = fresh; } // a clash on the same block: the host's text wins
+    }
+    if (this.pending && seen >= this.pending.seq) this.seq = Math.max(this.seq, seen);
+    Object.assign(this, { v, pending: null, resyncing: false, synced: true, joining: false, mine: [] });
     this.changes.clear();
-    this.shadow = cloneBlocks(doc.blocks);
-    this.live = cloneBlocks(doc.blocks);
+    this.confirmed = cloneBlocks(fresh);
+    this.shadow = cloneBlocks(fresh);
+    this.live = live;
     this.carets = new Map(Object.entries(carets || {}).filter(([, c]) => validCaret(c) && c));
     this.applying = true;
-    try { this.adapter.load({ blocks: cloneBlocks(doc.blocks), meta: doc.meta }); } finally { this.applying = false; }
+    try { this.adapter.load({ blocks: cloneBlocks(live), meta: doc.meta }); } finally { this.applying = false; }
     this.setPeople(people || []);
     this.setStatus("live");
     if (this.myCaret) this.caret(this.myCaret);
+    this.flush();
+  }
+  // Back in the room with a known version: apply what was missed, then send the batch in flight again if the host
+  // never got it (its seq is past what the host has seen), then the rest.
+  catchup({ v, entries, people, carets, seen = 0 }) {
+    this.joining = false;
+    for (const e of entries || []) this.remoteOps(e);
+    if (this.resyncing || this.v !== v) return this.resync();
+    this.setPeople(people || []);
+    for (const [pid, c] of Object.entries(carets || {})) if (validCaret(c) && c) this.carets.set(pid, c);
+    this.setStatus("live");
+    if (this.pending) {
+      if (seen >= this.pending.seq) { this.confirmed = cloneBlocks(this.shadow); this.pending = null; }
+      else if (!this.send({ type: "op", base: this.v, seq: this.pending.seq, ops: this.pending.ops })) return;
+    }
+    if (this.myCaret) this.caret(this.myCaret);
+    this.on.carets?.();
+    this.flush();
   }
   resync() {
     if (this.resyncing) return;
     this.resyncing = true;
     this.send({ type: "resync" });
   }
-  remoteOps({ v, ops, by, seq }) {
+  remoteOps({ v, ops, by, client, seq }) {
     if (!this.synced || this.resyncing || v <= this.v) return;
     if (v !== this.v + 1) return this.resync();
-    if (by === this.pid && this.pending && seq === this.pending.seq) {
+    if (client === this.client && this.pending && seq === this.pending.seq) {
       this.v = v;
       this.pending = null;
+      this.confirmed = cloneBlocks(this.shadow);
       return this.flush();
     }
     try {
       let [r, p] = transformOps(ops, this.pending?.ops ?? [], true);
+      const confirmed = applyOps(cloneBlocks(this.confirmed), ops);
       const shadow = applyOps(cloneBlocks(this.shadow), r);
       [r] = transformOps(r, diff(this.shadow, this.live), true);
       const next = applyOps(cloneBlocks(this.live), r);
+      this.confirmed = confirmed;
       this.shadow = shadow;
       if (this.pending) this.pending.ops = p;
       this.v = v;

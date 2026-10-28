@@ -3,7 +3,7 @@
 // Then: node scripts/smoke-room.mjs [base URL, default http://127.0.0.1:8787]
 // One host and two guests use the real client (public/together/room.js) over WebSocket, each with a plain
 // in-memory document. No network beyond the local Worker.
-import { RoomClient, newRoom } from "../public/together/room.js";
+import { RoomClient, newRoom, protocols } from "../public/together/room.js";
 import { applyOps, cloneBlocks } from "../public/together/ops.js";
 
 const BASE = (process.argv[2] || process.env.SMOKE_BASE || "http://127.0.0.1:8787").replace(/\/$/, "");
@@ -39,9 +39,14 @@ function plainAdapter(blocks = []) {
   return a;
 }
 const para = (id, text) => ({ id, text, attrs: { type: "para" } });
+// Every socket the clients open, with the URL and subprotocols they really sent.
+const opened = [];
+class WatchedSocket extends WebSocket {
+  constructor(url, protos) { super(url, protos); opened.push({ url, protos, ws: this }); }
+}
 const clients = [];
 function client(opts) {
-  const c = new RoomClient({ url: URL_, ...opts }).start();
+  const c = new RoomClient({ url: URL_, WebSocketImpl: WatchedSocket, backoffMs: 100, ...opts }).start();
   clients.push(c);
   return c;
 }
@@ -51,17 +56,22 @@ try {
   check(plain.status === 426, "/api/room without a WebSocket gets 426", plain.status);
 
   const creds = newRoom();
-  check(!URL_.includes(creds.key) && !URL_.includes(creds.room), "the socket URL holds no room id and no key");
   const ha = plainAdapter([para("t1", "Smoke test"), para("p1", "We type here together."), para("p2", "A second line.")]);
   const asks = [];
   const host = client({ role: "host", ...creds, name: "Host", adapter: ha, on: { message: (m) => asks.push(m) } });
   check(await until(() => host.status === "live"), "the host opens the room", host.status);
+  const sent = opened[0];
+  check(JSON.stringify(sent.protos) === JSON.stringify(protocols(creds)) && sent.protos[0] === "script-editor-room", "the host proves its keys with subprotocols", JSON.stringify(sent.protos));
+  check(!sent.url.includes(creds.key) && !sent.url.includes(creds.hostKey) && !sent.url.includes(creds.room), "the socket URL holds no room id and no key", sent.url);
+  check(sent.ws.protocol === "script-editor-room", "the room answers with the script-editor-room subprotocol", sent.ws.protocol);
 
   const g1a = plainAdapter(), g2a = plainAdapter();
   const g1 = client({ role: "guest", room: creds.room, key: creds.key, name: "Ana", adapter: g1a });
   const g2 = client({ role: "guest", room: creds.room, key: creds.key, name: "Ben", adapter: g2a });
   check(await until(() => g1.status === "live" && g2.status === "live"), "two guests join", `${g1.status} ${g2.status}`);
   check(g1a.text() === ha.text() && g2a.text() === ha.text(), "guests get the script", g1a.text());
+  const gs = opened.find((o) => o.protos.length === 3);
+  check(gs && JSON.stringify(gs.protos) === JSON.stringify(["script-editor-room", `r.${creds.room}`, `k.${creds.key}`]), "a guest sends no host key", JSON.stringify(gs?.protos));
   check(g1a.info?.name === "smoke.md", "guests get the file name");
   check(await until(() => host.peopleList().length === 3 && g2.peopleList().length === 3), "everyone sees three people", JSON.stringify(g2.peopleList()));
 
@@ -81,6 +91,19 @@ try {
   const all = [...words.host, ...words.g1, ...words.g2].every((w) => ha.text().includes(w.trim()));
   check(all, "no typed word is lost", ha.text());
   check(host.v >= 3, "the host gave each batch a version", host.v);
+
+  // A guest's connection drops while it types: nothing it typed is lost.
+  g1a.type("p2", 0, "Kept1 "); g1.local();
+  g1.ws.close();
+  g1a.type("p2", 0, "Kept2 "); g1.local();
+  check(await until(() => g1.status === "live" && same() && ha.text().includes("Kept2 Kept1 "), 8000), "a guest's typing survives a lost connection", `${ha.text()} / ${g1a.text()}`);
+  check(ha.text().split("Kept1").length === 2, "and arrives once", ha.text());
+
+  // The host's connection drops: guests keep typing, and it all arrives when the host is back.
+  host.ws.close();
+  check(await until(() => g2.status === "away"), "guests see the host is away", g2.status);
+  g2a.type("p2", 999, " WhileAway"); g2.local();
+  check(await until(() => host.status === "live" && g2.status === "live" && same() && ha.text().includes("WhileAway"), 10000), "typing while the host is away arrives when it is back", `${ha.text()} / ${g2a.text()}`);
 
   // Carets: Ana's caret reaches the host and Ben.
   g1.caret({ blockId: "p2", offset: 2, selEnd: 6 });

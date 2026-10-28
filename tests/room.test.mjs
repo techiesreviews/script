@@ -1,11 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Room, CLOSE, HOST_GRACE_MS } from "../worker/room.js";
+import { Room, CLOSE, HOST_GRACE_MS, GUESTS_MAX } from "../worker/room.js";
 import { RoomClient, newRoom, makeLink, parseLink, protocols } from "../public/together/room.js";
 import { applyOps, cloneBlocks } from "../public/together/ops.js";
 
 const tick = () => new Promise((r) => setImmediate(r));
 const settle = async (n = 30) => { for (let i = 0; i < n; i++) await tick(); };
+async function waitFor(fn, ms = 3000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (fn()) return true; await new Promise((r) => setTimeout(r, 5)); }
+  return fn();
+}
 
 /* ---------- A fake Durable Object context and fake sockets ---------- */
 function fakeCtx() {
@@ -114,7 +119,7 @@ test("room: guests say who they are first, can't pose as someone else, and reach
   await room.webSocketMessage(a, msg({ type: "op", base: 0, ops: [] }));
   assert.equal(host.sent.length, 1, "nothing before hello");
   await room.webSocketMessage(a, msg({ type: "hello", name: "  Ana\u0007  Maria " }));
-  assert.deepEqual(host.sent.at(-1), { type: "join", from: a.att.pid, name: "Ana Maria" });
+  assert.deepEqual(host.sent.at(-1), { type: "join", from: a.att.pid, name: "Ana Maria", client: null, v: null });
   await room.webSocketMessage(b, msg({ type: "hello", name: "" }));
   assert.equal(host.sent.at(-1).name, "Guest");
   await room.webSocketMessage(a, msg({ type: "op", from: "host", base: 0, seq: 1, ops: [1] }));
@@ -152,6 +157,25 @@ test("room: the host sends to one guest or to all; the end closes everyone and r
   assert.equal((await join({ keyHash: "k", hostHash: "h" })).code, CLOSE.ended);
 });
 
+test("room: the 21st guest is told the room is full", async () => {
+  const { join } = roomWith();
+  await join({ keyHash: "k", hostHash: "h" });
+  for (let i = 0; i < GUESTS_MAX; i++) assert.equal((await join({ keyHash: "k", hostHash: "" })).code, undefined);
+  assert.equal((await join({ keyHash: "k", hostHash: "" })).code, CLOSE.full);
+});
+
+test("room: with the host away, a guest's change is answered, never dropped quietly", async () => {
+  const { room, join } = roomWith();
+  const host = await join({ keyHash: "k", hostHash: "h" });
+  const a = await join({ keyHash: "k", hostHash: "" });
+  await room.webSocketMessage(a, msg({ type: "hello", name: "Ana", client: "client-aaaa", v: 4 }));
+  assert.deepEqual(host.sent.at(-1), { type: "join", from: a.att.pid, name: "Ana", client: "client-aaaa", v: 4 });
+  host.closed = true;
+  await room.webSocketClose(host, 1006);
+  await room.webSocketMessage(a, msg({ type: "op", base: 4, seq: 1, ops: [] }));
+  assert.deepEqual(a.sent.at(-1), { type: "host", online: false });
+});
+
 test("room: 30 s without the host ends the room; a host back in time keeps it", async () => {
   const { ctx, room, join } = roomWith();
   let host = await join({ keyHash: "k", hostHash: "h" });
@@ -176,11 +200,11 @@ async function session(blocks) {
   const WS = socketFactory(rooms);
   const creds = newRoom();
   const ha = plainAdapter(blocks);
-  const host = new RoomClient({ role: "host", ...creds, url: "ws://x/api/room", name: "Lex", adapter: ha, WebSocketImpl: WS, timers }).start();
+  const host = new RoomClient({ role: "host", ...creds, url: "ws://x/api/room", name: "Lex", adapter: ha, WebSocketImpl: WS, timers, backoffMs: 5 }).start();
   await settle();
   const guest = async (name) => {
     const a = plainAdapter();
-    const c = new RoomClient({ role: "guest", room: creds.room, key: creds.key, url: "ws://x/api/room", name, adapter: a, WebSocketImpl: WS, timers }).start();
+    const c = new RoomClient({ role: "guest", room: creds.room, key: creds.key, url: "ws://x/api/room", name, adapter: a, WebSocketImpl: WS, timers, backoffMs: 5 }).start();
     await settle();
     return { a, c };
   };
@@ -235,7 +259,7 @@ test("together: Enter and typing at the same time, carets follow, and the undo o
   assert.equal(ha.text(), "First half. |Second half.");
 });
 
-test("together: a guest whose base is too old gets a fresh snapshot", async () => {
+test("together: a guest whose base is too old gets a fresh snapshot, and its change is rebased onto it", async () => {
   const { host, ha, guest } = await session([para("p1", "abc")]);
   const g = await guest("Ana");
   let snapshots = 0;
@@ -246,7 +270,8 @@ test("together: a guest whose base is too old gets a fresh snapshot", async () =
   await settle(60);
   assert.equal(snapshots, 1);
   assert.equal(g.a.text(), ha.text());
-  assert.equal(g.c.v, 10);
+  assert.equal(ha.text(), "abcd", "the change survives the snapshot");
+  assert.equal(g.c.v, 11, "sent again on top of version 10");
   // A structure clash on one block also ends in a snapshot, never in two different texts.
   g.a.blocks.splice(0, 1); g.c.local();
   ha.blocks.splice(1, 0, para("n", "x")); host.local();
@@ -269,6 +294,78 @@ test("together: stop sharing ends the room for guests, and the link no longer wo
   assert.equal(late.c.status, "ended");
   assert.equal(rooms.size, 1);
   void creds;
+});
+
+const allSame = (ha, ...gs) => gs.every((g) => g.a.text() === ha.text() && !g.c.pending);
+
+test("together: a guest whose connection drops keeps what it typed, and it arrives once", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello."), para("p2", "World.")]);
+  const g = await guest("Ana"), other = await guest("Ben");
+  // The batch reaches the host, but the receipt is lost with the connection.
+  g.a.type("p1", 6, " One"); g.c.local();
+  g.c.ws.close();
+  g.a.type("p1", 10, " Two"); g.c.local(); // typed while away: kept unsent
+  ha.type("p2", 0, "Big "); host.local();
+  // And a batch that never reached anyone.
+  await waitFor(() => g.c.status === "away");
+  g.a.type("p2", 10, " Three"); g.c.local();
+  assert.ok(await waitFor(() => g.c.status === "live" && allSame(ha, g, other)), `${ha.text()} / ${g.a.text()}`);
+  assert.equal(ha.text(), "Hello. One Two|Big World. Three");
+  host.stop();
+});
+
+test("together: typing while the host is away arrives when the host is back", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello.")]);
+  const g = await guest("Ana");
+  g.a.type("p1", 6, " Early"); g.c.local(); // in flight when the host's connection drops
+  host.ws.close();
+  await waitFor(() => g.c.status === "away");
+  g.a.type("p1", 0, "Away: "); g.c.local();
+  ha.type("p1", 6, "!"); host.local(); // the host typed while offline too
+  assert.ok(await waitFor(() => host.status === "live" && g.c.status === "live" && allSame(ha, g)), `${ha.text()} / ${g.a.text()}`);
+  assert.equal(ha.text(), "Away: Hello.! Early");
+  host.stop();
+});
+
+test("together: a client told the room is full stops and does not reconnect", async () => {
+  let made = 0;
+  class Full {
+    constructor() { made++; this.readyState = 1; this.l = {}; setImmediate(() => this.l.close?.({ code: 4005 })); }
+    addEventListener(t, f) { this.l[t] = f; }
+    send() {}
+    close() {}
+  }
+  const c = new RoomClient({ role: "guest", ...newRoom(), url: "ws://x", name: "Late", adapter: plainAdapter(), WebSocketImpl: Full, timers, backoffMs: 1 }).start();
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(c.status, "full");
+  assert.equal(made, 1);
+});
+
+test("together: Ctrl+Z in a room undoes an Enter and a Backspace for everyone", async () => {
+  const { host, ha, guest } = await session([para("p1", "First half. Second half."), para("p2", "Last line.")]);
+  const g = await guest("Ana");
+  const start = ha.text();
+  // Enter in the middle of p1 (diff makes it a split).
+  g.a.blocks.splice(1, 0, para("n1", g.a.blocks[0].text.slice(12)));
+  g.a.blocks[0].text = g.a.blocks[0].text.slice(0, 12);
+  g.c.local();
+  await settle(60);
+  assert.equal(ha.text(), "First half. |Second half.|Last line.");
+  assert.ok(g.c.undoMine());
+  await settle(60);
+  assert.equal(ha.text(), start);
+  assert.equal(g.a.text(), start);
+  // Backspace at the start of p2 (a merge).
+  g.a.blocks[0].text += g.a.blocks[1].text;
+  g.a.blocks.splice(1, 1);
+  g.c.local();
+  await settle(60);
+  assert.equal(ha.text(), "First half. Second half.Last line.");
+  assert.ok(g.c.undoMine());
+  await settle(60);
+  assert.equal(ha.text(), start);
+  assert.equal(g.a.text(), start);
+  host.stop();
 });
 
 test("together: links keep the key after #, and keys travel as subprotocols", () => {

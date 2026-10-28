@@ -598,6 +598,16 @@ export function withoutCommand(doc, cmd) {
   if (b) setContent(copy, b.id, cutCommand(contentOf(b), cmd).content);
   return copy;
 }
+/** In a shared script, is the "/" command at the caret held back from the others? Yes while the parts menu is open,
+ *  or about to open (a command with matching parts, not dismissed, in the focused script). Never for a guest in
+ *  step D1: there "/" is plain text and goes out at once. */
+export function slashHold({ guest = false, open = false, focused = false, cmd = null, dismissed = null, matches = 0 } = {}) {
+  if (guest) return false;
+  if (open) return true;
+  if (!focused || !cmd) return false;
+  if (dismissed && dismissed.id === cmd.id && dismissed.start === cmd.start) return false;
+  return matches > 0;
+}
 /** The line a part replaces: the block where only the command was typed, when it is now an empty para without an
  *  open ask and not the only block. Otherwise null, and the part goes after it. */
 export function lineToReplace(doc, id, asks = []) {

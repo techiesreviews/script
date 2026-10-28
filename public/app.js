@@ -2660,11 +2660,11 @@ function pickSlash(partId) {
 // In a shared script, a "/" command is held back from the others from its first character: the menu opens after the
 // change is reported, so this asks what updateSlash is about to do.
 function slashHeld() {
-  if (slash.open) return true;
-  if (!scriptEl.contains(document.activeElement)) return false;
-  const cmd = slashAtCaret();
-  if (!cmd || (slash.dismissed?.id === cmd.id && slash.dismissed.start === cmd.start)) return false;
-  return D.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) }).length > 0;
+  if (state.guest || slash.open) return D.slashHold({ guest: state.guest, open: slash.open });
+  const focused = scriptEl.contains(document.activeElement);
+  const cmd = focused ? slashAtCaret() : null;
+  const matches = cmd ? D.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) }).length : 0;
+  return D.slashHold({ focused, cmd, dismissed: slash.dismissed, matches });
 }
 // What a save writes: the script without an open "/" command.
 function saveText() {
@@ -3041,17 +3041,17 @@ function loadGuest(doc, name) {
   if (first) scrollTo({ top: 0 });
 }
 // The host stopped sharing: the guest keeps reading, but can no longer edit.
-function guestEnded() {
+function guestEnded(status) {
   state.locked = true;
   closeSlash();
   hideBar();
   renderAll();
-  showBanner("Sharing stopped", []);
+  showBanner(status === "full" ? "This script already has 20 guests" : "Sharing stopped", []);
 }
-function joinFailed() {
+function joinFailed(status) {
   $("#joinForm").hidden = true;
   const note = $("#emptyNote");
-  note.textContent = "This edit link has ended";
+  note.textContent = status === "full" ? "This script already has 20 guests" : "This edit link has ended";
   note.hidden = false;
 }
 if (roomLink) {
@@ -3090,6 +3090,17 @@ together = createTogether({
   icon,
 });
 
+// The Script/Storyboard switch stays centred on the bar whenever the actions fit beside it.
+function fitTop() {
+  const top = $(".top"), sw = $("#viewSwitch"), end = $(".top__end");
+  const cs = getComputedStyle(top);
+  const room = top.clientWidth - parseFloat(cs.paddingInlineEnd) - end.offsetWidth;
+  const crowded = !sw.hidden && room < top.clientWidth / 2 + sw.offsetWidth / 2 + (parseFloat(cs.columnGap) || 8);
+  if (crowded !== ("crowded" in top.dataset)) top.toggleAttribute("data-crowded", crowded);
+}
+const topFit = new ResizeObserver(() => fitTop());
+for (const el of [$(".top"), $(".top__end"), $("#viewSwitch")]) topFit.observe(el);
+
 /* ---------- Hooks for tests and step B ---------- */
 window.__scriptEditor = {
   answer: receiveAnswer,
@@ -3114,6 +3125,7 @@ window.__scriptEditor = {
     receiveSketch(ask, shotId, checked.svg, { id: "test", name: "Test" });
     return true;
   },
+  dropRoom: () => { try { together.room?.ws?.close(); } catch { /* closed */ } },
   room: () => (together.room ? { role: together.room.role, status: together.room.status, v: together.room.v, people: together.room.peopleList(), carets: together.room.caretList(), link: together.room.role === "host" ? together.room.link(location.origin) : null } : null),
   ask: (blockIndex, start, end, action = "simpler", typed = "") => {
     const b = state.doc?.blocks[blockIndex];

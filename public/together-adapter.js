@@ -17,6 +17,9 @@ const ATTRS = ["type", "sep", "prefix"];
 // same content offsets as asks.
 export const readBlocks = (doc) => doc.blocks.map((b) => ({ id: b.id, text: D.contentOf(b), attrs: { type: b.type, sep: b.sep, prefix: D.prefixOf(b) } }));
 
+// The "# " / "## " marker belongs to its type: titles have "#", headings "##", every other block none.
+const PREFIX = { title: /^#[ \t]{1,8}$/, heading: /^##[ \t]{1,8}$/ };
+const prefixFits = (type, prefix) => (PREFIX[type] ? PREFIX[type].test(prefix) : prefix === "");
 export function validAttrs(a, partial) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const keys = Object.keys(a);
@@ -24,7 +27,23 @@ export function validAttrs(a, partial) {
   if ("type" in a && !TYPES.includes(a.type)) return false;
   if ("sep" in a && !(typeof a.sep === "string" && a.sep.length <= 400 && /^[ \t\r\n]*$/.test(a.sep))) return false;
   if ("prefix" in a && !(typeof a.prefix === "string" && /^(?:#{1,2}[ \t]{1,8})?$/.test(a.prefix))) return false;
+  if ("type" in a && "prefix" in a && !prefixFits(a.type, a.prefix)) return false;
   return true;
+}
+/** The script after someone else's change: every marker fits its type, and blocks stay apart the way the file is
+ *  read back (a blank line between blocks; only a title or heading may be followed by a single line break).
+ *  With `before`, only blocks whose attrs are new or changed are checked, so a host file that already differs
+ *  from these rules never blocks a guest's ordinary edits. */
+export function validBlocks(blocks, before = null) {
+  const old = before && new Map(before.map((b) => [b.id, JSON.stringify(b.attrs)]));
+  return blocks.every((b, i) => {
+    if (old && old.get(b.id) === JSON.stringify(b.attrs)) return true;
+    const { type, sep, prefix } = b.attrs || {};
+    if (!validAttrs(b.attrs, false) || !prefixFits(type, prefix)) return false;
+    if (i === 0) return /^(?:[ \t]*\r?\n)*$/.test(sep);
+    const prev = blocks[i - 1].attrs?.type;
+    return /^\r?\n(?:[ \t]*\r?\n)+[ \t]*$/.test(sep) || ((prev === "title" || prev === "heading") && /^\r?\n$/.test(sep));
+  });
 }
 
 function scriptIO(doc) {
@@ -63,7 +82,7 @@ export function docFromSnapshot({ blocks, meta }) {
 /* ---------- The app side ---------- */
 /**
  * createTogether(app): app = { doc(), name(), me, setName(name), held(), selection(), restore(sel), element(id),
- *   applied(ops, sel), loadGuest(doc, name), guestEnded(), joinFailed(status), sharing(on), renderTop(), renderDots(),
+ *   applied(ops, sel), loadGuest(doc, name), guestEnded(status), joinFailed(status), sharing(on), renderTop(), renderDots(),
  *   sheet, scriptEl, icon(name) }
  */
 export function createTogether(app) {
@@ -88,6 +107,7 @@ export function createTogether(app) {
     held: () => app.held(),
     busy: () => composing,
     validAttrs,
+    validBlocks,
     apply(ops) {
       const doc = app.doc();
       if (!doc) return;
@@ -104,8 +124,8 @@ export function createTogether(app) {
 
   const on = {
     status(s) {
-      if (s === "ended" || s === "refused") {
-        if (room?.role === "guest") { if (room.synced) app.guestEnded(); else app.joinFailed(s); }
+      if (s === "ended" || s === "refused" || s === "full") {
+        if (room?.role === "guest") { if (room.synced) app.guestEnded(s); else app.joinFailed(s); }
         else { share.set(false); app.sharing(false); }
         room = null;
       }
@@ -148,6 +168,11 @@ export function createTogether(app) {
     if (sig === last) return;
     const had = new Set([...el.children].map((c) => c.dataset.who));
     last = sig;
+    const others = list.length - 1;
+    const more = document.createElement("span");
+    more.className = "people__more";
+    more.textContent = `+${others - 2}`;
+    more.title = list.filter((p) => !p.me).slice(2).map((p) => p.name).join(", ");
     el.replaceChildren(...[...list].sort((a, b) => b.me - a.me).map((p) => {
       const a = document.createElement(p.me ? "span" : "button");
       a.className = p.me ? "avatar avatar--me" : "avatar";
@@ -162,7 +187,7 @@ export function createTogether(app) {
         if (had.size && !had.has(p.pid)) a.dataset.new = "";
       }
       return a;
-    }));
+    }), ...(others > 2 ? [more] : []));
   }
   $("#people").addEventListener("click", (e) => {
     const a = e.target.closest("button[data-who]");

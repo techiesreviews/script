@@ -705,7 +705,13 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .avatar:enabled:active { scale: 0.94; }
 @media (prefers-reduced-motion: no-preference) { .avatar[data-new] { animation: pop-in 320ms var(--ease-out); } }
 @keyframes pop-in { from { scale: 0.4; opacity: 0; } }
-@container app (width < 46rem) { .people { display: none; } }
+.people__more { display: none; }
+/* Phones: the others only, at most two, then a count. */
+@container app (width < 46rem) {
+  .people { padding-inline: 0.15rem 0; }
+  .people .avatar--me, .people > .avatar:nth-child(n + 4) { display: none; }
+  .people__more { display: grid; place-items: center; min-inline-size: 1.5rem; block-size: 1.5rem; margin-inline-start: 0.15rem; padding-inline: 0.3rem; border-radius: 99px; background: var(--raised); color: var(--muted); font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+}
 /* While sharing, the people and the × join the actions: the voice and agent buttons show their icons only, as on
    narrower screens, so the Script/Storyboard switch stays clear. */
 @container app (width < 100rem) {
@@ -713,11 +719,14 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .top:has(#stopShare:not([hidden])) :is(.voice-btn, .agent-btn) .lbl { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
   .top:has(#stopShare:not([hidden])) .agent-btn > svg { display: block; }
 }
-/* Phones: the switch follows the name instead of sitting in the middle, so every action fits. */
+/* Phones: compact icon buttons, the agent's status as a small dot on its plug, so the switch can stay centred. */
 @container app (width < 36rem) {
-  .top { grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.35rem; }
-  .top__end { gap: 0.3rem; }
+  .top__end, .share { gap: 0.25rem; }
+  .top__end .tb:has(.lbl), .top__end .tb--icon { min-inline-size: 2rem; padding-inline: 0.45rem; }
+  .agent-btn > .status-dot { position: absolute; inset-block-start: 0.3rem; inset-inline-end: 0.3rem; inline-size: 6px; block-size: 6px; box-shadow: 0 0 0 1.5px var(--bg); }
 }
+/* Only when the actions really don't fit beside a centred switch (measured in app.js) does it follow the name. */
+.top[data-crowded] { grid-template-columns: minmax(0, 1fr) auto auto; }
 
 .share { display: flex; gap: 0.25rem; anchor-name: --share; }
 .share__icon { display: contents; }

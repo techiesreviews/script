@@ -6,12 +6,12 @@ Owner: Lex (non-technical; explain in plain words). The approved mock-up and the
 
 ## Rules
 
-- **No paid usage.** There are no built-in AI API calls, ever. All AI work is done by the person's own agent through MCP. Cloudflare free plan only: Workers, static assets, and a SQLite Durable Object for the live relay.
+- **No paid usage.** There are no built-in AI API calls, ever. All AI work is done by the person's own agent through MCP. Cloudflare free plan only: Workers, static assets, and SQLite-backed Durable Objects for the live relay and for the rooms of Share to edit.
 - **Scripts stay with the person.** Files are opened and saved in the browser (File System Access API, with download as a fallback). The relay passes asks and answers between the tab and the agent and never stores script text.
 - Address: https://script.techies.tools (Lex approved 2026-10-28; workers.dev stays as a fallback). Pages stay `noindex` until Lex says otherwise. No GitHub push without Lex's OK for that repo.
 - Never touch the Native Site Editor repos or its live site. Copy its approach (agents over MCP, asks like its "pins for asking agents", caret and edit-bar look), not its code.
 - No toasts and no explainer text: the interface shows what happens where it happens. Calm neutral look in light mode and Techies Reviews night blue in dark mode, with the warm orange `#ff6a3d` as the only accent. CSS follows the good-css skill: logical properties, oklch colours, hover inside `(hover: hover) and (pointer: fine)`, motion inside `prefers-reduced-motion: no-preference`.
-- Version 1 is for one person. Multiplayer (other people's carets, Share to edit) comes later, reusing the editor's agents + multiplayer build. The data shape (`docs/data-shape.md`) must leave room for it.
+- Working together is built in step D: Share to edit, other people's carets and the undo on name tags (`docs/together.md`). The host's file stays the only copy; a room passes changes and carets between tabs and never stores script text. The data shape (`docs/data-shape.md`) keeps room for the agent's caret and guests' asks (step D2).
 
 ## Agent Kit
 

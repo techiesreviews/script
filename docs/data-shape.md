@@ -97,7 +97,7 @@ people: [{ pid, name, colour, kind: "person" | "agent" }]   // colour: an index 
 carets: { [pid]: { blockId, offset, selEnd? } }             // content offsets, like asks
 ```
 
-Carets use the same block ids and content offsets as asks, so they follow edits the same way. Every ask has `by` and every answer `answeredBy`; each operation the host sends carries `by`, so Undo on a name tag undoes only that person's change. The file on disk stays plain Markdown: ids, people and carets live only in the session, and the room stores no script text.
+A person's id is `pid` (the plan called it `personId`): `"host"` for the host, a fresh id per connection for a guest; messages carry it as `from`, and an operation's author as `by`. Carets use the same block ids and content offsets as asks, so they follow edits the same way. Every ask has `by` and every answer `answeredBy`; each operation the host sends carries `by`, so Undo on a name tag undoes only that person's change. The file on disk stays plain Markdown: ids, people and carets live only in the session, and the room stores no script text.
 
 ## Files, recent scripts and the prompter link
 

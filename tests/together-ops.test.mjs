@@ -80,6 +80,28 @@ test("ops: random concurrent edits converge (TP1)", () => {
   assert.ok(checked > 3000, `only ${checked} pairs checked`);
 });
 
+// The host's log and diff() make lists of operations: batches of 2–4 on each side must converge too.
+test("ops: random concurrent batches converge", () => {
+  const r = rng(23);
+  let checked = 0, n = 0;
+  const batch = (s, side) => {
+    const ops = [];
+    let work = cloneBlocks(s);
+    for (let k = 0, m = 2 + Math.floor(r() * 3); k < m; k++) {
+      const op = randomOp(work, r, `${side}${n}${k}`);
+      try { work = applyOps(cloneBlocks(work), op); ops.push(...op); } catch (e) { if (!(e instanceof Conflict)) throw e; }
+      if (!work.length) break;
+    }
+    return ops;
+  };
+  for (; n < 3000; n++) {
+    const s = doc(...Array.from({ length: 1 + Math.floor(r() * 4) }, () => "abcdefghij".slice(0, Math.floor(r() * 11))));
+    const A = batch(s, "a"), B = batch(s, "b");
+    try { both(s, A, B); checked++; } catch (e) { if (!(e instanceof Conflict)) throw e; }
+  }
+  assert.ok(checked > 1000, `only ${checked} batches checked`);
+});
+
 test("ops: diff finds operations that rebuild the document exactly", () => {
   const r = rng(11);
   for (let n = 0; n < 2000; n++) {
