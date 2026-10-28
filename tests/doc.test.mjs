@@ -582,7 +582,7 @@ test("renumbering: a part at the start, in the middle and at the end; names, sep
   // Spoken text without a heading above it: the heading goes above that text, unnumbered, so it stays spoken.
   doc = parse("# New\n\nFirst line.\n");
   insertPart(doc, at(doc, "First line.").id, "hook");
-  assert.equal(serialize(doc), "# New\n\n## Hook\n\nFirst line.\n\n\n");
+  assert.equal(serialize(doc), "# New\n\n## 1 · Hook\n\nFirst line.\n\n\n");
   // CRLF stays CRLF, also in the moved headings.
   doc = parse(SCRIPT3.replace(/\n/g, "\r\n"));
   insertPart(doc, at(doc, "Hello.").id, "point");

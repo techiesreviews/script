@@ -652,8 +652,8 @@ function addSpoken(doc, afterId, part, numbered) {
  * insertPart(doc, afterId, partId, { replaceId }) → { caret: { id, offset } } with the part's blocks inserted after
  * `afterId` (or at the start when null). replaceId (see lineToReplace): that empty line is removed and the part takes
  * its place. Spoken parts: a heading and an empty para. The heading is numbered "## N · Name" (later numbered
- * headings move up by one) when the script already numbers its headings or is still fresh (no headings, no spoken
- * text); otherwise "## Name", in the script's own style. A part never makes spoken text stop being spoken.
+ * headings move up by one) when the script already numbers its headings or has no headings yet
+ * (a new script); otherwise "## Name", in the script's own style. A part never makes spoken text stop being spoken.
  * On screen / Silent note: the note, caret inside the brackets. Divider: "---" and an empty para.
  */
 export function insertPart(doc, afterId, partId, { replaceId = null } = {}) {
@@ -667,8 +667,8 @@ export function insertPart(doc, afterId, partId, { replaceId = null } = {}) {
   if (part.kind === "spoken") {
     const before = spokenIds(doc);
     const heads = doc.blocks.filter((b) => b.type === "heading");
-    const fresh = !heads.length && !doc.blocks.some((b) => before.has(b.id) && b.type === "para" && contentOf(b).trim());
-    const numbered = heads.some((h) => NUM_RE.test(contentOf(h))) || fresh;
+    // Numbered when the script has no headings yet (a new script) or already numbers them; the [true, false] check below keeps spoken text spoken.
+    const numbered = !heads.length || heads.some((h) => NUM_RE.test(contentOf(h)));
     for (const n of numbered ? [true, false] : [false]) {
       const copy = cloneDoc(doc);
       const res = addSpoken(copy, afterId, part, n);

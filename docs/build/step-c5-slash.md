@@ -27,6 +27,8 @@ Lex (2026-10-28): "When starting a new script, allow me to add parts with / comm
 
 ## Numbering
 
+- Style (lead's choice, 2026-10-28, open for Lex): a script with no headings yet, or with numbered headings, gets `## N · Name`; a script whose headings have no numbers gets `## Name`, so its sections stay spoken. A part never makes spoken text stop being spoken; spoken text with no heading above it goes under the new heading.
+
 - The new heading gets the right number for where it lands, and the numbered headings after it move up by one.
   - Keep their names and any time range in brackets exactly as they were.
   - Change nothing else in the file.
