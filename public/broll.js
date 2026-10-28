@@ -17,13 +17,16 @@ function cells(row) {
 }
 function columns(head) {
   const find = (re) => head.findIndex((h) => re.test(clean(h)));
-  return { id: find(/^(#|id|shot)$/i), what: find(/^what/i), over: find(/^over/i), how: find(/^how/i), record: head.some((h) => /record/i.test(h)) };
+  return { id: find(/^(#|id|shot)$/i), what: find(/^what/i), over: find(/^over/i), how: find(/^how/i), kind: find(/^kind$/i), record: head.some((h) => /record/i.test(h)) };
 }
+// A "Kind" column (written by exportBroll) wins over the heading and the "How" text.
+const kindOf = (cell) => (/screen/i.test(cell) ? "screen" : /motion/i.test(cell) ? "motion" : /b.?roll/i.test(cell) ? "broll" : "");
 
 /**
  * parseBroll(markdown) → { shots: [{ id, what, over, how, kind }], sketches: { [id]: svg } }
  * Main table: # | What to show | Over (A-roll line) | How to make it. A table under a "Screen recordings"
  * heading (or with "What to record") lists screen recordings. Rows whose "How" mentions motion are motion plates.
+ * An optional "Kind" column (B-roll, Motion plate, Screen recording) decides the kind on its own.
  */
 export function parseBroll(markdown) {
   const lines = String(markdown ?? "").replace(/\r\n?/g, "\n").split("\n");
@@ -64,7 +67,7 @@ export function parseBroll(markdown) {
       let id = (get("id") || `#${shots.length + 1}`).replace(/\s+/g, "-").slice(0, 20);
       for (let n = 2; seen.has(id); n++) id = `${get("id") || "#"}·${n}`;
       seen.add(id);
-      shots.push({ id, what, over, how, kind: screen ? "screen" : /motion/i.test(how) ? "motion" : "broll" });
+      shots.push({ id, what, over, how, kind: kindOf(get("kind")) || (screen ? "screen" : /motion/i.test(how) ? "motion" : "broll") });
     }
   }
   return { shots, sketches };
@@ -287,4 +290,86 @@ export function checkSketch(ask, args) {
   const svg = sanitizeSvg(a.svg);
   if (!svg) return { error: "Nothing drawable is left after cleaning. Use path, rect, circle, ellipse, line, polyline, polygon or text with class s, l, o or mv." };
   return { svg };
+}
+
+/* ---------- Export: the B-roll list and the storyboard ---------- */
+export const KIND_NAME = { broll: "B-roll", motion: "Motion plate", screen: "Screen recording" };
+const cell = (s) => String(s ?? "").replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
+const escHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// Kept sketches of the given shots in their order, then any others the list still holds.
+function sketchOrder(shots, sketches) {
+  const ids = shots.map((s) => s.id).filter((id) => sketches[id]);
+  return [...ids, ...Object.keys(sketches).filter((id) => !ids.includes(id))];
+}
+
+/**
+ * exportBroll(shots, sketches, { title }) → Markdown: one table in the given (script) order with the columns
+ * # | Kind | What to show | Over (A-roll line) | How to make it | Check, then "## Sketches". parseBroll reads it back.
+ */
+export function exportBroll(shots, sketches = {}, { title = "" } = {}) {
+  const rows = shots.map((s) => `| ${[s.id, KIND_NAME[s.kind] || KIND_NAME.broll, s.what, s.over, s.how, s.check ? "Check" : ""].map(cell).join(" | ")} |`);
+  const out = [`# ${cell(title) ? `${cell(title)} · ` : ""}B-roll list`, "",
+    "| # | Kind | What to show | Over (A-roll line) | How to make it | Check |", "| --- | --- | --- | --- | --- | --- |", ...rows];
+  const ids = sketchOrder(shots, sketches).filter((id) => /^\S+$/.test(id) && sanitizeSvg(sketches[id]));
+  if (ids.length) {
+    out.push("", "## Sketches");
+    for (const id of ids) out.push("", `\`\`\`svg ${id}`, sketchLines(sanitizeSvg(sketches[id])), "```");
+  }
+  return out.join("\n") + "\n";
+}
+
+const BOARD_CSS = `@page { size: A4; margin: 14mm; }
+:root { color-scheme: light; --ink: oklch(22% 0 none); --muted: oklch(47% 0 none); --line: oklch(86% 0 none); --accent: oklch(70.4% 0.1915 37.1); --accent-ink: oklch(52% 0.17 37); }
+* { box-sizing: border-box; }
+body { margin: 0 auto; max-inline-size: 64rem; padding: 2rem 1.5rem; background: oklch(100% 0 none); color: var(--ink); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+h1 { margin: 0 0 1.25rem; font-size: 1.35rem; line-height: 1.25; }
+h2 { margin: 1.75rem 0 0.75rem; color: var(--muted); font-size: 0.8rem; }
+ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1.25rem 1rem; margin: 0; padding: 0; list-style: none; }
+li { break-inside: avoid; }
+.img { display: block; aspect-ratio: 260 / 140; overflow: clip; margin-block-end: 0.45rem; border: 1px solid var(--line); border-radius: 6px; }
+.img.empty { border-style: dashed; }
+svg { display: block; inline-size: 100%; block-size: auto; }
+svg :where(path, rect, circle, ellipse, line, polyline, polygon) { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+svg .l { stroke: oklch(70% 0 none); }
+svg .o { stroke: var(--accent); stroke-width: 2.2; }
+svg .mv { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 4 4; }
+svg text { fill: var(--ink); stroke: none; font: 600 11px system-ui, sans-serif; }
+b { margin-inline-end: 0.4rem; font-variant-numeric: tabular-nums; }
+.kind { display: inline-block; margin-inline-end: 0.4rem; padding: 0 0.4rem; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); font-size: 0.68rem; font-weight: 600; vertical-align: 0.1em; }
+.kind.motion { border-color: var(--accent); color: var(--accent-ink); }
+.over { display: block; margin-block-start: 0.2rem; color: var(--muted); font-style: italic; }
+.missing { color: var(--muted); }
+@media print { body { max-inline-size: none; padding: 0; } ol { grid-template-columns: repeat(3, 1fr); } }`;
+
+/**
+ * exportStoryboard(shots, sketches, { title, missing }) → one self-contained HTML page (no scripts, inline CSS,
+ * light colours, A4 print): per shot in the given order its frame, id, kind, what and Over line.
+ * Shots for which missing(shot) is true go last, under "Not found in the script". Sketches are sanitised again.
+ */
+export function exportStoryboard(shots, sketches = {}, { title = "", missing = (s) => !s.blockIds?.length } = {}) {
+  const frame = (s) => {
+    const svg = sanitizeSvg(sketches[s.id] || "");
+    const img = svg ? svg.replace("<svg ", `<svg role="img" aria-label="Sketch ${escHtml(s.id)}" `) : "";
+    return `<li${missing(s) ? ' class="missing"' : ""}><span class="img${svg ? "" : " empty"}">${img}</span>`
+      + `<b>${escHtml(s.id)}</b><span class="kind ${escHtml(s.kind)}">${escHtml(KIND_NAME[s.kind] || KIND_NAME.broll)}</span>${escHtml(s.what)}`
+      + `<span class="over">Over: ${escHtml(s.over || "–")}</span></li>`;
+  };
+  const found = shots.filter((s) => !missing(s)), lost = shots.filter((s) => missing(s));
+  const name = String(title || "").trim();
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escHtml(name ? `${name} · Storyboard` : "Storyboard")}</title>
+<style>
+${BOARD_CSS}
+</style>
+</head>
+<body>
+<h1>${escHtml(name || "Storyboard")}</h1>
+<ol>${found.map(frame).join("\n")}</ol>
+${lost.length ? `<h2>Not found in the script</h2>\n<ol>${lost.map(frame).join("\n")}</ol>\n` : ""}</body>
+</html>
+`;
 }

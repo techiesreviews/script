@@ -34,6 +34,7 @@ const ICONS = {
   film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
   motion: '<path d="M4 17c3-8 6-11 9-10s3 6 7 3"/><circle cx="20" cy="10" r="1.2"/><circle cx="4" cy="17" r="1.2"/>',
   screen: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><circle cx="12" cy="10" r="2.2"/>',
+  doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M9 11h6M9 15h6"/>',
   board: '<rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/>',
   sketch: '<path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/>',
 };
@@ -83,8 +84,10 @@ const state = {
 // The B-roll list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
 const broll = {
   token: 0, link: null, status: "none", err: "", text: "",
-  shots: [], sketches: {}, flags: {}, lit: null, board: false, saving: {}, problem: {},
+  shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {},
 };
+// Script or Storyboard (the switch in the top bar), remembered; where the script was scrolled.
+const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 0 };
 
 /* ---------- Small helpers ---------- */
 const scriptEl = $("#script");
@@ -386,7 +389,7 @@ function renderToc() {
   toc.innerHTML = sections.filter((s) => s.heading).map((s) => {
     const { num, name, start } = s.info;
     return `<li><a href="#s-${s.heading.id}" data-sec="${s.heading.id}" data-spoken="${s.spoken}"${s.heading.id === current ? ' aria-current="true"' : ""}><span class="toc__num">${esc(num)}</span><span class="toc__title">${esc(name || D.contentOf(s.heading).trim() || "Untitled")}</span><span class="toc__side"><span class="toc__dots"></span><span class="toc__time">${esc(start)}</span></span></a></li>`;
-  }).join("") + `<li class="toc__broll"><button class="toc__chip" type="button" id="brollChip"${brollChecks() ? " data-check" : ""}>${icon("film")}B-roll</button></li>`;
+  }).join("");
   sectionObserver?.disconnect();
   sectionObserver = new IntersectionObserver((entries) => {
     const vis = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
@@ -421,9 +424,10 @@ $("#toc").addEventListener("click", (e) => {
 function renderTop() {
   const open = !!state.doc;
   $("#docInfo").hidden = !open;
-  for (const id of ["exportBtn", "voiceBtn", "agentBtn"]) $("#" + id).hidden = !open;
+  for (const id of ["exportBtn", "voiceBtn", "agentBtn", "viewSwitch"]) $("#" + id).hidden = !open;
   $("#empty").hidden = open;
   $("#layout").hidden = !open;
+  renderView();
   if (!open) return;
   renderAgent();
   $("#fileName").textContent = state.name;
@@ -912,7 +916,7 @@ export function takeAsk(askId, by) {
   if (by) ask.takenBy = validBy(by);
   emit("taken", ask);
   if (ask.scope === "selection") renderBlock(ask.blockId, getCaret());
-  if (ask.scope === "broll") renderBoard();
+  if (ask.scope === "broll") renderBroll();
   renderVoice();
   renderAgent();
   changed();
@@ -974,7 +978,7 @@ function undoAnswer(askId) {
 }
 scriptEl.addEventListener("click", (e) => {
   const btn = e.target.closest(".change__bar button, .note__x, .ask-chip__x");
-  if (!btn) return;
+  if (!btn || btn.closest(".shot-frame")) return;
   e.preventDefault();
   const id = btn.closest("[data-ask]")?.dataset.ask;
   if (btn.classList.contains("keep")) keepAnswer(id);
@@ -1442,6 +1446,11 @@ function exportFile(kind) {
   else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
   else if (kind === "prompter-open") openPrompter();
   else if (kind === "markdown") saveAs();
+  else if ((kind === "broll" || kind === "storyboard") && broll.status === "ok") {
+    const shots = B.scriptOrder(state.doc, broll.shots), title = D.titleOf(state.doc) || baseName();
+    if (kind === "broll") download(B.exportBroll(shots, broll.sketches, { title }), `${baseName()}-broll.md`, "text/markdown");
+    else download(B.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }), `${baseName()}-storyboard.html`, "text/html");
+  }
 }
 
 async function openSample() {
@@ -1606,7 +1615,7 @@ document.addEventListener("keydown", (e) => {
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); if (broll.lit && !e.target.closest?.("dialog")) lightShot(broll.lit, false); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); if (broll.lit) lightShot(broll.lit, false); } });
 addEventListener("beforeunload", (e) => {
   persistDraft();
   flushSave();
@@ -1623,14 +1632,13 @@ $$("[data-icon]").forEach((el) => {
 $$(".edit-bar__button").forEach((b) => (b.innerHTML = icon(ACT_ICON[b.dataset.act]) + esc(D.ACTIONS[b.dataset.act].name)));
 
 
-/* ---------- B-roll: tags beside the lines, the list in the left column, the storyboard ---------- */
+/* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
 const KIND_ICON = { broll: "film", motion: "motion", screen: "screen" };
-const KIND_NAME = { broll: "B-roll", motion: "Motion plate", screen: "Screen recording" };
+const KIND_NAME = B.KIND_NAME;
 const brollKey = (name = state.name) => `broll:${name}`;
 const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
 const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
 const covered = (s) => (s.blockIds || []).filter((id) => byId(id));
-const brollChecks = () => broll.status === "ok" && broll.shots.some((s) => s.check);
 const sketchAsk = () => state.asks.find((a) => a.scope === "broll" && isOpen(a)) || null;
 const pendingSketch = (id) => sketchAsk()?.answer?.sketches?.[id] || "";
 function brollFlags() {
@@ -1648,8 +1656,8 @@ function syncFlags() {
 // Leaving a script: the old list goes with it.
 function closeBroll() {
   broll.token++;
-  closeSheet();
-  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, board: false, saving: {}, problem: {} });
+  ui.scriptY = 0;
+  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
   renderBroll();
 }
 async function loadBroll() {
@@ -1693,7 +1701,6 @@ function adoptBroll(text) {
   Object.assign(broll, { text, shots, sketches, status: "ok", err: "" });
   if (broll.lit && !shotById(broll.lit)) broll.lit = null;
   renderBroll();
-  renderBrollMarks();
 }
 // After a reload or restore the block ids are new: match every shot again. Otherwise only the ones not found.
 function rematchBroll(all) {
@@ -1708,19 +1715,53 @@ function rematchBroll(all) {
     s.blockIds = ids;
     s.sig = B.coverText(state.doc, ids);
   }
-  if (moved) { renderBroll(); renderBrollMarks(); }
+  if (moved) renderBroll();
 }
 // A covered line changed (typing, Keep, undo): its shot gets "Check".
 function brollTouched() {
   if (broll.status !== "ok" || !state.doc) return;
-  if (!B.touchShots(state.doc, broll.shots).length) return;
+  if (!B.touchShots(state.doc, broll.shots).length) { placeFrames(); return; }
   syncFlags();
   renderBroll();
+}
+// Everything that shows the list: the frames in the script, the storyboard and the export items.
+function renderBroll() {
   renderBrollMarks();
+  renderBoard();
+  const ok = broll.status === "ok";
+  for (const b of $$('#exportMenu [data-export="broll"], #exportMenu [data-export="storyboard"]')) b.disabled = !ok;
+  for (const n of $$('#exportMenu [data-note="broll"]')) n.hidden = ok;
 }
 
-/* Tags beside the lines (not part of the text) and a thin rule beside every covered line. */
+/* One sketch frame, as in the script and the storyboard. Pending agent sketches carry Keep / Undo. */
+const sketchSvg = (svg, label) => svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" ');
+function frameImg(s, label) {
+  const pending = pendingSketch(s.id);
+  const svg = pending || broll.sketches[s.id] || "";
+  const ask = sketchAsk();
+  const waiting = !svg && ask && ask.shots.some((x) => x.id === s.id) && !ask.answer?.done?.[s.id];
+  return `<span class="frame__img"${svg ? "" : " data-empty"}${pending ? " data-pending" : ""}${waiting ? " data-waiting" : ""}>${svg ? sketchSvg(svg, label ? `Sketch ${s.id}` : "") : ""}</span>`;
+}
+function keepBar(s) {
+  const ask = sketchAsk();
+  if (!pendingSketch(s.id)) return "";
+  return `<span class="change__bar frame__bar" data-ask="${esc(ask.id)}">${broll.problem[s.id] ? `<span class="frame__problem" title="${esc(broll.problem[s.id])}">Not saved</span>` : ""}<button type="button" class="undo" data-act="undo" data-b="${esc(s.id)}">${icon("undo")}Undo</button><button type="button" class="keep" data-act="keep" data-b="${esc(s.id)}"${broll.saving[s.id] ? " disabled" : ""}>${icon("check")}Keep</button></span>`;
+}
+// Re-rendering keeps the keyboard where it was (the same frame, or the same button in it).
+function focusKey(root) {
+  const f = document.activeElement?.closest?.("[data-b], [data-act]");
+  if (!f || !root.contains(f)) return null;
+  return { b: f.dataset.b, act: f.dataset.act || "" };
+}
+function refocus(root, key) {
+  if (!key) return;
+  const sel = (act) => `${key.b ? `[data-b="${CSS.escape(key.b)}"]` : ""}${act ? `[data-act="${CSS.escape(act)}"]` : ":not([data-act])"}`;
+  (root.querySelector(sel(key.act)) || (key.b && root.querySelector(sel(""))))?.focus({ preventScroll: true });
+}
+
+/* Frames beside the first line of each shot (never part of the text), and a thin rule beside every covered line. */
 function renderBrollMarks() {
+  const key = focusKey(scriptEl);
   for (const t of $$(".broll-tags", scriptEl)) t.remove();
   for (const l of $$(".line[data-covered]", scriptEl)) { delete l.dataset.covered; delete l.dataset.last; delete l.dataset.lit; }
   if (broll.status !== "ok") return;
@@ -1737,93 +1778,72 @@ function renderBrollMarks() {
     const first = wrapOf(ids[0]);
     if (!first) continue;
     let box = first.querySelector(":scope > .broll-tags");
-    if (!box) { box = h("div", "broll-tags", { "data-skip": "" }); first.prepend(box); }
-    const tag = h("button", "broll-tag", { type: "button", "data-b": s.id, "aria-pressed": String(broll.lit === s.id), title: s.what });
-    if (s.check) { tag.dataset.check = ""; tag.title = `${s.what} · Check`; }
-    tag.innerHTML = `${icon(KIND_ICON[s.kind])}B-roll <b></b>`;
-    tag.querySelector("b").textContent = s.id;
-    box.append(tag);
+    if (!box) { box = h("div", "broll-tags", { "data-skip": "", contenteditable: "false" }); first.prepend(box); }
+    const lit = broll.lit === s.id;
+    const label = `${KIND_NAME[s.kind]} ${s.id}: ${s.what}${s.check ? " · Check" : ""}`;
+    box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}>`
+      + `<button class="shot-frame__jump" type="button" data-b="${esc(s.id)}" aria-pressed="${lit}" aria-label="${esc(label)}" title="${esc(s.what)}">${frameImg(s, false)}`
+      + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${keepBar(s)}</div>`);
   }
   for (const l of $$(".line[data-covered]", scriptEl)) if (!goesOn.has(l)) l.dataset.last = "";
+  refocus(scriptEl, key);
+  placeFrames();
 }
+// Wide screens: frames sit in the right margin; one that would overlap the frame above moves down.
+let framesFrame = 0;
+function placeFrames() {
+  cancelAnimationFrame(framesFrame);
+  framesFrame = requestAnimationFrame(() => {
+    const boxes = $$(".broll-tags", scriptEl);
+    for (const b of boxes) b.style.removeProperty("--push");
+    let bottom = -Infinity;
+    const pushes = boxes.map((b) => {
+      if (getComputedStyle(b).position !== "absolute") return 0;
+      const r = b.getBoundingClientRect();
+      const push = Math.max(0, Math.ceil(bottom + 12 - r.top));
+      bottom = r.bottom + push;
+      return push;
+    });
+    boxes.forEach((b, i) => { if (pushes[i]) b.style.setProperty("--push", `${pushes[i]}px`); });
+  });
+}
+new ResizeObserver(() => placeFrames()).observe(scriptEl);
 
-/* Light a shot: its lines, its tag and its row. Lighting clears its "Check". */
+/* Light a shot: its lines and its frame. Lighting clears its "Check". */
 function lightShot(id, scroll) {
   const s = shotById(id);
   if (!s) return;
   const on = scroll || broll.lit !== id;
   broll.lit = on ? id : null;
   if (on && s.check) { s.check = false; syncFlags(); }
-  renderBrollMarks();
   renderBroll();
   if (!on) return;
   const first = wrapOf(covered(s)[0]);
   if (scroll && first) first.scrollIntoView({ behavior: reduced.matches ? "auto" : "smooth", block: "center" });
-  if (!scroll) {
-    const group = $('#broll details[data-group="broll"]');
-    if (group && !group.open && matchMedia("(min-width: 52rem)").matches) group.open = true;
-    $(`#broll .shot[data-b="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
-  }
 }
 
-scriptEl.addEventListener("click", (e) => { const t = e.target.closest(".broll-tag"); if (t) lightShot(t.dataset.b, false); });
-
-/* ---------- The left column (and the phone sheet) ---------- */
-const sketchSvg = (svg, label) => svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" ');
-function thumb(s) {
-  const pending = pendingSketch(s.id);
-  const svg = pending || broll.sketches[s.id] || "";
-  const ask = sketchAsk();
-  const waiting = !svg && ask && ask.shots.some((x) => x.id === s.id) && !ask.answer?.done?.[s.id];
-  return `<span class="thumb"${pending ? " data-pending" : ""}${!svg ? " data-empty" : ""}${waiting ? " data-waiting" : ""}>${svg ? sketchSvg(svg) : ""}</span>`;
-}
-function shotRow(s, missing) {
-  const check = s.check ? '<span class="shot__check">Check</span>' : "";
-  const sub = missing ? `<small class="shot__over">${esc(s.over || "No Over line")}</small>` : `<small>${KIND_NAME[s.kind]}${check}</small>`;
-  return `<button class="shot" type="button" data-b="${esc(s.id)}"${broll.lit === s.id ? ' aria-current="true"' : ""}${s.check ? " data-check" : ""}${missing ? " data-missing" : ""} title="${esc(s.what)}">${thumb(s)}<span class="shot__text"><span class="shot__what"><b>${esc(s.id)}</b> ${esc(s.what)}</span>${sub}</span></button>`;
-}
-function shotList(shots) {
-  const found = shots.filter((s) => covered(s).length), lost = shots.filter((s) => !covered(s).length);
-  return `<div class="shots">${found.map((s) => shotRow(s, false)).join("")}${lost.length ? `<p class="shots__head">Not found in the script</p>${lost.map((s) => shotRow(s, true)).join("")}` : ""}</div>`;
-}
-const groupOpen = (g) => (store.get("brollOpen") || {})[g] ?? true;
-function renderBroll() {
-  const el = $("#broll");
-  const focused = document.activeElement?.closest?.("#broll [data-b], #broll [data-act]");
-  const again = focused ? (focused.dataset.b ? `[data-b="${CSS.escape(focused.dataset.b)}"]` : `[data-act="${focused.dataset.act}"]`) : null;
-  const file = broll.link ? `<div class="broll__file">${icon("film")}<span class="broll__name">${esc(broll.link.name || "B-roll list")}</span><button class="broll__btn" type="button" data-act="unlink">Unlink</button></div>` : "";
-  let body = "";
-  if (!broll.link || broll.status === "none") body = `<button class="broll__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>`;
-  else if (broll.status === "permission") body = `<button class="broll__link" type="button" data-act="allow">${icon("film")}Allow reading ${esc(broll.link.name)}</button>${file}`;
-  else if (broll.status === "error") body = `<p class="broll__note">Couldn't open ${esc(broll.link.name || "the B-roll list")}</p><button class="broll__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>${file}`;
-  else if (broll.status === "loading") body = file;
-  else {
-    const motion = broll.shots.filter((s) => s.kind === "motion");
-    const dot = (list) => (list.some((s) => s.check) ? '<span class="pdot pdot--ask"></span>' : "");
-    body = `<details class="group" data-group="broll"${groupOpen("broll") ? " open" : ""}><summary>${icon("film")}<span class="group__name">B-roll · ${broll.shots.length}</span>${dot(broll.shots)}</summary>`
-      + (broll.shots.length ? `<button class="board-toggle" type="button" data-act="board" aria-pressed="${broll.board}">${icon("board")}Storyboard</button>` : "")
-      + `${shotList(broll.shots)}</details>`
-      + (motion.length ? `<details class="group" data-group="motion"${groupOpen("motion") ? " open" : ""}><summary>${icon("motion")}<span class="group__name">Motion plates · ${motion.length}</span>${dot(motion)}</summary>${shotList(motion)}</details>` : "")
-      + file;
+scriptEl.addEventListener("click", (e) => {
+  const act = e.target.closest(".shot-frame [data-act]");
+  if (act) { e.preventDefault(); return act.dataset.act === "keep" ? keepSketch(act.dataset.b) : undoSketch(act.dataset.b); }
+  const t = e.target.closest(".shot-frame__jump");
+  if (t) lightShot(t.dataset.b, false);
+});
+// Frames are not text: a copy that runs across one gives only the script's words.
+scriptEl.addEventListener("copy", (e) => {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) return;
+  const r = sel.getRangeAt(0);
+  if (!$$(".broll-tags", scriptEl).some((f) => r.intersectsNode(f))) return;
+  const parts = [];
+  for (const el of $$(".block", scriptEl)) {
+    if (!r.intersectsNode(el)) continue;
+    const content = readContent(el);
+    const start = el.contains(r.startContainer) ? offsetIn(el, r.startContainer, r.startOffset) : 0;
+    const end = el.contains(r.endContainer) ? offsetIn(el, r.endContainer, r.endOffset) : content.length;
+    if (end > start) parts.push(content.slice(start, end));
   }
-  el.innerHTML = body;
-  if (again) el.querySelector(again)?.focus({ preventScroll: true });
-  $("#brollChip")?.toggleAttribute("data-check", brollChecks());
-  renderBoard();
-}
-$("#broll").addEventListener("toggle", (e) => {
-  const g = e.target.dataset?.group;
-  if (!g) return;
-  store.set("brollOpen", { ...(store.get("brollOpen") || {}), [g]: e.target.open });
-}, true);
-$("#broll").addEventListener("click", (e) => {
-  const shot = e.target.closest(".shot");
-  if (shot) { closeSheet(); return lightShot(shot.dataset.b, true); }
-  const act = e.target.closest("[data-act]")?.dataset.act;
-  if (act === "link") linkBroll();
-  else if (act === "unlink") unlinkBroll();
-  else if (act === "allow") { const t = ++broll.token; readBroll(t, true); }
-  else if (act === "board") { closeSheet(); showBoard(!broll.board); }
+  e.preventDefault();
+  e.clipboardData?.setData("text/plain", parts.join("\n\n"));
 });
 
 async function linkBroll() {
@@ -1846,12 +1866,17 @@ $("#brollInput").addEventListener("change", async (e) => {
 });
 async function setLink(link) {
   const token = ++broll.token;
+  // Changing the list closes the sketch ask made for the old one.
+  const ask = sketchAsk();
+  if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
   broll.link = link;
   broll.flags = {};
   broll.lit = null;
+  broll.saving = {};
+  broll.problem = {};
   idbSet(brollKey(), link);
   await readBroll(token, true);
-  if (token === broll.token) { syncFlags(); renderBrollMarks(); }
+  if (token === broll.token) { syncFlags(); renderBroll(); }
 }
 function unlinkBroll() {
   broll.token++;
@@ -1859,63 +1884,89 @@ function unlinkBroll() {
   idbSet(brollKey(), state.name === SAMPLE.name ? { none: true } : null);
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
-  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, board: false, saving: {}, problem: {} });
+  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
   syncFlags();
   renderBroll();
-  renderBrollMarks();
-  renderToc();
 }
 
-/* Phones: the "B-roll" chip opens the same list as a sheet. */
-const sheet = $("#brollSheet");
-function openSheet() {
-  sheet.querySelector(".broll-sheet__body").append($("#broll"));
-  sheet.showModal();
+/* ---------- Script | Storyboard: the switch in the top bar (remembered) ---------- */
+function setView(v) {
+  const board = v === "board";
+  if (board === (ui.view === "board")) return;
+  if (board) ui.scriptY = scrollY;
+  ui.view = board ? "board" : "script";
+  store.set("view", ui.view);
+  hideBar();
+  closeCard();
+  renderView();
+  scrollTo({ top: board ? 0 : ui.scriptY });
 }
-function closeSheet() { if (sheet.open) sheet.close(); }
-sheet.addEventListener("close", () => $(".side").append($("#broll")));
-sheet.addEventListener("click", (e) => { if (e.target === sheet || e.target.closest(".broll-sheet__close")) closeSheet(); });
-$("#toc").addEventListener("click", (e) => { if (e.target.closest("#brollChip")) openSheet(); });
+function renderView() {
+  const board = ui.view === "board" && !!state.doc;
+  $("#layout").dataset.view = board ? "board" : "";
+  for (const b of $$("#viewSwitch button")) b.setAttribute("aria-pressed", String(b.dataset.view === (board ? "board" : "script")));
+  renderBoard();
+  if (!board) placeFrames();
+}
+$("#viewSwitch").addEventListener("click", (e) => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
 
 /* ---------- Storyboard: every frame in script order ---------- */
-function showBoard(on) {
-  broll.board = on && broll.status === "ok";
-  $("#layout").dataset.view = broll.board ? "board" : "";
-  renderBroll();
-  if (broll.board) scrollTo({ top: 0 });
+const FILTERS = [
+  ["all", "All", () => true],
+  ["broll", "B-roll", (s) => s.kind === "broll"],
+  ["motion", "Motion plates", (s) => s.kind === "motion"],
+  ["screen", "Screen", (s) => s.kind === "screen"],
+];
+function boardHead() {
+  const name = esc(broll.link?.name || "B-roll list");
+  const linkBtn = `<button class="board__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>`;
+  if (!broll.link || broll.status === "none") return linkBtn;
+  if (broll.status === "error") return `<p class="board__note">Couldn't open ${name}</p>${linkBtn}`;
+  if (broll.status === "permission") return `<button class="board__link" type="button" data-act="allow">${icon("film")}Allow reading ${name}</button>`;
+  const ask = sketchAsk();
+  let action = "";
+  if (broll.status === "ok") {
+    const missing = broll.shots.filter((s) => !broll.sketches[s.id] && !pendingSketch(s.id));
+    const waiting = ask && (ask.status === "waiting" || ask.status === "taken");
+    const asking = ask && ask.status === "answered" && ask.shots.some((s) => !ask.answer.done?.[s.id] && !ask.answer.sketches?.[s.id]);
+    if (waiting || asking) action = `<span class="board__wait" data-taken="${ask.status === "taken"}"><span class="status-dot"></span>Waiting for sketches<button class="icon-btn" type="button" data-act="cancel" aria-label="Cancel">${icon("x")}</button></span>`;
+    else if (!ask && missing.length) action = `<button class="board__ask" type="button" data-act="ask">${icon("sketch")}Ask for sketches</button>`;
+  }
+  return `<div class="board__file">${icon("film")}<span class="board__name">${name}</span><button class="board__btn" type="button" data-act="link">Change…</button><button class="board__btn" type="button" data-act="unlink">Unlink</button></div>${action}`;
+}
+function boardFrame(s, missing) {
+  const check = s.check ? '<span class="check-note">Check</span>' : "";
+  return `<li class="frame" data-b="${esc(s.id)}"${broll.lit === s.id ? ' aria-current="true"' : ""}${missing ? " data-missing" : ""}>`
+    + `<button class="frame__jump" type="button" data-b="${esc(s.id)}">${frameImg(s, true)}`
+    + `<span class="frame__cap"><b>${esc(s.id)}</b><span class="kind-tag" data-kind="${s.kind}">${KIND_NAME[s.kind]}</span>${check} ${esc(s.what)}<span class="frame__over">Over: ${esc(s.over || "–")}</span></span></button>${keepBar(s)}</li>`;
 }
 function renderBoard() {
   const el = $("#board");
-  if (!broll.board || broll.status !== "ok") {
-    el.hidden = true;
-    el.replaceChildren();
-    if ($("#layout").dataset.view === "board") $("#layout").dataset.view = "";
-    return;
-  }
+  if (ui.view !== "board" || !state.doc) { el.hidden = true; el.replaceChildren(); return; }
+  const key = focusKey(el);
   el.hidden = false;
-  const ask = sketchAsk();
-  const missing = broll.shots.filter((s) => !broll.sketches[s.id] && !pendingSketch(s.id));
-  const waiting = ask && (ask.status === "waiting" || ask.status === "taken");
-  const asking = ask && ask.status === "answered" && ask.shots.some((s) => !ask.answer.done?.[s.id] && !ask.answer.sketches?.[s.id]);
-  let action = "";
-  if (waiting || asking) action = `<span class="board__wait" data-taken="${ask.status === "taken"}"><span class="status-dot"></span>Waiting for sketches<button class="icon-btn" type="button" data-act="cancel" aria-label="Cancel">${icon("x")}</button></span>`;
-  else if (!ask && missing.length) action = `<button class="board__ask" type="button" data-act="ask">${icon("sketch")}Ask for sketches</button>`;
-  const order = state.doc ? B.scriptOrder(state.doc, broll.shots) : broll.shots;
-  const frames = order.map((s) => {
-    const pending = pendingSketch(s.id);
-    const svg = pending || broll.sketches[s.id] || "";
-    const bar = pending ? `<span class="change__bar frame__bar" data-ask="${esc(ask.id)}">${broll.problem[s.id] ? `<span class="frame__problem" title="${esc(broll.problem[s.id])}">Not saved</span>` : ""}<button type="button" class="undo" data-act="undo" data-b="${esc(s.id)}">${icon("undo")}Undo</button><button type="button" class="keep" data-act="keep" data-b="${esc(s.id)}"${broll.saving[s.id] ? " disabled" : ""}>${icon("check")}Keep</button></span>` : "";
-    return `<li class="frame" data-b="${esc(s.id)}"${broll.lit === s.id ? ' aria-current="true"' : ""}${covered(s).length ? "" : " data-missing"}>`
-      + `<button class="frame__jump" type="button" data-b="${esc(s.id)}"><span class="frame__img"${svg ? "" : " data-empty"}${pending ? " data-pending" : ""}>${svg ? sketchSvg(svg, `Sketch ${s.id}`) : ""}</span>`
-      + `<span class="frame__cap"><b>${esc(s.id)}</b><span class="kind-tag" data-kind="${s.kind}">${KIND_NAME[s.kind]}</span>${s.check ? '<span class="shot__check">Check</span>' : ""} ${esc(s.what)}<span class="frame__over">Over: ${esc(s.over || "–")}</span></span></button>${bar}</li>`;
-  }).join("");
-  el.innerHTML = `<div class="board__bar"><h2 class="board__title">Storyboard</h2>${action}<button class="icon-btn" type="button" data-act="close" aria-label="Back to the script">${icon("x")}</button></div><ol class="board__grid">${frames}</ol>`;
+  let body = "";
+  if (broll.status === "ok" && broll.shots.length) {
+    const counts = FILTERS.map(([id, name, keep]) => [id, name, keep, broll.shots.filter(keep).length]).filter((f) => f[3] > 0);
+    const current = counts.find((f) => f[0] === broll.filter) || counts[0];
+    const chips = counts.map(([id, name, , n]) => `<button class="chip" type="button" data-act="filter" data-filter="${id}" aria-pressed="${id === current[0]}">${name} · ${n}</button>`).join("");
+    const order = B.scriptOrder(state.doc, broll.shots).filter(current[2]);
+    const found = order.filter((s) => covered(s).length), lost = order.filter((s) => !covered(s).length);
+    body = `<div class="board__filters" role="group" aria-label="Show">${chips}</div>`
+      + (found.length ? `<ol class="board__grid">${found.map((s) => boardFrame(s, false)).join("")}</ol>` : "")
+      + (lost.length ? `<h2 class="board__lost">Not found in the script</h2><ol class="board__grid" data-missing>${lost.map((s) => boardFrame(s, true)).join("")}</ol>` : "");
+  }
+  el.innerHTML = `<div class="board__bar">${boardHead()}</div>${body}`;
+  refocus(el, key);
 }
 $("#board").addEventListener("click", (e) => {
   const act = e.target.closest("[data-act]");
   if (act) {
     const a = act.dataset.act;
-    if (a === "close") showBoard(false);
+    if (a === "link") linkBroll();
+    else if (a === "unlink") unlinkBroll();
+    else if (a === "allow") { const t = ++broll.token; readBroll(t, true); }
+    else if (a === "filter") { broll.filter = act.dataset.filter; renderBoard(); }
     else if (a === "ask") requestSketches();
     else if (a === "cancel") cancelSketches();
     else if (a === "keep") keepSketch(act.dataset.b);
@@ -1924,7 +1975,8 @@ $("#board").addEventListener("click", (e) => {
   }
   const jump = e.target.closest(".frame__jump");
   if (!jump) return;
-  showBoard(false);
+  // Back to the script, with this shot's lines lit.
+  setView("script");
   lightShot(jump.dataset.b, true);
 });
 
@@ -1992,7 +2044,7 @@ async function keepSketch(id) {
   const token = broll.token;
   broll.saving[id] = true;
   delete broll.problem[id];
-  renderBoard();
+  renderBroll();
   try {
     // One file write at a time: two quick Keeps must not both read the old file.
     const run = brollWrites.then(() => writeSketch(id, svg));
@@ -2199,7 +2251,7 @@ function handleCall({ id, tool, args = {} }) {
       const checked = B.checkSketch(ask, args);
       if (checked.error) return send({ error: checked.error });
       receiveSketch(ask, args.shotId, checked.svg, agentBy());
-      return send({ result: "Shown to the person in the storyboard. They choose Keep or Undo." });
+      return send({ result: "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo." });
     }
     send({ error: `Unknown tool: ${tool}` });
   } catch (e) {

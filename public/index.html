@@ -13,8 +13,8 @@
 <div class="app" id="app">
   <header class="top">
     <div class="doc" id="docInfo" hidden>
-      <span class="doc__title"><button class="doc__switch" id="docSwitch" type="button" popovertarget="scriptMenu"><span class="doc__name" id="fileName"></span><span data-icon="chevron"></span></button><span class="save-state" id="saveState"></span><button class="allow-save" id="allowSave" type="button" hidden></button></span>
-      <span class="doc__meta" id="docMeta"></span>
+      <button class="doc__switch" id="docSwitch" type="button" popovertarget="scriptMenu"><span class="doc__title"><span class="doc__name" id="fileName"></span><span data-icon="chevron"></span></span><span class="doc__meta" id="docMeta"></span></button>
+      <span class="doc__state"><span class="save-state" id="saveState"></span><button class="allow-save" id="allowSave" type="button" hidden></button></span>
     </div>
     <div class="menu menu--scripts" id="scriptMenu" popover>
       <input class="menu__search" id="scriptSearch" type="search" placeholder="Search scripts" aria-label="Search scripts" autocomplete="off" spellcheck="false">
@@ -24,6 +24,10 @@
       <button class="menu-action" id="menuNew" type="button"><span data-icon="plus"></span><span class="menu-action__text">New script</span></button>
     </div>
     <div class="top__end">
+      <div class="view-switch" id="viewSwitch" role="group" aria-label="View" hidden>
+        <button type="button" data-view="script" aria-pressed="true" aria-label="Script"><span data-icon="doc"></span><span class="lbl">Script</span></button>
+        <button type="button" data-view="board" aria-pressed="false" aria-label="Storyboard"><span data-icon="board"></span><span class="lbl">Storyboard</span></button>
+      </div>
       <button class="tb voice-btn" id="voiceBtn" type="button" disabled hidden><span data-icon="wave"></span><span class="lbl">Sounds like me</span><span class="status-dot"></span><span class="count" id="voiceCount" hidden>0</span></button>
       <button class="tb agent-btn" id="agentBtn" type="button" hidden popovertarget="agentMenu" data-state="off"><span class="status-dot"></span><span data-icon="plug"></span><span class="lbl" id="agentBtnLabel">Connect your agent</span></button>
       <div class="menu menu--agent" id="agentMenu" popover>
@@ -35,11 +39,22 @@
         <textarea class="menu__prompt" id="mcpPrompt" readonly hidden aria-label="Connection prompt"></textarea>
       </div>
       <button class="tb tb--ink" id="exportBtn" type="button" hidden popovertarget="exportMenu"><span data-icon="export"></span><span class="lbl">Export</span></button>
-      <div class="menu" id="exportMenu" popover>
-        <button class="menu-action" type="button" data-export="camera"><span data-icon="camera"></span><span class="menu-action__text">Camera script (.txt)</span></button>
-        <button class="menu-action" type="button" data-export="prompter-open" id="prompterAction"><span data-icon="prompter"></span><span class="menu-action__text">Open in prompter<span class="menu-action__note" id="prompterNote" hidden>Too long for the prompter</span></span></button>
-        <button class="menu-action" type="button" data-export="prompter"><span data-icon="download"></span><span class="menu-action__text">Prompter (.md)</span></button>
-        <button class="menu-action" type="button" data-export="markdown" id="saveAsAction" hidden><span data-icon="save"></span><span class="menu-action__text">Markdown file (.md)</span></button>
+      <div class="menu menu--export" id="exportMenu" popover>
+        <div class="menu__group" role="group" aria-labelledby="exportA">
+          <p class="menu__head" id="exportA">A-roll</p>
+          <button class="menu-action" type="button" data-export="camera"><span data-icon="camera"></span><span class="menu-action__text">Camera script (.txt)</span></button>
+          <button class="menu-action" type="button" data-export="prompter-open" id="prompterAction"><span data-icon="prompter"></span><span class="menu-action__text">Open in prompter<span class="menu-action__note" id="prompterNote" hidden>Too long for the prompter</span></span></button>
+          <button class="menu-action" type="button" data-export="prompter"><span data-icon="download"></span><span class="menu-action__text">Prompter (.md)</span></button>
+          <button class="menu-action" type="button" data-export="markdown" id="saveAsAction" hidden><span data-icon="save"></span><span class="menu-action__text">Markdown file (.md)</span></button>
+        </div>
+        <div class="menu__group" role="group" aria-labelledby="exportB">
+          <p class="menu__head" id="exportB">B-roll</p>
+          <button class="menu-action" type="button" data-export="broll" disabled><span data-icon="film"></span><span class="menu-action__text">B-roll list (.md)<span class="menu-action__note" data-note="broll">Link a B-roll list first</span></span></button>
+        </div>
+        <div class="menu__group" role="group" aria-labelledby="exportS">
+          <p class="menu__head" id="exportS">Storyboard</p>
+          <button class="menu-action" type="button" data-export="storyboard" disabled><span data-icon="board"></span><span class="menu-action__text">Storyboard (.html)<span class="menu-action__note" data-note="broll">Link a B-roll list first</span></span></button>
+        </div>
       </div>
     </div>
   </header>
@@ -57,7 +72,6 @@
   <div class="layout" id="layout" hidden>
     <aside class="side">
       <nav class="toc" aria-label="Sections"><ol id="toc"></ol></nav>
-      <section class="broll" id="broll" aria-label="B-roll"></section>
     </aside>
     <main class="paper">
       <div class="sheet">
@@ -88,8 +102,6 @@
   <div class="voice-card__actions"><button class="small-btn" type="button" id="vcKeep">Keep mine</button><button class="small-btn use" type="button" id="vcUse">Use this</button></div>
 </div>
 
-
-<dialog class="broll-sheet" id="brollSheet" aria-label="B-roll"><div class="broll-sheet__head"><button class="icon-btn broll-sheet__close" type="button" aria-label="Close" data-icon="x"></button></div><div class="broll-sheet__body"></div></dialog>
 
 <input type="file" id="fileInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
 <input type="file" id="brollInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>

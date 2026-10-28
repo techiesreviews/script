@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { parse, contentOf, blockById, setContent, cloneDoc, checkAnswer, ACTIONS } from "../public/doc.js";
 import {
   parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
-  sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX,
+  sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -213,4 +213,73 @@ test("a finished shot does not reopen, and shot ids fit sketch fences", () => {
   const list = parseBroll("| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n| Screen 1 with a very long name here | x | \"y\" | Slide |\n");
   const id = list.shots[0].id;
   assert.ok(!/\s/.test(id) && id.length <= 20, id);
+});
+
+/* ---------- Export: the B-roll list and the storyboard ---------- */
+const shape = (shots) => shots.map(({ id, what, over, how, kind }) => ({ id, what, over, how, kind }));
+
+test("B-roll export round trip: script order, a Kind column, the Sketches section, parsed back the same", () => {
+  const doc = parse(SCRIPT);
+  const { shots, sketches } = parseBroll(DEMO);
+  matchShots(doc, shots);
+  shots.find((s) => s.id === "B6").check = true;
+  const ordered = scriptOrder(doc, shots);
+  const md = exportBroll(ordered, sketches, { title: "How to Write a Good Video Script" });
+  assert.match(md, /^# How to Write a Good Video Script · B-roll list\n/);
+  assert.match(md, /\n\| # \| Kind \| What to show \| Over \(A-roll line\) \| How to make it \| Check \|\n/);
+  assert.match(md, /\n\| B6 \| B-roll \| [^\n]*\| Check \|\n/);
+  assert.match(md, /\n\| S1 \| Screen recording \| /);
+  assert.match(md, /\n## Sketches\n\n```svg B1\n<svg viewBox="0 0 260 140">\n/);
+  const back = parseBroll(md);
+  assert.deepEqual(shape(back.shots), shape(ordered));
+  assert.deepEqual(back.shots.map((s) => s.id), ["B1", "B2", "B3", "B4", "B5", "S1", "B7", "S2", "B6", "B8"]);
+  assert.deepEqual(back.sketches, sketches);
+  // Linked again, every shot still finds its lines.
+  matchShots(doc, back.shots);
+  assert.deepEqual(back.shots.map((s) => s.blockIds), ordered.map((s) => s.blockIds));
+});
+
+test("B-roll export keeps pipes, kinds the How text would not give, unmatched shots last, and no empty Sketches", () => {
+  const doc = parse(SHAPE_SCRIPT);
+  const { shots } = parseBroll(SHAPE_LIST);
+  matchShots(doc, shots);
+  const ordered = scriptOrder(doc, shots);
+  assert.equal(ordered.at(-1).id, "B6"); // "Not found in the script" goes last
+  const md = exportBroll(ordered, {}, { title: "Screen | tips" });
+  assert.doesNotMatch(md, /## Sketches/);
+  assert.match(md, /a \\\| pipe/);
+  const back = parseBroll(md);
+  assert.deepEqual(shape(back.shots), shape(ordered));
+  // A Kind column wins over a "screen" heading and the How text.
+  const kinds = parseBroll("# Screen things\n\n| # | Kind | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- | --- |\n| M1 | B-roll | x | \"y\" | Motion plate |\n| M2 | Motion plate | x | \"y\" | Slide |\n");
+  assert.deepEqual(kinds.shots.map((s) => s.kind), ["broll", "motion"]);
+});
+
+test("storyboard export: one self-contained page, every shot in order, sketches sanitised, no scripts", () => {
+  const doc = parse(SHAPE_SCRIPT);
+  const { shots } = parseBroll(SHAPE_LIST);
+  matchShots(doc, shots);
+  const ordered = scriptOrder(doc, shots);
+  const evil = '<svg viewBox="0 0 260 140" onload="alert(1)"><script>alert(2)</script><a href="javascript:alert(3)"><rect class="s" x="1" y="1" width="9" height="9"/></a>'
+    + '<path class="o" d="M0 0L9 9" style="stroke:red" onclick="x()"/><foreignObject><img src=x onerror=alert(4)></foreignObject></svg>';
+  const sketches = { B1: evil, B4: '<svg viewBox="0 0 260 140"><path class="mv" d="M10 10L90 90"/><text x="5" y="20">Step &lt;1&gt;</text></svg>' };
+  const html = exportStoryboard(ordered, sketches, { title: 'Made-up <video> & "more"' });
+  assert.match(html, /^<!doctype html>\n<html lang="en">/);
+  assert.match(html, /<title>Made-up &lt;video&gt; &amp; &quot;more&quot; · Storyboard<\/title>/);
+  assert.match(html, /@page \{ size: A4;/);
+  assert.match(html, /<style>/);
+  assert.doesNotMatch(html, /<script|<link|<img|<a |<iframe|<foreignObject|\son\w+=|href=|javascript:|style="|src=/i);
+  assert.match(html, /<path class="o" d="M0 0L9 9"\/>/); // the drawable part of the bad sketch is kept
+  assert.match(html, /<text x="5" y="20">Step &lt;1&gt;<\/text>/);
+  // Every shot, in script order, with its id, kind, what and Over; the unmatched one last under its heading.
+  const ids = [...html.matchAll(/<b>([^<]+)<\/b>/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ordered.map((s) => s.id));
+  const esc = (t) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  for (const s of ordered) {
+    assert.ok(html.includes(esc(s.what)), s.id);
+    assert.ok(html.includes(`Over: ${esc(s.over)}`), s.id);
+  }
+  assert.match(html, /<h2>Not found in the script<\/h2>\n<ol><li class="missing">[^\n]*<b>B6<\/b>/);
+  assert.match(html, /<span class="kind screen">Screen recording<\/span>/);
+  assert.equal((html.match(/class="img empty"/g) || []).length, ordered.length - 2);
 });
