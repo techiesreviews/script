@@ -19,6 +19,7 @@ test("agentBrand: MCP clientInfo names and old pretty names become the model's n
     ["cursor-vscode", "Cursor", "ai-cursor"],
     ["Visual Studio Code", "Visual Studio Code", "ai-sparkle"],
     ["GitHub Copilot", "Copilot", "ai-copilot"],
+    ["vscode", "Vscode", "ai-sparkle"],
     ["github-copilot", "Copilot", "ai-copilot"],
     ["my-tool", "My Tool", "ai-sparkle"],
     ["acme-mcp-client", "Acme", "ai-sparkle"],
