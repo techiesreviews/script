@@ -492,3 +492,20 @@ test("moving a shot to Screen recordings and back; a screen recording's How cell
   assert.match(saved, /\n\| S1 \| Screen recording \| x \| "AI helps you write faster\." \| Phone timer, silent \|  \|\n/);
   assert.equal(parseBroll(saved).shots.find((s) => s.id === "S1").how, "Phone timer, silent");
 });
+
+test("a motion plate keeps its kind in a table without a How column", () => {
+  const t = "| # | What to show | Over |\n| --- | --- | --- |\n| B1 | a | \"b\" |\n";
+  assert.equal(kindOfId(addShot(t, { id: "B2", kind: "motion", what: "m", over: '"x"' }), "B2"), "motion");
+  assert.equal(kindOfId(updateShot(t, "B1", { kind: "motion" }), "B1"), "motion");
+  const slow = addShot(t, { id: "B2", kind: "broll", what: "c", over: '"d"', how: "slow motion" });
+  assert.ok(slow.includes('| B1 | a | "b" |'), "B1's line stays as it was");
+  assert.equal(kindOfId(slow, "B2"), "broll");
+});
+
+test("a motion plate switched to a screen recording moves table and leaves the main table as it was", () => {
+  const withMap = addShot(DEMO, { id: "B9", kind: "motion", what: "Map", over: '"x"', how: "After Effects" });
+  const moved = updateShot(withMap, "B9", { kind: "screen" });
+  assert.equal(kindOfId(moved, "B9"), "screen");
+  const main = (md) => md.slice(0, md.indexOf("## Screen recordings"));
+  assert.equal(main(moved), main(DEMO));
+});

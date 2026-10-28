@@ -61,7 +61,7 @@ function scan(markdown) {
     }
     const h = line.match(/^[ \t]{0,3}(#{1,6})[ \t]+(.*)$/);
     // Only a section heading (## and deeper) names a table: a "# … Screen … · B-roll list" title does not.
-    if (h) { if (h[1].length > 1) heading = h[2]; headings.push({ i, level: h[1].length, text: h[2] }); continue; }
+    if (h) { heading = h[1].length > 1 ? h[2] : ""; headings.push({ i, level: h[1].length, text: h[2] }); continue; }
     if (!/^[ \t]*\|/.test(line) || !SEP_ROW_RE.test(lines[i + 1] ?? "")) continue;
     const head = cells(line);
     const col = columns(head);
@@ -433,7 +433,9 @@ function howFor(table, shot) {
   if (!how) return "Motion plate";
   return table.col.kind < 0 && !/motion/i.test(how) ? `Motion plate: ${how}` : how;
 }
-const needsKind = (table, shot) => !!table && table.col.kind < 0 && !table.screen && shot.kind === "broll" && /motion/i.test(shot.how || "");
+// Without a How column nothing in the row can say "motion", so a motion plate needs the Kind column there.
+const needsKind = (table, shot) => !!table && table.col.kind < 0 && !table.screen &&
+  (table.col.how < 0 ? shot.kind === "motion" : shot.kind === "broll" && /motion/i.test(shot.how || ""));
 function withKindColumn(markdown, table) {
   const { rows } = scan(markdown);
   const kindAt = new Map(rows.filter((r) => r.table.start === table.start).map((r) => [r.i, r.shot.kind]));

@@ -831,7 +831,6 @@ function showBar() {
   barSel = s;
   const add = $("#addBroll");
   add.disabled = !canAddBroll() || !spokenSelection(s.range).length;
-  add.title = !add.disabled ? "" : !canAddBroll() ? "The B-roll list can't be read" : "Select spoken lines to add B-roll";
   const n = D.countWords(s.quote);
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();

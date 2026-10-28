@@ -13,16 +13,16 @@ Lex (2026-10-28): "I also want to be able to add B-roll and define a description
 - The new shot:
   - id: the next free `B<n>` for B-roll and Motion plate, the next free `S<n>` for Screen recording;
   - Over: built from the selection so the existing matcher finds the same lines again. One block: the first words of the selection (about 8 words, ending in `…` when cut). Several blocks: a range, `"first words…" through "first words of the last block…"`. If the quote would match an earlier line first, use more words until it doesn't;
-  - Motion plate: when "How" is empty, write "Motion plate", so it is detected as motion as before. In a table without a Kind column, a How that does not mention motion is written as "Motion plate: <how>"; a B-roll whose How mentions motion gives that table a Kind column, filled in for every row, so every kind reads back the same (review fix, 2026-10-28).
+  - Motion plate: when "How" is empty, write "Motion plate", so it is detected as motion as before. In a table without a Kind column, a How that does not mention motion is written as "Motion plate: <how>"; a B-roll whose How mentions motion, or a motion plate in a table without a How column, gives that table a Kind column, filled in for every row, so every kind reads back the same (review fix, 2026-10-28).
   - A row always has its id: a table without an id column gets a standard table next to it.
 - It shows at once: tag, rule and empty sketch frame beside the line, in the Storyboard and its filters, in `get_script`'s `broll` and in "Ask for sketches".
 
 ## Changing and removing a shot
 
-- Clicking a shot's tag or frame lights it up as now and also opens the same card filled in: kind, What, How, plus "Remove shot". Save changes the row in place.
+- Clicking a shot's tag or frame lights it up as now and also opens the same card filled in: kind, What, How, plus "Remove shot". Save changes the row in place. After Cancel or Escape the shot stays lit, and one click opens its card again.
 - Remove takes the row out, and its sketch too.
 - To move a shot to other text, the person removes it and adds it again (no extra UI).
-- Changing the kind to or from Screen recording in a list without a Kind column moves the row between the two tables and keeps its id (a `B<n>` can then sit among the screen recordings).
+- Changing the kind to or from Screen recording in a list without a Kind column moves the row between the two tables and keeps its id (a `B<n>` can then sit among the screen recordings). The Screen recordings table has no How column, so a How is lost on that move.
 
 ## Where it is saved
 
