@@ -1262,6 +1262,14 @@ function positionCard(m) {
   card.style.setProperty("--card-x", x + "px");
   card.style.setProperty("--card-y", y + "px");
 }
+// A rewrite that can't stay in its line's type (step F) is not offered: "Use this" would change nothing.
+function rewriteFits(mark) {
+  const b = byId(mark.blockId);
+  const r = b && D.reanchor(mark, D.contentOf(b));
+  if (!r) return false;
+  const probe = D.makeAsk(state.doc, { blockId: b.id, start: r.start, end: r.end, action: "voice", by: me });
+  return C.fits(state.doc, probe, { kind: "replace", text: mark.rewrite });
+}
 function openCard(m) {
   const found = markOf(m);
   if (!found) return;
@@ -1272,7 +1280,7 @@ function openCard(m) {
   $("#vcWhy").innerHTML = icon("wave") + "<span></span>";
   $("#vcWhy span").textContent = found.mark.why || D.ACTIONS.voice.name;
   $("#vcTry").textContent = found.mark.rewrite;
-  $("#vcUse").hidden = !found.mark.rewrite;
+  $("#vcUse").hidden = !found.mark.rewrite || !rewriteFits(found.mark);
   $("#vcKeep").parentElement.hidden = state.guest; // the host's "Sounds like me" check: only the host acts on it
   card.hidden = false;
   positionCard(m);
@@ -1303,6 +1311,7 @@ $("#vcUse").addEventListener("click", () => {
   const { ask: voice, mark } = found;
   const b = byId(mark.blockId);
   const r = b && D.reanchor(mark, D.contentOf(b));
+  if (r && !rewriteFits(mark)) return;
   mark.state = "used";
   settleVoice(voice);
   if (r) {

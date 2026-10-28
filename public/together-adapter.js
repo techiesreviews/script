@@ -298,7 +298,8 @@ export function createTogether(app) {
   function sync() {
     if (!room || room.role !== "host" || room.stopped) return;
     const a = asksMsg(), b = brollMsg();
-    const as = JSON.stringify(a.asks), bs = JSON.stringify(b.broll);
+    // Sent again only when what guests use changed: a mark's place index (for drafts) is left out of the comparison.
+    const as = JSON.stringify(a.asks, (k, v) => (k === "ctx" && v ? { ...v, index: undefined } : v)), bs = JSON.stringify(b.broll);
     if (as !== shared.asks) { shared.asks = as; room.sendAll(a); }
     if (bs !== shared.broll) { shared.broll = bs; room.sendAll(b); }
   }

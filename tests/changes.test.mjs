@@ -123,6 +123,8 @@ test("one paragraph: an answer that would change the block's type goes in on one
     ["We start here.", "# A title", "A title Then we go on."],
     ["We start here. Then we go on.", "[ON SCREEN: a map]", "ON SCREEN: a map"],
     ["We start here.", "1. First", "First Then we go on."],
+    ["We start here.", "## 2.5 million.", "2.5 million. Then we go on."],
+    ["We start here.", "## #1 tip.", "#1 tip. Then we go on."],
   ];
   for (const [quote, given, want] of cases) {
     const doc = script(), p = paras(doc)[0];

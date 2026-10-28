@@ -27,8 +27,9 @@ function keepsType(content, type) {
   return p.blocks.length <= 1 && (p.blocks[0]?.type ?? "para") === type;
 }
 // Marks at the start of a text that make a block a heading, the title, a list, a quote, a table, a fence, a rule, a
-// note or HTML: "#", "- ", "1. ", ">", "|", "`", "~", "[", "<", "*", "+", "_".
-const LEAD_MARKS = /^\s*(?:(?:#{1,6}|[-*+_>|`~[<]|\d+[.)])\s*)+/;
+// note or HTML: "# ", "- ", "1. ", ">", "|", "`", "~", "[", "<", "* ", "+ ", "_". Numbers and "#" only with a space after
+// them, so "2.5 million" and "#1 tip" stay.
+const LEAD_MARKS = /^\s*(?:(?:#{1,6}|[-*+]|\d+[.)])\s+|[_>|`~[<]\s*)+/;
 /**
  * The answer's text as it goes in, so that its block keeps its type (null when it can't): as sent when that fits;
  * otherwise on one line, without the marks at its start and a "]" at its end. In a heading or the title it is
