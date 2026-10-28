@@ -16,4 +16,4 @@ The repo is github.com/techiesreviews/script (main). Next steps from the plan: B
 - The site is open to search engines (no more `noindex` on pages; `/api/` and `/mcp` stay `noindex`). The old mock-up Worker (`script-editor-mockup`) is deleted.
 - Plan decisions: scripts stay files (A); everyone brings their own agent (A); a separate site, not a mode in the Native Site Editor (A). How AI changes land: **straight into the text (B)**, lightly marked, with Undo on the agent's name tag, for everyone's asks, guests' too (step F).
 - Standing OK: push to GitHub and `kit deploy` once a feature has passed `kit specs` and `kit review`.
-
+- Live 2026-10-29: step F (answers land straight in, marked, Undo on the agent's tag) and step G (links: clean in the editor, Find links, whole in the prompter). Checked live: an answer lands and Undo restores it; a found link shows as its words and opens from the prompter's link row.
