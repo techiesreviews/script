@@ -7,6 +7,7 @@ A calm editor for video scripts. Open a Markdown script, edit it, and let **your
 - Edits a plain Markdown file: `## 1 · Hook (0:00–0:30)` sections, `[ON SCREEN: …]` and `[SILENT: …]` notes, and spoken paragraphs. The file stays byte for byte the same where you didn't edit it.
 - Saves itself to the file you opened (about 1.5 s after you stop typing). If the file changed on disk, it asks before overwriting.
 - A section list with spoken times, a word count and the spoken length.
+- Type `/` while writing to add a part: Hook, Intro, Problem, Point, Demo, Recap, Call to action, Close or a named Section (numbered for where it lands; later sections move up), an `[ON SCREEN: ]` or `[SILENT: ]` note, B-roll for the current line, or a divider.
 - Export: the camera script (spoken text only), a prompter file, or **Open in prompter**, which opens the script on [prompter.techies.tools](https://prompter.techies.tools).
 - B-roll beside the lines: link a B-roll list, add a shot to selected text yourself, or let your agent suggest shots ("Suggest B-roll" on a selection, "Plan B-roll" for the whole script). Every suggested add, change or removal waits for your Keep or Undo.
 - A switcher with your recent scripts and a search.

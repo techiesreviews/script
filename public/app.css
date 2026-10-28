@@ -669,3 +669,21 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .frame__body { display: grid; gap: 0.45rem; }
 .kind-tag[data-kind="suggested"] { border-style: dashed; border-color: var(--accent); color: var(--accent-ink); }
 .board__all { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--faint); font-size: 0.8rem; }
+
+/* ---------- "/" parts menu at the caret (in the style of the script menu) ---------- */
+.slash-menu {
+  position: fixed; z-index: 32; inset-block-start: var(--slash-y, 0); inset-inline-start: var(--slash-x, 0);
+  inline-size: min(14rem, calc(100vw - 1rem)); max-block-size: min(20rem, 50dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  padding: 0.4rem; border-radius: var(--radius-panel); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.slash-menu__item {
+  display: flex; align-items: center; min-block-size: 2rem; padding-inline: 0.5rem; border-radius: var(--radius);
+  font-weight: 600; cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.slash-menu__item[aria-selected="true"] { background: var(--pressed); }
+.slash-menu__sep { block-size: 1px; margin-block: 0.3rem; margin-inline: 0.25rem; background: var(--line); }
+@media (pointer: coarse) { .slash-menu__item { min-block-size: 2.75rem; } }
+@media (hover: hover) and (pointer: fine) { .slash-menu__item[aria-selected="false"]:hover { background: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) { .slash-menu:not([hidden]) { animation: lift-in 120ms var(--ease-out); } }
+/* "Type / for parts" on a brand-new script's empty first line (Lex to decide: remove this rule and its attribute to drop it). */
+.block[data-placeholder]:empty::before { content: attr(data-placeholder); position: absolute; color: var(--faint); pointer-events: none; }

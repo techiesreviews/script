@@ -81,6 +81,7 @@ const state = {
   preCaret: null,
   pendingDraft: null,
   frontOpen: false,
+  hint: null,
 };
 // The B-roll list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
 const broll = {
@@ -219,6 +220,7 @@ function blockShell(b) {
   el.dataset.id = b.id;
   el.dataset.type = b.type;
   // While "Unsaved changes from … · Restore · Discard" shows, the script is read-only, so no edit is lost.
+  if (b.id === state.hint) el.dataset.placeholder = "Type / for parts"; // a brand-new script's first spoken line
   if (state.pendingDraft) el.contentEditable = "false";
   else editable(el);
   if (b.type !== "heading") wrap.append(el);
@@ -1124,7 +1126,7 @@ function persistDraft() {
   const dirty = isDirty();
   const flags = brollFlags();
   if (!dirty && !open.length && !flags) { store.del(draftKey()); return; }
-  store.set(draftKey(), { text: dirty ? D.serialize(state.doc) : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
+  store.set(draftKey(), { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
 }
 
 function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
@@ -1151,6 +1153,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   state.asks = [];
   state.pendingDraft = null;
   state.frontOpen = false;
+  state.hint = null;
   const draft = store.get(draftKey(name));
   broll.flags = draft?.broll && typeof draft.broll === "object" ? { ...draft.broll } : {};
   const banner = $("#banner");
@@ -1292,6 +1295,7 @@ async function writeHandle(handle, text) {
 const AUTOSAVE_MS = 1500;
 function scheduleSave() {
   clearTimeout(saveTimer);
+  if (slash.open) return; // a "/" command is being typed: auto-save waits until the menu closes
   if (state.handle && !state.conflict && isDirty()) saveTimer = setTimeout(() => save({ auto: true }), AUTOSAVE_MS);
 }
 function flushSave() {
@@ -1306,7 +1310,7 @@ async function allowSaving() {
 // Saves asked for while another one runs wait here, one record per script (see save-queue.js).
 let saveQueue = Q.emptyQueue();
 const saveRequest = (force, auto) => ({
-  handle: state.handle, name: state.name, text: D.serialize(state.doc),
+  handle: state.handle, name: state.name, text: saveText(),
   savedText: state.savedText, fileModified: state.fileModified, force, auto,
 });
 // A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
@@ -1346,7 +1350,7 @@ async function save({ force = false, auto = false } = {}) {
   if (!state.handle) return saveAs();
   clearTimeout(saveTimer);
   const { handle, name, savedText, fileModified } = state;
-  const text = D.serialize(state.doc);
+  const text = saveText();
   let written = null;
   state.saving = true;
   state.autoSaving = auto;
@@ -1400,7 +1404,7 @@ function finishSave(current) {
 // "Markdown file (.md)" and Ctrl/Cmd+S without an open file: pick where to save, then keep auto-saving there.
 async function saveAs() {
   if (!state.doc || state.saving) return;
-  const text = D.serialize(state.doc);
+  const text = saveText();
   state.saveError = "";
   try {
     if ("showSaveFilePicker" in window) {
@@ -1441,7 +1445,7 @@ async function reloadFromDisk() {
   hideBanner();
   if (!state.handle) return;
   // Keep what is on screen as a draft, so "Restore" brings it back.
-  if (isDirty()) store.set(draftKey(), { text: D.serialize(state.doc), at: Date.now(), asks: state.asks.filter(isOpen), ...(brollFlags() ? { broll: brollFlags() } : {}) });
+  if (isDirty()) store.set(draftKey(), { text: saveText(), at: Date.now(), asks: state.asks.filter(isOpen), ...(brollFlags() ? { broll: brollFlags() } : {}) });
   await openHandle(state.handle);
 }
 function download(text, name, type) {
@@ -1478,7 +1482,7 @@ function newScript() {
   state.doc = doc;
   const t = D.insertBlock(state.doc, null, "title", "Untitled script");
   t.sep = "";
-  D.insertBlock(state.doc, t.id, "para", "");
+  state.hint = D.insertBlock(state.doc, t.id, "para", "").id;
   state.savedText = D.serialize(state.doc);
   renderTop();
   renderAll();
@@ -2529,6 +2533,132 @@ async function keepSuggestions(keys) {
   renderBroll();
   renderTocDots();
 }
+
+/* ---------- Parts with "/" while typing (step C5) ---------- */
+// "/" at the start of a line or after a space opens the parts menu at the caret; the typed letters filter it.
+// The menu never takes the focus: the caret stays in the script, and the command is never saved (see saveText).
+const slashMenu = $("#slashMenu");
+const slash = { open: false, id: null, start: 0, end: 0, items: [], active: 0, dismissed: null };
+function slashAtCaret() {
+  if (!state.doc || state.pendingDraft) return null;
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return null;
+  const caret = getCaret();
+  const b = caret && byId(caret.id);
+  if (!b || b.type === "title") return null;
+  const content = D.contentOf(b);
+  const cmd = D.slashCommand(content, caret.offset);
+  return cmd ? { id: b.id, content, ...cmd } : null;
+}
+// B-roll is offered on a spoken line that has words besides the command.
+const slashOnSpokenLine = (cmd) => canAddBroll() && B.spokenBlocks(state.doc).some((x) => x.id === cmd.id)
+  && /[\p{L}\p{N}]/u.test(cmd.content.slice(0, cmd.start) + cmd.content.slice(cmd.end));
+function updateSlash(typed) {
+  const cmd = slashAtCaret();
+  if (!cmd) { slash.dismissed = null; return closeSlash(); }
+  // After Escape the typed text stays text until this command is gone.
+  if (slash.dismissed?.id === cmd.id && slash.dismissed.start === cmd.start) return closeSlash();
+  slash.dismissed = null;
+  if (!slash.open && !typed) return;
+  const items = D.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) });
+  if (!items.length) return closeSlash();
+  const same = slash.open && slash.id === cmd.id && slash.start === cmd.start && slash.items.map((p) => p.id).join() === items.map((p) => p.id).join();
+  Object.assign(slash, { open: true, id: cmd.id, start: cmd.start, end: cmd.end, items, active: same ? slash.active : 0 });
+  renderSlash();
+}
+function renderSlash() {
+  slashMenu.innerHTML = slash.items.map((p, i) => `${i && p.kind !== "spoken" && slash.items[i - 1].kind === "spoken" ? '<div class="slash-menu__sep" role="separator"></div>' : ""}`
+    + `<div class="slash-menu__item" role="option" id="slash-${p.id}" data-part="${p.id}" aria-selected="${i === slash.active}">${esc(p.name)}</div>`).join("");
+  slashMenu.hidden = false;
+  blockNode(slash.id)?.setAttribute("aria-activedescendant", `slash-${slash.items[slash.active].id}`);
+  slashMenu.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  positionSlash();
+}
+function positionSlash() {
+  if (!slash.open) return;
+  const r = caretRect() || blockNode(slash.id)?.getBoundingClientRect();
+  if (!r) return;
+  const w = slashMenu.offsetWidth, ht = slashMenu.offsetHeight;
+  const x = Math.max(8, Math.min(r.left - 8, document.documentElement.clientWidth - w - 8));
+  let y = r.bottom + 6;
+  if (y + ht > innerHeight - 8) y = Math.max(8, r.top - ht - 6);
+  slashMenu.style.setProperty("--slash-x", x + "px");
+  slashMenu.style.setProperty("--slash-y", y + "px");
+}
+function closeSlash() {
+  if (!slash.open) return;
+  slash.open = false;
+  slashMenu.hidden = true;
+  blockNode(slash.id)?.removeAttribute("aria-activedescendant");
+  scheduleSave();
+}
+// Picking removes the command and inserts the part, all in one undo step.
+function pickSlash(partId) {
+  const part = D.PARTS.find((p) => p.id === partId);
+  if (!slash.open || !part) return;
+  const { id, start, end } = slash;
+  closeSlash();
+  const b = byId(id);
+  if (!b || D.contentOf(b).slice(start, start + 1) !== "/") return;
+  state.preCaret = { id, offset: end };
+  checkpoint("part", id);
+  const content = D.contentOf(b);
+  D.setContent(state.doc, id, content.slice(0, start) + content.slice(end));
+  moveAsks(id, id, end, start - end);
+  reanchorBlock(id);
+  if (part.kind === "broll") {
+    renderAll({ id, offset: start });
+    changed();
+    const text = D.contentOf(byId(id));
+    const words = D.snapToWords(text, 0, text.length);
+    return openShotCard({ mode: "add", sel: [{ id, start: words.start, end: words.end }], anchor: () => blockNode(id) });
+  }
+  // A line that held only the command gives its place to the part.
+  let after = id;
+  const cur = byId(id);
+  if (cur?.type === "para" && !D.contentOf(cur).trim() && state.doc.blocks.length > 1 && !state.asks.some((a) => a.blockId === id && isOpen(a))) {
+    const i = state.doc.blocks.indexOf(cur);
+    after = i > 0 ? state.doc.blocks[i - 1].id : null;
+    D.removeBlock(state.doc, id);
+  }
+  const res = D.insertPart(state.doc, after, part.id);
+  renderAll(res.caret);
+  changed();
+}
+// What a save writes: the script without an open "/" command.
+function saveText() {
+  if (!slash.open || !state.doc) return D.serialize(state.doc);
+  const doc = D.cloneDoc(state.doc);
+  const b = D.blockById(doc, slash.id);
+  if (b) { const c = D.contentOf(b); D.setContent(doc, slash.id, c.slice(0, slash.start) + c.slice(slash.end)); }
+  return D.serialize(doc);
+}
+scriptEl.addEventListener("input", (e) => { if (!e.isComposing) updateSlash(true); });
+scriptEl.addEventListener("compositionend", () => updateSlash(true));
+document.addEventListener("selectionchange", () => { if (slash.open) updateSlash(false); });
+scriptEl.addEventListener("focusout", (e) => { if (slash.open && !slashMenu.contains(e.relatedTarget)) closeSlash(); });
+addEventListener("scroll", positionSlash, { passive: true });
+addEventListener("resize", positionSlash);
+// The keys go to the menu first while it is open.
+scriptEl.addEventListener("keydown", (e) => {
+  if (!slash.open || e.isComposing || e.altKey || e.metaKey || e.ctrlKey) return;
+  const n = slash.items.length;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { slash.active = (slash.active + (e.key === "ArrowDown" ? 1 : -1) + n) % n; renderSlash(); }
+  else if (e.key === "Enter" || (e.key === "Tab" && !e.shiftKey)) pickSlash(slash.items[slash.active].id);
+  else if (e.key === "Escape") { slash.dismissed = { id: slash.id, start: slash.start }; closeSlash(); }
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+// Phone keyboards may send Enter only as an input.
+scriptEl.addEventListener("beforeinput", (e) => {
+  if (!slash.open || (e.inputType !== "insertParagraph" && e.inputType !== "insertLineBreak")) return;
+  e.preventDefault();
+  e.stopPropagation();
+  pickSlash(slash.items[slash.active].id);
+}, true);
+slashMenu.addEventListener("pointerdown", (e) => e.preventDefault());
+slashMenu.addEventListener("click", (e) => { const it = e.target.closest("[data-part]"); if (it) pickSlash(it.dataset.part); });
 
 /* ---------- Your own agent over MCP (live relay) ---------- */
 const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;

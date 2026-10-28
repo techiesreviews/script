@@ -6,6 +6,7 @@ import {
   outline, parseHeading, exportCamera, exportPrompter, sentences, stats, countWords, snapToWords, reanchor,
   makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, locate, checkAnswer,
   prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS,
+  PARTS, matchParts, slashCommand, shiftHeadings, numberAt, insertPart,
 } from "../public/doc.js";
 
 const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
@@ -552,4 +553,82 @@ test("a CRLF file keeps CRLF when one block is split in two", () => {
   setContent(doc, doc.blocks[0].id, "One\n\nTwo");
   assert.equal(serialize(doc), "One\r\n\r\nTwo\r\n\r\nB");
   assert.deepEqual(doc.blocks.map((b) => b.type), parse(serialize(doc)).blocks.map((b) => b.type));
+});
+
+/* ---------- Step C5: parts added with "/" ---------- */
+const SCRIPT3 = "# Title\n\n## 1 · Hook (0:00–0:20)\n\nHello.\n\n## 2. The problem\n\nIt breaks.\n\n## 3 · Close (2:00–2:20)\n\nBye.\n\n## Notes\n\nNot spoken.\n";
+const at = (doc, text) => doc.blocks.find((b) => contentOf(b) === text);
+
+test("renumbering: a part at the start, in the middle and at the end; names, separators and times stay", () => {
+  // Start: before the first heading, it takes number 1 and every numbered heading moves up.
+  let doc = parse(SCRIPT3);
+  insertPart(doc, at(doc, "Title").id, "intro");
+  assert.equal(serialize(doc), "# Title\n\n## 1 · Intro\n\n\n\n## 2 · Hook (0:00–0:20)\n\nHello.\n\n## 3. The problem\n\nIt breaks.\n\n## 4 · Close (2:00–2:20)\n\nBye.\n\n## Notes\n\nNot spoken.\n");
+  // Middle: after "Hello." it is 2; "2. The problem" becomes "3. The problem" with its own separator kept.
+  doc = parse(SCRIPT3);
+  const r = insertPart(doc, at(doc, "Hello.").id, "demo");
+  assert.equal(serialize(doc), "# Title\n\n## 1 · Hook (0:00–0:20)\n\nHello.\n\n## 2 · Demo\n\n\n\n## 3. The problem\n\nIt breaks.\n\n## 4 · Close (2:00–2:20)\n\nBye.\n\n## Notes\n\nNot spoken.\n");
+  assert.equal(doc.blocks.find((b) => b.id === r.caret.id).type, "para");
+  assert.equal(r.caret.offset, 0);
+  // End: after the last block; the unnumbered "Notes" heading is not touched.
+  doc = parse(SCRIPT3);
+  insertPart(doc, at(doc, "Not spoken.").id, "recap");
+  assert.equal(serialize(doc), SCRIPT3.replace(/\n$/, "") + "\n\n## 4 · Recap\n\n\n");
+  // No numbered heading yet (a new script): 1.
+  doc = parse("# New\n\nFirst line.\n");
+  insertPart(doc, at(doc, "First line.").id, "hook");
+  assert.equal(serialize(doc), "# New\n\nFirst line.\n\n## 1 · Hook\n\n\n");
+  // CRLF stays CRLF, also in the moved headings.
+  doc = parse(SCRIPT3.replace(/\n/g, "\r\n"));
+  insertPart(doc, at(doc, "Hello.").id, "point");
+  assert.equal(serialize(doc), "# Title\r\n\r\n## 1 · Hook (0:00–0:20)\r\n\r\nHello.\r\n\r\n## 2 · Point\r\n\r\n\r\n\r\n## 3. The problem\r\n\r\nIt breaks.\r\n\r\n## 4 · Close (2:00–2:20)\r\n\r\nBye.\r\n\r\n## Notes\r\n\r\nNot spoken.\r\n");
+  // shiftHeadings and numberAt on their own; leading spaces after "##" and odd numbers are kept.
+  doc = parse("##  7 · Odd (1:00)\n\nx\n\n## 9) Nine\n");
+  assert.equal(numberAt(doc, 0), 7);
+  assert.equal(numberAt(doc, 2), 8);
+  shiftHeadings(doc, 0, 1);
+  assert.equal(serialize(doc), "##  8 · Odd (1:00)\n\nx\n\n## 10) Nine\n");
+  // After a reload the new heading reads as a numbered spoken section.
+  const back = parse(serialize((() => { const d = parse(SCRIPT3); insertPart(d, at(d, "Hello.").id, "call-to-action"); return d; })()));
+  assert.deepEqual(outline(back).sections.map((x) => [x.info.num, x.info.name, x.spoken]), [["1", "Hook", true], ["2", "Call to action", true], ["3", "The problem", true], ["4", "Close", true], ["", "Notes", false]]);
+});
+
+test("part templates: the exact Markdown each one inserts, and where the caret goes", () => {
+  const made = (id) => {
+    const doc = parse("# T\n\nLine.\n");
+    const r = insertPart(doc, at(doc, "Line.").id, id);
+    const caret = doc.blocks.find((b) => b.id === r.caret.id);
+    return [serialize(doc).slice("# T\n\nLine.".length), caret.type, contentOf(caret).slice(0, r.caret.offset)];
+  };
+  assert.deepEqual(made("hook"), ["\n\n## 1 · Hook\n\n\n", "para", ""]);
+  assert.deepEqual(made("call-to-action"), ["\n\n## 1 · Call to action\n\n\n", "para", ""]);
+  assert.deepEqual(made("section"), ["\n\n## 1 · \n\n\n", "heading", "1 · "]);
+  assert.deepEqual(made("on-screen"), ["\n\n[ON SCREEN: ]\n", "note", "[ON SCREEN: "]);
+  assert.deepEqual(made("silent"), ["\n\n[SILENT: ]\n", "note", "[SILENT: "]);
+  assert.deepEqual(made("divider"), ["\n\n---\n\n\n", "para", ""]);
+  assert.equal(insertPart(parse("x\n"), null, "broll"), null); // B-roll opens the card instead
+  assert.deepEqual(PARTS.map((p) => p.name), ["Hook", "Intro", "Problem", "Point", "Demo", "Recap", "Call to action", "Close", "Section", "On screen", "Silent note", "B-roll", "Divider"]);
+});
+
+test("the / filter and where / opens a menu", () => {
+  const names = (q, o) => matchParts(q, o).map((p) => p.name);
+  assert.deepEqual(names("re"), ["Recap"]);
+  assert.deepEqual(names("cta"), ["Call to action"]);
+  assert.deepEqual(names("b", { spokenLine: true }), ["B-roll"]);
+  assert.deepEqual(names("b"), []); // B-roll only on a spoken line
+  assert.deepEqual(names("on"), ["On screen"]);
+  assert.deepEqual(names("sec"), ["Section"]);
+  assert.deepEqual(names("SI"), ["Silent note"]);
+  assert.equal(names("").length, 12);
+  assert.equal(names("", { spokenLine: true }).length, 13);
+  assert.deepEqual(names("xyz"), []);
+  // "/" at the start of a line or after a space; never in the middle of a word.
+  assert.deepEqual(slashCommand("/re", 3), { start: 0, end: 3, query: "re" });
+  assert.deepEqual(slashCommand("Some text /on", 13), { start: 10, end: 13, query: "on" });
+  assert.deepEqual(slashCommand("Line one\n/", 10), { start: 9, end: 10, query: "" });
+  assert.deepEqual(slashCommand("/hook and more", 5), { start: 0, end: 5, query: "hook" });
+  assert.equal(slashCommand("and/or", 6), null);
+  assert.equal(slashCommand("https://example.com", 8), null);
+  assert.equal(slashCommand("word/", 5), null);
+  assert.equal(slashCommand("/re now", 7), null); // a space after the command ends it
 });

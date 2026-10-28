@@ -548,3 +548,74 @@ export function checkAnswer(ask, args, doc) {
   const answer = cleanAnswer(ask, a);
   return answer ? { answer } : { error: "That answer could not be shown." };
 }
+
+/* ---------- Parts added with "/" while typing (step C5) ---------- */
+// In menu order. Spoken parts add "## N · <Name>" and an empty spoken para; Section leaves the name to type.
+export const PARTS = [
+  ...["Hook", "Intro", "Problem", "Point", "Demo", "Recap", "Call to action", "Close"].map((name) => ({ id: name.toLowerCase().replace(/\s+/g, "-"), name, kind: "spoken" })),
+  { id: "section", name: "Section", kind: "spoken", named: true },
+  { id: "on-screen", name: "On screen", kind: "note", text: "[ON SCREEN: ]" },
+  { id: "silent", name: "Silent note", kind: "note", text: "[SILENT: ]" },
+  { id: "broll", name: "B-roll", kind: "broll" },
+  { id: "divider", name: "Divider", kind: "divider", text: "---" },
+];
+// A part matches when the typed letters start its name, one of its words, or its initials ("cta").
+function partKeys(p) {
+  const name = p.name.toLowerCase(), words = name.split(/[\s-]+/).filter(Boolean);
+  return [name, ...words, ...(words.length > 1 ? [words.map((w) => w[0]).join("")] : [])];
+}
+/** matchParts(query, { spokenLine }) → the parts for "/<query>", in menu order. B-roll only on a spoken line. */
+export function matchParts(query, { spokenLine = false } = {}) {
+  const q = String(query ?? "").toLowerCase();
+  return PARTS.filter((p) => (p.kind !== "broll" || spokenLine) && (!q || partKeys(p).some((k) => k.startsWith(q))));
+}
+/** The "/" command just before the caret: { start, end, query }, or null. "/" counts at the start of a line or
+ *  after a space, never inside a word ("and/or", "https://"). */
+export function slashCommand(content, offset) {
+  const before = String(content ?? "").slice(0, offset);
+  const m = before.match(/(^|\s)\/([\p{L}\p{N}-]*)$/u);
+  return m ? { start: m.index + m[1].length, end: before.length, query: m[2] } : null;
+}
+
+const NUM_RE = /^(\s*)(\d+)/;
+/** shiftHeadings(doc, from, by) → numbered headings at block index `from` and later move by `by`. Only the number
+ *  changes: their names, separators, time ranges and every other block stay exactly as they were. */
+export function shiftHeadings(doc, from, by = 1) {
+  for (let i = Math.max(0, from); i < doc.blocks.length; i++) {
+    const b = doc.blocks[i];
+    if (b.type !== "heading") continue;
+    const content = contentOf(b);
+    const m = content.match(NUM_RE);
+    if (!m) continue;
+    b.text = textFor(b, m[1] + String(Number(m[2]) + by) + content.slice(m[0].length), doc.eol);
+  }
+}
+/** The number a new spoken heading gets at block index `at`: one after the numbered heading before it, else the
+ *  number of the first one after it (which then moves up), else 1. */
+export function numberAt(doc, at) {
+  const num = (b) => (b.type === "heading" ? contentOf(b).match(NUM_RE)?.[2] : null);
+  for (let i = Math.min(at, doc.blocks.length) - 1; i >= 0; i--) { const n = num(doc.blocks[i]); if (n) return Number(n) + 1; }
+  for (let i = at; i < doc.blocks.length; i++) { const n = num(doc.blocks[i]); if (n) return Number(n); }
+  return 1;
+}
+/**
+ * insertPart(doc, afterId, partId) → { caret: { id, offset } } with the part's blocks inserted after `afterId`
+ * (or at the start when null). Spoken parts: "## N · Name" (the later numbered headings move up by one) and an
+ * empty para. On screen / Silent note: the note, caret inside the brackets. Divider: "---" and an empty para.
+ */
+export function insertPart(doc, afterId, partId) {
+  const part = PARTS.find((p) => p.id === partId);
+  if (!part || part.kind === "broll") return null;
+  if (part.kind === "spoken") {
+    const at = afterId == null ? 0 : indexOf(doc, afterId) + 1;
+    const n = numberAt(doc, at);
+    shiftHeadings(doc, at, 1);
+    const content = `${n} · ${part.named ? "" : part.name}`;
+    const head = insertBlock(doc, afterId, "heading", content);
+    const para = insertBlock(doc, head.id, "para", "");
+    return { caret: part.named ? { id: head.id, offset: content.length } : { id: para.id, offset: 0 } };
+  }
+  const block = insertBlock(doc, afterId, typeOf(part.text), part.text);
+  if (part.kind === "divider") return { caret: { id: insertBlock(doc, block.id, "para", "").id, offset: 0 } };
+  return { caret: { id: block.id, offset: part.text.length - 1 } };
+}
