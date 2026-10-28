@@ -27,7 +27,7 @@ Lex (2026-10-28): "When starting a new script, allow me to add parts with / comm
 
 ## Numbering
 
-- Style (lead's choice, 2026-10-28, open for Lex): a script with no headings yet, or with numbered headings, gets `## N · Name`; a script whose headings have no numbers gets `## Name`, so its sections stay spoken. A part never makes spoken text stop being spoken; spoken text with no heading above it goes under the new heading.
+- Style (lead's choice, confirmed by Lex on 2026-10-28): a script with no headings yet, or with numbered headings, gets `## N · Name`; a script whose headings have no numbers gets `## Name`, so its sections stay spoken. A part never makes spoken text stop being spoken; spoken text with no heading above it goes under the new heading.
 
 - The new heading gets the right number for where it lands, and the numbered headings after it move up by one.
   - Keep their names and any time range in brackets exactly as they were.
@@ -37,7 +37,7 @@ Lex (2026-10-28): "When starting a new script, allow me to add parts with / comm
 
 ## A new script
 
-- The empty first spoken line of a brand-new script shows the muted placeholder "Type / for parts". This is the only hint; it disappears once there is text. This is a small exception to the no-explainer rule, so Lex can see the feature exists. Mention it in the report so he can say no.
+- The empty first spoken line of a brand-new script shows the muted placeholder "Type / for parts". This is the only hint; it disappears once there is text. This is a small exception to the no-explainer rule, so Lex can see the feature exists; Lex chose to keep it on 2026-10-28.
 
 ## Not part of this step
 
