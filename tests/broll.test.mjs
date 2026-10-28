@@ -425,3 +425,70 @@ test("Over from a selection matches back to the same blocks: one block, several 
   assert.match(r, / through "Step two is hard and we did it anyway,…"$/);
   assert.deepEqual(matchOver(tl, r), [tl[2].id, tl[3].id, tl[4].id]);
 });
+
+/* ---------- Step C3 review: kinds, ids and untouched cells survive ---------- */
+const kindOfId = (md, id) => parseBroll(md).shots.find((s) => s.id === id)?.kind;
+
+test("the chosen kind survives a How: Motion plate: <how>, and a Kind column for a B-roll whose How says motion", () => {
+  const m = addShot(DEMO, { id: "B9", kind: "motion", what: "Map", over: '"x"', how: "After Effects" });
+  assert.equal(kindOfId(m, "B9"), "motion");
+  assert.match(m, /\| B9 \| Map \| "x" \| Motion plate: After Effects \|/);
+  assert.equal(m.replace(rowRe("B9"), ""), DEMO);
+  // B1 is a B-roll with a How ("Stock clip or a staged desk shot"): switched to motion it reads back as motion, and back.
+  const up = updateShot(DEMO, "B1", { kind: "motion" });
+  assert.equal(kindOfId(up, "B1"), "motion");
+  assert.match(up, /\| B1 \|[^\n]*\| Motion plate: Stock clip or a staged desk shot \|/);
+  const back = updateShot(up, "B1", { kind: "broll" });
+  assert.equal(kindOfId(back, "B1"), "broll");
+  assert.equal(back, DEMO);
+  // A B-roll whose How says "slow motion": the main table gets a Kind column; every row keeps its kind.
+  const before = parseBroll(DEMO).shots.map((s) => [s.id, s.kind]);
+  const slow = addShot(DEMO, { id: "B9", kind: "broll", what: "Rain", over: '"x"', how: "slow motion stock" });
+  assert.equal(kindOfId(slow, "B9"), "broll");
+  assert.deepEqual(parseBroll(slow).shots.filter((s) => s.id !== "B9").map((s) => [s.id, s.kind]), before);
+  assert.match(slow, /\n\| # \| Kind \| What to show \| Over \(A-roll line\) \| How to make it \|\n\| --- \| --- \| --- \| --- \| --- \|\n\| B1 \| B-roll \| Blank page/);
+  assert.match(slow, /\| B3 \| Motion plate \| /);
+  assert.equal(slow.slice(slow.indexOf("## Screen recordings")), DEMO.slice(DEMO.indexOf("## Screen recordings"))); // the rest stays
+  const slowUp = updateShot(DEMO, "B6", { how: "Slow motion pan over the checklist" });
+  assert.equal(kindOfId(slowUp, "B6"), "broll");
+  assert.deepEqual(parseBroll(slowUp).shots.filter((s) => s.id !== "B6").map((s) => [s.id, s.kind]), before.filter(([id]) => id !== "B6"));
+  // A title that says "Screen" does not turn the main table into screen recordings.
+  assert.equal(kindOfId(addShot(newList("Screen tips"), { id: "B1", kind: "broll", what: "a", over: '"b"' }), "B1"), "broll");
+});
+
+test("an edit keeps untouched cells byte for byte, also in a CRLF file", () => {
+  const list = "| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n| B1 |  old   | \"A \\| b\" and **bold**  | Slide  |\n";
+  const out = updateShot(list, "B1", { what: "new" });
+  assert.equal(out, "| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n| B1 | new | \"A \\| b\" and **bold**  | Slide  |\n");
+  const crlf = DEMO.replace(/\n/g, "\r\n");
+  const changed = updateShot(crlf, "B5", { what: "A spare key on a ring" });
+  const a = crlf.split("\r\n"), b = changed.split("\r\n");
+  assert.equal(a.length, b.length);
+  assert.deepEqual(b.map((l, i) => (l === a[i] ? null : i)).filter((i) => i != null).length, 1);
+  assert.match(changed, /\r\n\| B5 \| A spare key on a ring \| "A backup is a spare key\." \| Slide \|\r\n/);
+});
+
+test("a row is never written without an id: a table without an id column gets a standard table next to it", () => {
+  const list = "| What to show | Over |\n| --- | --- |\n| a | \"b\" |\n";
+  const out = addShot(list, { id: "B1", kind: "broll", what: "c", over: '"d"' });
+  assert.ok(out.startsWith(list));
+  assert.deepEqual(parseBroll(out).shots.map((s) => s.id), ["#1", "B1"]);
+  const screen = addShot(out, { id: "S1", kind: "screen", what: "e", over: '"f"' });
+  assert.deepEqual(parseBroll(screen).shots.map((s) => [s.id, s.kind]), [["#1", "broll"], ["B1", "broll"], ["S1", "screen"]]);
+});
+
+test("moving a shot to Screen recordings and back; a screen recording's How cell is kept on save", () => {
+  const there = updateShot(DEMO, "B1", { kind: "screen" });
+  const back = updateShot(there, "B1", { kind: "broll" });
+  const shots = parseBroll(back).shots;
+  assert.deepEqual(shots.map((s) => s.id), ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B1", "S1", "S2"]);
+  assert.equal(shots.find((s) => s.id === "B1").kind, "broll");
+  const screenRows = (md) => md.slice(md.indexOf("## Screen recordings"), md.indexOf("## Sketches"));
+  assert.equal(screenRows(back), screenRows(DEMO));
+  // An exported list (Kind column) where S1 has a How: saving the card (how undefined) leaves it.
+  const demo = parseBroll(DEMO).shots.map((s) => (s.id === "S1" ? { ...s, how: "Phone timer, silent" } : s));
+  const exported = exportBroll(demo, {});
+  const saved = updateShot(exported, "S1", { what: "x", how: undefined, kind: "screen" });
+  assert.match(saved, /\n\| S1 \| Screen recording \| x \| "AI helps you write faster\." \| Phone timer, silent \|  \|\n/);
+  assert.equal(parseBroll(saved).shots.find((s) => s.id === "S1").how, "Phone timer, silent");
+});

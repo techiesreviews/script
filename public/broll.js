@@ -60,7 +60,8 @@ function scan(markdown) {
       continue;
     }
     const h = line.match(/^[ \t]{0,3}(#{1,6})[ \t]+(.*)$/);
-    if (h) { heading = h[2]; headings.push({ i, level: h[1].length, text: h[2] }); continue; }
+    // Only a section heading (## and deeper) names a table: a "# … Screen … · B-roll list" title does not.
+    if (h) { if (h[1].length > 1) heading = h[2]; headings.push({ i, level: h[1].length, text: h[2] }); continue; }
     if (!/^[ \t]*\|/.test(line) || !SEP_ROW_RE.test(lines[i + 1] ?? "")) continue;
     const head = cells(line);
     const col = columns(head);
@@ -412,23 +413,59 @@ function lineEdit(markdown, change) {
   const out = lines.join("\n");
   return eol === "\r\n" ? out.replace(/\n/g, "\r\n") : out;
 }
-// A Motion plate without "How" says so, so the list reads it back as motion without a Kind column.
-const howFor = (shot) => (shot.how || "").trim() || (shot.kind === "motion" ? "Motion plate" : "");
+// A row as written: the text before the first pipe, each cell with its own spaces and escapes, and the text after
+// the closing pipe. Cells nobody changes are joined back exactly as they were.
+function rawRow(line) {
+  const parts = line.split(/(?<!\\)\|/);
+  const lead = parts.shift();
+  const tail = /(?<!\\)\|\s*$/.test(line) ? parts.pop() : null;
+  return { lead, cells: parts, tail };
+}
+const joinRow = (r) => [r.lead, ...r.cells, ...(r.tail != null ? [r.tail] : [])].join("|");
+const rawText = (c) => clean((c ?? "").replace(/\\\|/g, "|").trim());
+
+// Without a Kind column a row is motion only when "How" mentions motion, so the written How must agree with the kind:
+// a Motion plate's How says "Motion plate" (or "Motion plate: <how>"); a B-roll whose How mentions motion needs a
+// Kind column (needsKind), which the table then gets, filled in for every row so they all read back the same.
+function howFor(table, shot) {
+  const how = (shot.how || "").replace(/\s+/g, " ").trim();
+  if (shot.kind !== "motion") return how;
+  if (!how) return "Motion plate";
+  return table.col.kind < 0 && !/motion/i.test(how) ? `Motion plate: ${how}` : how;
+}
+const needsKind = (table, shot) => !!table && table.col.kind < 0 && !table.screen && shot.kind === "broll" && /motion/i.test(shot.how || "");
+function withKindColumn(markdown, table) {
+  const { rows } = scan(markdown);
+  const kindAt = new Map(rows.filter((r) => r.table.start === table.start).map((r) => [r.i, r.shot.kind]));
+  const at = table.col.id >= 0 ? table.col.id + 1 : 0;
+  return lineEdit(markdown, (text) => {
+    const lines = text.split("\n");
+    for (let i = table.start; i <= table.end; i++) {
+      const r = rawRow(lines[i]);
+      while (r.cells.length < at) r.cells.push(" ");
+      const value = i === table.start ? "Kind" : i === table.start + 1 ? "---" : kindAt.has(i) ? KIND_NAME[kindAt.get(i)] : "";
+      r.cells.splice(at, 0, ` ${value} `);
+      lines[i] = joinRow(r);
+    }
+    return lines;
+  });
+}
 function rowFor(table, shot) {
   const out = Array(Math.max(table.width, 1)).fill("");
   const { col } = table;
-  if (col.id >= 0) out[col.id] = shot.id;
+  out[col.id] = shot.id;
   if (col.kind >= 0) out[col.kind] = KIND_NAME[shot.kind] || KIND_NAME.broll;
   out[col.what] = shot.what;
   out[col.over] = shot.over;
-  if (col.how >= 0) out[col.how] = howFor(shot);
+  if (col.how >= 0) out[col.how] = howFor(table, shot);
   return `| ${out.map(cell).join(" | ")} |`;
 }
 // Where a shot of this kind goes: the main table, or the Screen recordings table when the main one has no Kind column.
+// Only tables with an id column count, so a new row always carries its id; otherwise a standard table is made.
 function tableFor(tables, kind) {
-  const main = tables.find((t) => !t.screen);
+  const main = tables.find((t) => !t.screen && t.col.id >= 0);
   if (kind !== "screen" || main?.col.kind >= 0) return { table: main, screen: false };
-  return { table: tables.find((t) => t.screen), screen: true };
+  return { table: tables.find((t) => t.screen && t.col.id >= 0), screen: true };
 }
 // A new table goes before the given headings (outside fences), else at the end, with blank lines around it.
 function insertBlock(lines, headings, before, block) {
@@ -450,7 +487,10 @@ function insertBlock(lines, headings, before, block) {
  * Kind column keeps every kind there. Pipes are escaped.
  */
 export function addShot(markdown, shot) {
-  return lineEdit(markdown, (text) => {
+  let md = String(markdown ?? "");
+  const found = tableFor(scan(md).tables, shot.kind).table;
+  if (needsKind(found, shot)) md = withKindColumn(md, found);
+  return lineEdit(md, (text) => {
     const { lines, tables, headings } = scan(text);
     const { table, screen } = tableFor(tables, shot.kind);
     if (table) { lines.splice(table.end + 1, 0, rowFor(table, shot)); return lines; }
@@ -459,9 +499,11 @@ export function addShot(markdown, shot) {
       insertBlock(lines, headings, (h) => /^sketches\b/i.test(h.text.trim()) && h.level <= 2,
         ["## Screen recordings", "", "| # | What to record | Over (A-roll line) |", "| --- | --- | --- |", rowFor(head, shot)]);
     } else {
-      const head = { width: 4, col: { id: 0, what: 1, over: 2, how: 3, kind: -1 } };
+      const kind = shot.kind === "broll" && /motion/i.test(shot.how || "");
+      const head = kind ? { width: 5, col: { id: 0, kind: 1, what: 2, over: 3, how: 4 } } : { width: 4, col: { id: 0, what: 1, over: 2, how: 3, kind: -1 } };
       insertBlock(lines, headings, (h) => h.level === 2,
-        ["| # | What to show | Over (A-roll line) | How to make it |", "| --- | --- | --- | --- |", rowFor(head, shot)]);
+        [kind ? "| # | Kind | What to show | Over (A-roll line) | How to make it |" : "| # | What to show | Over (A-roll line) | How to make it |",
+          kind ? "| --- | --- | --- | --- | --- |" : "| --- | --- | --- | --- |", rowFor(head, shot)]);
     }
     return lines;
   });
@@ -470,24 +512,25 @@ export function addShot(markdown, shot) {
 /** updateShot(markdown, id, { kind, what, over, how }) → the list with that row changed in place (or moved to the
  *  Screen recordings table and back when the kind needs it and there is no Kind column). Unknown id: unchanged. */
 export function updateShot(markdown, id, fields) {
-  const { lines, rows } = scan(markdown);
-  const r = rows.find((x) => x.shot.id === id);
-  if (!r) return String(markdown ?? "");
+  let md = String(markdown ?? "");
+  let r = scan(md).rows.find((x) => x.shot.id === id);
+  if (!r) return md;
   const next = { ...r.shot, ...Object.fromEntries(Object.entries(fields || {}).filter(([, v]) => v != null)) };
-  // A B-roll that was a Motion plate only because of the written default loses it.
-  if (next.kind !== "motion" && r.shot.kind === "motion" && next.how === "Motion plate") next.how = "";
+  // A Motion plate turned into something else loses the written "Motion plate" default.
+  if (next.kind !== "motion" && r.shot.kind === "motion") next.how = (next.how || "").replace(/^Motion plate(?::\s*|$)/i, "");
+  if (r.table.col.kind < 0 && (next.kind === "screen") !== r.table.screen) return addShot(removeRow(md, r.i), next);
+  if (needsKind(r.table, next)) { md = withKindColumn(md, r.table); r = scan(md).rows.find((x) => x.shot.id === id); }
   const { col } = r.table;
-  if (col.kind < 0 && (next.kind === "screen") !== r.table.screen) return addShot(removeRow(markdown, r.i), next);
-  return lineEdit(markdown, () => {
-    const raw = cells(lines[r.i]);
-    while (raw.length < r.table.width) raw.push("");
-    const set = (k, v) => { if (col[k] >= 0 && clean(raw[col[k]] ?? "") !== v) raw[col[k]] = v; };
+  return lineEdit(md, (text) => {
+    const lines = text.split("\n");
+    const row = rawRow(lines[r.i]);
+    while (row.cells.length < r.table.width) row.cells.push(" ");
+    const set = (k, v) => { if (col[k] >= 0 && rawText(row.cells[col[k]]) !== v) row.cells[col[k]] = ` ${cell(v)} `; };
     set("what", next.what);
     set("over", next.over);
-    set("how", howFor(next));
-    if (col.kind >= 0 && kindOf(raw[col.kind]) !== next.kind) raw[col.kind] = KIND_NAME[next.kind];
-    const row = `| ${raw.map(cell).join(" | ")} |`;
-    if (row !== `| ${cells(lines[r.i]).map(cell).join(" | ")} |`) lines[r.i] = row;
+    if (col.how >= 0 && (fields?.how != null || next.kind !== r.shot.kind || next.how !== r.shot.how)) set("how", howFor(r.table, next));
+    if (col.kind >= 0 && kindOf(rawText(row.cells[col.kind])) !== next.kind) row.cells[col.kind] = ` ${KIND_NAME[next.kind]} `;
+    lines[r.i] = joinRow(row);
     return lines;
   });
 }

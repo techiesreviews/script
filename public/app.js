@@ -829,7 +829,9 @@ function showBar() {
   const s = currentSelection();
   if (!s) { hideBar(); return; }
   barSel = s;
-  $("#addBroll").disabled = !canAddBroll() || !spokenSelection(s.range).length;
+  const add = $("#addBroll");
+  add.disabled = !canAddBroll() || !spokenSelection(s.range).length;
+  add.title = !add.disabled ? "" : !canAddBroll() ? "The B-roll list can't be read" : "Select spoken lines to add B-roll";
   const n = D.countWords(s.quote);
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
@@ -1833,11 +1835,12 @@ scriptEl.addEventListener("click", (e) => {
   if (act) { e.preventDefault(); return act.dataset.act === "keep" ? keepSketch(act.dataset.b) : undoSketch(act.dataset.b); }
   const t = e.target.closest(".shot-frame__jump");
   if (!t) return;
-  // Lighting a shot also opens its card to change or remove it; a second click puts both away.
+  // A click lights the shot and opens its card to change or remove it; a click while its card is open puts both away.
+  // After Cancel or Escape the shot stays lit, and one click opens the card again.
   const id = t.dataset.b;
-  lightShot(id, false);
-  if (broll.lit === id) openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
-  else closeShotCard();
+  if (!shotCard.hidden && sc.mode === "edit" && sc.id === id) { closeShotCard(); if (broll.lit === id) lightShot(id, false); return; }
+  if (broll.lit !== id) lightShot(id, false);
+  openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
 });
 // Frames are not text: a copy that runs across one gives only the script's words.
 scriptEl.addEventListener("copy", (e) => {
@@ -2136,16 +2139,19 @@ async function startList() {
   const token = ++broll.token;
   let link = null;
   if ("showSaveFilePicker" in window) {
+    // Only a cancelled picker keeps the list in the browser; any other problem shows "Not saved" in the card.
+    const pick = (o) => window.showSaveFilePicker({ suggestedName: name, types: FILE_TYPES, ...o });
+    let handle = null;
     try {
-      const pick = (o) => window.showSaveFilePicker({ suggestedName: name, types: FILE_TYPES, ...o });
-      let handle;
       try { handle = await pick(state.handle ? { startIn: state.handle } : {}); }
       catch (e) { if (e?.name === "TypeError") handle = await pick({}); else throw e; }
+    } catch (e) { if (e?.name !== "AbortError") throw e; }
+    if (handle) {
       const run = brollWrites.then(() => writeHandle(handle, text));
       brollWrites = run.catch(() => {});
       await run;
       link = { handle, name: handle.name };
-    } catch { link = null; } // cancelled or refused: the list is kept in the browser
+    }
   }
   if (token !== broll.token) throw new Error("The script changed.");
   if (!link) { link = { name, draft: true }; keepList(text); }
@@ -2270,7 +2276,8 @@ shotCard.addEventListener("submit", async (e) => {
   if (sc.busy || !state.doc) return;
   const what = $("#scWhat").value.replace(/\s+/g, " ").trim().slice(0, 200);
   if (!what) return $("#scWhat").focus();
-  const how = sc.kind === "screen" ? "" : $("#scHow").value.replace(/\s+/g, " ").trim().slice(0, 120);
+  // A screen recording's card hides How: its cell in the file stays as it is.
+  const how = sc.kind === "screen" ? undefined : $("#scHow").value.replace(/\s+/g, " ").trim().slice(0, 120);
   const { kind, mode, id } = sc;
   sc.busy = true;
   $("#scProblem").hidden = true;
@@ -2316,7 +2323,10 @@ $("#scRemove").addEventListener("click", async () => {
   } catch (err) { failShotCard(err); }
 });
 // A press outside the card closes it (frames reopen it on their own click).
-document.addEventListener("pointerdown", (e) => { if (!shotCard.hidden && !shotCard.contains(e.target)) closeShotCard(); }, true);
+document.addEventListener("pointerdown", (e) => {
+  if (shotCard.hidden || shotCard.contains(e.target) || e.target.closest?.(".shot-frame__jump")) return;
+  closeShotCard();
+}, true);
 const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
 
 /* ---------- Your own agent over MCP (live relay) ---------- */

@@ -13,7 +13,8 @@ Lex (2026-10-28): "I also want to be able to add B-roll and define a description
 - The new shot:
   - id: the next free `B<n>` for B-roll and Motion plate, the next free `S<n>` for Screen recording;
   - Over: built from the selection so the existing matcher finds the same lines again. One block: the first words of the selection (about 8 words, ending in `…` when cut). Several blocks: a range, `"first words…" through "first words of the last block…"`. If the quote would match an earlier line first, use more words until it doesn't;
-  - Motion plate: when "How" is empty, write "Motion plate", so it is detected as motion as before.
+  - Motion plate: when "How" is empty, write "Motion plate", so it is detected as motion as before. In a table without a Kind column, a How that does not mention motion is written as "Motion plate: <how>"; a B-roll whose How mentions motion gives that table a Kind column, filled in for every row, so every kind reads back the same (review fix, 2026-10-28).
+  - A row always has its id: a table without an id column gets a standard table next to it.
 - It shows at once: tag, rule and empty sketch frame beside the line, in the Storyboard and its filters, in `get_script`'s `broll` and in "Ask for sketches".
 
 ## Changing and removing a shot
@@ -21,6 +22,7 @@ Lex (2026-10-28): "I also want to be able to add B-roll and define a description
 - Clicking a shot's tag or frame lights it up as now and also opens the same card filled in: kind, What, How, plus "Remove shot". Save changes the row in place.
 - Remove takes the row out, and its sketch too.
 - To move a shot to other text, the person removes it and adds it again (no extra UI).
+- Changing the kind to or from Screen recording in a list without a Kind column moves the row between the two tables and keeps its id (a `B<n>` can then sit among the screen recordings).
 
 ## Where it is saved
 
@@ -30,8 +32,8 @@ Lex (2026-10-28): "I also want to be able to add B-roll and define a description
   - `removeShot(md, id)`: removes the row and its sketch block.
   - Pipes in text are escaped.
 - **A linked file:** write through the existing linked handle and the one-write-at-a-time queue, asking permission when needed, as the sketch Keep does.
-- **No list linked yet:** the first Add makes a new list. Where the File System Access API exists, a save picker suggests `<script name>-broll.md` next to the script; the new file starts with `# <script title> · B-roll list`, the main table and the Screen recordings table, and becomes the linked list. If the picker is cancelled, or the API is missing, the list lives in the draft.
-- **The demo list and lists kept in the draft:** changes stay in the draft (localStorage) and survive a reload. The Storyboard header shows a quiet "Not saved to a file · Save as…", which saves the list as a file and links it. Export → B-roll list also still works.
+- **No list linked yet:** the first Add makes a new list. Where the File System Access API exists, a save picker suggests `<script name>-broll.md` next to the script; the new file starts with `# <script title> · B-roll list`, the main table and the Screen recordings table, and becomes the linked list. If the picker is cancelled, or the API is missing, the list is kept in the browser (below); any other problem shows "Not saved" in the card.
+- **The demo list and lists kept in the browser:** changes stay in local storage under their own key, `script-editor:brollList:<script name>`, apart from the script's draft (so "Discard" on unsaved script changes keeps the list), and survive a reload. The Storyboard header shows a quiet "Not saved to a file · Save as…", which saves the list as a file and links it. Export → B-roll list also still works.
 
 ## Checks
 
