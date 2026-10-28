@@ -1677,11 +1677,13 @@ function closeBroll() {
 async function loadBroll() {
   const token = ++broll.token;
   if (!state.doc) return;
+  // "none" must mean "no list linked", so the list counts as loading while its link is looked up.
+  broll.status = "loading";
   let link = await idbGet(brollKey());
   if (token !== broll.token) return;
   // The demo script links its own made-up list.
   if (!link && state.name === SAMPLE.name) link = { demo: true, name: SAMPLE_BROLL.name };
-  if (!link || link.none) return renderBroll();
+  if (!link || link.none) { broll.status = "none"; dropGoneSuggestions(); return renderBroll(); }
   broll.link = link;
   await readBroll(token, true);
 }
