@@ -177,6 +177,20 @@ test("room: with the host away, a guest's change is answered, never dropped quie
   assert.deepEqual(a.sent.at(-1), { type: "host", online: false });
 });
 
+test("room: an oversized op is refused by its seq; other oversized messages get no reply", async () => {
+  const { room, join } = roomWith();
+  const host = await join({ keyHash: "k", hostHash: "h" });
+  const a = await join({ keyHash: "k", hostHash: "" });
+  await room.webSocketMessage(a, msg({ type: "hello", name: "Ana" }));
+  const big = "x".repeat(600 * 1024);
+  const hostSeen = host.sent.length, before = a.sent.length;
+  await room.webSocketMessage(a, msg({ type: "op", base: 0, seq: 7, ops: [{ type: "text", blockId: "b1", at: 0, del: 0, ins: big }] }));
+  assert.deepEqual(a.sent.slice(before), [{ type: "refused", seq: 7 }]);
+  await room.webSocketMessage(a, msg({ type: "ask", ask: { id: "a1", quote: big } }));
+  assert.equal(a.sent.length, before + 1, "an oversized ask gets no reply");
+  assert.equal(host.sent.length, hostSeen, "nothing oversized reaches the host");
+});
+
 test("room: 30 s without the host ends the room; a host back in time keeps it", async () => {
   const { ctx, room, join } = roomWith();
   let host = await join({ keyHash: "k", hostHash: "h" });
@@ -443,6 +457,68 @@ test("together: a catch-up waits while an input method composes", async () => {
   g.c.resume();
   assert.ok(await waitFor(() => g.c.status === "live" && allSame(ha, g)));
   assert.equal(g.a.text(), "Hello. World.");
+  host.stop();
+});
+
+test("together: a catch-up entry that fails while a resync is open asks once, and the text arrives once", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello."), para("p2", "")]);
+  const g = await guest("Ana");
+  g.c.backoffMs = 40;
+  // The host's catch-up carries a broken entry, so applying it fails and the guest asks for a resync.
+  const hostSend = host.send.bind(host);
+  host.send = (m) => {
+    if (m.type === "to" && m.msg.type === "catchup") m = { ...m, msg: { ...m.msg, entries: m.msg.entries.map((e) => (e.by === "host" ? { ...e, ops: [{ type: "text", blockId: "gone", at: 0, del: 0, ins: "?" }] } : e)) } };
+    return hostSend(m);
+  };
+  let resyncs = 0;
+  const guestSend = g.c.send.bind(g.c);
+  g.c.send = (m) => { if (m.type === "resync") resyncs++; return guestSend(m); };
+  g.a.type("p1", 6, " Once."); g.c.local();
+  g.c.ws.close(); // the host applies the batch, the receipt is lost
+  await settle(8);
+  ha.type("p2", 0, "Host."); host.local();
+  g.a.type("p1", 0, "Later. "); g.c.local(); // typed while away
+  assert.ok(await waitFor(() => g.c.status === "live" && !g.c.resyncing && allSame(ha, g)), `${g.c.status} ${ha.text()} / ${g.a.text()}`);
+  assert.equal(resyncs, 1, "exactly one resync");
+  assert.equal(ha.text(), "Later. Hello. Once.|Host.");
+  assert.equal(ha.text().split("Once.").length, 2, "the batch arrives once");
+  host.stop();
+});
+
+// A guest whose batches are held back by the network: the batch stays in flight until the test answers.
+async function heldGuest() {
+  const { host, ha, guest } = await session([para("p1", "Hello.")]);
+  const g = await guest("Ana");
+  const send = g.c.send.bind(g.c);
+  g.c.send = (m) => (m.type === "op" ? true : send(m));
+  g.a.type("p1", 6, " Big"); g.c.local();
+  const seq = g.c.pending.seq;
+  g.a.type("p1", 0, "Kept "); g.c.local(); // typed after the batch: stays unsent
+  return { host, ha, g, seq };
+}
+
+test("together: a refused with another seq leaves the batch in flight; a matching one drops only that batch", async () => {
+  const { host, g, seq } = await heldGuest();
+  g.c.receive(JSON.stringify({ type: "refused", seq: seq + 1 }));
+  assert.equal(g.c.pending?.seq, seq);
+  assert.equal(g.a.text(), "Kept Hello. Big");
+  g.c.receive(JSON.stringify({ type: "refused", seq }));
+  assert.notEqual(g.c.pending?.seq, seq, "the refused batch is no longer in flight");
+  assert.ok(!g.c.pending?.ops.some((o) => o.ins === " Big"));
+  assert.equal(g.a.text(), "Kept Hello.", "the refused batch is gone, what came after it stays");
+  host.stop();
+});
+
+test("together: a refused that arrives while an input method composes waits in the queue", async () => {
+  const { host, g, seq } = await heldGuest();
+  g.a.busyNow = true;
+  g.c.receive(JSON.stringify({ type: "refused", seq }));
+  assert.equal(g.c.pending?.seq, seq, "not dropped while composing");
+  assert.deepEqual(g.c.queue.map((m) => m.type), ["refused"]);
+  g.a.busyNow = false;
+  g.c.resume();
+  assert.equal(g.a.text(), "Kept Hello.");
+  assert.ok(!g.c.pending?.ops.some((o) => o.ins === " Big"));
   host.stop();
 });
 

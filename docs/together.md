@@ -44,10 +44,11 @@ The room stamps `from` on everything a guest sends and lets guests send only `he
 | --- | --- |
 | room → anyone | `{ type: "welcome", role, pid, peers? / host? }` |
 | guest → host | `{ type: "hello", name, client, v }` → host gets `{ type: "join", from, name, client, v }`; `{ type: "leave", from }` when it closes |
-| host → guest | `{ type: "catchup", v, entries, seen, people, carets }` when the guest's `v` is still in the log, else `{ type: "snapshot", v, doc: { blocks, meta }, people, carets, seen }` (sent with `{ type: "to", to: pid, msg }`) |
+| host → guest | `{ type: "catchup", v, entries, seen, people, carets }` when the guest's `v` is still in the log, else `{ type: "snapshot", v, doc: { blocks, meta }, people, carets, seen, refused? }` (sent with `{ type: "to", to: pid, msg }`) |
 | guest → host | `{ type: "op", base, seq, ops }` (at most one in flight) and `{ type: "resync" }` |
 | host → all | `{ type: "op", v, ops, by, client?, seq? }` (sent with `{ type: "all", msg }`; the copy with the guest's own `client` and `seq` is its receipt) |
 | room → guest | `{ type: "host", online }`, also in answer to a change sent while the host is away |
+| room → guest | `{ type: "refused", seq }` when a batch is too large for the room |
 | host → all | `{ type: "people", people: [{ pid, name, colour, kind }] }` |
 | anyone → others | `{ type: "caret", c: { blockId, offset, selEnd? } }`, at most 15 a second |
 | host → room | `{ type: "end" }`; the room also ends 30 s after the host's tab closed |
@@ -55,7 +56,7 @@ The room stamps `from` on everything a guest sends and lets guests send only `he
 
 The host transforms a guest's batch against every version after its `base`, applies it, gives it the next version and sends it to everyone. A `base` older than the host's log (500 versions) gets a snapshot. A guest transforms what arrives against its batch in flight and its unsent changes. Carets follow every operation; the author's caret goes to the end of their change.
 
-**Nothing a guest types is lost.** A guest sends only while the room is live; otherwise its changes stay unsent. `client` (random, kept across reconnects) and `seq` let the host skip a batch it already has and tell the guest, as `seen`, the last one it applied. After a lost connection, or when the host is back, the guest says hello with its last confirmed `v`: it gets the versions it missed, then sends its batch in flight again (unless `seen` covers it) and then the rest. A snapshot (old base or a clash) rebases the guest's unsent changes onto it; only changes that clash with the host's on the same block give way. While a resync is open the guest's hello asks for a snapshot. A batch the host will not take (not valid for the document) comes back as a snapshot with `refused: seq`, and one too large for the room as `{ type: "refused" }`: the guest drops that batch, keeps what it typed after it, and never sends it again.
+**Nothing a guest types is lost.** A guest sends only while the room is live; otherwise its changes stay unsent. `client` (random, kept across reconnects) and `seq` let the host skip a batch it already has and tell the guest, as `seen`, the last one it applied. After a lost connection, or when the host is back, the guest says hello with its last confirmed `v`: it gets the versions it missed, then sends its batch in flight again (unless `seen` covers it) and then the rest. A snapshot (old base or a clash) rebases the guest's unsent changes onto it; only changes that clash with the host's on the same block give way. While a resync is open the guest's hello asks for a snapshot. A batch the host will not take (not valid for the document) comes back as a snapshot with `refused: seq`, and one too large for the room as `{ type: "refused", seq }`: the guest drops that batch, keeps what it typed after it, and never sends it again.
 
 **Undo.** Each tab tracks everyone's last text change (typing with pauses under 1.5 s is one change). While it is untouched, that person's name tag shows Undo, which undoes only that change. Ctrl/Cmd+Z in a room undoes only your own text, Enter and Backspace joins; the whole-document undo stack is cleared when sharing starts and ends.
 

@@ -125,7 +125,7 @@ export class RoomClient {
     try { msg = JSON.parse(data); } catch { return; }
     if (!msg || typeof msg.type !== "string" || msg.type === "pong") return;
     // While the person composes text (an input method), changes wait so the composition is not broken.
-    if (this.adapter.busy?.() && (msg.type === "op" || msg.type === "snapshot" || msg.type === "catchup")) { this.queue.push(msg); return; }
+    if (this.adapter.busy?.() && (msg.type === "op" || msg.type === "snapshot" || msg.type === "catchup" || msg.type === "refused")) { this.queue.push(msg); return; }
     this.retry = 0;
     if (this.role === "host") this.hostMessage(msg);
     else this.guestMessage(msg);
@@ -408,7 +408,7 @@ export class RoomClient {
         return;
       case "snapshot": return this.snapshot(msg);
       case "catchup": return this.catchup(msg);
-      case "refused": return this.refused(); // the room would not pass a batch on (too large)
+      case "refused": return this.refused(msg); // the room would not pass a batch on (too large)
       case "op": return this.joining ? undefined : this.remoteOps(msg);
       case "people": return this.setPeople((msg.people || []).filter((p) => p && typeof p.pid === "string"));
       case "caret": return this.setCaret(msg.from, msg.c);
@@ -442,8 +442,8 @@ export class RoomClient {
     this.live = live;
     this.mine = [];
   }
-  refused() {
-    if (!this.pending) return;
+  refused({ seq } = {}) {
+    if (!this.pending || this.pending.seq !== seq) return;
     this.dropPending();
     this.applying = true;
     try { this.adapter.load({ blocks: cloneBlocks(this.live), meta: this.meta }); } finally { this.applying = false; }
@@ -482,7 +482,8 @@ export class RoomClient {
   catchup({ v, entries, people, carets, seen = 0 }) {
     this.joining = false;
     for (const e of entries || []) this.remoteOps(e);
-    if (this.resyncing || this.v !== v) { this.resyncing = false; return this.resync(); }
+    if (this.resyncing) return; // the snapshot already asked for brings this guest up to date
+    if (this.v !== v) return this.resync();
     this.setPeople(people || []);
     for (const [pid, c] of Object.entries(carets || {})) if (validCaret(c) && c) this.carets.set(pid, c);
     this.setStatus("live");
