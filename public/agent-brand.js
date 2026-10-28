@@ -1,5 +1,6 @@
 // Who the connected agent is, for its caret, its avatar and the agent button: the model's own name and logo
 // ("Claude", "Codex", …, no "(agent)"; Lex, 2026-10-28). Pure: no DOM. The icon keys are drawn by app.js (ICONS).
+// The logos are their makers' trademarks, used only to name the connected agent.
 
 const BRANDS = [
   [/claude|anthropic/i, "Claude", "ai-claude"],
@@ -7,7 +8,7 @@ const BRANDS = [
   [/chatgpt|openai/i, "ChatGPT", "ai-openai"],
   [/gemini/i, "Gemini", "ai-gemini"],
   [/cursor/i, "Cursor", "ai-cursor"],
-  [/copilot|visual studio code|vscode/i, "Copilot", "ai-copilot"],
+  [/copilot/i, "Copilot", "ai-copilot"], // not VS Code itself: it can run any model
 ];
 
 /** An MCP clientInfo name made readable: "my-tool" → "My Tool"; names with capitals or spaces stay as they are.

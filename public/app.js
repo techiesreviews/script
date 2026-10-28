@@ -3018,7 +3018,10 @@ function renderAgent() {
   const btn = $("#agentBtn"), act = $("#mcpAction");
   btn.dataset.state = agent.state;
   act.dataset.state = agent.state === "elsewhere" ? "off" : agent.state;
-  const name = agentBrand(agent.info?.name).name;
+  const brand = agentBrand(agent.info?.name), name = brand.name;
+  // While connected, the button shows the agent's own logo instead of the plug.
+  const key = agent.state === "on" ? brand.icon : "plug", mark = btn.querySelector("svg.i");
+  if (mark && mark.dataset.key !== key) mark.outerHTML = icon(key).replace("<svg ", `<svg data-key="${key}" `);
   $("#agentBtnLabel").textContent = agent.state === "on" ? name : agent.state === "waiting" ? "Waiting for MCP" : agent.state === "elsewhere" ? "Open in another tab" : "Connect your agent";
   btn.title = agent.state === "elsewhere" ? "Open in another tab" : agent.state === "on" ? name : "";
   $("#mcpActionText").textContent = agent.state === "on" ? "Disconnect MCP" : agent.state === "elsewhere" ? "Use this tab" : "Wait for MCP";
