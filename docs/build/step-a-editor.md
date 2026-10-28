@@ -12,7 +12,7 @@ Read first: `AGENTS.md`, `docs/agents/agent-scripts.md`, the approved mock-up, k
 - `package.json`: `"type": "module"`, private, scripts `dev` (`npx --yes wrangler@4 dev`), `test` (`node --test tests/*.test.mjs`). No runtime dependencies, no build step.
 - `docs/data-shape.md`: the document and ask data shape (below), written for a future multiplayer build.
 - `tests/doc.test.mjs`: unit tests for `doc.js`.
-- Sample: `public/samples/demo-backup-wordpress.md` (a made-up demo script; the first build used a private one). Fixtures are in `tests/fixtures/`. Do not edit anything outside this repository.
+- Sample: `public/samples/demo-good-script.md` (a made-up demo script; the first build used a private one). Fixtures are in `tests/fixtures/`. Do not edit anything outside this repository.
 
 ## Document model (`doc.js`)
 

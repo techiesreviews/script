@@ -10,7 +10,7 @@ import {
 
 const read = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
 // The demo script the start screen offers ("Try a demo script"): made up, so it can be public.
-const SCRIPT = readFileSync(new URL("../public/samples/demo-backup-wordpress.md", import.meta.url), "utf8");
+const SCRIPT = readFileSync(new URL("../public/samples/demo-good-script.md", import.meta.url), "utf8");
 const PROMPTER_EXAMPLE = read("prompter-example.md");
 
 /* The prompter's own parse(), copied from the original prompter page (kept outside this repo; regexes unchanged). */
@@ -127,7 +127,7 @@ test("block types", () => {
 test("demo script: title, front matter, 7 numbered spoken sections and 2 others", () => {
   const doc = parse(SCRIPT);
   assert.equal(doc.blocks[0].type, "title");
-  assert.equal(titleOf(doc), "DEMO · How to Back Up a WordPress Site");
+  assert.equal(titleOf(doc), "DEMO · How to Write a Good Video Script");
   const { front, sections } = outline(doc);
   assert.ok(front.length >= 3);
   assert.equal(sections.length, 9);
@@ -257,7 +257,7 @@ test("cloneDoc copies blocks", () => {
 test("camera script: spoken paras only, joined by one blank line, ending with a newline", () => {
   const doc = parse(SCRIPT);
   const cam = exportCamera(doc);
-  assert.ok(cam.startsWith("A plugin update. A white screen."));
+  assert.ok(cam.startsWith("A blank page. A deadline."));
   assert.ok(cam.endsWith("Thanks for watching, and see you in the next one.\n"));
   assert.ok(!/\[|^#|^- /m.test(cam), "no notes, headings or lists");
   assert.ok(!cam.includes("fresh staging copy") && !cam.includes("Music low"), "no unspoken sections");
@@ -281,13 +281,13 @@ test("sentences: one per line, nothing lost", () => {
 test("prompter export reads back in the prompter: 7 sections, titles, times, no line lost", () => {
   const doc = parse(SCRIPT);
   const md = exportPrompter(doc);
-  assert.ok(md.startsWith("# DEMO · How to Back Up a WordPress Site\n\n---\n\n### **1 · HOOK · 0:00**\n\n"));
+  assert.ok(md.startsWith("# DEMO · How to Write a Good Video Script\n\n---\n\n### **1 · HOOK · 0:00**\n\n"));
   assert.ok(md.endsWith("\n") && !md.endsWith("\n\n"));
   const sections = prompterParse(md);
   assert.equal(sections.length, 7);
   assert.deepEqual(sections.map((s) => s.title), [
-    "1 · HOOK", "2 · WHAT A BACKUP REALLY IS", "3 · WHERE BACKUPS GO WRONG", "4 · SET IT UP ONCE",
-    "5 · TEST THE RESTORE", "6 · MAKE IT A HABIT", "7 · RECAP AND CLOSE",
+    "1 · HOOK", "2 · START WITH THE PROBLEM", "3 · WRITE FOR THE EAR", "4 · SOUND LIKE YOU, NOT LIKE AI",
+    "5 · READ IT OUT LOUD", "6 · MAKE IT A HABIT", "7 · RECAP AND CLOSE",
   ]);
   assert.deepEqual(sections.map((s) => s.time), ["0:00", "0:20", "0:45", "1:10", "1:40", "2:05", "2:20"]);
 

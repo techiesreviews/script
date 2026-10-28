@@ -38,7 +38,7 @@ const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 
 
 const LS = "script-editor:";
 const FILE_TYPES = [{ description: "Markdown script", accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] } }];
-const SAMPLE = { url: "samples/demo-backup-wordpress.md", name: "demo-backup-wordpress.md" };
+const SAMPLE = { url: "samples/demo-good-script.md", name: "demo-good-script.md" };
 const TYPING_GROUP_MS = 600;
 const UNDO_LIMIT = 300;
 
