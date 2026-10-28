@@ -618,7 +618,9 @@ export function quoteSelection(doc, quote) {
   const paras = outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para"));
   let joined = "";
   const spans = paras.map((b) => { const text = contentOf(b), start = joined.length ? joined.length + 2 : 0; joined += (joined.length ? "\n\n" : "") + text; return { id: b.id, start, end: start + text.length }; });
-  const m = new RegExp(words.map(escRe).join("\\s+")).exec(joined);
+  // Whole words only: a quote may not start or end inside a word ("ackup", "spare ke").
+  const edge = (w, side) => (/[\p{L}\p{N}]/u.test(side === "start" ? w[0] : w.at(-1)) ? (side === "start" ? "(?<![\\p{L}\\p{N}])" : "(?![\\p{L}\\p{N}])") : "");
+  const m = new RegExp(edge(words[0], "start") + words.map(escRe).join("\\s+") + edge(words.at(-1), "end"), "u").exec(joined);
   if (!m) return [];
   const a = m.index, z = m.index + m[0].length;
   return spans.filter((p) => p.start < z && p.end > a).map((p) => ({ id: p.id, start: Math.max(a, p.start) - p.start, end: Math.min(z, p.end) - p.start }));
@@ -642,6 +644,7 @@ export function checkBrollAnswer(ask, args, { doc, shots = [] } = {}) {
   if (a.message != null && typeof a.message !== "string") return { error: "message must be text." };
   if (typeof a.message === "string" && a.message.length > L.message) return { error: `message is longer than ${L.message} characters.` };
   const known = new Map(shots.map((s) => [s.id, s]));
+  const touched = new Set();
   const idList = shots.length ? shots.map((s) => s.id).join(", ") : "none yet";
   const changes = [];
   for (const [i, c] of a.changes.entries()) {
@@ -665,6 +668,8 @@ export function checkBrollAnswer(ask, args, { doc, shots = [] } = {}) {
     }
     const shot = known.get(c.id);
     if (!shot) return { error: `${at}: unknown shot id ${JSON.stringify(c.id ?? "")}. Shot ids: ${idList}.` };
+    if (touched.has(c.id)) return { error: `${at}: ${c.id} already has a change in this answer. Send one change per shot.` };
+    touched.add(c.id);
     if (c.op === "remove") { changes.push({ op: "remove", id: c.id, why, state: "open" }); continue; }
     if (c.what == null && c.how == null && c.kind == null) return { error: `${at}: an update needs what, how or kind.` };
     if (c.what != null && !oneLine(c.what)) return { error: `${at}: what can't be empty.` };
@@ -685,8 +690,41 @@ export function applyBrollChange(markdown, c) {
   if (c.op === "remove") return removeShot(markdown, c.id);
   return String(markdown ?? "");
 }
-/** Keep several in order, in one write: each change sees the ones before it. */
-export const applyBrollChanges = (markdown, changes) => changes.reduce(applyBrollChange, String(markdown ?? ""));
+/**
+ * Keep several in order, in one write: each change sees the ones before it. applied[i] says whether change i
+ * really applied: an update or remove whose shot is no longer in the list changes nothing and is not kept.
+ */
+export function applyBrollChangesReport(markdown, changes) {
+  let md = String(markdown ?? "");
+  const applied = [];
+  for (const c of changes) {
+    if (c.op !== "add" && !parseBroll(md).shots.some((s) => s.id === c.id)) { applied.push(false); continue; }
+    md = applyBrollChange(md, c);
+    applied.push(true);
+  }
+  return { markdown: md, applied };
+}
+export const applyBrollChanges = (markdown, changes) => applyBrollChangesReport(markdown, changes).markdown;
+/** Open updates and removals for shots that are gone: they can no longer apply, so they become undone.
+ *  skip(i): a change still being kept, which the Keep itself settles. */
+export function dropGone(answer, shots, skip = () => false) {
+  const ids = new Set(shots.map((s) => s.id));
+  let dropped = 0;
+  (answer?.changes || []).forEach((c, i) => { if (c.state === "open" && c.op !== "add" && !ids.has(c.id) && !skip(i)) { c.state = "undone"; dropped++; } });
+  return dropped;
+}
+
+/** What the agent sees of an ask in wait_for_asks: a selection's quote and context, a sketch ask's shots, or the
+ *  whole spoken text; a plan ask also gets the B-roll list; like and voice asks get the voice guide. */
+export function askForAgent(a, { spokenText = "", shots = null, voiceGuide = "" } = {}) {
+  const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, createdAt: a.createdAt };
+  if (a.scope === "selection") Object.assign(out, { quote: a.quote, context: a.context, section: a.section });
+  else if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots;
+  else out.spokenText = spokenText;
+  if (a.action === "plan") out.broll = (shots || []).map(forAgent);
+  if ((a.action === "like" || a.action === "voice") && voiceGuide) out.voiceGuide = voiceGuide;
+  return out;
+}
 /** The changes a Keep writes: only the ones still open. An undone change writes nothing. */
 export const changesToKeep = (answer, ns) => ns.map((n) => answer?.changes?.[n]).filter((c) => c?.state === "open");
 /** After a Keep or Undo: the ask's final status once every change is done ("kept" when any was kept), else null. */

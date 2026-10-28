@@ -663,7 +663,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .suggest__why { font-style: italic; }
 .suggest del { color: var(--faint); text-decoration-color: color-mix(in oklch, var(--text) 45%, transparent); text-decoration-thickness: 1.5px; }
 .suggest ins { padding-inline: 0.1em; border-radius: 3px; background: var(--accent-soft); text-decoration: none; }
-.suggest__bar { margin: 0.15rem 0 0; }
+.suggest__bar { margin-block: 0.15rem 0; margin-inline: 0; }
 .frame > .suggest__bar { margin-block-start: 0.45rem; }
 .suggest__problem { padding-inline: 0.45rem 0.2rem; color: var(--accent-ink); }
 .frame__body { display: grid; gap: 0.45rem; }

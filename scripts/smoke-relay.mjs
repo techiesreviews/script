@@ -55,11 +55,13 @@ function onTabMessage(m) {
     if (a.action !== "broll") return reply(m.id, { error: "This ask is not about B-roll. Answer it with answer_ask." });
     if (m.args.changes.some((c) => c.op === "add" && !"Hello there.".includes(c.quote))) return reply(m.id, { error: "Change 1: the quote is not in the spoken text word for word." });
     a.status = "answered";
-    a.answer = { kind: "broll", changes: m.args.changes.map((c) => ({ ...c, state: "waiting" })) };
+    a.answer = { kind: "broll", changes: m.args.changes.map((c) => ({ ...c, state: "open" })) };
     received.broll.push(m.args);
     return reply(m.id, { result: "Shown to the person. They choose Keep or Undo per change." });
   }
-  if (m.tool === "list_asks") return reply(m.id, { result: { asks: asks.map(({ id, action, status, answer }) => ({ id, action, status, answer })) } });
+  // Like the editor: a change's stored state "open" is shown to the agent as "waiting".
+  const shown = (answer) => (answer?.kind === "broll" ? { ...answer, changes: answer.changes.map((c) => ({ ...c, state: c.state === "open" ? "waiting" : c.state })) } : answer);
+  if (m.tool === "list_asks") return reply(m.id, { result: { asks: asks.map(({ id, action, status, answer }) => ({ id, action, status, answer: shown(answer) })) } });
   reply(m.id, { error: "Unknown tool" });
 }
 function makeAsk(action = "simpler", instruction = "Use simpler words.") {

@@ -7,6 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
+  applyBrollChangesReport, dropGone, askForAgent,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -626,4 +627,61 @@ test("Keep gives the same file as the C3 functions; Keep all is one write in ord
   for (const c of answer.changes) if (c.state === "open") c.state = "kept";
   assert.equal(settleBroll(answer), "kept");
   assert.equal(settleBroll({ changes: [{ state: "undone" }] }), "undone");
+});
+
+/* ---------- Step C4 review: gone shots, whole words, what the agent sees ---------- */
+test("changes for a shot that is gone: one change per shot, not kept when it can't apply, and dropped as undone", () => {
+  const doc = parse(SCRIPT);
+  const { shots } = parseBroll(DEMO);
+  matchShots(doc, shots);
+  assert.match(checkBrollAnswer(brollAsk(), { changes: [{ op: "remove", id: "B7" }, { op: "update", id: "B7", what: "x" }] }, { doc, shots }).error, /Change 2: B7 already has a change in this answer/);
+  // The shot was removed before Keep: the update applies to nothing, so it is reported as not applied.
+  const without = removeShot(DEMO, "B7");
+  const up = { op: "update", id: "B7", what: "x", state: "open" };
+  const add = { op: "add", kind: "broll", what: "Key", over: '"A backup is a spare key."', how: "", state: "open" };
+  const r = applyBrollChangesReport(without, [up, add, { op: "remove", id: "B1", state: "open" }]);
+  assert.deepEqual(r.applied, [false, true, true]);
+  assert.equal(r.markdown, removeShot(addShot(without, { id: "B9", kind: "broll", what: "Key", over: add.over, how: "" }), "B1"));
+  assert.equal(applyBrollChangesReport(without, [up]).markdown, without);
+  assert.equal(applyBrollChanges(without, [up]), without);
+  // Gone shots: their open update or remove becomes undone, so the ask can settle; adds and kept ones stay.
+  const answer = { kind: "broll", changes: [{ ...up }, { ...add }, { op: "remove", id: "B2", state: "kept" }, { op: "remove", id: "B3", state: "open" }] };
+  assert.equal(dropGone(answer, parseBroll(without).shots, (i) => i === 3), 1);
+  assert.deepEqual(answer.changes.map((c) => c.state), ["undone", "open", "kept", "open"]);
+  answer.changes[1].state = "undone";
+  answer.changes[3].state = "kept";
+  assert.equal(settleBroll(answer), "kept");
+});
+
+test("a quote must start and end on whole words; regex characters in the text are plain text", () => {
+  const doc = parse(SCRIPT);
+  assert.deepEqual(quoteSelection(doc, "ackup is a spare key."), []);
+  assert.deepEqual(quoteSelection(doc, "A backup is a spare ke"), []);
+  assert.equal(quoteSelection(doc, "A backup is a spare key").length, 1); // stops before the full stop: fine
+  const { shots } = parseBroll(DEMO);
+  assert.match(checkBrollAnswer(brollAsk(), { changes: [{ op: "add", kind: "broll", what: "Key", quote: "are key." }] }, { doc, shots }).error, /not in the spoken text/);
+  const money = parse("# T\n\n## 1 · A (0:00–0:10)\n\nIt costs $5 (or less). [Really?] Yes.*+ ^done|\n\nNext line.\n");
+  const list = spokenBlocks(money);
+  for (const quote of ["It costs $5 (or less).", "(or less). [Really?] Yes.*+ ^done|", "$5"]) {
+    const sel = quoteSelection(money, quote);
+    assert.equal(sel.length, 1, quote);
+    assert.equal(contentOf(blockById(money, sel[0].id)).slice(sel[0].start, sel[0].end), quote);
+    assert.deepEqual(matchOver(list, overFor(money, sel)), [list[0].id], quote);
+  }
+});
+
+test("what the agent sees: a plan ask gets the spoken text and the B-roll; a sketch ask only its shots", () => {
+  const { shots } = parseBroll(DEMO);
+  const ctx = { spokenText: "Spoken words.", shots, voiceGuide: "Short and warm." };
+  const plan = askForAgent({ id: "p", scope: "broll", action: "plan", instruction: "Plan", createdAt: "t" }, ctx);
+  assert.deepEqual(Object.keys(plan), ["id", "scope", "action", "instruction", "createdAt", "spokenText", "broll"]);
+  assert.equal(plan.spokenText, "Spoken words.");
+  assert.deepEqual(plan.broll.map((s) => s.id), shots.map((s) => s.id));
+  assert.deepEqual(Object.keys(plan.broll[0]), ["id", "what", "over", "how", "kind", "blockIds", "check"]);
+  const sketch = askForAgent({ id: "s", scope: "broll", action: "sketch", instruction: "Draw", createdAt: "t", shots: [{ id: "B4" }] }, ctx);
+  assert.deepEqual(Object.keys(sketch), ["id", "scope", "action", "instruction", "createdAt", "shots"]);
+  const sel = askForAgent({ id: "a", scope: "selection", action: "broll", instruction: "Suggest", createdAt: "t", quote: "q", context: "c", section: "1" }, ctx);
+  assert.deepEqual([sel.quote, sel.context, sel.section, sel.spokenText, sel.broll, sel.voiceGuide], ["q", "c", "1", undefined, undefined, undefined]);
+  assert.equal(askForAgent({ id: "v", scope: "script", action: "voice" }, ctx).voiceGuide, "Short and warm.");
+  assert.equal(askForAgent({ id: "l", scope: "selection", action: "like" }, { ...ctx, voiceGuide: "" }).voiceGuide, undefined);
 });

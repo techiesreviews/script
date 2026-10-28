@@ -1714,6 +1714,7 @@ function adoptBroll(text) {
   for (const s of shots) s.check = !!broll.flags[s.id];
   Object.assign(broll, { text, shots, sketches, status: "ok", err: "" });
   if (broll.lit && !shotById(broll.lit)) broll.lit = null;
+  dropGoneSuggestions();
   renderBroll();
 }
 // After a reload or restore the block ids are new: match every shot again. Otherwise only the ones not found.
@@ -1923,6 +1924,7 @@ function unlinkBroll() {
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
   Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
+  dropGoneSuggestions();
   syncFlags();
   renderBroll();
 }
@@ -2018,8 +2020,8 @@ $("#board").addEventListener("click", (e) => {
     else if (a === "plan-cancel") cancelPlan();
     else if (a === "s-keep") keepSuggestions([act.dataset.s]);
     else if (a === "s-undo") undoSuggestions([act.dataset.s]);
-    else if (a === "s-keep-all") keepSuggestions(openSuggestions().map((x) => x.key));
-    else if (a === "s-undo-all") undoSuggestions(openSuggestions().map((x) => x.key));
+    else if (a === "s-keep-all") keepSuggestions(bulkKeys());
+    else if (a === "s-undo-all") undoSuggestions(bulkKeys());
     else if (a === "ask") requestSketches();
     else if (a === "cancel") cancelSketches();
     else if (a === "keep") keepSketch(act.dataset.b);
@@ -2190,7 +2192,8 @@ async function startList() {
   if (token !== broll.token) throw new Error("The script changed.");
   if (!link) { link = { name, draft: true }; keepList(text); }
   else store.del(listKey());
-  Object.assign(broll, { link, flags: {}, lit: null, saving: {}, problem: {} });
+  // Keep "saving": a Keep that made this list is still writing, and a second click must not add the shot twice.
+  Object.assign(broll, { link, flags: {}, lit: null, problem: {} });
   idbSet(brollKey(), link);
   adoptBroll(text);
 }
@@ -2376,6 +2379,18 @@ function receiveBroll(ask, answer, by) {
   renderAgent();
   changed();
 }
+// A shot that is gone (removed, or the list changed) takes its open update or removal with it, so the ask settles
+// and "Plan B-roll" comes back.
+function dropGoneSuggestions() {
+  const shots = broll.status === "ok" ? broll.shots : [];
+  let dropped = 0;
+  for (const a of state.asks) {
+    if (!isBrollAnswer(a)) continue;
+    const n = B.dropGone(a.answer, shots, (i) => !!broll.saving[`${a.id}:${i}`]);
+    if (n) { dropped += n; settleSuggestions(a); }
+  }
+  if (dropped) changed();
+}
 // Every change still waiting for Keep or Undo, in ask order, with a stable key "askId:index".
 function openSuggestions() {
   const out = [];
@@ -2453,9 +2468,10 @@ function planAction() {
   return `<span class="board__wait" data-taken="${ask.status === "taken"}"><span class="status-dot"></span>Waiting for a B-roll plan<button class="icon-btn" type="button" data-act="plan-cancel" aria-label="Cancel">${icon("x")}</button></span>`;
 }
 // "Keep all · Undo all", once, while an answer with several changes still has some waiting.
+// The open changes of answers that still have more than one waiting: what "Keep all · Undo all" acts on.
+const bulkKeys = () => openSuggestions().filter((x) => x.ask.answer.changes.filter((c) => c.state === "open").length > 1).map((x) => x.key);
 function keepAllAction() {
-  const many = state.asks.some((a) => isBrollAnswer(a) && a.answer.changes.length > 1 && a.answer.changes.some((c) => c.state === "open"));
-  if (!many) return "";
+  if (!bulkKeys().length) return "";
   return `<span class="board__all"><button class="board__btn" type="button" data-act="s-keep-all">Keep all</button><span aria-hidden="true">·</span><button class="board__btn" type="button" data-act="s-undo-all">Undo all</button></span>`;
 }
 
@@ -2494,9 +2510,12 @@ async function keepSuggestions(keys) {
     // No list yet: the first Keep makes one, as "Add B-roll" does.
     if (broll.status === "none") await startList();
     if (broll.status !== "ok") throw new Error("The B-roll list can't be read.");
-    // One queued write: every change in order, each add with the next free id at that moment.
-    await changeList((md) => B.applyBrollChanges(md, items.map((x) => x.c)));
-    for (const x of items) x.c.state = "kept";
+    // One queued write: every change in order, each add with the next free id at that moment. Only a change that
+    // really applied counts as kept; one whose shot is gone becomes undone.
+    const changes = items.flatMap((x) => B.changesToKeep(x.ask.answer, [x.n]));
+    let report = null;
+    await changeList((md) => { report = B.applyBrollChangesReport(md, changes); return report.markdown; });
+    items.forEach((x, i) => { x.c.state = report?.applied[i] ? "kept" : "undone"; });
     for (const ask of new Set(items.map((x) => x.ask))) settleSuggestions(ask);
     changed();
   } catch (e) {
@@ -2612,16 +2631,11 @@ function takeUnseen() {
   return list.map(askForAgent);
 }
 function voiceGuide() { return store.get("voiceGuide"); }
-function askForAgent(a) {
-  const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, createdAt: a.createdAt };
-  if (a.scope === "selection") Object.assign(out, { quote: a.quote, context: a.context, section: a.section });
-  else if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots;
-  else if (state.doc) out.spokenText = D.exportCamera(state.doc);
-  if (a.action === "plan") out.broll = broll.status === "ok" ? broll.shots.map(B.forAgent) : [];
-  const guide = voiceGuide();
-  if ((a.action === "like" || a.action === "voice") && guide?.text) out.voiceGuide = guide.text;
-  return out;
-}
+const askForAgent = (a) => B.askForAgent(a, {
+  spokenText: a.scope === "selection" || a.action === "sketch" || !state.doc ? "" : D.exportCamera(state.doc),
+  shots: broll.status === "ok" ? broll.shots : [],
+  voiceGuide: voiceGuide()?.text || "",
+});
 function askForList(a) {
   const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, status: a.status, createdAt: a.createdAt };
   if (a.scope === "selection") Object.assign(out, { quote: a.quote, section: a.section });
