@@ -10,7 +10,26 @@ const check = (ok, label, extra = "") => {
   console.log(`${ok ? "ok" : "FAIL"} ${label}${extra && !ok ? ` (${extra})` : ""}`);
   if (!ok) failures++;
 };
-const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+// Tokens come from the Worker, with its own time inside: se2-<birth time in base36>-<random>.
+async function agentToken() {
+  const res = await fetch(`${BASE}/api/agent-token`, { method: "POST" });
+  const body = await res.json();
+  if (res.status !== 200 || !/^se2-[0-9a-z]{8,10}-[A-Za-z0-9_-]{43}$/.test(body.token)) throw new Error(`POST /api/agent-token: ${res.status} ${JSON.stringify(body)}`);
+  return body;
+}
+// A token made by hand with any birth time: it has the right form, so only its time can refuse it.
+const handMade = (born) => `se2-${born.toString(36)}-${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")}`;
+// What a tab hears when it connects with this token: the close code, or "open" if it stays open.
+function relayAnswer(t) {
+  return new Promise((resolve) => {
+    const s = new WebSocket(`${WS_BASE}/api/relay`, ["script-editor", `t.${t}`]);
+    const timer = setTimeout(() => { try { s.close(); } catch { /* closed */ } resolve("open"); }, 2000);
+    s.addEventListener("close", (e) => { clearTimeout(timer); resolve(e.code); });
+    s.addEventListener("error", () => {});
+  });
+}
+const minted = await agentToken();
+const token = minted.token;
 
 /* ---------- The fake tab ---------- */
 const asks = [];
@@ -85,6 +104,21 @@ async function mcp(method, params, { auth = token, origin, notification = false 
 const toolText = (r) => r.body?.result?.content?.[0]?.text ?? "";
 
 try {
+  check(Math.abs(minted.createdAt - Date.now()) < 5 * 60_000 && parseInt(token.split("-")[1], 36) === minted.createdAt, "POST /api/agent-token gives a token with its birth time inside", JSON.stringify(minted));
+  const tokenGet = await fetch(`${BASE}/api/agent-token`);
+  check(tokenGet.status === 405, "GET /api/agent-token gets 405", tokenGet.status);
+  const tokenForeign = await fetch(`${BASE}/api/agent-token`, { method: "POST", headers: { Origin: "https://evil.example" } });
+  check(tokenForeign.status === 403, "POST /api/agent-token from another site gets 403", tokenForeign.status);
+
+  // A token past its time, or from the future, is refused by the Worker itself.
+  for (const [label, born] of [["9 hours old", Date.now() - 9 * 3600_000], ["1 hour in the future", Date.now() + 3600_000]]) {
+    const t = handMade(born);
+    const code = await relayAnswer(t);
+    check(code === 4003, `a token ${label}: the relay closes the tab with 4003`, code);
+    const r = await mcp("tools/list", null, { auth: t });
+    check(r.status === 401, `a token ${label}: /mcp gets 401`, r.status);
+  }
+
   // Before any tab: the token is unknown, so the relay refuses it.
   const early = await mcp("tools/list");
   check(early.status === 401, "unknown token gets 401", early.status);
@@ -160,9 +194,11 @@ try {
   await sleep(400);
   const after = await mcp("tools/list");
   check(after.status === 401, "a revoked token gets 401", after.status);
+  const reopened = await relayAnswer(token);
+  check(reopened === 4003, "a revoked token stays refused for a new tab", reopened);
 
   // No tab connected: tools say the editor is not open.
-  const token2 = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+  const { token: token2 } = await agentToken();
   const ws2 = new WebSocket(`${WS_BASE}/api/relay`, ["script-editor", `t.${token2}`]);
   await new Promise((r) => ws2.addEventListener("open", r));
   ws2.close();

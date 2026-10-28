@@ -3,6 +3,7 @@
 // Then: node scripts/smoke-room.mjs [base URL, default http://127.0.0.1:8787]
 // One host and two guests use the real client (public/together/room.js) over WebSocket, each with a plain
 // in-memory document. No network beyond the local Worker.
+// The rooms' alarms (the daily check, the erase 7 days after the end) are too slow to smoke-test; tests/room.test.mjs covers them.
 import { RoomClient, newRoom, protocols } from "../public/together/room.js";
 import { applyOps, cloneBlocks } from "../public/together/ops.js";
 

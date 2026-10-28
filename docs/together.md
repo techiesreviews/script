@@ -19,6 +19,8 @@ Nothing in `public/together/` or `worker/room.js` knows about scripts.
 
 `https://script.techies.tools/#room=<22 chars>&k=<43 chars>`. Everything after `#` stays in the browser. The socket opens `/api/room` with the subprotocols `["script-editor-room", "r.<room>", "k.<key>"]`, plus `"h.<host key>"` for the host (the host key never leaves the host's tab). The Worker checks their form and passes only SHA-256 hashes to the room, which stores `{ keyHash, hostHash, createdAt, ended }` and nothing else. Close codes: `4003` wrong key, `4004` ended (or no such room), `4005` full (20 guests), `4001` another host tab took over. The first three are final: the client stops and does not reconnect.
 
+The room keeps one alarm, and the note says what it means. While the host is in, it is a daily check, so a room whose host left without a close event (a restart, say) still ends. When the host's tab closes, it is the 30-second grace. When the room ends, the note becomes `{ createdAt, ended: true, endedAt }` and the alarm erases it 7 days later; an ended note from before `endedAt` gets that alarm when someone knocks. After the erase, a guest with the old link still hears `4004`. The host's own tab, if it is still open, would make the room anew with the same keys; that is allowed, because only that tab holds the host key (in memory, never saved). But a host tab that has heard nothing from its room for 7 days stops with `ended` instead of reconnecting.
+
 ## Document model
 
 A document is a list of blocks `{ id, text, attrs }`. `text` is what people edit (`\n` line breaks); `attrs` is opaque to the room. The script editor uses `text = contentOf(block)` and `attrs = { type, sep, prefix }` (`prefix` is the `# ` / `## ` marker), so carets and asks share content offsets and a para that becomes a heading is an attrs change plus a text change.
@@ -51,7 +53,7 @@ The room stamps `from` on everything a guest sends and lets guests send only `he
 | room → guest | `{ type: "refused", seq }` when a batch is too large for the room |
 | host → all | `{ type: "people", people: [{ pid, name, colour, kind }] }` |
 | anyone → others | `{ type: "caret", c: { blockId, offset, selEnd? } }`, at most 15 a second |
-| host → room | `{ type: "end" }`; the room also ends 30 s after the host's tab closed |
+| host → room | `{ type: "end" }`; the room also ends 30 s after the host's tab closed, or at the daily check without a host |
 | guest → host | `{ type: "ask", ref, ask: { blockId, start, quote, action, instruction? } }` a new ask; `{ type: "ask", ref, id, act: "keep" \| "undo" \| "dismiss" }` on the guest's own ask |
 | host → guest | `{ type: "ask-ack", ref }` taken (or already taken); `{ type: "ask-refused", ref, reason: "changed" \| "taken" }` the quote is not in the host's script, or someone else's open ask is on that text |
 | host → guest | `{ type: "you", asker }` the opaque id that carries this tab's Keep/Undo rights; `{ type: "join-refused" }` another tab uses this tab's client id |

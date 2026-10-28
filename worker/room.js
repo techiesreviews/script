@@ -1,12 +1,18 @@
 // Room for working together (Share to edit). One Durable Object per room id, with the hibernation API.
 // It passes messages between the host's tab and the guests and never stores script text: storage holds only
-// { keyHash, hostHash, createdAt, ended }. Per-socket data (person id, name, role) lives in the socket attachment.
+// { keyHash, hostHash, createdAt, ended }, and once ended { createdAt, ended, endedAt }. Per-socket data (person id,
+// name, role) lives in the socket attachment.
 // The host's tab is the source of truth; the room only checks who may send what, and stamps who sent it.
+// One alarm, read from the note: while the host is in, a daily check; while the host is away, the 30-second grace; once
+// ended, the erase 7 days later.
 //
 // No Cloudflare imports, so the tests can run it with a fake ctx and fake sockets.
+import { ENDED_KEEP_MS } from "../public/together/room.js";
 
+export { ENDED_KEEP_MS };
 export const PROTOCOL = "script-editor-room";
 export const HOST_GRACE_MS = 30_000;
+export const HOST_CHECK_MS = 24 * 60 * 60 * 1000;
 export const GUESTS_MAX = 20;
 export const GUEST_MESSAGE_MAX = 512 * 1024;
 export const NAME_MAX = 40;
@@ -39,6 +45,7 @@ export class Room {
     return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": PROTOCOL } });
   }
 
+  now() { return Date.now(); }
   meta() { return this.ctx.storage.get("meta"); }
   att(ws) { try { return ws.deserializeAttachment() || {}; } catch { return {}; } }
   send(ws, msg) { try { ws.send(typeof msg === "string" ? msg : JSON.stringify(msg)); return true; } catch { return false; } }
@@ -52,14 +59,20 @@ export class Room {
 
   async join(ws, { keyHash, hostHash }) {
     let meta = await this.meta();
-    if (meta?.ended) return this.refuse(ws, CLOSE.ended, "ended");
+    if (meta?.ended) {
+      // An ended note from before endedAt gets its erase now.
+      if ((await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(this.now() + ENDED_KEEP_MS);
+      return this.refuse(ws, CLOSE.ended, "ended");
+    }
     if (hostHash) {
+      // Once the note is erased, the host's own open tab (the only place its key is, in memory) makes the room anew.
       if (!meta) {
-        meta = { keyHash, hostHash, createdAt: Date.now(), ended: false };
+        meta = { keyHash, hostHash, createdAt: this.now(), ended: false };
         await this.ctx.storage.put("meta", meta);
       } else if (meta.hostHash !== hostHash || meta.keyHash !== keyHash) return this.refuse(ws, CLOSE.refused, "refused");
       for (const old of this.ctx.getWebSockets("host")) { try { old.close(CLOSE.replaced, "replaced"); } catch { /* closed */ } }
-      await this.ctx.storage.deleteAlarm();
+      // A daily check, so a room whose host left without a close event still ends.
+      await this.ctx.storage.setAlarm(this.now() + HOST_CHECK_MS);
       this.ctx.acceptWebSocket(ws, ["host"]);
       ws.serializeAttachment({ pid: "host", role: "host" });
       const peers = this.guests().map((g) => this.att(g)).filter((a) => a.name).map(({ pid, name }) => ({ pid, name }));
@@ -147,20 +160,31 @@ export class Room {
     } else if (me.role === "host" && !this.ctx.getWebSockets("host").some((s) => s !== ws)) {
       if ((await this.meta())?.ended) return;
       for (const g of this.guests()) this.send(g, { type: "host", online: false });
-      await this.ctx.storage.setAlarm(Date.now() + HOST_GRACE_MS);
+      await this.ctx.storage.setAlarm(this.now() + HOST_GRACE_MS);
     }
   }
   async webSocketError(ws) { return this.webSocketClose(ws, 1006); }
 
-  // The host has been away for 30 seconds: the room ends.
+  // An ended room is erased after 7 days. Otherwise: with the host in, check again tomorrow; with the host away (30 s
+  // after it left, or found gone at the daily check), the room ends.
   async alarm() {
-    if (!this.host()) await this.end();
+    const meta = await this.meta();
+    if (!meta) return;
+    const now = this.now();
+    if (meta.ended) {
+      const due = (meta.endedAt ?? 0) + ENDED_KEEP_MS;
+      if (now < due) return this.ctx.storage.setAlarm(due);
+      return this.ctx.storage.deleteAll();
+    }
+    if (this.host()) return this.ctx.storage.setAlarm(now + HOST_CHECK_MS);
+    await this.end();
   }
 
   async end() {
     const meta = (await this.meta()) || {};
-    await this.ctx.storage.put("meta", { createdAt: meta.createdAt ?? Date.now(), ended: true });
-    await this.ctx.storage.deleteAlarm();
+    const now = this.now();
+    await this.ctx.storage.put("meta", { createdAt: meta.createdAt ?? now, ended: true, endedAt: now });
+    await this.ctx.storage.setAlarm(now + ENDED_KEEP_MS);
     for (const s of this.ctx.getWebSockets()) { try { s.close(CLOSE.ended, "ended"); } catch { /* closed */ } }
   }
 }

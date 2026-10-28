@@ -1,8 +1,8 @@
-// script.techies.tools Worker: static assets, the live relay (/api/relay), rooms for working together (/api/room)
-// and MCP (/mcp).
+// script.techies.tools Worker: static assets, agent tokens (/api/agent-token), the live relay (/api/relay), rooms for
+// working together (/api/room) and MCP (/mcp).
 import { Relay } from "./relay.js";
 import { Room, PROTOCOL as ROOM_PROTOCOL } from "./room.js";
-import { handleMcp, TOKEN_RE } from "./mcp.js";
+import { handleMcp, TOKEN_RE, checkToken, newToken } from "./mcp.js";
 
 export { Relay, Room };
 const ROOM_RE = /^[A-Za-z0-9_-]{22}$/;
@@ -15,6 +15,13 @@ async function sha256hex(text) {
 async function relayStub(env, token) {
   return env.RELAY.get(env.RELAY.idFromName(await sha256hex(token)));
 }
+// A socket that is closed at once, so the tab hears why (4003 makes it forget the token). No relay object is touched.
+function closedSocket(code, reason) {
+  const [client, server] = Object.values(new WebSocketPair());
+  server.accept();
+  server.close(code, reason);
+  return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": "script-editor" } });
+}
 const noindex = (response) => {
   if (response.status === 101) return response;
   const r = new Response(response.body, response);
@@ -25,6 +32,14 @@ const noindex = (response) => {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/agent-token") {
+      // A new agent token with the Worker's own time inside (see mcp.js). It touches no relay object.
+      if (request.method !== "POST") return noindex(Response.json({ error: "Method not allowed" }, { status: 405, headers: { Allow: "POST" } }));
+      const origin = request.headers.get("Origin");
+      if (origin && origin !== url.origin) return noindex(Response.json({ error: "Forbidden" }, { status: 403 }));
+      const { token, born } = newToken();
+      return noindex(Response.json({ token, createdAt: born }, { headers: { "Cache-Control": "no-store" } }));
+    }
     if (url.pathname === "/api/relay") {
       if (request.headers.get("Upgrade") !== "websocket") return noindex(Response.json({ error: "Expected a WebSocket" }, { status: 426 }));
       const origin = request.headers.get("Origin");
@@ -33,8 +48,13 @@ export default {
       const protocols = (request.headers.get("Sec-WebSocket-Protocol") || "").split(",").map((p) => p.trim());
       const token = protocols.find((p) => p.startsWith("t."))?.slice(2) ?? "";
       if (!protocols.includes("script-editor") || !TOKEN_RE.test(token)) return noindex(Response.json({ error: "Unauthorized" }, { status: 401 }));
+      // Past its time (or from the future): refused here, before any relay object is touched.
+      const t = checkToken(token);
+      if (!t.ok) return closedSocket(4003, "expired");
       const stub = await relayStub(env, token);
-      return stub.fetch("https://relay/tab", { headers: { Upgrade: "websocket" } });
+      const headers = { Upgrade: "websocket" };
+      if (t.born != null) headers["X-Token-Born"] = String(t.born);
+      return stub.fetch("https://relay/tab", { headers });
     }
     if (url.pathname === "/api/room") {
       if (request.headers.get("Upgrade") !== "websocket") return noindex(Response.json({ error: "Expected a WebSocket" }, { status: 426 }));

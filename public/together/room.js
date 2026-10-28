@@ -12,6 +12,9 @@ export const PROTOCOL = "script-editor-room";
 export const CARET_MS = Math.ceil(1000 / 15); // at most 15 caret messages a second
 export const COLOURS = 6;
 export const LOG_MAX = 500;
+// A room is erased 7 days after it ends (the Worker's room uses this too). A host tab that has heard nothing from its
+// room for that long does not make it anew: the room ended long ago.
+export const ENDED_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 // Messages that change what the person sees wait while an input method composes (the app's own "ask", "asks" and
 // "broll" messages too).
 const WAIT_WHILE_BUSY = new Set(["op", "snapshot", "catchup", "refused", "ask", "asks", "broll"]);
@@ -138,9 +141,11 @@ export class RoomClient {
 
   connect() {
     if (this.stopped) return;
+    if (this.role === "host" && this.lastHeard && this.now() - this.lastHeard >= ENDED_KEEP_MS) return this.finish("ended");
     const ws = new this.WS(this.url, protocols(this));
     this.ws = ws;
-    ws.addEventListener("message", (e) => { if (this.ws === ws) this.receive(e.data); });
+    ws.addEventListener("open", () => { if (this.ws === ws) this.heard(); });
+    ws.addEventListener("message", (e) => { if (this.ws === ws) { this.heard(); this.receive(e.data); } });
     ws.addEventListener("close", (e) => {
       if (this.ws !== ws) return;
       this.ws = null;
@@ -154,6 +159,7 @@ export class RoomClient {
       this.reconnect = this.timers.setTimeout(() => this.connect(), delay);
     });
   }
+  heard() { if (this.role === "host") this.lastHeard = this.now(); }
   send(msg) {
     try { if (this.ws?.readyState === 1) { this.ws.send(JSON.stringify(msg)); return true; } } catch { /* closed */ }
     return false;

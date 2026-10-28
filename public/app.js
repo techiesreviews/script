@@ -2819,10 +2819,22 @@ const RETAKE_AFTER_MS = 2 * 60 * 1000;
 const NOT_HERE = "This tab is editing someone else's shared script. Your agent works only in your own scripts.";
 const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, waiters: [], copiedTimer: 0 };
 
-function newToken() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+// Tokens come from the Worker, which writes its own time into them. A clipboard write needs the click itself, so a
+// spare is fetched when the menu opens; it is used if it is younger than ten minutes. Ages here use this tab's clock,
+// counted from when the token arrived.
+const SPARE_MS = 10 * 60 * 1000;
+let spareToken = null, spareFetch = null;
+function fetchToken() {
+  return fetch("/api/agent-token", { method: "POST", cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((b) => (typeof b?.token === "string" && b.token ? { token: b.token, at: Date.now() } : null))
+    .catch(() => null);
 }
+function prefetchToken() {
+  if (spareFetch || (spareToken && Date.now() - spareToken.at < SPARE_MS)) return;
+  spareFetch = fetchToken().then((t) => { spareFetch = null; if (t) spareToken = t; return t; });
+}
+const liveToken = () => !!agent.token && Date.now() - agent.createdAt < AGENT_MAX_AGE;
 const prettyName = (n) => {
   const name = String(n || "").trim();
   if (!name) return "Agent";
@@ -3044,12 +3056,23 @@ async function copyPrompt() {
     box.select();
   }
 }
-$("#mcpAction").addEventListener("click", () => {
+let tokenWait = false;
+$("#mcpAction").addEventListener("click", async () => {
   if (agent.state === "on") return disconnectAgent();
   if (agent.state === "elsewhere") { agent.state = "waiting"; connectRelay(); renderAgent(); return; }
-  if (!agent.token || Date.now() - agent.createdAt >= AGENT_MAX_AGE) {
-    agent.token = newToken();
-    agent.createdAt = Date.now();
+  if (!liveToken()) {
+    if (tokenWait) return;
+    let t = spareToken && Date.now() - spareToken.at < SPARE_MS ? spareToken : null;
+    spareToken = null;
+    if (!t) {
+      tokenWait = true;
+      t = await (spareFetch ?? fetchToken());
+      tokenWait = false;
+      if (spareToken === t) spareToken = null;
+    }
+    if (!t || liveToken()) return; // no token from the Worker: stays off
+    agent.token = t.token;
+    agent.createdAt = t.at;
     store.set("agent", { token: agent.token, createdAt: agent.createdAt });
     connectRelay();
   } else if (!agent.ws) connectRelay();
@@ -3058,7 +3081,10 @@ $("#mcpAction").addEventListener("click", () => {
   copyPrompt();
 });
 $("#agentMenu").addEventListener("click", (e) => { if (e.target.closest("#agentStop")) disconnectAgent(); });
-$("#agentMenu").addEventListener("toggle", (e) => { if (e.newState === "closed") $("#mcpPrompt").hidden = true; });
+$("#agentMenu").addEventListener("toggle", (e) => {
+  if (e.newState === "closed") $("#mcpPrompt").hidden = true;
+  else if (!liveToken()) prefetchToken();
+});
 $("#voiceBtn").addEventListener("click", () => { if (agent.state === "on") requestVoiceCheck(); });
 $("#voiceGuideOpen").addEventListener("click", () => $("#voiceGuideInput").click());
 $("#voiceGuideClear").addEventListener("click", () => { store.del("voiceGuide"); renderVoiceGuide(); });
@@ -3075,7 +3101,7 @@ $("#voiceGuideInput").addEventListener("change", async (e) => {
 });
 setInterval(() => { try { if (agent.ws?.readyState === WebSocket.OPEN) agent.ws.send('{"type":"ping"}'); } catch { /* closed */ } }, 45_000);
 // A token lives at most eight hours; then it is replaced like Disconnect MCP.
-setInterval(() => { if (agent.token && Date.now() - agent.createdAt >= AGENT_MAX_AGE) disconnectAgent(); }, 60_000);
+setInterval(() => { if (agent.token && !liveToken()) disconnectAgent(); }, 60_000);
 (() => {
   if (roomLink) return; // a guest's tab never connects its own agent to someone else's script
   const saved = store.get("agent");

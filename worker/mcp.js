@@ -5,7 +5,38 @@ import { SKETCH_MAX, BROLL_LIMITS } from "../public/broll.js";
 
 export const VERSION = "0.2.0";
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
-export const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+// An agent token: "se2-<birth time>-<random>", made by the Worker (POST /api/agent-token). The birth time is the
+// Worker's Date.now() in base36; the random part is 32 random bytes in base64url. The Worker's clock both writes and
+// checks it, so a browser clock that is ahead or behind changes nothing. It needs no signature: the relay object is
+// picked by the hash of the whole token, so changing the birth time makes another token with an empty relay. A
+// self-made token with a birth time in the past only lives shorter, and one from the future is refused.
+export const MAX_AGE_MS = 8 * 60 * 60 * 1000;
+export const FUTURE_SLACK_MS = 60_000;
+// Tokens from before (43 random characters, made by the tab) work until this date, so every one of them has its full
+// 8 hours and a tab still running the old page has a day to reload. The legacy branch can go after 2026-10-30.
+export const LEGACY_UNTIL = Date.UTC(2026, 9, 30, 12);
+const NEW_TOKEN_RE = /^se2-([0-9a-z]{8,10})-([A-Za-z0-9_-]{43})$/;
+const LEGACY_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+// The form only; checkToken also checks the time.
+export const TOKEN_RE = new RegExp(`${NEW_TOKEN_RE.source}|${LEGACY_TOKEN_RE.source}`);
+
+export function newToken(now = Date.now()) {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const rand = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return { token: `se2-${now.toString(36)}-${rand}`, born: now };
+}
+// { ok: true, born } for a token that may be used now (born is null for a legacy token), else { ok: false, reason }.
+export function checkToken(token, now = Date.now()) {
+  const s = String(token ?? "");
+  const m = s.match(NEW_TOKEN_RE);
+  if (m) {
+    const born = parseInt(m[1], 36);
+    if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
+    return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
+  }
+  if (LEGACY_TOKEN_RE.test(s)) return now < LEGACY_UNTIL ? { ok: true, born: null } : { ok: false, reason: "expired" };
+  return { ok: false, reason: "invalid" };
+}
 export const NOT_OPEN = "The script editor is not open. Ask the person to open it and keep the tab open.";
 export const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
 const CALL_TIMEOUT_MS = 10_000;
@@ -202,32 +233,36 @@ const rpcError = (id, code, message, status = 200, extra) => json({ jsonrpc: "2.
 const rpcResult = (id, result) => json({ jsonrpc: "2.0", id, result });
 const textResult = (value, isError = false) => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }], ...(isError ? { isError: true } : {}) });
 
-export function bearer(request) {
+// The token from the Authorization header, with its birth time, or null when it is missing, malformed or past its time.
+export function bearer(request, now = Date.now()) {
   const m = (request.headers.get("Authorization") || "").match(/^Bearer\s+(\S+)$/i);
-  return m && TOKEN_RE.test(m[1]) ? m[1] : null;
+  const t = m ? checkToken(m[1], now) : null;
+  return t?.ok ? { token: m[1], born: t.born } : null;
 }
 
 // relayFor(token) returns { op(message) } that answers { status: "ok" | "unauthorized" | "no-tab" | "timeout", result?, error? }.
-export async function handleMcp(request, { relayFor }) {
+// Every op message carries the token's birth time (born, null for a legacy token).
+export async function handleMcp(request, { relayFor, now = Date.now }) {
   const url = new URL(request.url);
   if (request.method === "GET" || request.method === "DELETE") return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, { Allow: "POST" });
   const origin = request.headers.get("Origin");
   if (origin && origin !== url.origin) return rpcError(null, -32600, "Requests from other websites are refused.", 403);
-  const token = bearer(request);
+  const auth = bearer(request, now());
   const unauthorized = () => rpcError(null, -32001, "Unauthorized: use the Authorization Bearer token from the script editor's Connect your agent menu.", 401, { "WWW-Authenticate": "Bearer" });
-  if (!token) return unauthorized();
+  if (!auth) return unauthorized();
 
   let msg;
   try { msg = await request.json(); } catch { return rpcError(null, -32700, "Parse error", 400); }
   if (Array.isArray(msg)) return rpcError(null, -32600, "Batches are not supported.", 400);
   if (!isObj(msg) || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return rpcError(msg?.id, -32600, "Invalid request", 400);
 
-  const relay = relayFor(token);
+  const stub = relayFor(auth.token);
+  const relay = { op: (message) => stub.op({ ...message, born: auth.born }) };
   const isNotification = !("id" in msg);
   if (isNotification) {
-    const auth = await relay.op({ op: "auth" });
-    return auth.status === "unauthorized" ? unauthorized() : new Response(null, { status: 202, headers: { "X-Robots-Tag": "noindex" } });
+    const ok = await relay.op({ op: "auth" });
+    return ok.status === "unauthorized" ? unauthorized() : new Response(null, { status: 202, headers: { "X-Robots-Tag": "noindex" } });
   }
   const { id, method } = msg;
   const params = isObj(msg.params) ? msg.params : {};
@@ -245,8 +280,8 @@ export async function handleMcp(request, { relayFor }) {
     });
   }
 
-  const auth = await relay.op({ op: "auth" });
-  if (auth.status === "unauthorized") return unauthorized();
+  const ok = await relay.op({ op: "auth" });
+  if (ok.status === "unauthorized") return unauthorized();
 
   switch (method) {
     case "ping": return rpcResult(id, {});

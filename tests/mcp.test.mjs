@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleMcp, checkArgs, TOOLS, PROTOCOL_VERSIONS, NOT_OPEN, NO_ASKS, INSTRUCTIONS } from "../worker/mcp.js";
+import { handleMcp, checkArgs, TOOLS, PROTOCOL_VERSIONS, NOT_OPEN, NO_ASKS, INSTRUCTIONS, checkToken, newToken, TOKEN_RE, MAX_AGE_MS, FUTURE_SLACK_MS, LEGACY_UNTIL } from "../worker/mcp.js";
 
-const TOKEN = "A".repeat(43);
+const { token: TOKEN, born: BORN } = newToken();
 const BASE = "https://script-editor.example.workers.dev/mcp";
 
 // A fake relay: records ops and answers them like the Durable Object would.
@@ -24,12 +24,12 @@ function fakeRelay({ tab = true, authorized = true, results = {} } = {}) {
     }),
   };
 }
-async function rpc(body, { relay = fakeRelay(), token = TOKEN, origin, method = "POST", raw } = {}) {
+async function rpc(body, { relay = fakeRelay(), token = TOKEN, origin, method = "POST", raw, now } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (origin) headers.Origin = origin;
   const req = new Request(BASE, { method, headers, body: method === "POST" ? (raw ?? JSON.stringify(body)) : undefined });
-  const res = await handleMcp(req, relay);
+  const res = await handleMcp(req, now ? { ...relay, now } : relay);
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null, headers: res.headers, relay };
 }
@@ -56,6 +56,49 @@ test("initialize passes the client's name and version to the relay, cut short", 
   assert.equal(agent.name.length, 60);
   assert.equal(agent.version, "2.1");
   assert.equal(agent.token, TOKEN);
+  assert.equal(agent.born, BORN, "each op carries the token's birth time");
+});
+
+test("checkToken: a token lives 8 hours from its birth on the Worker's clock", () => {
+  const now = Date.UTC(2026, 9, 28, 20);
+  const { token, born } = newToken(now);
+  assert.match(token, /^se2-[0-9a-z]{8,10}-[A-Za-z0-9_-]{43}$/);
+  assert.equal(parseInt(token.split("-")[1], 36), now);
+  assert.equal(born, now);
+  assert.ok(TOKEN_RE.test(token));
+  assert.notEqual(newToken(now).token, token, "the random part differs");
+  assert.deepEqual(checkToken(token, now), { ok: true, born: now });
+  assert.deepEqual(checkToken(token, now + MAX_AGE_MS - 1), { ok: true, born: now });
+  assert.deepEqual(checkToken(token, now + MAX_AGE_MS), { ok: false, reason: "expired" });
+  // A clock skew within a minute is fine; further in the future is refused.
+  assert.deepEqual(checkToken(token, now - FUTURE_SLACK_MS), { ok: true, born: now });
+  assert.deepEqual(checkToken(token, now - FUTURE_SLACK_MS - 1), { ok: false, reason: "invalid" });
+  // Legacy tokens (43 characters, made by the tab) work until the switch-over, then never again.
+  const legacy = "A".repeat(43);
+  assert.deepEqual(checkToken(legacy, LEGACY_UNTIL - 1), { ok: true, born: null });
+  assert.deepEqual(checkToken(legacy, LEGACY_UNTIL), { ok: false, reason: "expired" });
+  assert.equal(LEGACY_UNTIL, Date.parse("2026-10-30T12:00:00Z"));
+  for (const bad of ["", null, "short", "A".repeat(42), "A".repeat(44), "se2-abc-" + "A".repeat(43), `se2-${now.toString(36).toUpperCase()}-${"A".repeat(43)}`, `se1-${now.toString(36)}-${"A".repeat(43)}`, `se2-${now.toString(36)}-${"A".repeat(42)}`, token + " ", "A".repeat(43) + "\n"]) {
+    assert.deepEqual(checkToken(bad, now), { ok: false, reason: "invalid" }, JSON.stringify(bad));
+  }
+});
+
+test("/mcp: a token past its time, or from the future, is refused without asking the relay", async () => {
+  const now = Date.UTC(2026, 9, 28, 20);
+  for (const [token, label] of [[newToken(now - MAX_AGE_MS).token, "9 hours old"], [newToken(now + 2 * FUTURE_SLACK_MS).token, "from the future"], ["A".repeat(43), "legacy after the switch-over"]]) {
+    let asked = 0;
+    const relay = { relayFor: () => { asked++; return { op: async () => ({ status: "ok" }) }; } };
+    const at = token.length === 43 ? () => LEGACY_UNTIL : () => now;
+    for (const body of [{ jsonrpc: "2.0", id: 1, method: "tools/list" }, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} }, { jsonrpc: "2.0", method: "notifications/initialized" }]) {
+      const r = await rpc(body, { relay, token, now: at });
+      assert.equal(r.status, 401, label);
+      assert.equal(r.body.error.code, -32001);
+    }
+    assert.equal(asked, 0, `${label}: relayFor is never called`);
+  }
+  const legacy = fakeRelay();
+  assert.equal((await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { relay: legacy, token: "A".repeat(43), now: () => LEGACY_UNTIL - 1 })).status, 200);
+  assert.ok(legacy.ops.every((o) => o.born === null), "a legacy token's ops carry born: null");
 });
 
 test("tools/list has the six tools with input schemas and limits", async () => {

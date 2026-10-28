@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Room, CLOSE, HOST_GRACE_MS, GUESTS_MAX } from "../worker/room.js";
-import { RoomClient, newRoom, makeLink, parseLink, protocols, LOG_MAX, sha256hex } from "../public/together/room.js";
+import { Room, CLOSE, HOST_GRACE_MS, HOST_CHECK_MS, GUESTS_MAX } from "../worker/room.js";
+import { RoomClient, newRoom, makeLink, parseLink, protocols, LOG_MAX, sha256hex, ENDED_KEEP_MS } from "../public/together/room.js";
 import { createOutbox } from "../public/together-adapter.js";
 import { createHash } from "node:crypto";
 import { applyOps, cloneBlocks } from "../public/together/ops.js";
@@ -24,7 +24,9 @@ function fakeCtx() {
       get: async (k) => structuredClone(data.get(k)),
       put: async (k, v) => { data.set(k, structuredClone(v)); },
       setAlarm: async (t) => { ctx.alarm = t; },
+      getAlarm: async () => ctx.alarm,
       deleteAlarm: async () => { ctx.alarm = null; },
+      deleteAll: async () => { data.clear(); ctx.erased = true; },
       data,
     },
     acceptWebSocket(ws, tags) { ws.tags = tags; sockets.push(ws); },
@@ -203,13 +205,64 @@ test("room: 30 s without the host ends the room; a host back in time keeps it", 
   assert.deepEqual(a.sent.at(-1), { type: "host", online: false });
   assert.ok(ctx.alarm >= Date.now() + HOST_GRACE_MS - 1000);
   host = await join({ keyHash: "k", hostHash: "h" });
-  assert.equal(ctx.alarm, null);
+  assert.ok(ctx.alarm >= Date.now() + HOST_CHECK_MS - 1000, "back in time: the grace alarm becomes the daily check");
   assert.deepEqual(a.sent.at(-1), { type: "host", online: true });
   host.closed = true;
   await room.webSocketClose(host, 1001);
   await room.alarm();
   assert.equal(a.code, CLOSE.ended);
   assert.equal(ctx.storage.data.get("meta").ended, true);
+});
+
+test("room: an ended room is erased 7 days later; the old link then still says ended", async () => {
+  const { ctx, room, join } = roomWith();
+  let now = Date.UTC(2026, 9, 28, 20);
+  room.now = () => now;
+  const host = await join({ keyHash: "k", hostHash: "h" });
+  assert.equal(ctx.alarm, now + HOST_CHECK_MS, "with the host in: a daily check");
+  now += HOST_CHECK_MS;
+  await room.alarm();
+  assert.equal(ctx.alarm, now + HOST_CHECK_MS, "host still here: checked again tomorrow");
+  assert.ok(!host.closed);
+  await room.webSocketMessage(host, msg({ type: "end" }));
+  const endedAt = now;
+  assert.deepEqual(ctx.storage.data.get("meta"), { createdAt: Date.UTC(2026, 9, 28, 20), ended: true, endedAt });
+  assert.equal(ctx.alarm, endedAt + ENDED_KEEP_MS);
+  // An alarm that fires early is set again for the right time.
+  now = endedAt + ENDED_KEEP_MS - 5000;
+  await room.alarm();
+  assert.equal(ctx.alarm, endedAt + ENDED_KEEP_MS);
+  assert.ok(ctx.storage.data.has("meta"));
+  now = endedAt + ENDED_KEEP_MS;
+  await room.alarm();
+  assert.equal(ctx.erased, true);
+  assert.equal(ctx.storage.data.size, 0, "nothing is left");
+  assert.equal((await join({ keyHash: "k", hostHash: "" })).code, CLOSE.ended, "a guest with the old link hears it ended");
+  await room.alarm(); // an alarm on an empty room does nothing
+  assert.equal(ctx.storage.data.size, 0);
+});
+
+test("room: a host gone without a close event is found at the daily check, and the room ends", async () => {
+  const { ctx, room, join } = roomWith();
+  const host = await join({ keyHash: "k", hostHash: "h" });
+  const a = await join({ keyHash: "k", hostHash: "" });
+  host.closed = true; // lost, no webSocketClose
+  await room.alarm();
+  assert.equal(a.code, CLOSE.ended);
+  assert.equal(ctx.storage.data.get("meta").ended, true);
+  assert.ok(ctx.alarm >= Date.now() + ENDED_KEEP_MS - 1000);
+});
+
+test("room: an ended note from before endedAt gets its erase when someone knocks", async () => {
+  const { ctx, room, join } = roomWith();
+  ctx.storage.data.set("meta", { createdAt: 1, ended: true });
+  assert.equal((await join({ keyHash: "k", hostHash: "" })).code, CLOSE.ended);
+  assert.ok(ctx.alarm >= Date.now() + ENDED_KEEP_MS - 1000);
+  const set = ctx.alarm;
+  assert.equal((await join({ keyHash: "k", hostHash: "h" })).code, CLOSE.ended);
+  assert.equal(ctx.alarm, set, "an alarm already set is kept");
+  await room.alarm(); // no endedAt: its time is long past
+  assert.equal(ctx.storage.data.size, 0);
 });
 
 /* ---------- Host and guests through the room ---------- */
@@ -715,4 +768,29 @@ test("together: a tab without a secret never takes over a live entry, and its cl
   assert.equal(withSecret.c.status, "refused");
   assert.ok(host.people.has(first.c.pid));
   host.stop();
+});
+
+test("together: a host tab that heard nothing from its room for 7 days does not make it anew", async () => {
+  const rooms = new Map();
+  const Base = socketFactory(rooms);
+  let opened = 0;
+  const WS = class extends Base { constructor(...a) { super(...a); opened++; } };
+  let now = Date.UTC(2026, 9, 28, 20);
+  const statuses = [];
+  const host = new RoomClient({ role: "host", ...newRoom(), url: "ws://x/api/room", name: "Lex", adapter: plainAdapter([para("p1", "a")]), WebSocketImpl: WS, timers, backoffMs: 5, now: () => now, on: { status: (s) => statuses.push(s) } }).start();
+  await settle();
+  assert.equal(host.status, "live");
+  assert.equal(host.lastHeard, now, "the welcome counts as hearing from the room");
+  // Away a little: it comes back.
+  now += 60_000;
+  host.ws.close(1006);
+  await waitFor(() => host.status === "live" && opened === 2);
+  assert.equal(opened, 2);
+  // Asleep for 7 days (the room was erased meanwhile): no new socket, the sharing has ended.
+  now += ENDED_KEEP_MS;
+  host.ws.close(1006);
+  await waitFor(() => host.status === "ended");
+  assert.equal(host.status, "ended");
+  assert.equal(opened, 2, "no socket is opened");
+  assert.ok(statuses.includes("away"));
 });
