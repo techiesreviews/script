@@ -949,7 +949,7 @@ for (const m of barMenus) {
 let selTimer = 0;
 document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
-addEventListener("resize", () => { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } positionShotCard(); });
+addEventListener("resize", () => { if (document.activeElement === $("#askInput")) fitAsk(true); if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } positionShotCard(); });
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
 bar.addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) makeAsk(b.dataset.act); });
 $("#askForm").addEventListener("submit", (e) => {
@@ -957,11 +957,23 @@ $("#askForm").addEventListener("submit", (e) => {
   const q = $("#askInput").value.trim();
   if (q) makeAsk("ask", q);
 });
-$("#askInput").addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); } });
+$("#askInput").addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  // A bar menu opened with the mouse leaves the focus here: Escape closes only that menu and keeps the typed ask.
+  if (closeBarMenu()) { e.preventDefault(); e.stopPropagation(); return; }
+  hideBar();
+});
 // The field grows when focused, but only into the room the screen has; the bar is placed again as it grows and shrinks.
 function fitAsk(focused) {
   const input = $("#askInput");
-  if (focused) input.style.setProperty("--ask-max", `${input.offsetWidth + Math.max(0, document.documentElement.clientWidth - 16 - bar.offsetWidth)}px`);
+  if (focused) {
+    // Measured against the field's resting width (7rem) and the bar's full content, so neither an already-widened
+    // field (no transition with reduced motion) nor the bar's own width cap hides how much room there is.
+    const rest = 7 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const controls = $(".edit-bar__controls", bar);
+    const barAtRest = bar.offsetWidth - controls.offsetWidth + controls.scrollWidth - input.offsetWidth + rest;
+    input.style.setProperty("--ask-max", `${rest + Math.max(0, document.documentElement.clientWidth - 16 - barAtRest)}px`);
+  }
   if (!bar.hidden && barSel?.range) placeBar(barSel.range);
 }
 $("#askInput").addEventListener("focusin", () => fitAsk(true));
