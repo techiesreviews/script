@@ -1,6 +1,7 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
 import * as D from "./doc.js";
 import * as Q from "./save-queue.js";
+import * as B from "./broll.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -30,15 +31,21 @@ const ICONS = {
   message: '<path d="M4 5h16v11H9l-5 4z"/>',
   chevron: '<path d="m7 10 5 5 5-5"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+  motion: '<path d="M4 17c3-8 6-11 9-10s3 6 7 3"/><circle cx="20" cy="10" r="1.2"/><circle cx="4" cy="17" r="1.2"/>',
+  screen: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><circle cx="12" cy="10" r="2.2"/>',
+  board: '<rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/>',
+  sketch: '<path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/>',
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
-const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send" };
+const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch" };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
 
 const LS = "script-editor:";
 const FILE_TYPES = [{ description: "Markdown script", accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] } }];
 const SAMPLE = { url: "samples/demo-good-script.md", name: "demo-good-script.md" };
+const SAMPLE_BROLL = { url: "samples/demo-good-script-broll.md", name: "demo-good-script-broll.md" };
 const TYPING_GROUP_MS = 600;
 const UNDO_LIMIT = 300;
 
@@ -72,6 +79,11 @@ const state = {
   preCaret: null,
   pendingDraft: null,
   frontOpen: false,
+};
+// The B-roll list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
+const broll = {
+  token: 0, link: null, status: "none", err: "", text: "",
+  shots: [], sketches: {}, flags: {}, lit: null, board: false, saving: {}, problem: {},
 };
 
 /* ---------- Small helpers ---------- */
@@ -363,6 +375,7 @@ function renderAll(caret = null) {
   scriptEl.toggleAttribute("data-locked", !!state.pendingDraft);
   renderToc();
   renderVoice();
+  renderBrollMarks();
   if (caret) placeCaret(caret.id, caret.offset);
 }
 
@@ -373,7 +386,7 @@ function renderToc() {
   toc.innerHTML = sections.filter((s) => s.heading).map((s) => {
     const { num, name, start } = s.info;
     return `<li><a href="#s-${s.heading.id}" data-sec="${s.heading.id}" data-spoken="${s.spoken}"${s.heading.id === current ? ' aria-current="true"' : ""}><span class="toc__num">${esc(num)}</span><span class="toc__title">${esc(name || D.contentOf(s.heading).trim() || "Untitled")}</span><span class="toc__side"><span class="toc__dots"></span><span class="toc__time">${esc(start)}</span></span></a></li>`;
-  }).join("");
+  }).join("") + `<li class="toc__broll"><button class="toc__chip" type="button" id="brollChip"${brollChecks() ? " data-check" : ""}>${icon("film")}B-roll</button></li>`;
   sectionObserver?.disconnect();
   sectionObserver = new IntersectionObserver((entries) => {
     const vis = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
@@ -440,6 +453,7 @@ function renderDerived() {
   $("#prompterAction").disabled = tooLong;
   $("#prompterNote").hidden = !tooLong;
   if (!tooLong) prompterUrl(pro);
+  rematchBroll(false);
 }
 
 let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
@@ -448,6 +462,7 @@ function changed() {
   clearTimeout(derivedTimer);
   derivedTimer = setTimeout(renderDerived, 250);
   renderTocDots();
+  brollTouched();
   clearTimeout(draftTimer);
   draftTimer = setTimeout(persistDraft, 400);
   scheduleSave();
@@ -862,7 +877,7 @@ function validBy(by) {
 }
 export function receiveAnswer(askId, answer) {
   const ask = state.asks.find((a) => a.id === askId);
-  if (!ask || !state.doc || (ask.status !== "waiting" && ask.status !== "taken")) return false;
+  if (!ask || !state.doc || ask.scope === "broll" || (ask.status !== "waiting" && ask.status !== "taken")) return false;
   const clean = D.cleanAnswer(ask, answer);
   if (!clean) return false;
   if (ask.scope === "selection") {
@@ -897,6 +912,7 @@ export function takeAsk(askId, by) {
   if (by) ask.takenBy = validBy(by);
   emit("taken", ask);
   if (ask.scope === "selection") renderBlock(ask.blockId, getCaret());
+  if (ask.scope === "broll") renderBoard();
   renderVoice();
   renderAgent();
   changed();
@@ -1079,8 +1095,8 @@ async function idbSet(k, v) {
     await new Promise((res) => { const t = db.transaction("handles", "readwrite"); t.objectStore("handles").put(v, k); t.oncomplete = res; t.onerror = res; });
   } catch { /* storage off: reopen is not offered */ }
 }
-async function permitted(handle, ask) {
-  const o = { mode: "readwrite" };
+async function permitted(handle, ask, mode = "readwrite") {
+  const o = { mode };
   try {
     if (!handle.queryPermission) return true;
     if ((await handle.queryPermission(o)) === "granted") return true;
@@ -1094,8 +1110,9 @@ function persistDraft() {
   if (!state.doc || state.pendingDraft) return;
   const open = state.asks.filter(isOpen);
   const dirty = isDirty();
-  if (!dirty && !open.length) { store.del(draftKey()); return; }
-  store.set(draftKey(), { text: dirty ? D.serialize(state.doc) : null, at: Date.now(), asks: open });
+  const flags = brollFlags();
+  if (!dirty && !open.length && !flags) { store.del(draftKey()); return; }
+  store.set(draftKey(), { text: dirty ? D.serialize(state.doc) : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
 }
 
 function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
@@ -1104,6 +1121,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   $("#emptyNote").hidden = true;
   hideBar();
   closeCard();
+  closeBroll();
   state.doc = D.parse(text);
   state.name = name;
   state.handle = handle;
@@ -1122,6 +1140,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   state.pendingDraft = null;
   state.frontOpen = false;
   const draft = store.get(draftKey(name));
+  broll.flags = draft?.broll && typeof draft.broll === "object" ? { ...draft.broll } : {};
   const banner = $("#banner");
   banner.hidden = true;
   if (draft?.text != null && draft.text !== text && (draft.at || 0) > modified) {
@@ -1134,6 +1153,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   renderAll();
   renderDerived();
   scrollTo({ top: 0 });
+  loadBroll();
 }
 function adoptAsks(asks) {
   if (!Array.isArray(asks)) return;
@@ -1182,6 +1202,7 @@ function restoreDraft() {
   state.asks = [];
   adoptAsks(draft.asks);
   hideBanner();
+  rematchBroll(true);
   renderAll();
   changed();
   offerAsks();
@@ -1277,7 +1298,7 @@ const saveRequest = (force, auto) => ({
 // A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
 function keepDraft(name, text) {
   const draft = store.get(draftKey(name));
-  store.set(draftKey(name), { text, at: Date.now(), asks: draft?.asks ?? [] });
+  store.set(draftKey(name), { text, at: Date.now(), asks: draft?.asks ?? [], ...(draft?.broll ? { broll: draft.broll } : {}) });
 }
 // Write a left script's snapshot straight to its own file, with auto-save rules: no permission prompt, and the
 // changed-on-disk check. Current `state` is never touched.
@@ -1375,7 +1396,11 @@ async function saveAs() {
       state.saving = true;
       renderSaveState();
       state.fileModified = await writeHandle(handle, text);
-      if (handle.name !== state.name) { store.del(draftKey()); state.name = handle.name; }
+      if (handle.name !== state.name) {
+        store.del(draftKey());
+        if (broll.link) idbSet(brollKey(handle.name), broll.link);
+        state.name = handle.name;
+      }
       state.handle = handle;
       state.needsPermission = false;
       state.conflict = false;
@@ -1400,7 +1425,7 @@ async function reloadFromDisk() {
   hideBanner();
   if (!state.handle) return;
   // Keep what is on screen as a draft, so "Restore" brings it back.
-  if (isDirty()) store.set(draftKey(), { text: D.serialize(state.doc), at: Date.now(), asks: state.asks.filter(isOpen) });
+  if (isDirty()) store.set(draftKey(), { text: D.serialize(state.doc), at: Date.now(), asks: state.asks.filter(isOpen), ...(brollFlags() ? { broll: brollFlags() } : {}) });
   await openHandle(state.handle);
 }
 function download(text, name, type) {
@@ -1581,7 +1606,7 @@ document.addEventListener("keydown", (e) => {
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); if (broll.lit && !e.target.closest?.("dialog")) lightShot(broll.lit, false); } });
 addEventListener("beforeunload", (e) => {
   persistDraft();
   flushSave();
@@ -1597,6 +1622,407 @@ $$("[data-icon]").forEach((el) => {
 });
 $$(".edit-bar__button").forEach((b) => (b.innerHTML = icon(ACT_ICON[b.dataset.act]) + esc(D.ACTIONS[b.dataset.act].name)));
 
+
+/* ---------- B-roll: tags beside the lines, the list in the left column, the storyboard ---------- */
+const KIND_ICON = { broll: "film", motion: "motion", screen: "screen" };
+const KIND_NAME = { broll: "B-roll", motion: "Motion plate", screen: "Screen recording" };
+const brollKey = (name = state.name) => `broll:${name}`;
+const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
+const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
+const covered = (s) => (s.blockIds || []).filter((id) => byId(id));
+const brollChecks = () => broll.status === "ok" && broll.shots.some((s) => s.check);
+const sketchAsk = () => state.asks.find((a) => a.scope === "broll" && isOpen(a)) || null;
+const pendingSketch = (id) => sketchAsk()?.answer?.sketches?.[id] || "";
+function brollFlags() {
+  const out = {};
+  if (broll.status === "ok") for (const s of broll.shots) { if (s.check) out[s.id] = true; }
+  else Object.assign(out, broll.flags);
+  return Object.keys(out).length ? out : null;
+}
+function syncFlags() {
+  broll.flags = brollFlags() || {};
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(persistDraft, 400);
+}
+
+// Leaving a script: the old list goes with it.
+function closeBroll() {
+  broll.token++;
+  closeSheet();
+  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, board: false, saving: {}, problem: {} });
+  renderBroll();
+}
+async function loadBroll() {
+  const token = ++broll.token;
+  if (!state.doc) return;
+  let link = await idbGet(brollKey());
+  if (token !== broll.token) return;
+  // The demo script links its own made-up list.
+  if (!link && state.name === SAMPLE.name) link = { demo: true, name: SAMPLE_BROLL.name };
+  if (!link || link.none) return renderBroll();
+  broll.link = link;
+  await readBroll(token, true);
+}
+async function readBroll(token, ask) {
+  const link = broll.link;
+  broll.status = "loading";
+  renderBroll();
+  let text = null;
+  try {
+    if (link.handle) {
+      if (!(await permitted(link.handle, ask, "read"))) {
+        if (token === broll.token) { broll.status = "permission"; renderBroll(); }
+        return;
+      }
+      text = await (await link.handle.getFile()).text();
+    } else if (typeof link.text === "string") text = link.text;
+    else if (link.demo) {
+      const res = await fetch(SAMPLE_BROLL.url, { cache: "no-store" });
+      if (!res.ok) throw new Error(res.statusText);
+      text = await res.text();
+    }
+  } catch { text = null; }
+  if (token !== broll.token) return;
+  if (text == null) { broll.status = "error"; renderBroll(); return; }
+  adoptBroll(text);
+}
+function adoptBroll(text) {
+  const { shots, sketches } = B.parseBroll(text);
+  if (state.doc) B.matchShots(state.doc, shots);
+  for (const s of shots) s.check = !!broll.flags[s.id];
+  Object.assign(broll, { text, shots, sketches, status: "ok", err: "" });
+  if (broll.lit && !shotById(broll.lit)) broll.lit = null;
+  renderBroll();
+  renderBrollMarks();
+}
+// After a reload or restore the block ids are new: match every shot again. Otherwise only the ones not found.
+function rematchBroll(all) {
+  if (broll.status !== "ok" || !state.doc) return;
+  const list = B.spokenBlocks(state.doc);
+  let moved = false;
+  for (const s of broll.shots) {
+    if (!all && covered(s).length) continue;
+    const ids = B.matchOver(list, s.over);
+    if (!ids.length && !all) continue;
+    if (ids.join() !== (s.blockIds || []).join()) moved = true;
+    s.blockIds = ids;
+    s.sig = B.coverText(state.doc, ids);
+  }
+  if (moved) { renderBroll(); renderBrollMarks(); }
+}
+// A covered line changed (typing, Keep, undo): its shot gets "Check".
+function brollTouched() {
+  if (broll.status !== "ok" || !state.doc) return;
+  if (!B.touchShots(state.doc, broll.shots).length) return;
+  syncFlags();
+  renderBroll();
+  renderBrollMarks();
+}
+
+/* Tags beside the lines (not part of the text) and a thin rule beside every covered line. */
+function renderBrollMarks() {
+  for (const t of $$(".broll-tags", scriptEl)) t.remove();
+  for (const l of $$(".line[data-covered]", scriptEl)) { delete l.dataset.covered; delete l.dataset.last; delete l.dataset.lit; }
+  if (broll.status !== "ok") return;
+  const goesOn = new Set();
+  for (const s of broll.shots) {
+    const ids = covered(s);
+    ids.forEach((id, i) => {
+      const w = wrapOf(id);
+      if (!w) return;
+      w.dataset.covered = "";
+      if (i < ids.length - 1) goesOn.add(w);
+      if (broll.lit === s.id) w.dataset.lit = "";
+    });
+    const first = wrapOf(ids[0]);
+    if (!first) continue;
+    let box = first.querySelector(":scope > .broll-tags");
+    if (!box) { box = h("div", "broll-tags", { "data-skip": "" }); first.prepend(box); }
+    const tag = h("button", "broll-tag", { type: "button", "data-b": s.id, "aria-pressed": String(broll.lit === s.id), title: s.what });
+    if (s.check) { tag.dataset.check = ""; tag.title = `${s.what} · Check`; }
+    tag.innerHTML = `${icon(KIND_ICON[s.kind])}B-roll <b></b>`;
+    tag.querySelector("b").textContent = s.id;
+    box.append(tag);
+  }
+  for (const l of $$(".line[data-covered]", scriptEl)) if (!goesOn.has(l)) l.dataset.last = "";
+}
+
+/* Light a shot: its lines, its tag and its row. Lighting clears its "Check". */
+function lightShot(id, scroll) {
+  const s = shotById(id);
+  if (!s) return;
+  const on = scroll || broll.lit !== id;
+  broll.lit = on ? id : null;
+  if (on && s.check) { s.check = false; syncFlags(); }
+  renderBrollMarks();
+  renderBroll();
+  if (!on) return;
+  const first = wrapOf(covered(s)[0]);
+  if (scroll && first) first.scrollIntoView({ behavior: reduced.matches ? "auto" : "smooth", block: "center" });
+  if (!scroll) {
+    const group = $('#broll details[data-group="broll"]');
+    if (group && !group.open && matchMedia("(min-width: 52rem)").matches) group.open = true;
+    $(`#broll .shot[data-b="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+scriptEl.addEventListener("click", (e) => { const t = e.target.closest(".broll-tag"); if (t) lightShot(t.dataset.b, false); });
+
+/* ---------- The left column (and the phone sheet) ---------- */
+const sketchSvg = (svg, label) => svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" ');
+function thumb(s) {
+  const pending = pendingSketch(s.id);
+  const svg = pending || broll.sketches[s.id] || "";
+  const ask = sketchAsk();
+  const waiting = !svg && ask && ask.shots.some((x) => x.id === s.id) && !ask.answer?.done?.[s.id];
+  return `<span class="thumb"${pending ? " data-pending" : ""}${!svg ? " data-empty" : ""}${waiting ? " data-waiting" : ""}>${svg ? sketchSvg(svg) : ""}</span>`;
+}
+function shotRow(s, missing) {
+  const check = s.check ? '<span class="shot__check">Check</span>' : "";
+  const sub = missing ? `<small class="shot__over">${esc(s.over || "No Over line")}</small>` : `<small>${KIND_NAME[s.kind]}${check}</small>`;
+  return `<button class="shot" type="button" data-b="${esc(s.id)}"${broll.lit === s.id ? ' aria-current="true"' : ""}${s.check ? " data-check" : ""}${missing ? " data-missing" : ""} title="${esc(s.what)}">${thumb(s)}<span class="shot__text"><span class="shot__what"><b>${esc(s.id)}</b> ${esc(s.what)}</span>${sub}</span></button>`;
+}
+function shotList(shots) {
+  const found = shots.filter((s) => covered(s).length), lost = shots.filter((s) => !covered(s).length);
+  return `<div class="shots">${found.map((s) => shotRow(s, false)).join("")}${lost.length ? `<p class="shots__head">Not found in the script</p>${lost.map((s) => shotRow(s, true)).join("")}` : ""}</div>`;
+}
+const groupOpen = (g) => (store.get("brollOpen") || {})[g] ?? true;
+function renderBroll() {
+  const el = $("#broll");
+  const focused = document.activeElement?.closest?.("#broll [data-b], #broll [data-act]");
+  const again = focused ? (focused.dataset.b ? `[data-b="${CSS.escape(focused.dataset.b)}"]` : `[data-act="${focused.dataset.act}"]`) : null;
+  const file = broll.link ? `<div class="broll__file">${icon("film")}<span class="broll__name">${esc(broll.link.name || "B-roll list")}</span><button class="broll__btn" type="button" data-act="unlink">Unlink</button></div>` : "";
+  let body = "";
+  if (!broll.link || broll.status === "none") body = `<button class="broll__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>`;
+  else if (broll.status === "permission") body = `<button class="broll__link" type="button" data-act="allow">${icon("film")}Allow reading ${esc(broll.link.name)}</button>${file}`;
+  else if (broll.status === "error") body = `<p class="broll__note">Couldn't open ${esc(broll.link.name || "the B-roll list")}</p><button class="broll__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>${file}`;
+  else if (broll.status === "loading") body = file;
+  else {
+    const motion = broll.shots.filter((s) => s.kind === "motion");
+    const dot = (list) => (list.some((s) => s.check) ? '<span class="pdot pdot--ask"></span>' : "");
+    body = `<details class="group" data-group="broll"${groupOpen("broll") ? " open" : ""}><summary>${icon("film")}<span class="group__name">B-roll · ${broll.shots.length}</span>${dot(broll.shots)}</summary>`
+      + (broll.shots.length ? `<button class="board-toggle" type="button" data-act="board" aria-pressed="${broll.board}">${icon("board")}Storyboard</button>` : "")
+      + `${shotList(broll.shots)}</details>`
+      + (motion.length ? `<details class="group" data-group="motion"${groupOpen("motion") ? " open" : ""}><summary>${icon("motion")}<span class="group__name">Motion plates · ${motion.length}</span>${dot(motion)}</summary>${shotList(motion)}</details>` : "")
+      + file;
+  }
+  el.innerHTML = body;
+  if (again) el.querySelector(again)?.focus({ preventScroll: true });
+  $("#brollChip")?.toggleAttribute("data-check", brollChecks());
+  renderBoard();
+}
+$("#broll").addEventListener("toggle", (e) => {
+  const g = e.target.dataset?.group;
+  if (!g) return;
+  store.set("brollOpen", { ...(store.get("brollOpen") || {}), [g]: e.target.open });
+}, true);
+$("#broll").addEventListener("click", (e) => {
+  const shot = e.target.closest(".shot");
+  if (shot) { closeSheet(); return lightShot(shot.dataset.b, true); }
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "link") linkBroll();
+  else if (act === "unlink") unlinkBroll();
+  else if (act === "allow") { const t = ++broll.token; readBroll(t, true); }
+  else if (act === "board") { closeSheet(); showBoard(!broll.board); }
+});
+
+async function linkBroll() {
+  if (!state.doc) return;
+  if (!canPick) return $("#brollInput").click();
+  let handle;
+  const pick = (o) => window.showOpenFilePicker({ types: FILE_TYPES, multiple: false, ...o });
+  try {
+    try { [handle] = await pick(state.handle ? { startIn: state.handle } : {}); }
+    catch (e) { if (e?.name === "TypeError") [handle] = await pick({}); else throw e; }
+  } catch (e) { if (e?.name !== "AbortError") $("#brollInput").click(); return; }
+  setLink({ handle, name: handle.name });
+}
+$("#brollInput").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file || !state.doc) return;
+  try { setLink({ name: file.name, text: await file.text() }); }
+  catch { broll.link = { name: file.name }; broll.status = "error"; renderBroll(); }
+});
+async function setLink(link) {
+  const token = ++broll.token;
+  broll.link = link;
+  broll.flags = {};
+  broll.lit = null;
+  idbSet(brollKey(), link);
+  await readBroll(token, true);
+  if (token === broll.token) { syncFlags(); renderBrollMarks(); }
+}
+function unlinkBroll() {
+  broll.token++;
+  // The demo links its list by itself, so unlinking it is remembered.
+  idbSet(brollKey(), state.name === SAMPLE.name ? { none: true } : null);
+  const ask = sketchAsk();
+  if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
+  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, board: false, saving: {}, problem: {} });
+  syncFlags();
+  renderBroll();
+  renderBrollMarks();
+  renderToc();
+}
+
+/* Phones: the "B-roll" chip opens the same list as a sheet. */
+const sheet = $("#brollSheet");
+function openSheet() {
+  sheet.querySelector(".broll-sheet__body").append($("#broll"));
+  sheet.showModal();
+}
+function closeSheet() { if (sheet.open) sheet.close(); }
+sheet.addEventListener("close", () => $(".side").append($("#broll")));
+sheet.addEventListener("click", (e) => { if (e.target === sheet || e.target.closest(".broll-sheet__close")) closeSheet(); });
+$("#toc").addEventListener("click", (e) => { if (e.target.closest("#brollChip")) openSheet(); });
+
+/* ---------- Storyboard: every frame in script order ---------- */
+function showBoard(on) {
+  broll.board = on && broll.status === "ok";
+  $("#layout").dataset.view = broll.board ? "board" : "";
+  renderBroll();
+  if (broll.board) scrollTo({ top: 0 });
+}
+function renderBoard() {
+  const el = $("#board");
+  if (!broll.board || broll.status !== "ok") {
+    el.hidden = true;
+    el.replaceChildren();
+    if ($("#layout").dataset.view === "board") $("#layout").dataset.view = "";
+    return;
+  }
+  el.hidden = false;
+  const ask = sketchAsk();
+  const missing = broll.shots.filter((s) => !broll.sketches[s.id] && !pendingSketch(s.id));
+  const waiting = ask && (ask.status === "waiting" || ask.status === "taken");
+  const asking = ask && ask.status === "answered" && ask.shots.some((s) => !ask.answer.done?.[s.id] && !ask.answer.sketches?.[s.id]);
+  let action = "";
+  if (waiting || asking) action = `<span class="board__wait" data-taken="${ask.status === "taken"}"><span class="status-dot"></span>Waiting for sketches<button class="icon-btn" type="button" data-act="cancel" aria-label="Cancel">${icon("x")}</button></span>`;
+  else if (!ask && missing.length) action = `<button class="board__ask" type="button" data-act="ask">${icon("sketch")}Ask for sketches</button>`;
+  const order = state.doc ? B.scriptOrder(state.doc, broll.shots) : broll.shots;
+  const frames = order.map((s) => {
+    const pending = pendingSketch(s.id);
+    const svg = pending || broll.sketches[s.id] || "";
+    const bar = pending ? `<span class="change__bar frame__bar" data-ask="${esc(ask.id)}">${broll.problem[s.id] ? `<span class="frame__problem" title="${esc(broll.problem[s.id])}">Not saved</span>` : ""}<button type="button" class="undo" data-act="undo" data-b="${esc(s.id)}">${icon("undo")}Undo</button><button type="button" class="keep" data-act="keep" data-b="${esc(s.id)}"${broll.saving[s.id] ? " disabled" : ""}>${icon("check")}Keep</button></span>` : "";
+    return `<li class="frame" data-b="${esc(s.id)}"${broll.lit === s.id ? ' aria-current="true"' : ""}${covered(s).length ? "" : " data-missing"}>`
+      + `<button class="frame__jump" type="button" data-b="${esc(s.id)}"><span class="frame__img"${svg ? "" : " data-empty"}${pending ? " data-pending" : ""}>${svg ? sketchSvg(svg, `Sketch ${s.id}`) : ""}</span>`
+      + `<span class="frame__cap"><b>${esc(s.id)}</b><span class="kind-tag" data-kind="${s.kind}">${KIND_NAME[s.kind]}</span>${s.check ? '<span class="shot__check">Check</span>' : ""} ${esc(s.what)}<span class="frame__over">Over: ${esc(s.over || "–")}</span></span></button>${bar}</li>`;
+  }).join("");
+  el.innerHTML = `<div class="board__bar"><h2 class="board__title">Storyboard</h2>${action}<button class="icon-btn" type="button" data-act="close" aria-label="Back to the script">${icon("x")}</button></div><ol class="board__grid">${frames}</ol>`;
+}
+$("#board").addEventListener("click", (e) => {
+  const act = e.target.closest("[data-act]");
+  if (act) {
+    const a = act.dataset.act;
+    if (a === "close") showBoard(false);
+    else if (a === "ask") requestSketches();
+    else if (a === "cancel") cancelSketches();
+    else if (a === "keep") keepSketch(act.dataset.b);
+    else if (a === "undo") undoSketch(act.dataset.b);
+    return;
+  }
+  const jump = e.target.closest(".frame__jump");
+  if (!jump) return;
+  showBoard(false);
+  lightShot(jump.dataset.b, true);
+});
+
+/* ---------- Sketch asks: the agent draws the missing frames, the person keeps or undoes each ---------- */
+function requestSketches() {
+  if (!state.doc || broll.status !== "ok") return null;
+  const missing = broll.shots.filter((s) => !broll.sketches[s.id]);
+  if (!missing.length) return null;
+  const old = sketchAsk();
+  if (old) closeAsk(old, old.status === "answered" ? "kept" : "cancelled");
+  const ask = D.makeAsk(state.doc, { scope: "broll", action: "sketch", by: me });
+  ask.shots = missing.map((s) => ({ id: s.id, what: s.what, over: s.over, kind: s.kind }));
+  state.asks.push(ask);
+  emit("created", ask);
+  renderBroll();
+  changed();
+  offerAsks();
+  return ask;
+}
+// Stop waiting: sketches already shown keep their Keep / Undo.
+function cancelSketches() {
+  const ask = sketchAsk();
+  if (!ask) return;
+  if (ask.status !== "answered") closeAsk(ask, "cancelled");
+  else {
+    for (const s of ask.shots) if (!ask.answer.sketches[s.id] && !ask.answer.done[s.id]) ask.answer.done[s.id] = "undone";
+    settleSketches(ask);
+  }
+  renderBroll();
+  changed();
+}
+function receiveSketch(ask, shotId, svg, by) {
+  ask.answer ??= { kind: "sketches", sketches: {}, done: {} };
+  ask.answer.sketches[shotId] = svg;
+  delete ask.answer.done[shotId];
+  ask.answeredBy = validBy(by);
+  ask.status = "answered";
+  delete broll.problem[shotId];
+  emit("answered", ask);
+  renderBroll();
+  renderAgent();
+  changed();
+}
+function settleSketches(ask) {
+  const done = ask.answer?.done || {};
+  if (!ask.shots.every((s) => done[s.id])) return;
+  closeAsk(ask, Object.values(done).includes("kept") ? "kept" : "undone");
+}
+function undoSketch(id) {
+  const ask = sketchAsk();
+  if (!ask?.answer?.sketches?.[id]) return;
+  delete ask.answer.sketches[id];
+  ask.answer.done[id] = "undone";
+  delete broll.problem[id];
+  settleSketches(ask);
+  renderBroll();
+  changed();
+}
+// Keep writes the sketch into the B-roll file's "## Sketches" section, so it stays with the file.
+async function keepSketch(id) {
+  const ask = sketchAsk();
+  const svg = ask?.answer?.sketches?.[id];
+  if (!svg || broll.saving[id]) return;
+  const token = broll.token;
+  broll.saving[id] = true;
+  delete broll.problem[id];
+  renderBoard();
+  try {
+    await writeSketch(id, svg);
+    if (token !== broll.token) return;
+    broll.sketches[id] = svg;
+    delete ask.answer.sketches[id];
+    ask.answer.done[id] = "kept";
+    settleSketches(ask);
+    changed();
+  } catch (e) {
+    if (token === broll.token) broll.problem[id] = e?.message || "Could not save the sketch.";
+  }
+  if (token !== broll.token) return;
+  delete broll.saving[id];
+  renderBroll();
+}
+async function writeSketch(id, svg) {
+  const link = broll.link;
+  if (!link) throw new Error("No B-roll list is linked.");
+  if (link.handle) {
+    if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
+    const now = await (await link.handle.getFile()).text();
+    const next = B.setSketch(now, id, svg);
+    await writeHandle(link.handle, next);
+    broll.text = next;
+  } else {
+    // The demo list and lists opened without a file handle are kept in the browser with the link.
+    broll.text = B.setSketch(broll.text, id, svg);
+    link.text = broll.text;
+    await idbSet(brollKey(), link);
+  }
+}
 
 /* ---------- Your own agent over MCP (live relay) ---------- */
 const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
@@ -1706,6 +2132,7 @@ function voiceGuide() { return store.get("voiceGuide"); }
 function askForAgent(a) {
   const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, createdAt: a.createdAt };
   if (a.scope === "selection") Object.assign(out, { quote: a.quote, context: a.context, section: a.section });
+  else if (a.scope === "broll") out.shots = a.shots;
   else if (state.doc) out.spokenText = D.exportCamera(state.doc);
   const guide = voiceGuide();
   if ((a.action === "like" || a.action === "voice") && guide?.text) out.voiceGuide = guide.text;
@@ -1714,7 +2141,8 @@ function askForAgent(a) {
 function askForList(a) {
   const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, status: a.status, createdAt: a.createdAt };
   if (a.scope === "selection") Object.assign(out, { quote: a.quote, section: a.section });
-  if (a.answer) out.answer = a.answer.kind === "marks" ? { kind: "marks", marks: a.answer.marks.map((m) => ({ quote: m.quote, state: m.state })) } : a.answer;
+  if (a.scope === "broll") out.shots = a.shots.map((s) => ({ id: s.id, state: a.answer?.done?.[s.id] || (a.answer?.sketches?.[s.id] ? "shown" : "waiting") }));
+  else if (a.answer) out.answer = a.answer.kind === "marks" ? { kind: "marks", marks: a.answer.marks.map((m) => ({ quote: m.quote, state: m.state })) } : a.answer;
   return out;
 }
 function offerAsks() {
@@ -1736,6 +2164,7 @@ function scriptInfo() {
     sections: sections.map((sec) => ({ heading: sec.heading ? D.contentOf(sec.heading).trim() : "", spoken: sec.spoken })),
     words: st.words,
     spoken: st.spoken,
+    broll: broll.status === "ok" ? broll.shots.map(B.forAgent) : [],
   };
 }
 function handleCall({ id, tool, args = {} }) {
@@ -1761,6 +2190,13 @@ function handleCall({ id, tool, args = {} }) {
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
       return send({ result: checked.answer.kind === "note" ? "Shown to the person." : "Shown to the person. They choose Keep or Undo." });
     }
+    if (tool === "sketch_shot") {
+      const ask = state.asks.find((a) => a.id === args.askId);
+      const checked = B.checkSketch(ask, args);
+      if (checked.error) return send({ error: checked.error });
+      receiveSketch(ask, args.shotId, checked.svg, agentBy());
+      return send({ result: "Shown to the person in the storyboard. They choose Keep or Undo." });
+    }
     send({ error: `Unknown tool: ${tool}` });
   } catch (e) {
     send({ error: `The editor could not do that: ${e?.message || e}` });
@@ -1779,7 +2215,7 @@ function renderAgent() {
   const rows = $("#agentRows");
   if (agent.state === "on") {
     const busy = state.asks.find((a) => a.status === "taken");
-    const where = busy ? (busy.scope === "script" ? "whole script" : `section ${D.parseHeading(busy.section || "").num || "·"}`) : "listening";
+    const where = busy ? (busy.scope === "script" ? "whole script" : busy.scope === "broll" ? "storyboard" : `section ${D.parseHeading(busy.section || "").num || "·"}`) : "listening";
     rows.innerHTML = `<li class="agent-row"><span class="status-dot"></span><span class="agent-row__name"></span><span class="agent-row__where"></span><button class="small-btn" type="button" id="agentStop">Stop</button></li>`;
     rows.querySelector(".agent-row__name").textContent = name;
     rows.querySelector(".agent-row__where").textContent = where;
@@ -1874,6 +2310,15 @@ window.__scriptEditor = {
   voiceCheck: () => requestVoiceCheck()?.id ?? null,
   asks: () => structuredClone(state.asks),
   markdown: () => (state.doc ? D.serialize(state.doc) : null),
+  broll: () => (broll.status === "ok" ? broll.shots.map(B.forAgent) : null),
+  sketchAsk: () => requestSketches()?.id ?? null,
+  sketch: (askId, shotId, svg) => {
+    const ask = state.asks.find((a) => a.id === askId);
+    const checked = B.checkSketch(ask, { shotId, svg });
+    if (checked.error) return checked.error;
+    receiveSketch(ask, shotId, checked.svg, { id: "test", name: "Test" });
+    return true;
+  },
   ask: (blockIndex, start, end, action = "simpler", typed = "") => {
     const b = state.doc?.blocks[blockIndex];
     if (!b) return null;

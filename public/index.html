@@ -55,12 +55,16 @@
   </main>
 
   <div class="layout" id="layout" hidden>
-    <nav class="toc" aria-label="Sections"><ol id="toc"></ol></nav>
+    <aside class="side">
+      <nav class="toc" aria-label="Sections"><ol id="toc"></ol></nav>
+      <section class="broll" id="broll" aria-label="B-roll"></section>
+    </aside>
     <main class="paper">
       <div class="sheet">
         <div class="banner" id="banner" role="status" hidden></div>
         <div class="script" id="script"></div>
       </div>
+      <section class="board" id="board" aria-label="Storyboard" hidden></section>
     </main>
   </div>
 </div>
@@ -85,7 +89,10 @@
 </div>
 
 
+<dialog class="broll-sheet" id="brollSheet" aria-label="B-roll"><div class="broll-sheet__head"><button class="icon-btn broll-sheet__close" type="button" aria-label="Close" data-icon="x"></button></div><div class="broll-sheet__body"></div></dialog>
+
 <input type="file" id="fileInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
+<input type="file" id="brollInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
 <input type="file" id="voiceGuideInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
 </body>
 </html>

@@ -10,12 +10,13 @@ export const ACTIONS = {
   facts: { name: "Check facts", instruction: "Check names, numbers and dates against what you know or can look up. Answer with a note." },
   ask: { name: "Ask", instruction: "" },
   voice: { name: "Sounds like me", instruction: "Mark lines in the spoken text that sound generic or AI-like, with a one-line reason and a rewrite in the speaker's voice." },
+  sketch: { name: "Ask for sketches", instruction: "Draw a simple storyboard sketch for each listed B-roll shot: an SVG line drawing with viewBox 0 0 260 140, using only g, path, rect, circle, ellipse, line, polyline, polygon and text, with class s (ink line), l (soft line), o (orange accent) or mv (dashed orange movement). No colours, styles or images. Send each one with sketch_shot." },
 };
 export const OPEN_STATUSES = ["waiting", "taken", "answered"];
 export const WORDS_PER_MINUTE = 160;
 export const MESSAGE_MAX = 200;
 // Limits for answers from an agent (shared with the Worker's tool schemas).
-export const LIMITS = { askId: 40, text: 4000, message: MESSAGE_MAX, marks: 20, quote: 500, why: 160, rewrite: 1000, instruction: 500, voiceGuide: 20 * 1024 };
+export const LIMITS = { askId: 40, shotId: 20, text: 4000, message: MESSAGE_MAX, marks: 20, quote: 500, why: 160, rewrite: 1000, instruction: 500, voiceGuide: 20 * 1024 };
 export const ANSWER_KINDS = ["replace", "add", "note", "marks"];
 
 /* ---------- Ids ---------- */
@@ -460,7 +461,7 @@ export function findQuote(doc, quote, near = null) {
 
 // Check an answer from an agent. Returns a clean answer or null.
 export function cleanAnswer(ask, answer) {
-  if (!answer || typeof answer !== "object") return null;
+  if (!answer || typeof answer !== "object" || ask.scope === "broll") return null;
   const str = (v) => (typeof v === "string" ? v : "");
   const message = str(answer.message).trim().slice(0, MESSAGE_MAX);
   const extra = message ? { message } : {};
@@ -516,6 +517,7 @@ export function moveAsks(asks, fromId, toId, fromStart, shift) {
 // Returns { answer } ready for receiveAnswer, or { error } with a short reason for the agent.
 export function checkAnswer(ask, args, doc) {
   if (!ask) return { error: "Unknown ask. Call list_asks or wait_for_asks for current ask ids." };
+  if (ask.scope === "broll") return { error: "This ask is for B-roll sketches. Answer it with sketch_shot, one call per shot." };
   if (ask.status !== "waiting" && ask.status !== "taken") return { error: `This ask is finished (${ask.status}).` };
   const a = args && typeof args === "object" ? args : {};
   if (!ANSWER_KINDS.includes(a.kind)) return { error: "kind must be replace, add, note or marks." };

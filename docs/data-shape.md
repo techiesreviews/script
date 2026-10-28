@@ -64,6 +64,21 @@ Mark { quote, why, rewrite, blockId, start, end, state: "open" | "kept" | "used"
 
 Life of an ask: `waiting` → `taken` (an agent picked it up with `wait_for_asks`; an ask taken more than two minutes ago without an answer is offered again) → `answered` → `kept` or `undone`. The person can cancel a waiting ask (`cancelled`). Anchors follow edits: the editor keeps `start`/`end` and the `quote`; after an edit in that block it finds the quote nearest the old offset, or cancels the ask when the quote is gone. Open asks (`waiting`, `taken`, `answered`) are kept in memory and in the browser's local storage with the draft, never in the file.
 
+## B-roll list and sketches (step C)
+
+`public/broll.js` reads a B-roll Markdown file linked to the script (IndexedDB store `handles`, key `broll:<script name>`: `{ handle, name }`, or `{ name, text }` without a file handle, or `{ none: true }` after unlinking the demo).
+
+```js
+Shot { id, what, over, how, kind: "broll" | "motion" | "screen", blockIds: string[], check: boolean }
+```
+
+- Main table `# | What to show | Over (A-roll line) | How to make it`; a table under a "Screen recordings" heading gives `kind: "screen"`; a "How" that mentions motion gives `kind: "motion"`.
+- `over` is matched to spoken paras, ignoring quotes, `…`, case and punctuation: the block that starts with the words wins, else the first that contains them. `"A…" through "B"` covers every spoken para from A to B. No match: `blockIds: []` ("Not found in the script").
+- `check` turns on when a covered block's text changes (typing, Keep, undo) and off when the shot is lit. Flags are kept with the draft as `broll: { [shotId]: true }`.
+- Sketches live in the B-roll file under `## Sketches` as fenced blocks: ```` ```svg B4 ```` + one `<svg viewBox="0 0 260 140">` + ```` ``` ````, using only `svg g path rect circle ellipse line polyline polygon text`, geometry attributes, `class` (`s`, `l`, `o`, `mv`), `text-anchor` and `transform`. `sanitizeSvg` drops everything else, on read and on every agent sketch.
+- "Ask for sketches" makes an ask `{ scope: "broll", action: "sketch", shots: [{ id, what, over, kind }] }`. The agent answers with `sketch_shot { askId, shotId, svg }` (svg at most 8 KB), once per shot; the answer is `{ kind: "sketches", sketches: { [shotId]: svg }, done: { [shotId]: "kept" | "undone" } }`. Keep writes the sketch into the file's `## Sketches` section (`setSketch`). The ask is `kept` (or `undone`) once every shot is done.
+- `get_script` returns `broll: Shot[]`.
+
 ## Agent connection (step B)
 
 The tab keeps `{ token, createdAt }` in local storage (`script-editor:agent`); a token lives at most eight hours. The relay (one Durable Object per `sha256(token)`) stores only `{ createdAt, revoked, agent: { name, version } }`. Asks, answers and script text pass through it in memory and are never stored. The voice guide (`{ name, text }`, at most 20 KB) stays in local storage and goes out with `like` and `voice` asks as `voiceGuide`.

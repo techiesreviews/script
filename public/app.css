@@ -165,9 +165,9 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 }
 @container app (width >= 70rem) {
   .layout { grid-template-columns: minmax(11.5rem, 1fr) minmax(0, 42rem) minmax(11.5rem, 1fr); grid-template-areas: "toc paper ."; }
-  .toc { inline-size: min(100%, 15rem); }
+  .side { inline-size: min(100%, 15rem); }
 }
-.toc { grid-area: toc; }
+.side { grid-area: toc; }
 .paper { grid-area: paper; container: paper / inline-size; }
 
 /* ---------- Section list ---------- */
@@ -189,11 +189,15 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .pdot--voice { background: transparent; border: 1.5px dashed var(--accent); }
 .pdot--ask { background: var(--accent); }
 @media (hover: hover) and (pointer: fine) { .toc a:hover { background: var(--hover); color: var(--text); } }
+/* The left column: the section list, then the B-roll list. It stays in view and scrolls on its own. */
 @container app (width >= 52rem) {
-  .toc { position: sticky; inset-block-start: var(--top); align-self: start; max-block-size: calc(100dvh - var(--top)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .side { position: sticky; inset-block-start: var(--top); align-self: start; max-block-size: calc(100dvh - var(--top)); padding-block-end: 1.5rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .toc:not(:has(a)), .toc__broll { display: none; }
 }
-/* Phone: the section list becomes one row of chips under the top bar. */
+/* Phone: the section list becomes one row of chips under the top bar; a "B-roll" chip opens the list as a sheet. */
 @container app (width < 52rem) {
+  .side { display: contents; }
+  .side > .broll { display: none; }
   .toc { position: sticky; inset-block-start: var(--top); z-index: 10; margin-inline: -0.75rem; padding: 0.5rem 0.75rem; background: color-mix(in oklch, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-block-end: 1px solid var(--line); }
   .toc li { flex: none; }
   .toc ol { flex-direction: row; gap: 0.35rem; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
@@ -466,3 +470,180 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .script[data-locked] { opacity: 0.75; }
 
 .empty__note { margin-block-end: 0.4rem; }
+
+/* ---------- B-roll: tags beside the lines (match the mock-up) ---------- */
+.broll-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-block-end: 0.35rem; }
+.broll-tag {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  block-size: 1.45rem; padding-inline: 0.45rem;
+  border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface);
+  color: var(--muted); font: 600 0.72rem/1 system-ui, sans-serif; white-space: nowrap; cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+}
+.broll-tag svg { inline-size: 0.8rem; block-size: 0.8rem; }
+.broll-tag b { font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
+.broll-tag:active { background: var(--pressed); }
+.broll-tag[data-check]::after { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--accent); }
+.broll-tag[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-faint); }
+.broll-tag[aria-pressed="true"] b { color: inherit; }
+@media (hover: hover) and (pointer: fine) { .broll-tag:hover { color: var(--text); border-color: var(--faint); } }
+/* A thin rule beside every covered line; it runs on to the next covered line. */
+.line { --rule-gap: 0.35rem; }
+.line[data-covered]::after {
+  content: ""; position: absolute; inset-inline-start: calc(100% + var(--rule-gap)); inset-block: 0.45em -0.65em;
+  inline-size: 2px; border-radius: 2px; background: var(--line-strong); pointer-events: none;
+}
+.line[data-covered][data-last]::after { inset-block-end: 0.45em; }
+.line[data-lit]::after { background: var(--accent); }
+.line[data-lit] .line__text { background: var(--accent-faint); box-shadow: 0 0 0 0.3rem var(--accent-faint); }
+@media (prefers-reduced-motion: no-preference) {
+  .line__text { transition: background-color 300ms var(--ease-out), box-shadow 300ms var(--ease-out); }
+}
+@container app (width >= 52rem) { .line { --rule-gap: 0.6rem; } }
+/* Wide screens: the tags sit in the right margin, beside the first line of their shot. */
+@container app (width >= 70rem) {
+  .line { --rule-gap: 0.75rem; }
+  .broll-tags { position: absolute; inset-inline-start: calc(100% + 1.4rem); inset-block-start: 0.2em; flex-direction: column; align-items: flex-start; margin: 0; }
+}
+
+/* ---------- B-roll: the list in the left column ---------- */
+.broll { display: grid; gap: 0.4rem; padding-block-start: 0.75rem; }
+.broll:empty { display: none; }
+.broll__link {
+  display: flex; align-items: center; gap: 0.5rem; inline-size: 100%; min-block-size: 2rem; padding: 0.3rem 0.5rem;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius); background: transparent;
+  color: var(--muted); font-weight: 500; text-align: start; cursor: pointer;
+}
+.broll__link:active { background: var(--pressed); }
+.broll__note { padding-inline: 0.5rem; color: var(--muted); font-size: 0.8rem; }
+.broll__file { display: flex; align-items: center; gap: 0.4rem; padding-inline: 0.5rem; color: var(--faint); font-size: 0.75rem; }
+.broll__name { flex: 1; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.broll__btn { position: relative; flex: none; padding: 0.15rem 0.35rem; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+.broll__btn::after { content: ""; position: absolute; inset: min(0px, (100% - 32px) / 2); }
+.broll__btn:active { background: var(--pressed); }
+
+.group { padding-block-start: 0.4rem; border-block-start: 1px solid var(--line); }
+.group > summary {
+  display: flex; align-items: center; gap: 0.45rem; padding: 0.35rem 0.5rem; border-radius: var(--radius);
+  color: var(--muted); font-weight: 600; cursor: pointer; list-style: none; user-select: none; -webkit-user-select: none;
+}
+.group > summary::-webkit-details-marker { display: none; }
+.group > summary::after { content: ""; flex: none; margin-inline-start: auto; inline-size: 0.4rem; block-size: 0.4rem; border-inline-end: 1.5px solid currentColor; border-block-end: 1.5px solid currentColor; rotate: -45deg; }
+.group[open] > summary::after { rotate: 45deg; }
+.group > summary:active { background: var(--pressed); }
+.group__name { font-variant-numeric: tabular-nums; }
+.board-toggle {
+  display: flex; align-items: center; gap: 0.45rem; inline-size: 100%; min-block-size: 2rem; margin-block: 0.15rem 0.35rem; padding-inline: 0.5rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: transparent; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.board-toggle svg { color: var(--muted); }
+.board-toggle:active { background: var(--pressed); }
+.board-toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-faint); }
+.board-toggle[aria-pressed="true"] svg { color: inherit; }
+
+.shots { display: grid; gap: 1px; padding-block-end: 0.35rem; }
+.shot {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 0.5rem; align-items: center; inline-size: 100%;
+  padding: 0.3rem; border: 0; border-radius: var(--radius); background: transparent; text-align: start; cursor: pointer;
+  font-size: 0.8rem; line-height: 1.35;
+}
+.shot__text { display: grid; gap: 0.15rem; }
+/* Two lines of "What to show"; line-clamp needs overflow: hidden. */
+.shot__what { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.shot b { color: var(--faint); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.shot small { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.4rem; color: var(--faint); font-size: 0.72rem; }
+.shot[data-check] b { color: var(--accent-ink); }
+.shot[aria-current="true"] { background: var(--accent-faint); }
+.shot:active { background: var(--pressed); }
+.shot[data-missing] { color: var(--muted); }
+.shot__over { font-style: italic; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.shot__check { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--accent-ink); font-size: 0.72rem; font-weight: 600; }
+.shot__check::before { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--accent); }
+.shots__head { padding: 0.5rem 0.3rem 0.15rem; color: var(--faint); font-size: 0.72rem; font-weight: 600; }
+@media (hover: hover) and (pointer: fine) {
+  .broll__link:hover, .broll__btn:hover, .group > summary:hover, .board-toggle:not([aria-pressed="true"]):hover, .shot:not([aria-current="true"]):hover { background: var(--hover); color: var(--text); }
+}
+@media (prefers-reduced-motion: no-preference) { .group > summary::after { transition: rotate 160ms var(--ease-out); } }
+
+/* ---------- Storyboard sketches: line drawings that follow light and dark mode ---------- */
+.thumb, .frame__img {
+  --sk-ink: color-mix(in oklch, var(--text) 78%, transparent);
+  --sk-soft: color-mix(in oklch, var(--text) 35%, transparent);
+  display: block; aspect-ratio: 260 / 140; overflow: clip;
+  border-radius: var(--radius-small); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+}
+.thumb { inline-size: 72px; }
+:is(.thumb, .frame__img)[data-empty] { background: transparent; box-shadow: none; border: 1px dashed var(--line-strong); }
+:is(.thumb, .frame__img)[data-pending] { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.thumb[data-waiting] { border-color: var(--accent); background: linear-gradient(90deg, transparent 0%, var(--accent-faint) 50%, transparent 100%) 0 0 / 200% 100%; }
+@media (prefers-reduced-motion: no-preference) { .thumb[data-waiting] { animation: shimmer 1.2s linear infinite; } }
+:is(.thumb, .frame__img) svg { inline-size: 100%; block-size: auto; }
+:is(.thumb, .frame__img) svg :where(path, rect, circle, ellipse, line, polyline, polygon) { fill: none; stroke: var(--sk-ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+:is(.thumb, .frame__img) svg .l { stroke: var(--sk-soft); }
+:is(.thumb, .frame__img) svg .o { stroke: var(--accent); stroke-width: 2.2; }
+:is(.thumb, .frame__img) svg .mv { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 4 4; }
+:is(.thumb, .frame__img) svg text { fill: var(--sk-ink); stroke: none; font: 600 11px system-ui, sans-serif; }
+
+/* ---------- Storyboard view: every frame in script order ---------- */
+.layout[data-view="board"] .sheet { display: none; }
+@container app (width >= 70rem) { .layout[data-view="board"] .paper { grid-column: 2 / -1; } }
+.board { max-inline-size: 60rem; margin-inline: auto; }
+.board__bar { display: flex; align-items: center; gap: 0.5rem; min-block-size: 2rem; margin-block-end: 1rem; }
+.board__title { flex: 1; color: var(--muted); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.02em; }
+.board__ask { display: inline-flex; align-items: center; gap: 0.4rem; min-block-size: 1.9rem; padding-inline: 0.6rem; border: 1px solid var(--line-strong); border-radius: var(--radius); background: transparent; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.board__ask svg { color: var(--accent-ink); }
+.board__ask:active { background: var(--pressed); }
+.board__wait { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+.board__wait .status-dot { background: var(--accent); opacity: 1; }
+.board__wait[data-taken="true"] .status-dot { background: var(--agent); }
+@media (prefers-reduced-motion: no-preference) { .board__wait .status-dot { animation: pulse 1.2s ease-in-out infinite; } }
+.board__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 1.25rem 1rem; }
+.frame { position: relative; }
+.frame__jump { display: grid; gap: 0.45rem; inline-size: 100%; padding: 0; border: 0; border-radius: var(--radius); background: transparent; text-align: start; cursor: pointer; }
+.frame__img { border-radius: var(--radius); }
+.frame__jump:active .frame__img { background: color-mix(in oklch, var(--surface), var(--text) 5%); }
+.frame[aria-current="true"] .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
+.frame__cap { font-size: 0.82rem; line-height: 1.4; }
+.frame__cap b { margin-inline-end: 0.4rem; font-variant-numeric: tabular-nums; }
+.frame__cap .shot__check { margin-inline-end: 0.4rem; }
+.frame[data-missing] .frame__cap { color: var(--muted); }
+.kind-tag { display: inline-block; margin-inline-end: 0.4rem; padding: 0 0.4rem; border: 1px solid var(--line-strong); border-radius: 99px; color: var(--muted); font-size: 0.68rem; font-weight: 600; vertical-align: 0.1em; }
+.kind-tag[data-kind="motion"] { border-color: var(--accent); color: var(--accent-ink); }
+.frame__over { display: block; margin-block-start: 0.2rem; color: var(--muted); font-style: italic; }
+.frame__bar { position: absolute; inset-block-start: 0.4rem; inset-inline-end: 0.4rem; margin: 0; }
+.frame__problem { padding-inline: 0.45rem 0.2rem; color: var(--accent-ink); }
+.change__bar button:disabled { opacity: 0.6; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .board__ask:hover { background: var(--hover); }
+  .frame__jump:hover .frame__img { box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .frame[aria-current="true"] .frame__jump:hover .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
+}
+
+/* ---------- Phone: the B-roll chip and its sheet ---------- */
+.toc__chip {
+  display: flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.6rem; white-space: nowrap;
+  border: 1px solid var(--line); border-radius: 99px; background: transparent; color: var(--muted); font-weight: 500; line-height: 1.3; cursor: pointer;
+}
+.toc__chip:active { background: var(--pressed); }
+/* The chip stays in view at the end of the scrolling row. */
+.toc__broll { position: sticky; inset-inline-end: 0; padding-inline-start: 0.5rem; background: linear-gradient(to right, transparent, var(--bg) 0.5rem); }
+.toc__broll:dir(rtl) { background: linear-gradient(to left, transparent, var(--bg) 0.5rem); }
+.toc__chip { background: var(--bg); }
+.toc__chip[data-check]::after { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--accent); }
+@media (hover: hover) and (pointer: fine) { .toc__chip:hover { background: var(--hover); color: var(--text); } }
+.broll-sheet {
+  margin: auto 0 0; inset-inline: 0; inline-size: 100%; max-inline-size: 100%; max-block-size: 80dvh;
+  padding: 0 0.75rem max(0.75rem, env(safe-area-inset-bottom, 0px)); border: 0; border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow); overflow-y: auto; overscroll-behavior: contain;
+  opacity: 0; transition: opacity 0.2s var(--ease-out), translate 0.2s var(--ease-out), display 0.2s allow-discrete, overlay 0.2s allow-discrete;
+}
+.broll-sheet::backdrop { background: oklch(0% 0 none / 0.4); opacity: 0; transition: opacity 0.2s var(--ease-out), display 0.2s allow-discrete, overlay 0.2s allow-discrete; }
+.broll-sheet[open], .broll-sheet[open]::backdrop { opacity: 1; }
+@starting-style { .broll-sheet[open], .broll-sheet[open]::backdrop { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .broll-sheet { translate: 0 1rem; }
+  .broll-sheet[open] { translate: 0 0; }
+  @starting-style { .broll-sheet[open] { translate: 0 1rem; } }
+}
+.broll-sheet__head { position: sticky; inset-block-start: 0; z-index: 1; display: flex; justify-content: flex-end; padding-block: 0.4rem 0; background: var(--surface); }
+.broll-sheet .broll { padding-block-start: 0; }

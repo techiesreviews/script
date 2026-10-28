@@ -60,7 +60,7 @@ test("initialize passes the client's name and version to the relay, cut short", 
 
 test("tools/list has the four tools with input schemas and limits", async () => {
   const r = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "get_script", "list_asks", "wait_for_asks"]);
+  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "get_script", "list_asks", "sketch_shot", "wait_for_asks"]);
   const answer = TOOLS.find((t) => t.name === "answer_ask").inputSchema;
   assert.equal(answer.properties.text.maxLength, 4000);
   assert.equal(answer.properties.message.maxLength, 200);
@@ -171,4 +171,29 @@ test("tool errors: no tab, the tab's own refusal, and a quiet wait", async () =>
   const quiet = await call("wait_for_asks", { waitSeconds: 1 }, { relay: fakeRelay({ results: { wait_for_asks: "timeout" } }) });
   assert.equal(quiet.body.result.isError, undefined);
   assert.equal(text(quiet), NO_ASKS);
+});
+
+test("sketch_shot: schema, limits, and get_script describes the B-roll", async () => {
+  const tool = TOOLS.find((t) => t.name === "sketch_shot");
+  assert.deepEqual(tool.inputSchema.required, ["askId", "shotId", "svg"]);
+  assert.equal(tool.inputSchema.properties.svg.maxLength, 8192);
+  assert.equal(tool.inputSchema.properties.shotId.maxLength, 20);
+  assert.match(TOOLS.find((t) => t.name === "get_script").description, /broll: .*blockIds.*check/);
+  const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M1 1L9 9"/></svg>';
+  for (const [args, re] of [
+    [{ shotId: "B4", svg }, /askId is required/],
+    [{ askId: "a", svg }, /shotId is required/],
+    [{ askId: "a", shotId: "B".repeat(21), svg }, /shotId is required/],
+    [{ askId: "a", shotId: "B4" }, /svg is required/],
+    [{ askId: "a", shotId: "B4", svg: "  " }, /svg is required/],
+    [{ askId: "a", shotId: "B4", svg: "x".repeat(8193) }, /longer than 8192/],
+    [{ askId: "a", shotId: "B4", svg, style: "x" }, /Unknown argument/],
+  ]) assert.match(checkArgs("sketch_shot", args), re);
+  assert.equal(checkArgs("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(8192) }), "");
+  const relay = fakeRelay({ results: { sketch_shot: "Shown to the person in the storyboard." } });
+  const r = await call("sketch_shot", { askId: "a", shotId: "B4", svg }, { relay });
+  assert.equal(text(r), "Shown to the person in the storyboard.");
+  assert.deepEqual(relay.ops.at(-1).args, { askId: "a", shotId: "B4", svg });
+  const tooLong = await call("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(9000) }, { relay });
+  assert.equal(tooLong.body.result.isError, true);
 });
