@@ -509,3 +509,19 @@ test("a motion plate switched to a screen recording moves table and leaves the m
   const main = (md) => md.slice(0, md.indexOf("## Screen recordings"));
   assert.equal(main(moved), main(DEMO));
 });
+
+test("a # title ends a ## Screen recordings section for the tables after it", () => {
+  const md = "## Screen recordings\n\n| # | What to record | Over |\n| --- | --- | --- |\n| S1 | a | \"b\" |\n\n# Part two\n\n| # | What to show | Over |\n| --- | --- | --- |\n| B1 | c | \"d\" |\n";
+  assert.equal(kindOfId(md, "S1"), "screen");
+  assert.equal(kindOfId(md, "B1"), "broll");
+  const s2 = addShot(md, { id: "S2", kind: "screen", what: "e", over: '"f"' });
+  assert.ok(s2.indexOf("| S2 |") < s2.indexOf("# Part two"), "S2 goes into the screen table");
+});
+
+test("a new Kind column is filled in for every row", () => {
+  const t = "| # | What to show | Over |\n| --- | --- | --- |\n| B1 | a | \"b\" |\n";
+  const added = addShot(t, { id: "B2", kind: "motion", what: "m", over: '"x"' });
+  assert.ok(added.startsWith("| # | Kind | What to show | Over |"));
+  assert.ok(added.includes('| B1 | B-roll | a | "b" |'));
+  assert.equal(kindOfId(added, "B1"), "broll");
+});
