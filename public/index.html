@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>script.techies.tools</title>
+<link rel="stylesheet" href="app.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="doc" id="docInfo" hidden>
+      <span class="doc__title"><button class="doc__switch" id="docSwitch" type="button" popovertarget="scriptMenu"><span class="doc__name" id="fileName"></span><span data-icon="chevron"></span></button><span class="save-state" id="saveState"></span><button class="allow-save" id="allowSave" type="button" hidden></button></span>
+      <span class="doc__meta" id="docMeta"></span>
+    </div>
+    <div class="menu menu--scripts" id="scriptMenu" popover>
+      <input class="menu__search" id="scriptSearch" type="search" placeholder="Search scripts" aria-label="Search scripts" autocomplete="off" spellcheck="false">
+      <ul class="scripts" id="scriptList" aria-label="Recent scripts"></ul>
+      <div class="menu__divider"></div>
+      <button class="menu-action" id="menuOpen" type="button"><span data-icon="open"></span><span class="menu-action__text">Open a script…</span></button>
+      <button class="menu-action" id="menuNew" type="button"><span data-icon="plus"></span><span class="menu-action__text">New script</span></button>
+    </div>
+    <div class="top__end">
+      <button class="tb voice-btn" id="voiceBtn" type="button" disabled hidden><span data-icon="wave"></span><span class="lbl">Sounds like me</span><span class="status-dot"></span><span class="count" id="voiceCount" hidden>0</span></button>
+      <button class="tb agent-btn" id="agentBtn" type="button" hidden popovertarget="agentMenu" data-state="off"><span class="status-dot"></span><span data-icon="plug"></span><span class="lbl" id="agentBtnLabel">Connect your agent</span></button>
+      <div class="menu menu--agent" id="agentMenu" popover>
+        <ul class="menu__agents" id="agentRows"></ul>
+        <div class="menu__divider"></div>
+        <div class="menu-row" id="voiceGuideRow"><span data-icon="wave"></span><span class="menu-row__text" id="voiceGuideText">Voice guide · <span id="voiceGuideName">none</span></span><button class="small-btn" type="button" id="voiceGuideOpen">Open…</button><button class="icon-btn" type="button" id="voiceGuideClear" aria-label="Remove the voice guide" hidden data-icon="x"></button></div>
+        <div class="menu__divider"></div>
+        <button class="menu-action" id="mcpAction" type="button" data-state="off"><span class="status-dot"></span><span class="menu-action__text" id="mcpActionText">Wait for MCP</span><span class="menu-action__copy" id="mcpCopy" aria-hidden="true" data-icon="copy"></span></button>
+        <textarea class="menu__prompt" id="mcpPrompt" readonly hidden aria-label="Connection prompt"></textarea>
+      </div>
+      <button class="tb tb--ink" id="exportBtn" type="button" hidden popovertarget="exportMenu"><span data-icon="export"></span><span class="lbl">Export</span></button>
+      <div class="menu" id="exportMenu" popover>
+        <button class="menu-action" type="button" data-export="camera"><span data-icon="camera"></span><span class="menu-action__text">Camera script (.txt)</span></button>
+        <button class="menu-action" type="button" data-export="prompter-open" id="prompterAction"><span data-icon="prompter"></span><span class="menu-action__text">Open in prompter<span class="menu-action__note" id="prompterNote" hidden>Too long for the prompter</span></span></button>
+        <button class="menu-action" type="button" data-export="prompter"><span data-icon="download"></span><span class="menu-action__text">Prompter (.md)</span></button>
+        <button class="menu-action" type="button" data-export="markdown" id="saveAsAction" hidden><span data-icon="save"></span><span class="menu-action__text">Markdown file (.md)</span></button>
+      </div>
+    </div>
+  </header>
+
+  <main class="empty" id="empty">
+    <div class="empty__actions">
+      <p class="banner empty__note" id="emptyNote" role="status" hidden></p>
+      <button class="tb tb--ink tb--big" type="button" id="emptyOpen"><span data-icon="open"></span>Open a script</button>
+      <button class="tb tb--big" type="button" id="emptyNew"><span data-icon="plus"></span>New script</button>
+      <button class="tb tb--big" type="button" id="emptySample"><span data-icon="prompter"></span>Try a demo script</button>
+      <button class="tb tb--big" type="button" id="emptyReopen" hidden><span data-icon="undo"></span><span id="reopenLabel">Reopen</span></button>
+    </div>
+  </main>
+
+  <div class="layout" id="layout" hidden>
+    <nav class="toc" aria-label="Sections"><ol id="toc"></ol></nav>
+    <main class="paper">
+      <div class="sheet">
+        <div class="banner" id="banner" role="status" hidden></div>
+        <div class="script" id="script"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="edit-bar" id="editBar" role="toolbar" aria-label="Edit selection" hidden>
+  <span class="edit-bar__label" id="ebLabel">0 words</span>
+  <div class="edit-bar__controls">
+    <button class="edit-bar__button edit-bar__button--voice" type="button" data-act="like"></button>
+    <button class="edit-bar__button" type="button" data-act="simpler"></button>
+    <button class="edit-bar__button" type="button" data-act="shorter"></button>
+    <button class="edit-bar__button" type="button" data-act="explain"></button>
+    <button class="edit-bar__button" type="button" data-act="facts"></button>
+    <span class="edit-bar__sep"></span>
+    <form class="edit-bar__ask" id="askForm"><input id="askInput" type="text" placeholder="Ask…" aria-label="Ask about this selection" autocomplete="off" maxlength="500"><button type="submit" aria-label="Send" data-icon="send"></button></form>
+  </div>
+</div>
+
+<div class="voice-card" id="voiceCard" role="dialog" aria-label="Sounds like me" hidden>
+  <p class="voice-card__why" id="vcWhy"></p>
+  <p class="voice-card__try" id="vcTry"></p>
+  <div class="voice-card__actions"><button class="small-btn" type="button" id="vcKeep">Keep mine</button><button class="small-btn use" type="button" id="vcUse">Use this</button></div>
+</div>
+
+
+<input type="file" id="fileInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
+<input type="file" id="voiceGuideInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
+</body>
+</html>

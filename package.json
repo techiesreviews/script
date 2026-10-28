@@ -1,0 +1,9 @@
+{
+  "name": "script-editor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes wrangler@4 dev",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

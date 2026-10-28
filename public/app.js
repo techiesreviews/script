@@ -1,0 +1,1885 @@
+// script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
+import * as D from "./doc.js";
+import * as Q from "./save-queue.js";
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+const fine = matchMedia("(hover: hover) and (pointer: fine)");
+
+const ICONS = {
+  wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
+  simpler: '<path d="M4 7h16M4 12h10M4 17h6"/>',
+  shorter: '<path d="M4 12h10M10 8l4 4-4 4M20 5v14"/>',
+  explain: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17h.01"/>',
+  facts: '<path d="M9 12l2 2 4-4"/><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/>',
+  send: '<path d="M5 12h13M13 6l6 6-6 6"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+  camera: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
+  prompter: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 9h10M8 12h8M10 21h4M12 17v4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  open: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  save: '<path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8M7 21v-7h10v7"/>',
+  export: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  message: '<path d="M4 5h16v11H9l-5 4z"/>',
+  chevron: '<path d="m7 10 5 5 5-5"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+};
+const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
+const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send" };
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
+
+const LS = "script-editor:";
+const FILE_TYPES = [{ description: "Markdown script", accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] } }];
+const SAMPLE = { url: "samples/demo-backup-wordpress.md", name: "demo-backup-wordpress.md" };
+const TYPING_GROUP_MS = 600;
+const UNDO_LIMIT = 300;
+
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(LS + k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(LS + k, JSON.stringify(v)); return true; } catch { return false; } },
+  del(k) { try { localStorage.removeItem(LS + k); } catch { /* storage off */ } },
+};
+const me = (() => {
+  let p = store.get("me");
+  if (!p?.id) { p = { id: D.newId(10), name: "You" }; store.set("me", p); }
+  return { id: p.id, name: p.name };
+})();
+
+const state = {
+  doc: null,
+  name: "",
+  handle: null,
+  savedText: "",
+  savedAt: 0,
+  fileModified: 0,
+  saving: false,
+  autoSaving: false,
+  saveError: "",
+  needsPermission: false,
+  conflict: false,
+  asks: [],
+  undo: [],
+  redo: [],
+  lastStep: null,
+  preCaret: null,
+  pendingDraft: null,
+  frontOpen: false,
+};
+
+/* ---------- Small helpers ---------- */
+const scriptEl = $("#script");
+const isOpen = (a) => D.OPEN_STATUSES.includes(a.status);
+const byId = (id) => (state.doc ? D.blockById(state.doc, id) : null);
+const blockNode = (id) => scriptEl.querySelector(`.block[data-id="${id}"]`);
+const blockOf = (node) => {
+  const el = node?.nodeType === 3 ? node.parentElement : node;
+  const b = el?.closest?.(".block");
+  return b && scriptEl.contains(b) ? b : null;
+};
+const isDirty = () => !!state.doc && D.serialize(state.doc) !== state.savedText;
+const clock = (t) => {
+  const d = new Date(t), now = new Date();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return d.toDateString() === now.toDateString() ? time : `${d.toLocaleDateString([], { day: "numeric", month: "short" })} ${time}`;
+};
+const baseName = () => state.name.replace(/\.(md|markdown|txt)$/i, "") || "script";
+function emit(type, ask) {
+  document.dispatchEvent(new CustomEvent("scripteditor:ask", { detail: { type, ask: structuredClone(ask) } }));
+}
+function editable(el) {
+  el.contentEditable = "plaintext-only";
+  if (el.contentEditable !== "plaintext-only") el.contentEditable = "true";
+  el.spellcheck = true;
+}
+function h(tag, cls, attrs = {}) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+/* ---------- Text and caret inside a block ---------- */
+// The block's text is every text node except decorations marked data-skip (chips, bars, inserted text).
+function contentNodes(root) {
+  const out = [];
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement.closest("[data-skip]") && root.contains(n.parentElement.closest("[data-skip]")) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  for (let n; (n = w.nextNode()); ) out.push(n);
+  return out;
+}
+const readContent = (el) => contentNodes(el).map((n) => n.data).join("").replace(/\r/g, "");
+function offsetIn(el, node, off) {
+  const p = document.createRange();
+  try { p.setStart(node, off); } catch { return 0; }
+  let acc = 0;
+  for (const t of contentNodes(el)) {
+    if (t === node) return acc + Math.min(off, t.data.length);
+    if (p.comparePoint(t, t.data.length) <= 0) acc += t.data.length;
+    else break;
+  }
+  return acc;
+}
+function pointAt(el, offset) {
+  const nodes = contentNodes(el);
+  let acc = 0;
+  for (const t of nodes) {
+    if (offset <= acc + t.data.length) return [t, offset - acc];
+    acc += t.data.length;
+  }
+  const last = nodes.at(-1);
+  return last ? [last, last.data.length] : [el, 0];
+}
+function rangeAt(el, start, end) {
+  const r = document.createRange();
+  const [sn, so] = pointAt(el, start);
+  const [en, eo] = pointAt(el, end);
+  r.setStart(sn, so);
+  r.setEnd(en, eo);
+  return r;
+}
+function setCaretAt(el, offset) {
+  const r = document.createRange();
+  const [n, o] = pointAt(el, Math.max(0, offset));
+  const lock = n.nodeType === 3 ? n.parentElement.closest('[contenteditable="false"]') : null;
+  if (lock && el.contains(lock)) r.setStartAfter(lock);
+  else r.setStart(n, o);
+  r.collapse(true);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+function getCaret() {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const el = blockOf(sel.focusNode);
+  return el ? { id: el.dataset.id, offset: offsetIn(el, sel.focusNode, sel.focusOffset) } : null;
+}
+function selectionIn(el) {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  const len = readContent(el).length;
+  const start = el.contains(r.startContainer) ? offsetIn(el, r.startContainer, r.startOffset) : 0;
+  const end = el.contains(r.endContainer) ? offsetIn(el, r.endContainer, r.endOffset) : len;
+  return { start: Math.min(start, end), end: Math.max(start, end) };
+}
+function placeCaret(id, offset) {
+  const el = blockNode(id);
+  if (!el) return;
+  const fold = el.closest("details");
+  if (fold && !fold.open) { fold.open = true; state.frontOpen = true; }
+  el.focus({ preventScroll: true });
+  setCaretAt(el, offset);
+  const r = el.getBoundingClientRect();
+  const top = $(".top").getBoundingClientRect().bottom + 8;
+  if (r.top < top || r.top > innerHeight - 40) el.scrollIntoView({ block: "center", behavior: "instant" });
+}
+
+/* ---------- Rendering ---------- */
+function blockShell(b) {
+  const wrap = h("div", `line line--${b.type}`);
+  wrap.dataset.wrap = b.id;
+  let el;
+  if (b.type === "title") el = h("h1", "block title");
+  else if (b.type === "heading") {
+    const head = h("h2", "section__head");
+    el = h("span", "block");
+    head.append(el);
+    wrap.append(head);
+  } else if (b.type === "raw") el = h("div", "block raw");
+  else el = h("p", "block line__text");
+  el.dataset.id = b.id;
+  el.dataset.type = b.type;
+  // While "Unsaved changes from … · Restore · Discard" shows, the script is read-only, so no edit is lost.
+  if (state.pendingDraft) el.contentEditable = "false";
+  else editable(el);
+  if (b.type !== "heading") wrap.append(el);
+  fillBlock(el, b);
+  return wrap;
+}
+
+// Decorations for a block: open asks on a selection, and open "Sounds like me" marks.
+function decorationsFor(id) {
+  const items = [];
+  for (const a of state.asks) {
+    if (a.scope === "selection" && a.blockId === id && isOpen(a)) items.push({ kind: "ask", ask: a, start: a.start, end: a.end });
+  }
+  for (const a of state.asks) {
+    if (a.scope !== "script" || a.status !== "answered") continue;
+    a.answer.marks.forEach((m, i) => { if (m.state === "open" && m.blockId === id) items.push({ kind: "mark", ask: a, mark: m, i, start: m.start, end: m.end }); });
+  }
+  items.sort((x, y) => x.start - y.start || (x.kind === "ask" ? -1 : 1));
+  const out = [];
+  let at = 0;
+  for (const it of items) {
+    if (it.start < at || it.end <= it.start) continue;
+    out.push(it);
+    at = it.end;
+  }
+  return out;
+}
+
+function fillBlock(el, b) {
+  const content = D.contentOf(b);
+  const decos = decorationsFor(b.id);
+  const nodes = [];
+  let at = 0, chips = 0;
+  const text = (s) => s && nodes.push(document.createTextNode(s));
+  for (const d of decos) {
+    text(content.slice(at, d.start));
+    const quote = content.slice(d.start, d.end);
+    if (d.kind === "mark") {
+      const m = h("mark", "voice", { tabindex: "0", "data-deco": "", "data-ask": d.ask.id, "data-mark": String(d.i) });
+      m.textContent = quote;
+      nodes.push(m);
+    } else if (d.ask.status === "answered" && d.ask.answer.kind === "note") {
+      const c = h("span", "checked", { "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
+      c.textContent = quote;
+      const n = h("span", "note", { contenteditable: "false", "data-skip": "", "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
+      n.innerHTML = `${icon(d.ask.answer.tone === "look" ? "flag" : "check")}<span></span><button type="button" class="note__x" aria-label="Done">${icon("x")}</button>`;
+      n.querySelector("span").textContent = d.ask.answer.text;
+      nodes.push(c, n);
+      chips++;
+    } else if (d.ask.status === "answered") {
+      const a = d.ask.answer;
+      const c = h("span", "change", { contenteditable: "false", "data-deco": "", "data-ask": d.ask.id });
+      const ins = h("ins", "", { "data-skip": "" });
+      if (a.kind === "replace") {
+        const del = h("del");
+        del.textContent = quote;
+        ins.textContent = a.text;
+        c.append(del, ins);
+      } else {
+        const from = h("span", "change__from");
+        from.textContent = quote;
+        ins.textContent = (/^\s/.test(a.text) ? "" : " ") + a.text;
+        c.append(from, ins);
+      }
+      const bar = h("span", "change__bar", { "data-skip": "" });
+      bar.innerHTML = `<span class="change__what">${icon(ACT_ICON[d.ask.action])}<span></span></span><button type="button" class="undo">${icon("undo")}Undo</button><button type="button" class="keep">${icon("check")}Keep</button>`;
+      bar.querySelector(".change__what span").textContent = actName(d.ask);
+      c.append(bar);
+      nodes.push(c);
+      chips++;
+    } else {
+      const s = h("span", "ask", { "data-deco": "", "data-ask": d.ask.id });
+      s.textContent = quote;
+      const chip = h("span", "ask-chip", { contenteditable: "false", "data-skip": "", "data-deco": "", "data-ask": d.ask.id });
+      if (d.ask.status === "taken") { s.dataset.taken = ""; chip.dataset.taken = ""; }
+      chip.innerHTML = `${icon(ACT_ICON[d.ask.action])}<span></span><span class="ask-chip__dot"></span><button type="button" class="ask-chip__x" aria-label="Cancel">${icon("x")}</button>`;
+      chip.querySelector("span").textContent = actName(d.ask);
+      nodes.push(s, chip);
+      chips++;
+    }
+    at = d.end;
+  }
+  text(content.slice(at));
+  if (content.endsWith("\n")) nodes.push(h("br", "", { "data-skip": "", "data-deco": "" }));
+  el.replaceChildren(...nodes);
+  el._decos = decos.length;
+  el._chips = chips;
+  // Messages from the agent: one small line under the block.
+  const wrap = el.closest(".line") || el.parentElement?.closest(".line");
+  const msgs = decos.filter((d) => d.kind === "ask" && d.ask.status === "answered" && d.ask.answer.message);
+  const host = wrap || null;
+  if (host) {
+    host.querySelectorAll(":scope > .line__msg").forEach((m) => m.remove());
+    for (const d of msgs) {
+      const p = h("p", "line__msg", { "data-ask": d.ask.id });
+      p.innerHTML = icon("message") + "<span></span>";
+      p.querySelector("span").textContent = d.ask.answer.message;
+      host.append(p);
+    }
+  }
+}
+
+// After typing: is the DOM still what the model would render?
+function domMatches(el, id) {
+  if (el.querySelector(":not(br):not([data-deco]):not([data-deco] *)")) return false;
+  const brs = el.querySelectorAll("br:not([data-skip])");
+  if (brs.length > 1 || (brs.length === 1 && el.lastChild !== brs[0])) return false;
+  const decos = el.querySelectorAll(".ask, .checked, .change, mark.voice");
+  if (decos.length !== (el._decos || 0)) return false;
+  if (el.querySelectorAll(".ask-chip, .note, .change__bar").length !== (el._chips || 0)) return false;
+  const expected = decorationsFor(id);
+  let k = 0;
+  for (const d of decos) {
+    const want = expected[k++];
+    if (!want) return false;
+    const r = document.createRange();
+    r.selectNodeContents(d);
+    if (offsetIn(el, r.startContainer, r.startOffset) !== want.start || readContent(d) !== D.contentOf(byId(id)).slice(want.start, want.end)) return false;
+  }
+  const content = D.contentOf(byId(id));
+  if (content.endsWith("\n") !== !!el.querySelector("br[data-skip]")) return false;
+  return true;
+}
+
+function renderBlock(id, caret = null) {
+  const el = blockNode(id), b = byId(id);
+  if (!el || !b) return renderAll(caret);
+  if (el.dataset.type !== b.type) return renderAll(caret);
+  fillBlock(el, b);
+  if (caret && caret.id === id) setCaretAt(el, caret.offset);
+}
+
+let sectionObserver = null;
+function renderAll(caret = null) {
+  const { front, sections } = D.outline(state.doc);
+  const frag = document.createDocumentFragment();
+  const head = h("header", "front");
+  const title = front.find((b) => b.type === "title");
+  if (title) head.append(blockShell(title));
+  const rest = front.filter((b) => b !== title);
+  if (rest.length) {
+    const more = h("details", "front__more");
+    more.open = state.frontOpen;
+    more.addEventListener("toggle", () => { state.frontOpen = more.open; });
+    const summary = h("summary");
+    summary.textContent = "Details";
+    const body = h("div", "front__body");
+    for (const b of rest) body.append(blockShell(b));
+    more.append(summary, body);
+    head.append(more);
+  }
+  frag.append(head);
+  for (const s of sections) {
+    const sec = h("section", "section");
+    sec.dataset.spoken = String(s.spoken);
+    if (s.heading) { sec.id = `s-${s.heading.id}`; sec.dataset.sec = s.heading.id; sec.append(blockShell(s.heading)); }
+    for (const b of s.blocks) sec.append(blockShell(b));
+    frag.append(sec);
+  }
+  scriptEl.replaceChildren(frag);
+  scriptEl.toggleAttribute("data-locked", !!state.pendingDraft);
+  renderToc();
+  renderVoice();
+  if (caret) placeCaret(caret.id, caret.offset);
+}
+
+function renderToc() {
+  const { sections } = D.outline(state.doc);
+  const toc = $("#toc");
+  const current = toc.querySelector('[aria-current="true"]')?.dataset.sec;
+  toc.innerHTML = sections.filter((s) => s.heading).map((s) => {
+    const { num, name, start } = s.info;
+    return `<li><a href="#s-${s.heading.id}" data-sec="${s.heading.id}" data-spoken="${s.spoken}"${s.heading.id === current ? ' aria-current="true"' : ""}><span class="toc__num">${esc(num)}</span><span class="toc__title">${esc(name || D.contentOf(s.heading).trim() || "Untitled")}</span><span class="toc__side"><span class="toc__dots"></span><span class="toc__time">${esc(start)}</span></span></a></li>`;
+  }).join("");
+  sectionObserver?.disconnect();
+  sectionObserver = new IntersectionObserver((entries) => {
+    const vis = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (!vis) return;
+    $$("#toc a").forEach((a) => a.setAttribute("aria-current", String(a.dataset.sec === vis.target.dataset.sec)));
+    const cur = $('#toc a[aria-current="true"]');
+    if (cur && matchMedia("(max-width: 52rem)").matches) cur.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, { rootMargin: "-30% 0px -60% 0px" });
+  $$(".section[data-sec]", scriptEl).forEach((s) => sectionObserver.observe(s));
+  renderTocDots();
+}
+function renderTocDots() {
+  const { sections } = D.outline(state.doc);
+  for (const s of sections) {
+    if (!s.heading) continue;
+    const dots = $(`#toc a[data-sec="${s.heading.id}"] .toc__dots`);
+    if (!dots) continue;
+    const ids = new Set([s.heading.id, ...s.blocks.map((b) => b.id)]);
+    const voice = state.asks.some((a) => a.scope === "script" && a.status === "answered" && a.answer.marks.some((m) => m.state === "open" && ids.has(m.blockId)));
+    const asks = state.asks.some((a) => a.scope === "selection" && isOpen(a) && ids.has(a.blockId));
+    dots.innerHTML = (voice ? '<span class="pdot pdot--voice"></span>' : "") + (asks ? '<span class="pdot pdot--ask"></span>' : "");
+  }
+}
+$("#toc").addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-sec]");
+  if (!a) return;
+  e.preventDefault();
+  document.getElementById(`s-${a.dataset.sec}`)?.scrollIntoView({ behavior: reduced.matches ? "auto" : "smooth", block: "start" });
+});
+
+/* ---------- Top bar and meta ---------- */
+function renderTop() {
+  const open = !!state.doc;
+  $("#docInfo").hidden = !open;
+  for (const id of ["exportBtn", "voiceBtn", "agentBtn"]) $("#" + id).hidden = !open;
+  $("#empty").hidden = open;
+  $("#layout").hidden = !open;
+  if (!open) return;
+  renderAgent();
+  $("#fileName").textContent = state.name;
+  document.title = `${D.titleOf(state.doc) || state.name} · script.techies.tools`;
+  renderSaveState();
+}
+function renderSaveState() {
+  const s = $("#saveState");
+  const dirty = isDirty();
+  const allow = $("#allowSave");
+  allow.hidden = !(state.needsPermission && state.handle);
+  if (!allow.hidden) allow.textContent = `Allow saving to ${state.handle.name}`;
+  $("#saveAsAction").hidden = !!state.handle;
+  if (state.saving && !state.autoSaving) { s.dataset.state = "saving"; s.textContent = "Saving…"; s.removeAttribute("aria-label"); s.title = ""; }
+  else if (state.saveError) { s.dataset.state = "error"; s.textContent = "Not saved"; s.title = state.saveError; s.removeAttribute("aria-label"); }
+  else if (dirty) { s.dataset.state = "dirty"; s.textContent = ""; s.setAttribute("aria-label", "Unsaved changes"); s.title = "Unsaved changes"; s.setAttribute("role", "img"); }
+  else if (state.savedAt) { s.dataset.state = "saved"; s.textContent = `Saved ${clock(state.savedAt)}`; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = ""; }
+  else { s.dataset.state = ""; s.textContent = ""; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = ""; }
+}
+function renderDerived() {
+  if (!state.doc) return;
+  const st = D.stats(state.doc);
+  $("#docMeta").textContent = `${st.words.toLocaleString("en")} words · ${st.spoken} spoken`;
+  // The prompter link is made ahead of the click; a script that is too long gets a quiet note instead.
+  const pro = D.exportPrompter(state.doc);
+  const tooLong = pro.length > D.PROMPTER_MAX_CHARS;
+  $("#prompterAction").disabled = tooLong;
+  $("#prompterNote").hidden = !tooLong;
+  if (!tooLong) prompterUrl(pro);
+}
+
+let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
+function changed() {
+  renderSaveState();
+  clearTimeout(derivedTimer);
+  derivedTimer = setTimeout(renderDerived, 250);
+  renderTocDots();
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(persistDraft, 400);
+  scheduleSave();
+}
+
+/* ---------- Prompter (prompter.techies.tools) ---------- */
+// The link is made ahead of the click, so opening the tab stays inside the click and is not blocked.
+const prompterCache = { text: null, url: null, seq: 0 };
+async function prompterUrl(text) {
+  if (prompterCache.text === text) return prompterCache.url;
+  const seq = ++prompterCache.seq;
+  const url = await D.prompterLink(text);
+  if (seq === prompterCache.seq) Object.assign(prompterCache, { text, url });
+  return url;
+}
+async function openPrompter() {
+  if (!state.doc) return;
+  const text = D.exportPrompter(state.doc);
+  const url = prompterCache.text === text ? prompterCache.url : await prompterUrl(text);
+  if (url) window.open(url, "_blank", "noopener");
+}
+
+/* ---------- Undo and redo ---------- */
+function checkpoint(kind, id) {
+  const now = Date.now(), last = state.lastStep;
+  if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
+  state.undo.push({ doc: D.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
+  if (state.undo.length > UNDO_LIMIT) state.undo.shift();
+  state.redo = [];
+  state.lastStep = { kind, id, at: now };
+}
+function restore(snap, from, to) {
+  to.push({ doc: D.cloneDoc(state.doc), caret: getCaret() });
+  state.doc = D.cloneDoc(snap.doc);
+  state.lastStep = null;
+  reanchorAll();
+  renderAll(snap.caret && byId(snap.caret.id) ? snap.caret : null);
+  hideBar();
+  changed();
+}
+function undo() { const s = state.undo.pop(); if (s) restore(s, state.undo, state.redo); }
+function redo() { const s = state.redo.pop(); if (s) restore(s, state.redo, state.undo); }
+
+/* ---------- Ask anchors follow edits ---------- */
+function closeAsk(a, status) {
+  a.status = status;
+  emit(status, a);
+}
+// Returns true when an anchor moved or was dropped.
+function reanchorBlock(id) {
+  const b = byId(id);
+  let moved = false;
+  for (const a of state.asks) {
+    if (a.scope === "selection" && a.blockId === id && isOpen(a)) {
+      const r = b && D.reanchor(a, D.contentOf(b));
+      if (!r) { closeAsk(a, "cancelled"); moved = true; }
+      else if (r.start !== a.start) { a.start = r.start; a.end = r.end; moved = true; }
+    }
+    if (a.scope === "script" && a.status === "answered") {
+      for (const m of a.answer.marks) {
+        if (m.state !== "open" || m.blockId !== id) continue;
+        const r = b && D.reanchor(m, D.contentOf(b));
+        if (!r) { m.state = "gone"; moved = true; }
+        else if (r.start !== m.start) { m.start = r.start; m.end = r.end; moved = true; }
+      }
+      settleVoice(a);
+    }
+  }
+  return moved;
+}
+function reanchorAll() {
+  const ids = new Set(state.asks.flatMap((a) => (a.scope === "selection" ? [a.blockId] : (a.answer?.marks || []).map((m) => m.blockId))));
+  for (const id of ids) reanchorBlock(id);
+}
+const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, fromId, toId, fromStart, shift);
+// After setContent split or retyped a block: anchors move into the blocks their text went to.
+function followPieces(id, r) {
+  for (let i = r.pieces.length - 1; i >= 0; i--) {
+    const p = r.pieces[i];
+    if (i > 0) moveAsks(id, p.id, p.start, -(p.start + p.prefix));
+    else if (p.start + p.prefix) moveAsks(id, id, 0, -(p.start + p.prefix));
+  }
+  let moved = false;
+  for (const p of r.pieces) moved = reanchorBlock(p.id) || moved;
+  return moved;
+}
+// Set a block's content, follow splits and type changes, re-render and put the caret back.
+function applyContent(id, content, caretOffset) {
+  const r = D.setContent(state.doc, id, content);
+  followPieces(id, r);
+  const caret = caretOffset == null ? null : D.locate(r, caretOffset);
+  if (r.changed || r.created.length) renderAll(caret);
+  else renderBlock(id, caret);
+  return r;
+}
+
+/* ---------- Editing ---------- */
+function syncFromDom(el) {
+  const id = el.dataset.id, b = byId(id);
+  if (!b) return;
+  const content = readContent(el);
+  if (content === D.contentOf(b)) {
+    if (!domMatches(el, id)) renderBlock(id, getCaret());
+    return;
+  }
+  checkpoint("type", id);
+  const caret = getCaret();
+  const r = D.setContent(state.doc, id, content);
+  const moved = followPieces(id, r);
+  if (r.changed || r.created.length) {
+    renderAll(D.locate(r, caret?.offset ?? 0));
+  } else {
+    if (moved || !domMatches(el, id)) renderBlock(id, caret);
+    if (b.type === "heading" || b.type === "title") { renderToc(); renderTop(); }
+  }
+  changed();
+}
+
+function splitAt(el, start, end, lineBreak) {
+  const id = el.dataset.id, b = byId(id);
+  let content = D.contentOf(b);
+  const after = state.doc.blocks[state.doc.blocks.indexOf(b) + 1];
+  if (!lineBreak && start === end && start === content.length && after?.type === "para" && D.contentOf(after) === "") {
+    placeCaret(after.id, 0);
+    return;
+  }
+  checkpoint("enter", id);
+  if (end > start) {
+    content = content.slice(0, start) + content.slice(end);
+    D.setContent(state.doc, id, content);
+    reanchorBlock(id);
+  }
+  // A second line break in a row starts a new block, so a para never holds a blank line.
+  if (lineBreak && b.type !== "raw" && content[start - 1] === "\n") {
+    content = content.slice(0, start - 1) + content.slice(start);
+    D.setContent(state.doc, id, content);
+    moveAsks(id, id, start, -1);
+    start -= 1;
+    lineBreak = false;
+  }
+  if (lineBreak) {
+    moveAsks(id, id, start, 1);
+    applyContent(id, content.slice(0, start) + "\n" + content.slice(start), start + 1);
+  } else if ((b.type === "heading" || b.type === "title") && start === 0 && content.length) {
+    const i = state.doc.blocks.indexOf(b);
+    D.insertBlock(state.doc, i > 0 ? state.doc.blocks[i - 1].id : null, "para", "");
+    renderAll({ id, offset: 0 });
+  } else {
+    const next = D.splitBlock(state.doc, id, start);
+    moveAsks(id, next.id, start, -start);
+    reanchorBlock(id);
+    reanchorBlock(next.id);
+    renderAll({ id: next.id, offset: 0 });
+  }
+  changed();
+}
+
+function removeEmpty(el, dir) {
+  const id = el.dataset.id;
+  const i = state.doc.blocks.findIndex((b) => b.id === id);
+  if (state.doc.blocks.length <= 1) return;
+  checkpoint("remove", id);
+  D.removeBlock(state.doc, id);
+  reanchorBlock(id);
+  const prev = state.doc.blocks[i - 1], next = state.doc.blocks[i];
+  const target = dir < 0 ? prev || next : next || prev;
+  renderAll(target ? { id: target.id, offset: target === prev && dir < 0 ? D.contentOf(prev).length : 0 } : null);
+  changed();
+}
+
+function mergeInto(prevId, id) {
+  const prev = byId(prevId);
+  const offset = D.contentOf(prev).length;
+  checkpoint("merge", id);
+  moveAsks(id, prevId, 0, offset);
+  const m = D.mergeWithPrevious(state.doc, id);
+  reanchorBlock(prevId);
+  renderAll({ id: m.into, offset: m.offset });
+  changed();
+}
+
+function onBackspace(el) {
+  const sel = selectionIn(el);
+  if (!sel || sel.start !== sel.end || sel.start !== 0) return false;
+  const id = el.dataset.id, b = byId(id);
+  if (D.contentOf(b) === "") { removeEmpty(el, -1); return true; }
+  const i = state.doc.blocks.indexOf(b), prev = state.doc.blocks[i - 1];
+  if (b.type === "para" && prev && (prev.type === "para" || prev.type === "note")) { mergeInto(prev.id, id); return true; }
+  return true;
+}
+function onDelete(el) {
+  const sel = selectionIn(el);
+  const id = el.dataset.id, b = byId(id), len = D.contentOf(b).length;
+  if (!sel || sel.start !== sel.end || sel.end !== len) return false;
+  if (len === 0) { removeEmpty(el, 1); return true; }
+  const i = state.doc.blocks.indexOf(b), next = state.doc.blocks[i + 1];
+  if (next && next.type === "para" && (b.type === "para" || b.type === "note")) { mergeInto(id, next.id); return true; }
+  return true;
+}
+
+// Plain text only. Blank lines in the pasted text make new blocks (setContent splits them).
+function pasteText(el, raw) {
+  const id = el.dataset.id, b = byId(id);
+  let text = raw.replace(/\r\n?/g, "\n");
+  if (b.type === "title" || b.type === "heading") text = text.replace(/\s*\n\s*/g, " ");
+  if (!text) return;
+  const sel = selectionIn(el) || { start: 0, end: 0 };
+  checkpoint("paste", id);
+  const content = D.contentOf(b);
+  moveAsks(id, id, sel.end, text.length - (sel.end - sel.start));
+  applyContent(id, content.slice(0, sel.start) + text + content.slice(sel.end), sel.start + text.length);
+  changed();
+}
+
+// Arrow keys move between blocks (each block is its own editing area).
+function caretRect() {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0).cloneRange();
+  r.collapse(false);
+  const rect = r.getClientRects()[0];
+  return rect && (rect.height || rect.width) ? rect : null;
+}
+function neighbour(el, dir) {
+  const all = $$(".block", scriptEl).filter((b) => b === el || !b.closest("details:not([open])"));
+  return all[all.indexOf(el) + dir] || null;
+}
+function caretFromPoint(x, y) {
+  if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); return p ? [p.offsetNode, p.offset] : null; }
+  if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(x, y); return r ? [r.startContainer, r.startOffset] : null; }
+  return null;
+}
+function jumpTo(el, dir, x) {
+  const target = neighbour(el, dir);
+  if (!target) return false;
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ block: "nearest" });
+  const tb = target.getBoundingClientRect();
+  const tlh = parseFloat(getComputedStyle(target).lineHeight) || 24;
+  const p = x == null ? null : caretFromPoint(Math.min(Math.max(x, tb.left + 1), tb.right - 1), dir < 0 ? tb.bottom - tlh / 2 : tb.top + tlh / 2);
+  if (p && target.contains(p[0])) setCaretAt(target, offsetIn(target, p[0], p[1]));
+  else setCaretAt(target, dir < 0 ? readContent(target).length : 0);
+  return true;
+}
+// Up/down leave the block from its first or last line. Where the caret has no box (some empty
+// lines), let the browser move first and jump only when the caret did not move.
+function moveVertical(el, dir) {
+  if (!getSelection().isCollapsed) return false;
+  const lh = parseFloat(getComputedStyle(el).lineHeight) || 24;
+  const box = el.getBoundingClientRect();
+  const rect = caretRect();
+  if (!rect) {
+    const before = getCaret();
+    setTimeout(() => {
+      const now = getCaret();
+      if (before && now && now.id === before.id && now.offset === before.offset && document.activeElement === el) jumpTo(el, dir, null);
+    }, 0);
+    return false;
+  }
+  if (dir < 0 && rect.top - box.top > lh * 0.6) return false;
+  if (dir > 0 && box.bottom - rect.bottom > lh * 0.6) return false;
+  return jumpTo(el, dir, rect.left);
+}
+function moveSideways(el, dir) {
+  const sel = selectionIn(el);
+  if (!sel || sel.start !== sel.end || !getSelection().isCollapsed) return false;
+  const len = readContent(el).length;
+  if ((dir < 0 && sel.start !== 0) || (dir > 0 && sel.end !== len)) return false;
+  const target = neighbour(el, dir);
+  if (!target) return false;
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ block: "nearest" });
+  setCaretAt(target, dir < 0 ? readContent(target).length : 0);
+  return true;
+}
+
+scriptEl.addEventListener("keydown", (e) => {
+  const el = blockOf(e.target);
+  if (!el) return;
+  state.preCaret = getCaret();
+  if (e.isComposing || e.keyCode === 229) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (e.key === "Enter" && !mod) {
+    e.preventDefault();
+    const s = selectionIn(el);
+    if (s) splitAt(el, s.start, s.end, e.shiftKey && (el.dataset.type === "para" || el.dataset.type === "note") || el.dataset.type === "raw");
+  } else if (e.key === "Backspace" && !mod && !e.altKey) {
+    if (onBackspace(el)) e.preventDefault();
+  } else if (e.key === "Delete" && !mod && !e.altKey) {
+    if (onDelete(el)) e.preventDefault();
+  } else if (!e.shiftKey && !mod && !e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+    if (moveVertical(el, e.key === "ArrowUp" ? -1 : 1)) e.preventDefault();
+  } else if (!e.shiftKey && !mod && !e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    const rtl = getComputedStyle(el).direction === "rtl";
+    if (moveSideways(el, (e.key === "ArrowLeft") !== rtl ? -1 : 1)) e.preventDefault();
+  }
+});
+scriptEl.addEventListener("beforeinput", (e) => {
+  const el = blockOf(e.target);
+  if (!el) return;
+  if (!state.preCaret) state.preCaret = getCaret();
+  if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
+    e.preventDefault();
+    e.inputType === "historyUndo" ? undo() : redo();
+  } else if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
+    // Keyboards that skip keydown (some phones).
+    e.preventDefault();
+    const s = selectionIn(el);
+    if (s) splitAt(el, s.start, s.end, (e.inputType === "insertLineBreak" && (el.dataset.type === "para" || el.dataset.type === "note")) || el.dataset.type === "raw");
+  } else if (e.inputType === "deleteContentBackward") {
+    if (onBackspace(el)) e.preventDefault();
+  }
+});
+scriptEl.addEventListener("input", (e) => {
+  if (e.isComposing) return;
+  const el = blockOf(e.target);
+  if (el) syncFromDom(el);
+  state.preCaret = null;
+});
+scriptEl.addEventListener("compositionend", (e) => { const el = blockOf(e.target); if (el) syncFromDom(el); });
+scriptEl.addEventListener("paste", (e) => {
+  const el = blockOf(e.target);
+  if (!el) return;
+  e.preventDefault();
+  pasteText(el, e.clipboardData?.getData("text/plain") || "");
+});
+
+/* ---------- Edit bar ---------- */
+const bar = $("#editBar");
+let barSel = null;
+// A selection across blocks is clamped to the first block where it covers at least one word.
+function currentSelection() {
+  if (state.pendingDraft) return null;
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) return null;
+  const r = sel.getRangeAt(0);
+  for (const el of $$(".block", scriptEl)) {
+    if (!r.intersectsNode(el) || el.closest("details:not([open])")) continue;
+    const content = readContent(el);
+    const start = el.contains(r.startContainer) ? offsetIn(el, r.startContainer, r.startOffset) : 0;
+    const end = el.contains(r.endContainer) ? offsetIn(el, r.endContainer, r.endOffset) : content.length;
+    const snap = D.snapToWords(content, start, end);
+    if (snap.end > snap.start) return { id: el.dataset.id, el, start: snap.start, end: snap.end, quote: content.slice(snap.start, snap.end), range: r.cloneRange() };
+  }
+  return null;
+}
+function placeBar(r) {
+  const rects = r.getClientRects(), first = rects[0] || r.getBoundingClientRect(), last = rects[rects.length - 1] || first;
+  bar.hidden = false;
+  if (matchMedia("(max-width: 40rem)").matches) return;
+  const w = bar.offsetWidth, ht = bar.offsetHeight, top = $(".top").getBoundingClientRect().bottom;
+  const x = Math.max(8, Math.min(first.left - 4, document.documentElement.clientWidth - w - 8));
+  let y = first.top - ht - 10;
+  if (y < top + 8) y = last.bottom + 12;
+  bar.style.setProperty("--bar-x", x + "px");
+  bar.style.setProperty("--bar-y", y + "px");
+}
+function showBar() {
+  if (bar.contains(document.activeElement)) return;
+  const s = currentSelection();
+  if (!s) { hideBar(); return; }
+  barSel = s;
+  const n = D.countWords(s.quote);
+  $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
+  closeCard();
+  placeBar(s.range);
+}
+function hideBar() { bar.hidden = true; $("#askInput").value = ""; barSel = null; }
+let selTimer = 0;
+document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); });
+addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); if (!card.hidden && cardFor) positionCard(cardFor); }, { passive: true });
+addEventListener("resize", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); });
+bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
+bar.addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) makeAsk(b.dataset.act); });
+$("#askForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = $("#askInput").value.trim();
+  if (q) makeAsk("ask", q);
+});
+$("#askInput").addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); } });
+
+function makeAsk(action, typed = "") {
+  const s = barSel;
+  if (!s || !state.doc) return;
+  const b = byId(s.id);
+  if (!b) return hideBar();
+  const content = D.contentOf(b);
+  let { start, end } = s;
+  if (content.slice(start, end) !== s.quote) {
+    const r = D.reanchor({ start, quote: s.quote }, content);
+    if (!r) return hideBar();
+    ({ start, end } = r);
+  }
+  // The newest ask wins where two overlap.
+  for (const a of state.asks) {
+    if (a.scope === "selection" && a.blockId === s.id && isOpen(a) && a.start < end && a.end > start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
+  }
+  const ask = D.makeAsk(state.doc, { blockId: s.id, start, end, action, instruction: action === "ask" ? typed : undefined, by: me });
+  state.asks.push(ask);
+  emit("created", ask);
+  hideBar();
+  getSelection().removeAllRanges();
+  renderBlock(s.id);
+  changed();
+  offerAsks();
+  return ask;
+}
+
+/* ---------- Answers ---------- */
+function validBy(by) {
+  return by && typeof by === "object" && typeof by.id === "string" ? { id: by.id.slice(0, 80), name: String(by.name ?? "").slice(0, 80) } : null;
+}
+export function receiveAnswer(askId, answer) {
+  const ask = state.asks.find((a) => a.id === askId);
+  if (!ask || !state.doc || (ask.status !== "waiting" && ask.status !== "taken")) return false;
+  const clean = D.cleanAnswer(ask, answer);
+  if (!clean) return false;
+  if (ask.scope === "selection") {
+    const b = byId(ask.blockId);
+    const r = b && D.reanchor(ask, D.contentOf(b));
+    if (!r) { closeAsk(ask, "cancelled"); if (b) renderBlock(b.id); changed(); return false; }
+    ask.start = r.start; ask.end = r.end;
+    ask.answer = clean;
+    ask.answeredBy = validBy(answer.by);
+    ask.status = "answered";
+    renderBlock(ask.blockId, getCaret());
+  } else {
+    clean.marks = clean.marks.map((m) => ({ ...m, ...(D.findQuote(state.doc, m.quote) || {}), state: "open" })).filter((m) => m.blockId);
+    ask.answer = clean;
+    ask.answeredBy = validBy(answer.by);
+    ask.status = "answered";
+    const caret = getCaret();
+    for (const id of new Set(clean.marks.map((m) => m.blockId))) renderBlock(id, caret);
+    emit("answered", ask);
+    settleVoice(ask);
+  }
+  if (ask.scope === "selection") emit("answered", ask);
+  renderVoice();
+  changed();
+  return true;
+}
+export function takeAsk(askId, by) {
+  const ask = state.asks.find((a) => a.id === askId);
+  if (!ask || ask.status !== "waiting") return false;
+  ask.status = "taken";
+  ask.takenAt = new Date().toISOString();
+  if (by) ask.takenBy = validBy(by);
+  emit("taken", ask);
+  if (ask.scope === "selection") renderBlock(ask.blockId, getCaret());
+  renderVoice();
+  renderAgent();
+  changed();
+  return true;
+}
+export function requestVoiceCheck() {
+  if (!state.doc || state.pendingDraft) return null;
+  for (const a of state.asks) if (a.scope === "script" && isOpen(a)) closeAsk(a, "cancelled");
+  const ask = D.makeAsk(state.doc, { scope: "script", action: "voice", by: me });
+  state.asks.push(ask);
+  emit("created", ask);
+  renderAll(getCaret());
+  changed();
+  offerAsks();
+  return ask;
+}
+
+function keepAnswer(askId) {
+  const ask = state.asks.find((a) => a.id === askId);
+  if (!ask || ask.status !== "answered") return;
+  const b = byId(ask.blockId);
+  const r = b && D.reanchor(ask, D.contentOf(b));
+  if (!r) { closeAsk(ask, "cancelled"); if (b) renderBlock(b.id); changed(); return; }
+  ask.start = r.start; ask.end = r.end;
+  checkpoint("keep", b.id);
+  const res = D.applyAnswer(D.contentOf(b), ask);
+  const delta = res.content.length - D.contentOf(b).length;
+  closeAsk(ask, "kept");
+  moveAsks(b.id, b.id, ask.end, delta);
+  const r2 = D.setContent(state.doc, b.id, res.content);
+  followPieces(b.id, r2);
+  if (r2.changed || r2.created.length) renderAll();
+  else { renderBlock(b.id); glow(b.id, res.start, res.end); }
+  changed();
+}
+function glow(id, start, end) {
+  const el = blockNode(id);
+  if (!el || end <= start) return;
+  try {
+    const r = rangeAt(el, start, end);
+    const s = h("span", "landed", { "data-deco": "" });
+    s.append(r.extractContents());
+    r.insertNode(s);
+    setTimeout(() => {
+      if (!s.isConnected) return;
+      const caret = document.activeElement === el ? getCaret() : null;
+      s.replaceWith(...s.childNodes);
+      el.normalize();
+      if (caret?.id === id) setCaretAt(el, caret.offset);
+    }, 1500);
+  } catch { /* the glow is only decoration */ }
+}
+function undoAnswer(askId) {
+  const ask = state.asks.find((a) => a.id === askId);
+  if (!ask || !isOpen(ask)) return;
+  closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled");
+  renderBlock(ask.blockId, getCaret());
+  changed();
+}
+scriptEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".change__bar button, .note__x, .ask-chip__x");
+  if (!btn) return;
+  e.preventDefault();
+  const id = btn.closest("[data-ask]")?.dataset.ask;
+  if (btn.classList.contains("keep")) keepAnswer(id);
+  else if (btn.classList.contains("note__x")) {
+    const ask = state.asks.find((a) => a.id === id);
+    if (ask && isOpen(ask)) { closeAsk(ask, "kept"); renderBlock(ask.blockId, getCaret()); changed(); }
+  } else undoAnswer(id);
+});
+// Keep the caret where it is when pressing a chip or bar button.
+scriptEl.addEventListener("pointerdown", (e) => { if (e.target.closest(".change__bar button, .note__x, .ask-chip__x")) e.preventDefault(); });
+
+/* ---------- "Sounds like me" marks and voice card ---------- */
+function settleVoice(ask) {
+  if (ask.scope === "script" && ask.status === "answered" && !ask.answer.marks.some((m) => m.state === "open")) closeAsk(ask, "kept");
+}
+function renderVoice() {
+  const open = state.asks.filter((a) => a.scope === "script" && a.status === "answered").flatMap((a) => a.answer.marks.filter((m) => m.state === "open"));
+  const waiting = state.asks.some((a) => a.scope === "script" && (a.status === "waiting" || a.status === "taken"));
+  const btn = $("#voiceBtn");
+  btn.dataset.state = waiting ? "waiting" : "";
+  btn.disabled = !(state.doc && !state.pendingDraft && agent.state === "on");
+  $("#voiceCount").hidden = !open.length;
+  $("#voiceCount").textContent = open.length;
+  btn.title = open.length ? `${open.length} ${open.length === 1 ? "line" : "lines"} to check` : "";
+  renderTocDots();
+}
+const card = $("#voiceCard");
+let cardFor = null, cardTimer = 0;
+function markOf(el) {
+  const ask = state.asks.find((a) => a.id === el.dataset.ask);
+  return ask?.answer?.marks?.[Number(el.dataset.mark)] ? { ask, mark: ask.answer.marks[Number(el.dataset.mark)] } : null;
+}
+function positionCard(m) {
+  const r = m.getClientRects()[0] || m.getBoundingClientRect();
+  if (matchMedia("(max-width: 40rem)").matches) return;
+  const w = card.offsetWidth, ht = card.offsetHeight;
+  const x = Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8));
+  let y = r.bottom + 8;
+  if (y + ht > innerHeight - 8) y = r.top - ht - 8;
+  card.style.setProperty("--card-x", x + "px");
+  card.style.setProperty("--card-y", y + "px");
+}
+function openCard(m) {
+  const found = markOf(m);
+  if (!found) return;
+  clearTimeout(cardTimer);
+  if (cardFor && cardFor !== m) delete cardFor.dataset.open;
+  cardFor = m;
+  m.dataset.open = "";
+  $("#vcWhy").innerHTML = icon("wave") + "<span></span>";
+  $("#vcWhy span").textContent = found.mark.why || D.ACTIONS.voice.name;
+  $("#vcTry").textContent = found.mark.rewrite;
+  $("#vcUse").hidden = !found.mark.rewrite;
+  card.hidden = false;
+  positionCard(m);
+}
+function closeCard() { card.hidden = true; if (cardFor) delete cardFor.dataset.open; cardFor = null; }
+const closeLater = () => { clearTimeout(cardTimer); cardTimer = setTimeout(closeCard, 260); };
+scriptEl.addEventListener("mouseover", (e) => { const m = e.target.closest(".voice"); if (m && fine.matches) { clearTimeout(cardTimer); cardTimer = setTimeout(() => openCard(m), 140); } });
+scriptEl.addEventListener("mouseout", (e) => { if (e.target.closest(".voice") && !e.relatedTarget?.closest?.(".voice")) closeLater(); });
+scriptEl.addEventListener("focusin", (e) => { const m = e.target.closest(".voice"); if (m) openCard(m); });
+scriptEl.addEventListener("click", (e) => { const m = e.target.closest(".voice"); if (m && getSelection().isCollapsed) openCard(m); });
+card.addEventListener("mouseenter", () => clearTimeout(cardTimer));
+card.addEventListener("mouseleave", closeLater);
+document.addEventListener("pointerdown", (e) => { if (!card.hidden && !card.contains(e.target) && !e.target.closest(".voice")) closeCard(); });
+$("#vcKeep").addEventListener("click", () => {
+  const found = cardFor && markOf(cardFor);
+  closeCard();
+  if (!found) return;
+  found.mark.state = "kept";
+  settleVoice(found.ask);
+  renderBlock(found.mark.blockId, getCaret());
+  renderVoice();
+  changed();
+});
+$("#vcUse").addEventListener("click", () => {
+  const found = cardFor && markOf(cardFor);
+  closeCard();
+  if (!found) return;
+  const { ask: voice, mark } = found;
+  const b = byId(mark.blockId);
+  const r = b && D.reanchor(mark, D.contentOf(b));
+  mark.state = "used";
+  settleVoice(voice);
+  if (r) {
+    for (const a of state.asks) if (a.scope === "selection" && a.blockId === b.id && isOpen(a) && a.start < r.end && a.end > r.start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
+    const ask = D.makeAsk(state.doc, { blockId: b.id, start: r.start, end: r.end, action: "voice", by: me });
+    ask.status = "answered";
+    ask.answer = { kind: "replace", text: mark.rewrite };
+    ask.answeredBy = voice.answeredBy ?? null;
+    state.asks.push(ask);
+    emit("answered", ask);
+  }
+  if (b) renderBlock(b.id, getCaret());
+  renderVoice();
+  changed();
+});
+
+/* ---------- Files ---------- */
+const canPick = "showOpenFilePicker" in window;
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("script-editor", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("handles");
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbGet(k) {
+  try {
+    const db = await idb();
+    return await new Promise((res) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); });
+  } catch { return null; }
+}
+async function idbSet(k, v) {
+  try {
+    const db = await idb();
+    await new Promise((res) => { const t = db.transaction("handles", "readwrite"); t.objectStore("handles").put(v, k); t.oncomplete = res; t.onerror = res; });
+  } catch { /* storage off: reopen is not offered */ }
+}
+async function permitted(handle, ask) {
+  const o = { mode: "readwrite" };
+  try {
+    if (!handle.queryPermission) return true;
+    if ((await handle.queryPermission(o)) === "granted") return true;
+    return ask ? (await handle.requestPermission(o)) === "granted" : false;
+  } catch { return false; }
+}
+
+const draftKey = (name = state.name) => `draft:${name}`;
+function persistDraft() {
+  clearTimeout(draftTimer);
+  if (!state.doc || state.pendingDraft) return;
+  const open = state.asks.filter(isOpen);
+  const dirty = isDirty();
+  if (!dirty && !open.length) { store.del(draftKey()); return; }
+  store.set(draftKey(), { text: dirty ? D.serialize(state.doc) : null, at: Date.now(), asks: open });
+}
+
+function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
+  // Leaving a script: write what is still waiting to its own file, and keep a draft as a safety net.
+  if (state.doc) { persistDraft(); flushSave(); }
+  $("#emptyNote").hidden = true;
+  hideBar();
+  closeCard();
+  state.doc = D.parse(text);
+  state.name = name;
+  state.handle = handle;
+  state.savedText = fresh ? "" : text;
+  if (fresh) state.savedText = D.serialize(state.doc);
+  state.savedAt = fresh ? 0 : modified;
+  state.fileModified = modified;
+  state.saveError = "";
+  state.needsPermission = false;
+  state.conflict = false;
+  clearTimeout(saveTimer);
+  state.undo = [];
+  state.redo = [];
+  state.lastStep = null;
+  state.asks = [];
+  state.pendingDraft = null;
+  state.frontOpen = false;
+  const draft = store.get(draftKey(name));
+  const banner = $("#banner");
+  banner.hidden = true;
+  if (draft?.text != null && draft.text !== text && (draft.at || 0) > modified) {
+    state.pendingDraft = draft;
+    showBanner(`Unsaved changes from ${clock(draft.at)}`, [["Restore", restoreDraft], ["Discard", discardDraft]]);
+  } else {
+    adoptAsks(draft?.asks);
+  }
+  renderTop();
+  renderAll();
+  renderDerived();
+  scrollTo({ top: 0 });
+}
+function adoptAsks(asks) {
+  if (!Array.isArray(asks)) return;
+  for (const a of asks) {
+    if (!a?.id || !isOpen(a)) continue;
+    if (a.scope === "selection" && !byId(a.blockId)) {
+      // Ids are new after a reload: find the quote again.
+      const hit = D.findQuote(state.doc, a.quote, null);
+      if (!hit) continue;
+      Object.assign(a, hit);
+    }
+    if (a.scope === "script" && a.answer?.marks) {
+      for (const m of a.answer.marks) {
+        if (m.state !== "open") continue;
+        const hit = D.findQuote(state.doc, m.quote, byId(m.blockId) ? m : null);
+        if (hit) Object.assign(m, hit); else m.state = "gone";
+      }
+    }
+    state.asks.push(a);
+  }
+  reanchorAll();
+  for (const a of state.asks) if (a.scope === "script") settleVoice(a);
+}
+function showBanner(text, actions) {
+  const banner = $("#banner");
+  banner.replaceChildren();
+  const s = h("span");
+  s.textContent = text;
+  banner.append(s);
+  for (const [label, fn] of actions) {
+    const b = h("button", "", { type: "button" });
+    b.textContent = label;
+    b.addEventListener("click", fn);
+    banner.append(b);
+  }
+  banner.hidden = false;
+}
+function hideBanner() { $("#banner").hidden = true; $("#banner").replaceChildren(); }
+function restoreDraft() {
+  const draft = state.pendingDraft;
+  if (!draft) return hideBanner();
+  state.preCaret = null;
+  checkpoint("restore", null);
+  state.doc = D.parse(draft.text);
+  state.pendingDraft = null;
+  state.asks = [];
+  adoptAsks(draft.asks);
+  hideBanner();
+  renderAll();
+  changed();
+  offerAsks();
+}
+function discardDraft() {
+  const draft = state.pendingDraft;
+  state.pendingDraft = null;
+  hideBanner();
+  if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || D.findQuote(state.doc, a.quote)));
+  store.del(draftKey());
+  renderAll(getCaret());
+  changed();
+  offerAsks();
+}
+
+async function openFile() {
+  if (!canPick) return $("#fileInput").click();
+  let handle;
+  try { [handle] = await window.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); }
+  catch (e) { if (e?.name !== "AbortError") $("#fileInput").click(); return; }
+  // Ask for write access while the person's pick still counts as a click, so auto-save can write.
+  // If the browser refuses to ask now, "Allow saving to …" shows at the first save.
+  permitted(handle, true);
+  await openHandle(handle);
+}
+async function openHandle(handle) {
+  try {
+    // The switcher hands over a fresh handle object for a known file; reuse the one the save queue holds.
+    for (const known of [state.handle, saveQueue.waiting?.handle, ...(saveQueue.left || []).map((x) => x.handle)]) {
+      if (known && known !== handle && (await sameFile(known, handle))) { handle = known; break; }
+    }
+    const file = await handle.getFile();
+    const text = await file.text();
+    loadText(text, { name: handle.name, handle, modified: file.lastModified });
+    remember(handle);
+    return true;
+  } catch {
+    openProblem(handle.name);
+    return false;
+  }
+}
+// A file that could not be opened: one quiet line where the person is looking.
+function openProblem(name) {
+  const text = `Couldn't open ${name}`;
+  // While the Restore/Discard choice is open, keep it: the script stays locked until the person chooses.
+  if (state.doc && state.pendingDraft) return showBanner(`${text} · Unsaved changes are still waiting`, [["Restore", restoreDraft], ["Discard", discardDraft], ["Open a script", openFile]]);
+  if (state.doc) return showBanner(text, [["Open a script", () => { hideBanner(); openFile(); }]]);
+  const note = $("#emptyNote");
+  note.replaceChildren();
+  const s = h("span");
+  s.textContent = text;
+  const b = h("button", "", { type: "button" });
+  b.textContent = "Open a script";
+  b.addEventListener("click", openFile);
+  note.append(s, b);
+  note.hidden = false;
+}
+$("#fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  try { loadText(await file.text(), { name: file.name, modified: file.lastModified }); }
+  catch { openProblem(file.name); }
+});
+
+async function writeHandle(handle, text) {
+  const w = await handle.createWritable();
+  await w.write(text);
+  await w.close();
+  try { return (await handle.getFile()).lastModified; } catch { return Date.now(); }
+}
+// Auto-save: about 1.5 s after the last change, to the opened file only. Ctrl/Cmd+S and page hide save at once.
+const AUTOSAVE_MS = 1500;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  if (state.handle && !state.conflict && isDirty()) saveTimer = setTimeout(() => save({ auto: true }), AUTOSAVE_MS);
+}
+function flushSave() {
+  clearTimeout(saveTimer);
+  if (state.handle && !state.conflict && isDirty()) save({ auto: true });
+}
+async function allowSaving() {
+  if (!state.handle) return;
+  if (await permitted(state.handle, true)) { state.needsPermission = false; renderSaveState(); save(); }
+  else { state.needsPermission = false; state.saveError = "No permission to write this file."; renderSaveState(); }
+}
+// Saves asked for while another one runs wait here, one record per script (see save-queue.js).
+let saveQueue = Q.emptyQueue();
+const saveRequest = (force, auto) => ({
+  handle: state.handle, name: state.name, text: D.serialize(state.doc),
+  savedText: state.savedText, fileModified: state.fileModified, force, auto,
+});
+// A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
+function keepDraft(name, text) {
+  const draft = store.get(draftKey(name));
+  store.set(draftKey(name), { text, at: Date.now(), asks: draft?.asks ?? [] });
+}
+// Write a left script's snapshot straight to its own file, with auto-save rules: no permission prompt, and the
+// changed-on-disk check. Current `state` is never touched.
+// The file's time when it changed on disk since our last write (and holds other text), else 0.
+async function diskConflict(handle, request) {
+  if (request.force || !request.fileModified) return 0;
+  const f = await handle.getFile();
+  if (f.lastModified <= request.fileModified) return 0;
+  return Q.changedOnDisk(request, { lastModified: f.lastModified, text: await f.text() }) ? f.lastModified : 0;
+}
+async function writeLeft(snap) {
+  try {
+    if (await permitted(snap.handle, false)) {
+      if (!(await diskConflict(snap.handle, snap))) {
+        return { handle: snap.handle, text: snap.text, modified: await writeHandle(snap.handle, snap.text) };
+      }
+    }
+  } catch { /* kept as a draft below */ }
+  keepDraft(snap.name, snap.text);
+  return null;
+}
+async function save({ force = false, auto = false } = {}) {
+  if (!state.doc) return;
+  if (state.saving) {
+    // Auto-save without a file does nothing; a click without a file waits for its turn to pick one.
+    if (state.handle || !auto) saveQueue = Q.queueSave(saveQueue, saveRequest(force, auto));
+    return;
+  }
+  // Auto-save only writes to a file that is already open; it never asks where to save.
+  if (!state.handle && auto) return;
+  if (!state.handle) return saveAs();
+  clearTimeout(saveTimer);
+  const { handle, name, savedText, fileModified } = state;
+  const text = D.serialize(state.doc);
+  let written = null;
+  state.saving = true;
+  state.autoSaving = auto;
+  state.saveError = "";
+  renderSaveState();
+  try {
+    // A click or key press may show the browser's permission prompt; auto-save may not, so it shows "Allow saving to …".
+    if (!(await permitted(handle, !auto))) {
+      if (auto) { if (handle === state.handle) state.needsPermission = true; }
+      else throw new Error("No permission to write this file.");
+    } else {
+      if (handle === state.handle) state.needsPermission = false;
+      const conflict = await diskConflict(handle, { force, fileModified, savedText });
+      if (conflict && handle === state.handle) {
+        state.conflict = true;
+        showBanner(`The file changed on disk at ${clock(conflict)}`, [["Save mine", () => { hideBanner(); state.conflict = false; save({ force: true }); }], ["Open that version", () => reloadFromDisk()]]);
+      } else if (!conflict) {
+        // Written to the file it was made for, even if another script was opened meanwhile.
+        written = { handle, text, modified: await writeHandle(handle, text) };
+        if (handle === state.handle) {
+          state.fileModified = written.modified;
+          state.conflict = false;
+          state.savedText = text;
+          state.savedAt = Date.now();
+          if ($("#banner").textContent.startsWith("The file changed")) hideBanner();
+        }
+      }
+    }
+  } catch (e) {
+    // A script the person already left keeps its local draft; its problem must not show on the new one.
+    if (handle === state.handle) state.saveError = e?.message || "Could not save.";
+  }
+  if (!written && handle !== state.handle) keepDraft(name, text);
+  // Scripts the person left go straight to their own files; requests that arrive meanwhile keep waiting.
+  saveQueue = Q.settleQueue(saveQueue, written);
+  for (;;) {
+    const { left, current } = Q.splitQueue(saveQueue, state.handle);
+    if (!left.length) { saveQueue = Q.emptyQueue(); state.saving = false; finishSave(current); return; }
+    saveQueue = { waiting: current, left: [] };
+    for (const snap of left) saveQueue = Q.settleQueue(saveQueue, await writeLeft(snap));
+  }
+}
+function finishSave(current) {
+  state.autoSaving = false;
+  renderTop();
+  persistDraft();
+  // The open script's own waiting request runs with its own flags.
+  if (current) save({ force: current.force, auto: current.auto });
+  else if (!state.saveError && !state.needsPermission) scheduleSave();
+}
+// "Markdown file (.md)" and Ctrl/Cmd+S without an open file: pick where to save, then keep auto-saving there.
+async function saveAs() {
+  if (!state.doc || state.saving) return;
+  const text = D.serialize(state.doc);
+  state.saveError = "";
+  try {
+    if ("showSaveFilePicker" in window) {
+      let handle;
+      try { handle = await window.showSaveFilePicker({ suggestedName: state.name, types: FILE_TYPES }); }
+      catch (e) { if (e?.name === "AbortError") return; throw e; }
+      state.saving = true;
+      renderSaveState();
+      state.fileModified = await writeHandle(handle, text);
+      if (handle.name !== state.name) { store.del(draftKey()); state.name = handle.name; }
+      state.handle = handle;
+      state.needsPermission = false;
+      state.conflict = false;
+      remember(handle);
+    } else {
+      download(text, state.name, "text/markdown");
+    }
+    state.savedText = text;
+    state.savedAt = Date.now();
+  } catch (e) {
+    state.saveError = e?.message || "Could not save.";
+  }
+  state.saving = false;
+  // Requests made during a save-as belonged to the old place; the new file is now current.
+  saveQueue = Q.emptyQueue();
+  renderTop();
+  renderDerived();
+  persistDraft();
+  scheduleSave();
+}
+async function reloadFromDisk() {
+  hideBanner();
+  if (!state.handle) return;
+  // Keep what is on screen as a draft, so "Restore" brings it back.
+  if (isDirty()) store.set(draftKey(), { text: D.serialize(state.doc), at: Date.now(), asks: state.asks.filter(isOpen) });
+  await openHandle(state.handle);
+}
+function download(text, name, type) {
+  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
+  const a = h("a", "", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function exportFile(kind) {
+  if (!state.doc) return;
+  if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
+  else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
+  else if (kind === "prompter-open") openPrompter();
+  else if (kind === "markdown") saveAs();
+}
+
+async function openSample() {
+  try {
+    const res = await fetch(SAMPLE.url, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.statusText);
+    loadText(await res.text(), { name: SAMPLE.name });
+  } catch { openProblem("the demo script"); }
+}
+function newScript() {
+  const doc = { blocks: [], tail: "\n", eol: "\n" };
+  loadText("", { name: "untitled-script.md", fresh: true });
+  state.doc = doc;
+  const t = D.insertBlock(state.doc, null, "title", "Untitled script");
+  t.sep = "";
+  D.insertBlock(state.doc, t.id, "para", "");
+  state.savedText = D.serialize(state.doc);
+  renderTop();
+  renderAll();
+  renderDerived();
+  const el = blockNode(t.id);
+  el.focus();
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  getSelection().removeAllRanges();
+  getSelection().addRange(r);
+}
+
+/* ---------- Buttons ---------- */
+$("#emptyOpen").addEventListener("click", openFile);
+$("#emptyNew").addEventListener("click", newScript);
+$("#emptySample").addEventListener("click", openSample);
+$("#allowSave").addEventListener("click", allowSaving);
+$("#exportMenu").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-export]");
+  if (!b) return;
+  exportFile(b.dataset.export);
+  $("#exportMenu").hidePopover();
+});
+$("#emptyReopen").addEventListener("click", async () => {
+  if (!lastHandle) return;
+  if (!(await permitted(lastHandle, true))) return openFile();
+  if (!(await openHandle(lastHandle))) {
+    // The file was moved or deleted: stop offering it.
+    $("#emptyReopen").hidden = true;
+    forget(lastHandle);
+  }
+});
+
+/* ---------- Recent scripts: the switcher under the file name ---------- */
+// Kept in IndexedDB with their file handles, newest first. Removing one only takes it off the list.
+const RECENT_MAX = 20;
+let lastHandle = null;
+async function sameFile(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  try { return await a.isSameEntry(b); } catch { return false; }
+}
+async function recentScripts() {
+  const list = await idbGet("recent");
+  if (Array.isArray(list)) return list.filter((r) => r?.handle?.name);
+  const last = await idbGet("last"); // before the list, only the last file was kept
+  return last?.name ? [{ handle: last, name: last.name, at: 0 }] : [];
+}
+async function without(list, handle) {
+  const out = [];
+  for (const r of list) if (!(await sameFile(r.handle, handle))) out.push(r);
+  return out;
+}
+let recentQueue = Promise.resolve();
+function updateRecent(change) {
+  recentQueue = recentQueue.then(async () => {
+    const list = await change(await recentScripts());
+    await idbSet("recent", list);
+    lastHandle = list[0]?.handle ?? null;
+  }).catch(() => {});
+  return recentQueue;
+}
+const remember = (handle) => updateRecent(async (list) => [{ handle, name: handle.name, at: Date.now() }, ...(await without(list, handle))].slice(0, RECENT_MAX));
+const forget = (handle) => updateRecent((list) => without(list, handle));
+
+let listToken = 0;
+async function renderScriptList() {
+  const token = ++listToken;
+  const rows = [];
+  let currentListed = false;
+  for (const r of await recentScripts()) {
+    const current = !!state.doc && (await sameFile(r.handle, state.handle));
+    currentListed ||= current;
+    rows.push({ ...r, current });
+  }
+  // The open script is always in the list, also the sample or a new script without a file.
+  if (state.doc && !currentListed) rows.unshift({ handle: null, name: state.name, at: 0, current: true });
+  if (token !== listToken) return;
+  const q = $("#scriptSearch").value.trim().toLowerCase();
+  const ul = $("#scriptList");
+  ul.replaceChildren();
+  for (const r of rows) {
+    if (q && !r.name.toLowerCase().includes(q)) continue;
+    const li = h("li", "scripts__row");
+    const open = h("button", "scripts__open", { type: "button" });
+    if (r.current) open.setAttribute("aria-current", "true");
+    const name = h("span", "scripts__name");
+    name.textContent = r.name;
+    open.append(name);
+    if (r.at && !r.current) {
+      const when = h("span", "scripts__when");
+      when.textContent = clock(r.at);
+      open.append(when);
+    }
+    if (r.current) open.insertAdjacentHTML("beforeend", icon("check"));
+    open.addEventListener("click", async () => {
+      $("#scriptMenu").hidePopover();
+      if (r.current || !r.handle) return;
+      await permitted(r.handle, true);
+      await openHandle(r.handle);
+    });
+    li.append(open);
+    if (r.handle) {
+      const x = h("button", "icon-btn scripts__remove", { type: "button", "aria-label": `Remove ${r.name} from the list` });
+      x.innerHTML = icon("x");
+      x.addEventListener("click", async () => { await forget(r.handle); renderScriptList(); });
+      li.append(x);
+    }
+    ul.append(li);
+  }
+  if (!ul.children.length) {
+    const li = h("li", "scripts__empty");
+    li.textContent = q ? "No match" : "No recent scripts";
+    ul.append(li);
+  }
+}
+$("#scriptMenu").addEventListener("toggle", (e) => {
+  if (e.newState !== "open") return;
+  $("#scriptSearch").value = "";
+  renderScriptList();
+  if (fine.matches) $("#scriptSearch").focus();
+});
+$("#scriptSearch").addEventListener("input", renderScriptList);
+$("#scriptSearch").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  $("#scriptList .scripts__open")?.click();
+});
+$("#menuOpen").addEventListener("click", () => { $("#scriptMenu").hidePopover(); openFile(); });
+$("#menuNew").addEventListener("click", () => { $("#scriptMenu").hidePopover(); newScript(); });
+(async () => {
+  if (!canPick) return;
+  lastHandle = (await recentScripts())[0]?.handle ?? null;
+  if (lastHandle?.name) {
+    $("#reopenLabel").textContent = `Reopen ${lastHandle.name}`;
+    $("#emptyReopen").hidden = false;
+  }
+})();
+
+document.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (!mod || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "s") { e.preventDefault(); save(); return; }
+  if (!state.doc || e.target.closest?.("input, textarea")) return;
+  if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); } });
+addEventListener("beforeunload", (e) => {
+  persistDraft();
+  flushSave();
+  if (isDirty()) { e.preventDefault(); e.returnValue = ""; }
+});
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { persistDraft(); flushSave(); } });
+addEventListener("pagehide", () => { persistDraft(); flushSave(); });
+
+/* ---------- Icons in the static markup ---------- */
+$$("[data-icon]").forEach((el) => {
+  if (el.classList.contains("menu-action__copy") || el.tagName === "BUTTON") el.innerHTML = icon(el.dataset.icon);
+  else el.outerHTML = icon(el.dataset.icon);
+});
+$$(".edit-bar__button").forEach((b) => (b.innerHTML = icon(ACT_ICON[b.dataset.act]) + esc(D.ACTIONS[b.dataset.act].name)));
+
+
+/* ---------- Your own agent over MCP (live relay) ---------- */
+const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
+const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
+const RETAKE_AFTER_MS = 2 * 60 * 1000;
+const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, waiters: [], copiedTimer: 0 };
+
+function newToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+const prettyName = (n) => {
+  const name = String(n || "").trim();
+  if (!name) return "Agent";
+  return /[A-Z ]/.test(name) ? name : name.split(/[-_]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+};
+const agentBy = () => ({ id: `agent:${agent.info?.name || "agent"}`, name: prettyName(agent.info?.name) });
+function connectionPrompt() {
+  return `Connect to my script editor as an MCP server and answer my asks.
+1. Run: claude mcp add --transport http script-editor ${location.origin}/mcp --header "Authorization: Bearer ${agent.token}"
+2. Reload MCP servers, then use the watch_script prompt (or call wait_for_asks in a loop and answer each ask with answer_ask).
+Keep the token private. It works until I press Disconnect MCP.`;
+}
+
+function connectRelay() {
+  clearTimeout(agent.timer);
+  if (!agent.token) return;
+  if (Date.now() - agent.createdAt >= AGENT_MAX_AGE) return disconnectAgent();
+  try { agent.ws?.close(); } catch { /* closed */ }
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`, ["script-editor", `t.${agent.token}`]);
+  agent.ws = ws;
+  ws.addEventListener("open", () => { agent.retry = 0; });
+  ws.addEventListener("message", (e) => {
+    let m;
+    if (agent.ws !== ws) return; // a detached socket (Disconnect) only carries the revoke
+    try { m = JSON.parse(e.data); } catch { return; }
+    onRelayMessage(m);
+  });
+  ws.addEventListener("close", (e) => {
+    if (agent.ws !== ws) return;
+    agent.ws = null;
+    dropWaiters();
+    if (e.code === 4001) { agent.state = "elsewhere"; renderAgent(); return; }
+    if (e.code === 4003) { forgetAgent(); return; }
+    if (!agent.token) return;
+    const delay = Math.min(30000, 1000 * 2 ** agent.retry++) * (0.75 + Math.random() * 0.5);
+    agent.timer = setTimeout(connectRelay, delay);
+  });
+}
+function onRelayMessage(m) {
+  if (m.type === "agent") {
+    agent.info = { name: String(m.name || ""), version: String(m.version || "") };
+    agent.state = "on";
+    renderAgent();
+  } else if (m.type === "call" && typeof m.id === "string") {
+    if (agent.state !== "on") { agent.state = "on"; renderAgent(); }
+    handleCall(m);
+  }
+}
+function forgetAgent() {
+  clearTimeout(agent.timer);
+  dropWaiters();
+  const ws = agent.ws;
+  agent.ws = null;
+  try { ws?.close(1000, "bye"); } catch { /* closed */ }
+  agent.token = null;
+  agent.createdAt = 0;
+  agent.info = null;
+  agent.state = "off";
+  store.del("agent");
+  renderAgent();
+}
+// Disconnect MCP: the relay forgets the token, so the agent is refused from now on.
+function disconnectAgent() {
+  // Detach the socket and token first, then show "off" at once; the revoke finishes quietly behind it.
+  const token = agent.token;
+  let ws = agent.ws;
+  agent.ws = null; // the app's own close handler now ignores this socket and won't reconnect
+  forgetAgent(); // clears any pending reconnect, the token and the menu state
+  if (!token) return;
+  const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`;
+  const close = () => { try { ws?.close(1000, "bye"); } catch { /* closed */ } };
+  const send = () => { try { ws.send(JSON.stringify({ type: "revoke" })); } catch { /* closed */ } setTimeout(close, 200); };
+  try {
+    if (!ws || ws.readyState >= WebSocket.CLOSING) ws = new WebSocket(url, ["script-editor", `t.${token}`]);
+    if (ws.readyState === WebSocket.OPEN) send();
+    else ws.addEventListener("open", send, { once: true });
+  } catch { /* offline: the token still ends after 8 hours */ }
+  setTimeout(close, 5000);
+}
+function dropWaiters() {
+  for (const w of agent.waiters) clearTimeout(w.timer);
+  agent.waiters = [];
+}
+
+// Asks the agent has not seen yet; taken asks come back if no answer arrived within two minutes.
+function takeUnseen() {
+  const now = Date.now();
+  const list = state.asks.filter((a) => a.status === "waiting" || (a.status === "taken" && now - Date.parse(a.takenAt || 0) > RETAKE_AFTER_MS));
+  for (const a of list) {
+    if (a.status === "waiting") takeAsk(a.id, agentBy());
+    else a.takenAt = new Date().toISOString();
+  }
+  return list.map(askForAgent);
+}
+function voiceGuide() { return store.get("voiceGuide"); }
+function askForAgent(a) {
+  const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, createdAt: a.createdAt };
+  if (a.scope === "selection") Object.assign(out, { quote: a.quote, context: a.context, section: a.section });
+  else if (state.doc) out.spokenText = D.exportCamera(state.doc);
+  const guide = voiceGuide();
+  if ((a.action === "like" || a.action === "voice") && guide?.text) out.voiceGuide = guide.text;
+  return out;
+}
+function askForList(a) {
+  const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, status: a.status, createdAt: a.createdAt };
+  if (a.scope === "selection") Object.assign(out, { quote: a.quote, section: a.section });
+  if (a.answer) out.answer = a.answer.kind === "marks" ? { kind: "marks", marks: a.answer.marks.map((m) => ({ quote: m.quote, state: m.state })) } : a.answer;
+  return out;
+}
+function offerAsks() {
+  while (agent.waiters.length) {
+    const list = takeUnseen();
+    if (!list.length) return;
+    const w = agent.waiters.shift();
+    clearTimeout(w.timer);
+    w.send({ result: { asks: list } });
+  }
+}
+function scriptInfo() {
+  const { sections } = D.outline(state.doc);
+  const st = D.stats(state.doc);
+  return {
+    fileName: state.name,
+    title: D.titleOf(state.doc),
+    markdown: D.serialize(state.doc),
+    sections: sections.map((sec) => ({ heading: sec.heading ? D.contentOf(sec.heading).trim() : "", spoken: sec.spoken })),
+    words: st.words,
+    spoken: st.spoken,
+  };
+}
+function handleCall({ id, tool, args = {} }) {
+  const ws = agent.ws;
+  const send = (payload) => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ } };
+  try {
+    if (tool === "wait_for_asks") {
+      const list = takeUnseen();
+      if (list.length) return send({ result: { asks: list } });
+      const seconds = Math.min(25, Math.max(0, Number(args.waitSeconds ?? 25) || 0));
+      const w = { send };
+      w.timer = setTimeout(() => { agent.waiters = agent.waiters.filter((x) => x !== w); send({ result: { asks: [], message: NO_ASKS } }); }, seconds * 1000);
+      agent.waiters.push(w);
+      return;
+    }
+    if (!state.doc) return send({ error: "No script is open in the editor. Ask the person to open one." });
+    if (tool === "get_script") return send({ result: scriptInfo() });
+    if (tool === "list_asks") return send({ result: { asks: state.asks.map(askForList) } });
+    if (tool === "answer_ask") {
+      const ask = state.asks.find((a) => a.id === args.askId);
+      const checked = D.checkAnswer(ask, args, state.doc);
+      if (checked.error) return send({ error: checked.error });
+      if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
+      return send({ result: checked.answer.kind === "note" ? "Shown to the person." : "Shown to the person. They choose Keep or Undo." });
+    }
+    send({ error: `Unknown tool: ${tool}` });
+  } catch (e) {
+    send({ error: `The editor could not do that: ${e?.message || e}` });
+  }
+}
+
+function renderAgent() {
+  const btn = $("#agentBtn"), act = $("#mcpAction");
+  btn.dataset.state = agent.state;
+  act.dataset.state = agent.state === "elsewhere" ? "off" : agent.state;
+  const name = prettyName(agent.info?.name);
+  $("#agentBtnLabel").textContent = agent.state === "on" ? name : agent.state === "waiting" ? "Waiting for MCP" : agent.state === "elsewhere" ? "Open in another tab" : "Connect your agent";
+  btn.title = agent.state === "elsewhere" ? "Open in another tab" : "";
+  $("#mcpActionText").textContent = agent.state === "on" ? "Disconnect MCP" : agent.state === "elsewhere" ? "Use this tab" : "Wait for MCP";
+  $("#mcpCopy").hidden = agent.state === "on" || agent.state === "elsewhere";
+  const rows = $("#agentRows");
+  if (agent.state === "on") {
+    const busy = state.asks.find((a) => a.status === "taken");
+    const where = busy ? (busy.scope === "script" ? "whole script" : `section ${D.parseHeading(busy.section || "").num || "·"}`) : "listening";
+    rows.innerHTML = `<li class="agent-row"><span class="status-dot"></span><span class="agent-row__name"></span><span class="agent-row__where"></span><button class="small-btn" type="button" id="agentStop">Stop</button></li>`;
+    rows.querySelector(".agent-row__name").textContent = name;
+    rows.querySelector(".agent-row__where").textContent = where;
+  } else rows.replaceChildren();
+  $("#voiceBtn").disabled = !(state.doc && !state.pendingDraft && agent.state === "on");
+  renderVoiceGuide();
+}
+function renderVoiceGuide(problem = "") {
+  const guide = voiceGuide();
+  const text = $("#voiceGuideText");
+  $("#voiceGuideName").textContent = problem || guide?.name || "none";
+  text.dataset.state = problem ? "error" : "";
+  $("#voiceGuideClear").hidden = !guide || !!problem;
+}
+async function copyPrompt() {
+  const text = connectionPrompt();
+  const box = $("#mcpPrompt");
+  try {
+    await navigator.clipboard.writeText(text);
+    box.hidden = true;
+    const act = $("#mcpAction");
+    act.dataset.copied = "";
+    $("#mcpCopy").innerHTML = icon("check");
+    clearTimeout(agent.copiedTimer);
+    agent.copiedTimer = setTimeout(() => { delete act.dataset.copied; $("#mcpCopy").innerHTML = icon("copy"); }, 2000);
+  } catch {
+    // No clipboard here: show the prompt, selected, to copy by hand.
+    box.value = text;
+    box.hidden = false;
+    box.focus();
+    box.select();
+  }
+}
+$("#mcpAction").addEventListener("click", () => {
+  if (agent.state === "on") return disconnectAgent();
+  if (agent.state === "elsewhere") { agent.state = "waiting"; connectRelay(); renderAgent(); return; }
+  if (!agent.token || Date.now() - agent.createdAt >= AGENT_MAX_AGE) {
+    agent.token = newToken();
+    agent.createdAt = Date.now();
+    store.set("agent", { token: agent.token, createdAt: agent.createdAt });
+    connectRelay();
+  } else if (!agent.ws) connectRelay();
+  agent.state = "waiting";
+  renderAgent();
+  copyPrompt();
+});
+$("#agentMenu").addEventListener("click", (e) => { if (e.target.closest("#agentStop")) disconnectAgent(); });
+$("#agentMenu").addEventListener("toggle", (e) => { if (e.newState === "closed") $("#mcpPrompt").hidden = true; });
+$("#voiceBtn").addEventListener("click", () => { if (agent.state === "on") requestVoiceCheck(); });
+$("#voiceGuideOpen").addEventListener("click", () => $("#voiceGuideInput").click());
+$("#voiceGuideClear").addEventListener("click", () => { store.del("voiceGuide"); renderVoiceGuide(); });
+$("#voiceGuideInput").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  if (file.size > D.LIMITS.voiceGuide) return renderVoiceGuide("too large, 20 KB at most");
+  try {
+    const text = await file.text();
+    if (!store.set("voiceGuide", { name: file.name, text })) return renderVoiceGuide("could not be kept");
+    renderVoiceGuide();
+  } catch { renderVoiceGuide(`couldn't open ${file.name}`); }
+});
+setInterval(() => { try { if (agent.ws?.readyState === WebSocket.OPEN) agent.ws.send('{"type":"ping"}'); } catch { /* closed */ } }, 45_000);
+// A token lives at most eight hours; then it is replaced like Disconnect MCP.
+setInterval(() => { if (agent.token && Date.now() - agent.createdAt >= AGENT_MAX_AGE) disconnectAgent(); }, 60_000);
+(() => {
+  const saved = store.get("agent");
+  if (saved?.token && Date.now() - saved.createdAt < AGENT_MAX_AGE) {
+    agent.token = saved.token;
+    agent.createdAt = saved.createdAt;
+    agent.state = "waiting";
+    connectRelay();
+  } else if (saved) store.del("agent");
+  renderAgent();
+})();
+
+// Menus sit under their button; browsers without anchor positioning get the place from here.
+for (const [menu, btn] of [["#exportMenu", "#exportBtn"], ["#agentMenu", "#agentBtn"], ["#scriptMenu", "#docInfo"]]) {
+  $(menu).addEventListener("toggle", (e) => {
+    if (e.newState !== "open" || CSS.supports("position-area: block-end")) return;
+    const r = $(btn).getBoundingClientRect(), m = $(menu);
+    const x = menu === "#scriptMenu" ? r.left : r.right - m.offsetWidth;
+    m.style.top = `${r.bottom + 6}px`;
+    m.style.left = `${Math.max(8, Math.min(x, innerWidth - m.offsetWidth - 8))}px`;
+  });
+}
+
+/* ---------- Hooks for tests and step B ---------- */
+window.__scriptEditor = {
+  answer: receiveAnswer,
+  take: takeAsk,
+  voiceCheck: () => requestVoiceCheck()?.id ?? null,
+  asks: () => structuredClone(state.asks),
+  markdown: () => (state.doc ? D.serialize(state.doc) : null),
+  ask: (blockIndex, start, end, action = "simpler", typed = "") => {
+    const b = state.doc?.blocks[blockIndex];
+    if (!b) return null;
+    const content = D.contentOf(b);
+    barSel = { id: b.id, start, end, quote: content.slice(start, end) };
+    return makeAsk(action, typed)?.id ?? null;
+  },
+};
+renderTop();

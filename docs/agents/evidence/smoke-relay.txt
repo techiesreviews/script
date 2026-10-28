@@ -1,0 +1,21 @@
+ok unknown token gets 401
+ok no token gets 401
+ok GET /mcp gets 405
+ok relay answers with the script-editor subprotocol
+ok initialize echoes the protocol version
+ok serverInfo is script-editor
+ok notification gets 202
+ok tab learns the agent's name
+ok foreign Origin is refused
+ok tools/list has the four tools
+ok get_script returns the tab's script
+ok wait_for_asks returns the new ask
+ok answer_ask reaches the tab
+ok tab received the answer
+ok over-long text is refused before the tab
+ok list_asks shows the answered status
+ok wait_for_asks says no asks yet after its wait
+ok an older tab is closed with 4001
+ok a revoked token gets 401
+ok with no tab, tools say the editor is not open
+RESULT: ok smoke

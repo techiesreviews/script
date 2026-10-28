@@ -1,0 +1,20 @@
+{
+  // Static assets, plus the Worker for MCP (/mcp) and the live relay (/api/relay).
+  // Cloudflare free plan: Workers, static assets and a SQLite-backed Durable Object.
+  "name": "script-editor",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  // Lex approved script.techies.tools on 2026-10-28. The workers.dev address keeps working too.
+  "routes": [{ "pattern": "script.techies.tools", "custom_domain": true }],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/mcp", "/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "RELAY", "class_name": "Relay" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Relay"] }]
+}
