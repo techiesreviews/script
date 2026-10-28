@@ -112,7 +112,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .tb:not(.tb--ink):enabled:hover { background: var(--hover); }
   .tb--ink:hover { background: color-mix(in oklch, var(--ink) 88%, var(--bg)); }
 }
-@container app (width < 52rem) { .voice-btn .lbl, .agent-btn .lbl { display: none; } .agent-btn .status-dot { display: none; } .agent-btn > svg { display: block; } }
+@container app (width < 68rem) { .voice-btn .lbl, .agent-btn .lbl { display: none; } .agent-btn .status-dot { display: none; } .agent-btn > svg { display: block; } }
+.agent-btn .lbl { max-inline-size: 10rem; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
 @container app (width < 46rem) { .doc__meta { display: none; } }
 @container app (width < 36rem) {
   .tb .lbl { display: none; }
