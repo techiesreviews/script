@@ -409,8 +409,20 @@ test("a B-roll suggestion is not open work for links, waiting or answered", () =
   const broll = D.makeAsk(doc, { blockId: p.id, start: s, end: s + 12, action: "broll", by });
   const ask = Object.assign(D.makeAsk(doc, { scope: "script", action: "links", by: { id: "lex", name: "Lex" } }), { status: "taken" });
   const answer = { kind: "links", links: [{ quote: "the prompter", url: "https://prompter.techies.tools" }] };
-  for (const status of ["waiting", "answered"]) {
+  for (const status of ["waiting", "taken", "answered"]) {
     Object.assign(broll, { status }, status === "answered" ? { answer: { kind: "broll", changes: [] } } : {});
     assert.deepEqual(C.planFor(doc, ask, answer, { asks: [broll] }).skipped, [], status);
   }
+});
+
+test("B-roll: spaces and line breaks alone ask for no check; punctuation does", async () => {
+  const B = await import("../public/broll.js");
+  const doc = D.parse("# T\n\n## 1 · Hook\n\nWe use Claude Code every day.\n");
+  const shots = [{ id: "B1", over: '"We use Claude Code every day."', what: "x", how: "", kind: "broll" }];
+  B.matchShots(doc, shots);
+  const p = doc.blocks.find((b) => b.type === "para");
+  D.setContent(doc, p.id, "We use Claude  Code\nevery day.");
+  assert.deepEqual(B.touchShots(doc, shots), []);
+  D.setContent(doc, p.id, "We use Claude Code every day?");
+  assert.deepEqual(B.touchShots(doc, shots), ["B1"]);
 });

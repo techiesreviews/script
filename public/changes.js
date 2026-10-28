@@ -74,7 +74,7 @@ function busyRanges(asks, except) {
   const add = (id, start, end) => { if (!out.has(id)) out.set(id, []); out.get(id).push([start, end]); };
   for (const a of asks || []) {
     if (a.id === except) continue;
-    if (a.scope === "selection" && D.OPEN_STATUSES.includes(a.status) && a.action !== "broll" && a.answer?.kind !== "broll") add(a.blockId, a.start, a.end);
+    if (a.scope === "selection" && D.OPEN_STATUSES.includes(a.status) && a.action !== "broll" && a.answer?.kind !== "broll") add(a.blockId, a.start, a.end); // kind "broll": a free Ask answered with B-roll
     else if (isMarked(a)) add(a.blockId, a.start, a.end);
     else if (a.scope === "script" && a.status === "answered" && Array.isArray(a.answer?.marks)) {
       for (const m of a.answer.marks) if (m.state === "open" && m.blockId) add(m.blockId, m.start, m.end);
