@@ -14,11 +14,11 @@ test("the view switch is its own column of the top bar", () => {
 // The voice and agent labels are hidden visually on narrow screens but must keep their accessible name.
 test("the voice and agent labels stay readable for screen readers", () => {
   const css = readFileSync(new URL("../public/app.css", import.meta.url), "utf8");
-  const block = (q) => { const at = css.indexOf(`@container app (${q}) {\n`); return css.slice(at, css.indexOf("\n}\n", at) + 3); };
+  const block = (q) => { const at = css.indexOf(`@container app (${q}) {\n`); assert.ok(at >= 0, `no @container block for ${q}`); return css.slice(at, css.indexOf("\n}\n", at) + 3); };
   const at68 = block("width < 68rem");
   assert.match(at68, /\.voice-btn \.lbl, \.agent-btn \.lbl \{[^}]*clip-path: inset\(50%\)/);
   assert.doesNotMatch(at68, /\.lbl \{[^}]*display: none/);
-  assert.match(block("width < 36rem"), /\.tb \.lbl:not\(\.voice-btn \.lbl, \.agent-btn \.lbl\) \{ display: none; \}/);
+  assert.match(block("width < 36rem"), /\.tb:not\(\.voice-btn, \.agent-btn\) \.lbl \{ display: none; \}/);
   assert.match(css, /\.agent-btn\[data-state="on"\] \.lbl \{ max-inline-size: 7rem;/);
   assert.doesNotMatch(css, /^\.agent-btn \.lbl \{ max-inline-size/m);
 });

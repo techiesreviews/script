@@ -123,7 +123,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 }
 @container app (width < 46rem) { .doc__meta { display: none; } }
 @container app (width < 36rem) {
-  .tb .lbl:not(.voice-btn .lbl, .agent-btn .lbl) { display: none; }
+  .tb:not(.voice-btn, .agent-btn) .lbl { display: none; }
   .tb:has(.lbl) { padding-inline: 0.5rem; }
 }
 
