@@ -7,7 +7,7 @@ Read first: `AGENTS.md`, `docs/agents/agent-scripts.md`, the approved mock-up, k
 ## Files
 
 - `public/index.html`: the app shell. `public/app.css`: styles. `public/app.js`: UI (ES module). `public/doc.js`: a pure module (no DOM) for parsing, serializing, exports and ask anchoring, imported by the app and by the tests.
-- `public/_headers`: `/*` → `X-Robots-Tag: noindex` and `Cache-Control: no-store`. `public/robots.txt`: `Disallow: /`.
+- `public/_headers`: `/*` → `X-Robots-Tag: noindex` and `Cache-Control: no-store`. `public/robots.txt`: `Disallow: /`. (Changed 2026-10-28: the pages are open to search engines; see handoff.md.)
 - `wrangler.jsonc`: name `script-editor`, compatibility_date `2026-10-27`, `workers_dev: true`, `preview_urls: false`, `assets.directory: ./public`. Assets only in this step; step B adds the Worker.
 - `package.json`: `"type": "module"`, private, scripts `dev` (`npx --yes wrangler@4 dev`), `test` (`node --test tests/*.test.mjs`). No runtime dependencies, no build step.
 - `docs/data-shape.md`: the document and ask data shape (below), written for a future multiplayer build.
