@@ -1,0 +1,45 @@
+/* Other people's carets: the approved caret from the Native Site Editor's prototypes 13 and 14, drawn in a layer
+   over the text (see carets.js). Identity colours are fixed and low in chroma; orange stays the one accent. */
+:root {
+  --rc-1: light-dark(oklch(54% 0.13 305), oklch(74% 0.12 305));
+  --rc-2: light-dark(oklch(53% 0.08 215), oklch(75% 0.08 215));
+  --rc-3: light-dark(oklch(52% 0.1 265), oklch(76% 0.09 265));
+  --rc-4: light-dark(oklch(51% 0.08 180), oklch(76% 0.08 180));
+  --rc-5: light-dark(oklch(54% 0.11 345), oklch(76% 0.1 345));
+  --rc-6: light-dark(oklch(50% 0.07 120), oklch(77% 0.08 120));
+  --rc-on: light-dark(oklch(100% 0 none), oklch(16% 0 none));
+}
+.rc-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.rc-sel, .rc { position: absolute; inset-block-start: 0; inset-inline-start: 0; }
+.rc-sel { background: color-mix(in oklch, var(--c) 22%, transparent); border-radius: 2px; }
+
+.rc { inline-size: 0; block-size: var(--h, 1.2em); border-inline-start: 2px solid var(--c); margin-inline-start: -1px; user-select: none; -webkit-user-select: none; }
+.rc__flag { position: absolute; inset-block-end: 100%; inset-inline-start: -0.62rem; z-index: 2; display: flex; align-items: center; block-size: 1.15rem; padding-inline-end: 0.45rem; border-radius: 0.575rem; background: var(--c); color: var(--rc-on); white-space: nowrap; cursor: default; translate: 0 2px; clip-path: inset(0 calc(100% - 1.15rem) 0 0 round 0.575rem); font: 700 0.66rem/1 system-ui, sans-serif; pointer-events: auto; }
+.rc__mark { position: relative; z-index: 1; inline-size: 1.15rem; block-size: 100%; display: grid; place-items: center; flex: none; }
+.rc__flag:not([data-letter]) .rc__mark { background: var(--c); border-radius: 50%; }
+.rc__mark b { font: inherit; background: var(--c); padding-inline: 0.06rem; }
+.rc__mark svg { inline-size: 0.7rem; block-size: 0.7rem; stroke-width: 2.4; }
+.rc__flag[data-letter] .rc__name { margin-inline-start: -0.36rem; }
+.rc__undo { all: unset; display: grid; place-items: center; flex: none; inline-size: 0.95rem; block-size: 0.95rem; margin-inline: 0.2rem -0.3rem; border-radius: 50%; cursor: pointer; }
+.rc__undo svg { inline-size: 0.65rem; block-size: 0.65rem; stroke-width: 2.6; }
+.rc__undo:focus-visible { outline: 1.5px solid currentColor; outline-offset: -1.5px; }
+.rc__undo:active { background: color-mix(in oklch, currentColor 30%, transparent); }
+:is(.rc__name, .rc__undo) { opacity: 0; translate: -0.55rem 0; filter: blur(3px); }
+/* The focus ring sits on the flag; the zero-width caret keeps a transparent one for forced-colours mode. */
+.rc:focus-visible { outline: 2px solid transparent; }
+.rc:focus-visible .rc__flag { outline: 2px solid var(--c); outline-offset: 2px; }
+.rc:focus-visible .rc__flag, .rc:focus-within .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
+.rc:focus-visible :is(.rc__name, .rc__undo), .rc:focus-within :is(.rc__name, .rc__undo) { opacity: 1; translate: 0 0; filter: blur(0); }
+@media (hover: hover) and (pointer: fine) {
+  .rc:hover .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
+  .rc:hover :is(.rc__name, .rc__undo) { opacity: 1; translate: 0 0; filter: blur(0); }
+  .rc__undo:hover { background: color-mix(in oklch, currentColor 20%, transparent); }
+}
+:is(.rc__name, .rc__undo) { transition: opacity 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)); }
+@media (prefers-reduced-motion: no-preference) {
+  .rc__flag { transition: clip-path 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)); }
+  :is(.rc__name, .rc__undo) { transition: opacity 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)), translate 240ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)), filter 240ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.rc__name, .rc__undo) { translate: 0 0; filter: none; }
+}

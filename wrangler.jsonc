@@ -1,6 +1,6 @@
 {
-  // Static assets, plus the Worker for MCP (/mcp) and the live relay (/api/relay).
-  // Cloudflare free plan: Workers, static assets and a SQLite-backed Durable Object.
+  // Static assets, plus the Worker for MCP (/mcp), the live relay (/api/relay) and rooms for working together (/api/room).
+  // Cloudflare free plan: Workers, static assets and SQLite-backed Durable Objects (the relay, and rooms since step D).
   "name": "script-editor",
   "main": "worker/index.js",
   "compatibility_date": "2026-09-15",
@@ -14,7 +14,13 @@
     "run_worker_first": ["/mcp", "/api/*"]
   },
   "durable_objects": {
-    "bindings": [{ "name": "RELAY", "class_name": "Relay" }]
+    "bindings": [
+      { "name": "RELAY", "class_name": "Relay" },
+      { "name": "ROOM", "class_name": "Room" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Relay"] }]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Relay"] },
+    { "tag": "v2", "new_sqlite_classes": ["Room"] }
+  ]
 }

@@ -39,6 +39,35 @@ Approved look and behaviour come from the chat workspace's `sites/script-editor-
 - The script editor plugs in through a small adapter (`public/together-adapter.js`): apply an operation, read a snapshot, find the element for a block id, report local changes.
 - Document the protocol, the adapter API and how the Native Site Editor would plug in, in `docs/together.md` (at most 2 pages).
 
+## Since this plan was written (steps C2–C5, all live)
+
+The editor now also has:
+- the Script/Storyboard switch;
+- sketch frames beside the lines;
+- "Add B-roll" and the shot card;
+- agent B-roll suggestions (`answer_broll`, Keep/Undo);
+- the `/` parts menu with renumbering.
+
+For working together:
+
+- **Guests and B-roll:** guests see the B-roll exactly as the host does: tags, frames, the Storyboard, and suggestions. The host sends the B-roll list text in the snapshot and again after each change. In this step guests can't add, change or remove shots, or Keep/Undo B-roll suggestions. They can use "Suggest B-roll", which is an ask like any other.
+- **Guests and `/` parts:** guests can use the `/` menu. Inserting a part and renumbering go to the host as structure operations, the host applies them in order, and everyone ends on the same text. The command text is never sent before a part is picked.
+- **Storyboard view:** each person picks their own view; it is not shared.
+
+## Built in two parts
+
+- **D1:** everything except the agent's caret and guests' asks:
+  - the `Room` Durable Object and the protocol;
+  - `public/together/` (room, carets, share button) and the adapter;
+  - Share to edit, joining with a name, presence avatars;
+  - live text editing with carets and selections, the undo button on the name tag;
+  - the guest limits;
+  - `docs/together.md`, `scripts/smoke-room.mjs` and the unit tests.
+- **D2:**
+  - guests' asks reaching the host and the agent, and answers showing for everyone (Keep/Undo only for the person who asked, or the host);
+  - the agent's caret;
+  - B-roll shown for guests, and the `/` parts for guests.
+
 ## Checks
 
 - **Unit tests:** transforming concurrent operations in one block (insert/insert, insert/delete, delete/delete, split while typing), snapshot after an old base, the caret offset after a remote operation, and the room message rules with a fake socket.

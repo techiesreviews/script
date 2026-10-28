@@ -2,6 +2,7 @@
 import * as D from "./doc.js";
 import * as Q from "./save-queue.js";
 import * as B from "./broll.js";
+import { createTogether, parseLink } from "./together-adapter.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -38,6 +39,8 @@ const ICONS = {
   board: '<rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/>',
   sketch: '<path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/>',
   suggest: '<rect x="3" y="7" width="14" height="13" rx="2"/><path d="M7 7v13M3 11.5h4M3 15.5h4"/><path d="M19.5 2.5v5M17 5h5"/>',
+  share: '<path d="M16 5l3 3-3 3"/><path d="M19 8h-6a6 6 0 0 0-6 6v4"/>',
+  link: '<path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/>',
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest" };
@@ -82,7 +85,12 @@ const state = {
   pendingDraft: null,
   frontOpen: false,
   hint: null,
+  guest: false, // in someone else's shared script (step D): no saving, B-roll, agent, export or sharing
+  locked: false, // a guest whose host stopped sharing
 };
+// Working together (step D): set up at the end of this file. A room link in the address makes this tab a guest.
+let together = null;
+const roomLink = parseLink(location.hash);
 // The B-roll list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
 const broll = {
   token: 0, link: null, status: "none", err: "", text: "",
@@ -221,7 +229,7 @@ function blockShell(b) {
   el.dataset.type = b.type;
   // While "Unsaved changes from … · Restore · Discard" shows, the script is read-only, so no edit is lost.
   if (b.id === state.hint) el.dataset.placeholder = "Type / for parts"; // a brand-new script's first spoken line
-  if (state.pendingDraft) el.contentEditable = "false";
+  if (state.pendingDraft || state.locked) el.contentEditable = "false";
   else editable(el);
   if (b.type !== "heading") wrap.append(el);
   fillBlock(el, b);
@@ -351,6 +359,7 @@ function renderBlock(id, caret = null) {
   if (el.dataset.type !== b.type) return renderAll(caret);
   fillBlock(el, b);
   if (caret && caret.id === id) setCaretAt(el, caret.offset);
+  together?.redraw();
 }
 
 let sectionObserver = null;
@@ -381,11 +390,12 @@ function renderAll(caret = null) {
     frag.append(sec);
   }
   scriptEl.replaceChildren(frag);
-  scriptEl.toggleAttribute("data-locked", !!state.pendingDraft);
+  scriptEl.toggleAttribute("data-locked", !!state.pendingDraft || state.locked);
   renderToc();
   renderVoice();
   renderBrollMarks();
   if (caret) placeCaret(caret.id, caret.offset);
+  together?.redraw();
 }
 
 function renderToc() {
@@ -416,7 +426,7 @@ function renderTocDots() {
     const ids = new Set([s.heading.id, ...s.blocks.map((b) => b.id)]);
     const voice = state.asks.some((a) => a.scope === "script" && a.status === "answered" && a.answer.marks.some((m) => m.state === "open" && ids.has(m.blockId)));
     const asks = state.asks.some((a) => a.scope === "selection" && isOpen(a) && !isBrollAnswer(a) && ids.has(a.blockId));
-    dots.innerHTML = (voice ? '<span class="pdot pdot--voice"></span>' : "") + (asks ? '<span class="pdot pdot--ask"></span>' : "");
+    dots.innerHTML = (voice ? '<span class="pdot pdot--voice"></span>' : "") + (asks ? '<span class="pdot pdot--ask"></span>' : "") + (together?.dots(ids) || "");
   }
 }
 $("#toc").addEventListener("click", (e) => {
@@ -430,7 +440,10 @@ $("#toc").addEventListener("click", (e) => {
 function renderTop() {
   const open = !!state.doc;
   $("#docInfo").hidden = !open;
-  for (const id of ["exportBtn", "voiceBtn", "agentBtn", "viewSwitch"]) $("#" + id).hidden = !open;
+  // A guest edits text only: no export, agent, voice check, B-roll views or sharing (step D1).
+  for (const id of ["exportBtn", "voiceBtn", "agentBtn", "viewSwitch"]) $("#" + id).hidden = !open || state.guest;
+  together?.renderShare(open, state.guest);
+  $("#docSwitch").disabled = state.guest;
   $("#empty").hidden = open;
   $("#layout").hidden = !open;
   renderView();
@@ -442,6 +455,7 @@ function renderTop() {
 }
 function renderSaveState() {
   const s = $("#saveState");
+  if (state.guest) { s.dataset.state = ""; s.textContent = ""; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = ""; $("#allowSave").hidden = true; return; }
   const dirty = isDirty();
   const allow = $("#allowSave");
   allow.hidden = !(state.needsPermission && state.handle);
@@ -469,6 +483,8 @@ function renderDerived() {
 
 let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
 function changed() {
+  together?.local();
+  together?.redraw();
   renderSaveState();
   clearTimeout(derivedTimer);
   derivedTimer = setTimeout(renderDerived, 250);
@@ -498,6 +514,8 @@ async function openPrompter() {
 
 /* ---------- Undo and redo ---------- */
 function checkpoint(kind, id) {
+  // In a shared script, undo follows each person's own changes instead (see together/room.js).
+  if (together?.active) return;
   const now = Date.now(), last = state.lastStep;
   if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
   state.undo.push({ doc: D.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
@@ -514,8 +532,16 @@ function restore(snap, from, to) {
   hideBar();
   changed();
 }
-function undo() { const s = state.undo.pop(); if (s) restore(s, state.undo, state.redo); }
-function redo() { const s = state.redo.pop(); if (s) restore(s, state.redo, state.undo); }
+function undo() {
+  if (together?.active) { hideBar(); return void together.undo(); }
+  const s = state.undo.pop();
+  if (s) restore(s, state.undo, state.redo);
+}
+function redo() {
+  if (together?.active) return;
+  const s = state.redo.pop();
+  if (s) restore(s, state.redo, state.undo);
+}
 
 /* ---------- Ask anchors follow edits ---------- */
 function closeAsk(a, status) {
@@ -832,6 +858,7 @@ function placeBar(r) {
   bar.style.setProperty("--bar-y", y + "px");
 }
 function showBar() {
+  if (state.guest) return hideBar(); // guests' asks come with step D2
   if (bar.contains(document.activeElement) || !shotCard.hidden) return;
   const s = currentSelection();
   if (!s) { hideBar(); return; }
@@ -846,7 +873,7 @@ function showBar() {
 }
 function hideBar() { bar.hidden = true; $("#askInput").value = ""; barSel = null; }
 let selTimer = 0;
-document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); });
+document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
 addEventListener("resize", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); positionShotCard(); });
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
@@ -1121,7 +1148,7 @@ async function permitted(handle, ask, mode = "readwrite") {
 const draftKey = (name = state.name) => `draft:${name}`;
 function persistDraft() {
   clearTimeout(draftTimer);
-  if (!state.doc || state.pendingDraft) return;
+  if (!state.doc || state.pendingDraft || state.guest) return;
   const open = state.asks.filter(isOpen);
   const dirty = isDirty();
   const flags = brollFlags();
@@ -1132,6 +1159,8 @@ function persistDraft() {
 function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   // Leaving a script: write what is still waiting to its own file, and keep a draft as a safety net.
   if (state.doc) { persistDraft(); flushSave(); }
+  // Sharing ends when another script opens; the same file read again from disk stays shared.
+  if (together?.active && !(handle && handle === state.handle)) together.stop();
   $("#emptyNote").hidden = true;
   hideBar();
   closeCard();
@@ -1169,6 +1198,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   renderDerived();
   scrollTo({ top: 0 });
   loadBroll();
+  together?.local();
 }
 function adoptAsks(asks) {
   if (!Array.isArray(asks)) return;
@@ -1339,7 +1369,7 @@ async function writeLeft(snap) {
   return null;
 }
 async function save({ force = false, auto = false } = {}) {
-  if (!state.doc) return;
+  if (!state.doc || state.guest) return;
   if (state.saving) {
     // Auto-save without a file does nothing; a click without a file waits for its turn to pick one.
     if (state.handle || !auto) saveQueue = Q.queueSave(saveQueue, saveRequest(force, auto));
@@ -1403,7 +1433,7 @@ function finishSave(current) {
 }
 // "Markdown file (.md)" and Ctrl/Cmd+S without an open file: pick where to save, then keep auto-saving there.
 async function saveAs() {
-  if (!state.doc || state.saving) return;
+  if (!state.doc || state.saving || state.guest) return;
   const text = saveText();
   state.saveError = "";
   try {
@@ -1457,7 +1487,7 @@ function download(text, name, type) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 function exportFile(kind) {
-  if (!state.doc) return;
+  if (!state.doc || state.guest) return;
   if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
   else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
   else if (kind === "prompter-open") openPrompter();
@@ -1614,7 +1644,7 @@ $("#scriptSearch").addEventListener("keydown", (e) => {
 $("#menuOpen").addEventListener("click", () => { $("#scriptMenu").hidePopover(); openFile(); });
 $("#menuNew").addEventListener("click", () => { $("#scriptMenu").hidePopover(); newScript(); });
 (async () => {
-  if (!canPick) return;
+  if (!canPick || roomLink) return;
   lastHandle = (await recentScripts())[0]?.handle ?? null;
   if (lastHandle?.name) {
     $("#reopenLabel").textContent = `Reopen ${lastHandle.name}`;
@@ -1635,7 +1665,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(
 addEventListener("beforeunload", (e) => {
   persistDraft();
   flushSave();
-  if (isDirty()) { e.preventDefault(); e.returnValue = ""; }
+  if (isDirty() && !state.guest) { e.preventDefault(); e.returnValue = ""; }
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { persistDraft(); flushSave(); } });
 addEventListener("pagehide", () => { persistDraft(); flushSave(); });
@@ -1680,7 +1710,7 @@ function closeBroll() {
 }
 async function loadBroll() {
   const token = ++broll.token;
-  if (!state.doc) return;
+  if (!state.doc || state.guest) return; // guests see the host's B-roll with step D2
   // "none" must mean "no list linked", so the list counts as loading while its link is looked up.
   broll.status = "loading";
   let link = await idbGet(brollKey());
@@ -1951,7 +1981,7 @@ function setView(v) {
   scrollTo({ top: board ? 0 : ui.scriptY });
 }
 function renderView() {
-  const board = ui.view === "board" && !!state.doc;
+  const board = ui.view === "board" && !!state.doc && !state.guest;
   $("#layout").dataset.view = board ? "board" : "";
   for (const b of $$("#viewSwitch button")) b.setAttribute("aria-pressed", String(b.dataset.view === (board ? "board" : "script")));
   renderBoard();
@@ -2554,6 +2584,7 @@ function slashAtCaret() {
 const slashOnSpokenLine = (cmd) => canAddBroll() && B.spokenBlocks(state.doc).some((x) => x.id === cmd.id)
   && /[\p{L}\p{N}]/u.test(D.cutCommand(cmd.content, cmd).content);
 function updateSlash(typed) {
+  if (state.guest) return closeSlash(); // guests get the "/" parts with step D2
   const cmd = slashAtCaret();
   if (!cmd) { slash.dismissed = null; return closeSlash(); }
   // After Escape the typed text stays text until this command is gone.
@@ -2595,6 +2626,8 @@ function closeSlash() {
   const el = blockNode(slash.id);
   if (el) for (const k of ["role", "aria-controls", "aria-expanded", "aria-autocomplete", "aria-activedescendant"]) el.removeAttribute(k);
   scheduleSave();
+  // In a shared script the command text was held back; a picked part replaces it before this runs.
+  queueMicrotask(() => together?.local());
 }
 // Picking removes the command and inserts the part, all in one undo step.
 function pickSlash(partId) {
@@ -2623,6 +2656,15 @@ function pickSlash(partId) {
   const res = D.insertPart(state.doc, id, part.id, { replaceId });
   renderAll(res.caret);
   changed();
+}
+// In a shared script, a "/" command is held back from the others from its first character: the menu opens after the
+// change is reported, so this asks what updateSlash is about to do.
+function slashHeld() {
+  if (slash.open) return true;
+  if (!scriptEl.contains(document.activeElement)) return false;
+  const cmd = slashAtCaret();
+  if (!cmd || (slash.dismissed?.id === cmd.id && slash.dismissed.start === cmd.start)) return false;
+  return D.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) }).length > 0;
 }
 // What a save writes: the script without an open "/" command.
 function saveText() {
@@ -2659,6 +2701,7 @@ slashMenu.addEventListener("click", (e) => { const it = e.target.closest("[data-
 const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
 const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
 const RETAKE_AFTER_MS = 2 * 60 * 1000;
+const NOT_HERE = "This tab is editing someone else's shared script. Your agent works only in your own scripts.";
 const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, waiters: [], copiedTimer: 0 };
 
 function newToken() {
@@ -2799,6 +2842,7 @@ function scriptInfo() {
 function handleCall({ id, tool, args = {} }) {
   const ws = agent.ws;
   const send = (payload) => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ } };
+  if (state.guest) return send({ error: NOT_HERE });
   try {
     if (tool === "wait_for_asks") {
       const list = takeUnseen();
@@ -2918,6 +2962,7 @@ setInterval(() => { try { if (agent.ws?.readyState === WebSocket.OPEN) agent.ws.
 // A token lives at most eight hours; then it is replaced like Disconnect MCP.
 setInterval(() => { if (agent.token && Date.now() - agent.createdAt >= AGENT_MAX_AGE) disconnectAgent(); }, 60_000);
 (() => {
+  if (roomLink) return; // a guest's tab never connects its own agent to someone else's script
   const saved = store.get("agent");
   if (saved?.token && Date.now() - saved.createdAt < AGENT_MAX_AGE) {
     agent.token = saved.token;
@@ -2929,7 +2974,7 @@ setInterval(() => { if (agent.token && Date.now() - agent.createdAt >= AGENT_MAX
 })();
 
 // Menus sit under their button; browsers without anchor positioning get the place from here.
-for (const [menu, btn] of [["#exportMenu", "#exportBtn"], ["#agentMenu", "#agentBtn"], ["#scriptMenu", "#docInfo"]]) {
+for (const [menu, btn] of [["#exportMenu", "#exportBtn"], ["#agentMenu", "#agentBtn"], ["#scriptMenu", "#docInfo"], ["#shareMenu", "#share"]]) {
   $(menu).addEventListener("toggle", (e) => {
     if (e.newState !== "open" || CSS.supports("position-area: block-end")) return;
     const r = $(btn).getBoundingClientRect(), m = $(menu);
@@ -2938,6 +2983,112 @@ for (const [menu, btn] of [["#exportMenu", "#exportBtn"], ["#agentMenu", "#agent
     m.style.left = `${Math.max(8, Math.min(x, innerWidth - m.offsetWidth - 8))}px`;
   });
 }
+
+/* ---------- Working together (step D): Share to edit, guests, carets ---------- */
+// The selection inside one block, in content offsets: { id, anchor, focus, focused }.
+function localSelection() {
+  if (!state.doc) return null;
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const fe = blockOf(sel.focusNode);
+  if (!fe) return null;
+  const focus = offsetIn(fe, sel.focusNode, sel.focusOffset);
+  const anchor = blockOf(sel.anchorNode) === fe ? offsetIn(fe, sel.anchorNode, sel.anchorOffset) : focus;
+  return { id: fe.dataset.id, anchor, focus, focused: scriptEl.contains(document.activeElement) };
+}
+function restoreSelection(sel) {
+  const el = sel?.focused && blockNode(sel.id);
+  if (!el || el.contentEditable === "false") return;
+  if (document.activeElement !== el) el.focus({ preventScroll: true });
+  const [an, ao] = pointAt(el, sel.anchor), [fn, fo] = pointAt(el, sel.focus);
+  try { getSelection().setBaseAndExtent(an, ao, fn, fo); } catch { setCaretAt(el, sel.focus); }
+}
+// Someone else's change (or an undo on a name tag) is in state.doc: asks follow the text, then the script redraws.
+function afterRoomOps(ops, sel) {
+  const touched = new Set();
+  let structure = false;
+  for (const op of ops) {
+    if (op.type === "text") touched.add(op.blockId);
+    else if (op.type === "split") { moveAsks(op.blockId, op.newId, op.at, -op.at); touched.add(op.blockId).add(op.newId); structure = true; }
+    else if (op.type === "merge") { moveAsks(op.blockId, op.into, 0, op.at); touched.add(op.into).add(op.blockId); structure = true; }
+    else { touched.add(op.blockId ?? op.block.id); structure = true; }
+  }
+  for (const id of touched) reanchorBlock(id);
+  const heads = [...touched].some((id) => byId(id)?.type === "title" || byId(id)?.type === "heading");
+  if (structure) renderAll();
+  else for (const id of touched) renderBlock(id);
+  if (heads && !structure) renderToc();
+  if (heads) renderTop();
+  restoreSelection(sel);
+  changed();
+}
+// A guest gets the host's script (the first time, and again after a fresh snapshot).
+function loadGuest(doc, name) {
+  const first = !state.guest || !state.doc;
+  const sel = first ? null : localSelection();
+  hideBar();
+  closeCard();
+  if (first) closeBroll();
+  Object.assign(state, {
+    guest: true, locked: false, doc, name, handle: null, savedText: D.serialize(doc), savedAt: 0, saveError: "",
+    needsPermission: false, conflict: false, undo: [], redo: [], lastStep: null, asks: [], pendingDraft: null, hint: null,
+  });
+  hideBanner();
+  renderTop();
+  renderAll();
+  renderDerived();
+  if (sel) restoreSelection(sel);
+  if (first) scrollTo({ top: 0 });
+}
+// The host stopped sharing: the guest keeps reading, but can no longer edit.
+function guestEnded() {
+  state.locked = true;
+  closeSlash();
+  hideBar();
+  renderAll();
+  showBanner("Sharing stopped", []);
+}
+function joinFailed() {
+  $("#joinForm").hidden = true;
+  const note = $("#emptyNote");
+  note.textContent = "This edit link has ended";
+  note.hidden = false;
+}
+if (roomLink) {
+  for (const b of $$(".empty__actions > .tb")) b.hidden = true;
+  const form = $("#joinForm");
+  form.hidden = false;
+  $("#joinName").value = me.name !== "You" ? me.name : "";
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("#joinName").value.replace(/\s+/g, " ").trim().slice(0, 40);
+    if (!name) return $("#joinName").focus();
+    me.name = name;
+    store.set("me", { id: me.id, name });
+    form.querySelector("button").disabled = true;
+    together.join(roomLink, name);
+  });
+}
+together = createTogether({
+  doc: () => state.doc,
+  name: () => state.name,
+  me,
+  held: slashHeld,
+  selection: localSelection,
+  restore: restoreSelection,
+  element: (id) => blockNode(id),
+  applied: afterRoomOps,
+  loadGuest,
+  guestEnded,
+  joinFailed,
+  // Undo steps from before sharing would bring back old text over other people's work.
+  sharing: () => { state.undo = []; state.redo = []; state.lastStep = null; },
+  renderTop: () => renderTop(),
+  renderDots: () => { if (state.doc) renderTocDots(); },
+  sheet: $(".sheet"),
+  scriptEl,
+  icon,
+});
 
 /* ---------- Hooks for tests and step B ---------- */
 window.__scriptEditor = {
@@ -2963,6 +3114,7 @@ window.__scriptEditor = {
     receiveSketch(ask, shotId, checked.svg, { id: "test", name: "Test" });
     return true;
   },
+  room: () => (together.room ? { role: together.room.role, status: together.room.status, v: together.room.v, people: together.room.peopleList(), carets: together.room.caretList(), link: together.room.role === "host" ? together.room.link(location.origin) : null } : null),
   ask: (blockIndex, start, end, action = "simpler", typed = "") => {
     const b = state.doc?.blocks[blockIndex];
     if (!b) return null;

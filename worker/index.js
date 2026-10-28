@@ -1,8 +1,12 @@
-// script.techies.tools Worker: static assets, the live relay (/api/relay) and MCP (/mcp).
+// script.techies.tools Worker: static assets, the live relay (/api/relay), rooms for working together (/api/room)
+// and MCP (/mcp).
 import { Relay } from "./relay.js";
+import { Room, PROTOCOL as ROOM_PROTOCOL } from "./room.js";
 import { handleMcp, TOKEN_RE } from "./mcp.js";
 
-export { Relay };
+export { Relay, Room };
+const ROOM_RE = /^[A-Za-z0-9_-]{22}$/;
+const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 
 async function sha256hex(text) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -31,6 +35,23 @@ export default {
       if (!protocols.includes("script-editor") || !TOKEN_RE.test(token)) return noindex(Response.json({ error: "Unauthorized" }, { status: 401 }));
       const stub = await relayStub(env, token);
       return stub.fetch("https://relay/tab", { headers: { Upgrade: "websocket" } });
+    }
+    if (url.pathname === "/api/room") {
+      if (request.headers.get("Upgrade") !== "websocket") return noindex(Response.json({ error: "Expected a WebSocket" }, { status: 426 }));
+      const origin = request.headers.get("Origin");
+      if (origin && origin !== url.origin) return noindex(Response.json({ error: "Forbidden" }, { status: 403 }));
+      // Room id and keys travel as subprotocols, never in the URL: ["script-editor-room", "r.<room>", "k.<key>", "h.<host key>"?].
+      // The room gets only the keys' hashes.
+      const protocols = (request.headers.get("Sec-WebSocket-Protocol") || "").split(",").map((p) => p.trim());
+      const part = (prefix) => protocols.find((p) => p.startsWith(prefix))?.slice(2) ?? "";
+      const room = part("r."), key = part("k."), host = part("h.");
+      if (!protocols.includes(ROOM_PROTOCOL) || !ROOM_RE.test(room) || !KEY_RE.test(key) || (host && !KEY_RE.test(host))) {
+        return noindex(Response.json({ error: "Unauthorized" }, { status: 401 }));
+      }
+      const stub = env.ROOM.get(env.ROOM.idFromName(room));
+      const headers = { Upgrade: "websocket", "X-Room-Key": await sha256hex(key) };
+      if (host) headers["X-Room-Host"] = await sha256hex(host);
+      return stub.fetch("https://room/join", { headers });
     }
     if (url.pathname === "/mcp") {
       const stubs = new Map();

@@ -1,0 +1,88 @@
+# Working together (Share to edit)
+
+The host shares a script with a link; guests type a name and edit it live, each with their own caret. The host's tab is the source of truth and its file stays the only copy: the room passes messages and stores no script text. Step D1 is built (rooms, carets, Share to edit, guest limits); D2 adds guests' asks, the agent's caret and B-roll for guests.
+
+## Pieces
+
+| File | What it does |
+| --- | --- |
+| `public/together/ops.js` | Block operations, their transform, the diff that finds them, point moves. Pure. |
+| `public/together/room.js` | `RoomClient`: the connection, the protocol, the host and guest roles, per-person Undo. |
+| `public/together/carets.js` + `carets.css` | Other people's carets and selections, drawn in a layer over any `contenteditable`. |
+| `public/together/share-button.js` | Share to edit → Link copied ✓ (2.4 s) → Copy edit link, with × Stop sharing. |
+| `public/together-adapter.js` | The script editor's adapter and UI wiring (the only file that knows about scripts). |
+| `worker/room.js` | The `Room` Durable Object (hibernation API, migration `v2`). |
+
+Nothing in `public/together/` or `worker/room.js` knows about scripts.
+
+## Link and keys
+
+`https://script.techies.tools/#room=<22 chars>&k=<43 chars>`. Everything after `#` stays in the browser. The socket opens `/api/room` with the subprotocols `["script-editor-room", "r.<room>", "k.<key>"]`, plus `"h.<host key>"` for the host (the host key never leaves the host's tab). The Worker checks their form and passes only SHA-256 hashes to the room, which stores `{ keyHash, hostHash, createdAt, ended }` and nothing else. Close codes: `4003` wrong key, `4004` ended (or no such room), `4005` full (20 guests), `4001` another host tab took over.
+
+## Document model
+
+A document is a list of blocks `{ id, text, attrs }`. `text` is what people edit (`\n` line breaks); `attrs` is opaque to the room. The script editor uses `text = contentOf(block)` and `attrs = { type, sep, prefix }` (`prefix` is the `# ` / `## ` marker), so carets and asks share content offsets and a para that becomes a heading is an attrs change plus a text change.
+
+Operations (`ops.js`):
+
+```js
+{ type: "text",   blockId, at, del, ins }              // the spec's { blockId, at, del, ins }
+{ type: "split",  blockId, at, newId, attrs }          // Enter
+{ type: "merge",  blockId, into, at }                  // Backspace at the start (`at` = length of `into`)
+{ type: "insert", after, block: { id, text, attrs } }  // new block, e.g. a "/" part
+{ type: "remove", blockId }
+{ type: "attrs",  blockId, attrs }                     // type and heading changes
+```
+
+Text is transformed against everything (insert/insert ties go to the change the host ordered first; text typed inside a deleted part is kept; typing in a block that is split follows its words). Two structure operations on the same block are a `Conflict`: the host then sends that guest a fresh snapshot instead of guessing.
+
+## Protocol
+
+The room stamps `from` on everything a guest sends and lets guests send only `hello`, `op`, `ask`, `resync` (to the host) and `caret` (to everyone else).
+
+| From → to | Message |
+| --- | --- |
+| room → anyone | `{ type: "welcome", role, pid, peers? / host? }` |
+| guest → host | `{ type: "hello", name }` → host gets `{ type: "join", from, name }`; `{ type: "leave", from }` when it closes |
+| host → guest | `{ type: "snapshot", v, doc: { blocks, meta }, people, carets }` (sent with `{ type: "to", to: pid, msg }`) |
+| guest → host | `{ type: "op", base, seq, ops }` (at most one in flight) and `{ type: "resync" }` |
+| host → all | `{ type: "op", v, ops, by, seq? }` (sent with `{ type: "all", msg }`; the sender's copy is its receipt) |
+| host → all | `{ type: "people", people: [{ pid, name, colour, kind }] }` |
+| anyone → others | `{ type: "caret", c: { blockId, offset, selEnd? } }`, at most 15 a second |
+| host → room | `{ type: "end" }`; the room also ends 30 s after the host's tab closed |
+| guest → host | `{ type: "ask", ask }` (D1 relays it; D2 answers it) |
+
+The host transforms a guest's batch against every version after its `base`, applies it, gives it the next version and sends it to everyone. A `base` older than the host's log (500 versions) gets a snapshot. A guest transforms what arrives against its batch in flight and its unsent changes. Carets follow every operation; the author's caret goes to the end of their change.
+
+**Undo.** Each tab tracks everyone's last text change (typing with pauses under 1.5 s is one change). While it is untouched, that person's name tag shows Undo, which undoes only that change. Ctrl/Cmd+Z in a room undoes only your own text, Enter and Backspace joins; the whole-document undo stack is cleared when sharing starts and ends.
+
+## The adapter API
+
+```js
+new RoomClient({ role, room, key, hostKey?, url, name, adapter, on }).start()
+adapter = {
+  read(),                // → blocks for the current document
+  apply(ops, { by }),    // apply someone else's operations (or an Undo) to your document and redraw
+  meta(),                // host: what guests need besides blocks (file name, line endings…)
+  load({ blocks, meta }),// guest: show this document
+  caret?(),              // { blockId, offset } of your caret (picks the place of an ambiguous edit)
+  held?(),               // true while local changes must not be sent yet (the "/" command)
+  busy?(),               // true while an input method composes; call room.resume() after
+  validAttrs?(attrs, partial), // check attrs from guests
+}
+on = { status(s), people(list), carets(), message(msg), changed() }
+room.local()  room.caret(c)  room.undoMine()  room.undoFor(pid)  room.canUndo(pid)  room.stop()
+room.peopleList()  room.caretList()  room.send(msg)
+```
+
+`createCarets({ container, element: (blockId) => el, onUndo, icon })` draws `caretList()` with `set(list)`; call `draw()` after your editor re-renders.
+
+## The script editor's rules
+
+- Text edits still go through `doc.js`: `changed()` calls `room.local()`, which diffs the document; remote operations are applied to `state.doc` with `applyToDoc` and the app redraws, re-anchors asks and auto-saves as before.
+- Guests can't save, export, link B-roll, use the agent, make asks (D2), use `/` parts (D2) or share. A guest's tab never connects its own agent. Opening another script stops sharing; reading the same file again from disk does not.
+- Guests see the host's name ("Host" until the host has joined a room with a name).
+
+## How the Native Site Editor would plug in
+
+Copy `public/together/` and `worker/room.js`. Write an adapter whose blocks are its editable regions (`text` = their plain text, `attrs` = whatever it needs to rebuild them), call `room.local()` after each edit, and give `createCarets` a container and an `element(blockId)` lookup. Its agents' carets are people with `kind: "agent"`, sent by the host with `{ type: "all", msg: { type: "caret", from, c } }` (D2).

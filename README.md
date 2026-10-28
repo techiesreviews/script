@@ -11,11 +11,14 @@ A calm editor for video scripts. Open a Markdown script, edit it, and let **your
 - Export: the camera script (spoken text only), a prompter file, or **Open in prompter**, which opens the script on [prompter.techies.tools](https://prompter.techies.tools).
 - B-roll beside the lines: link a B-roll list, add a shot to selected text yourself, or let your agent suggest shots ("Suggest B-roll" on a selection, "Plan B-roll" for the whole script). Every suggested add, change or removal waits for your Keep or Undo.
 - A switcher with your recent scripts and a search.
+- **Share to edit:** copy a link, and others edit the script with you live, each with their own caret. They type only a name. Your file stays the only copy and keeps saving itself; guests can't save, export, use your agent or share it further. Stop sharing with ×, or close the tab.
 - "Try a demo script" on the start screen loads a made-up example.
 
 ## Your script stays with you
 
 The editor has no accounts and no built-in AI, so it costs nothing to use. Scripts are opened and saved in your browser with the File System Access API (Chrome and Edge; other browsers download a copy). A draft of unsaved changes stays in your browser's local storage.
+
+When you share a script, a small room (another Durable Object) passes changes and carets between your tab and your guests. It never stores script text: it keeps only hashes of the link's keys, when the room was made and whether it ended. The key is in the part of the link after `#`, which browsers never send to a server.
 
 When you connect an agent, a small live relay (a Cloudflare Durable Object) passes asks and answers between your browser tab and your agent. It never stores script text: it keeps only when the connection was made, whether it was disconnected, and the agent's name and version. The prompter link carries the script in the part after `#`, which browsers never send to a server.
 
@@ -41,11 +44,11 @@ npx wrangler@4 dev               # editor, /mcp and the relay at http://localhos
 node --test tests/*.test.mjs     # runs the tests
 ```
 
-With the local server running, `node scripts/smoke-relay.mjs` checks the relay and MCP end to end. To connect an agent to your local copy, use the prompt from **Wait for MCP**: it already points at `http://localhost:8787/mcp`.
+With the local server running, `node scripts/smoke-relay.mjs` checks the relay and MCP end to end, and `node scripts/smoke-room.mjs` checks Share to edit with one host and two guests. To connect an agent to your local copy, use the prompt from **Wait for MCP**: it already points at `http://localhost:8787/mcp`.
 
 ## Deploy your own copy
 
-It runs on the Cloudflare Workers **free plan**: one Worker serves the page as static assets and answers `/mcp` and `/api/relay`, and one SQLite-backed Durable Object class is the relay.
+It runs on the Cloudflare Workers **free plan**: one Worker serves the page as static assets and answers `/mcp`, `/api/relay` and `/api/room`, and two SQLite-backed Durable Object classes are the relay and the rooms.
 
 1. Log in: `npx wrangler@4 login`.
 2. In `wrangler.jsonc`, change `"name"` if you like, and replace the `routes` entry `script.techies.tools` with your own domain, or remove `routes` to use the `*.workers.dev` address.

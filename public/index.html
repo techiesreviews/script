@@ -7,6 +7,7 @@
 <meta name="robots" content="noindex">
 <title>script.techies.tools</title>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="together/carets.css">
 <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -28,6 +29,7 @@
       <button type="button" data-view="board" aria-pressed="false" aria-label="Storyboard"><span data-icon="board"></span><span class="lbl">Storyboard</span></button>
     </div>
     <div class="top__end">
+      <div class="people" id="people" aria-label="People in this script" hidden></div>
       <button class="tb voice-btn" id="voiceBtn" type="button" disabled hidden><span data-icon="wave"></span><span class="lbl">Sounds like me</span><span class="status-dot"></span><span class="count" id="voiceCount" hidden>0</span></button>
       <button class="tb agent-btn" id="agentBtn" type="button" hidden popovertarget="agentMenu" data-state="off"><span class="status-dot"></span><span data-icon="plug"></span><span class="lbl" id="agentBtnLabel">Connect your agent</span></button>
       <div class="menu menu--agent" id="agentMenu" popover>
@@ -56,6 +58,11 @@
           <button class="menu-action" type="button" data-export="storyboard" disabled><span data-icon="board"></span><span class="menu-action__text">Storyboard (.html)<span class="menu-action__note" data-note="broll">Link a B-roll list first</span></span></button>
         </div>
       </div>
+      <div class="share" id="share" hidden>
+        <button class="tb tb--ink" id="shareBtn" type="button"><span class="share__icon" id="shareIcon"></span><span class="lbl" id="shareLabel">Share to edit</span></button>
+        <button class="tb tb--icon" id="stopShare" type="button" aria-label="Stop sharing" title="Stop sharing" hidden data-icon="x"></button>
+      </div>
+      <div class="menu menu--share" id="shareMenu" popover><input class="menu__link" id="shareLink" type="text" readonly aria-label="Edit link"></div>
     </div>
   </header>
 
@@ -66,6 +73,10 @@
       <button class="tb tb--big" type="button" id="emptyNew"><span data-icon="plus"></span>New script</button>
       <button class="tb tb--big" type="button" id="emptySample"><span data-icon="prompter"></span>Try a demo script</button>
       <button class="tb tb--big" type="button" id="emptyReopen" hidden><span data-icon="undo"></span><span id="reopenLabel">Reopen</span></button>
+      <form class="join" id="joinForm" hidden>
+        <input id="joinName" type="text" placeholder="Your name" aria-label="Your name" autocomplete="nickname" maxlength="40" spellcheck="false" enterkeyhint="go">
+        <button class="tb tb--ink tb--big" type="submit">Join</button>
+      </form>
     </div>
   </main>
 

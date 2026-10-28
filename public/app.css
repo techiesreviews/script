@@ -73,7 +73,11 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .doc__title { display: flex; align-items: center; gap: 0.25rem; font-weight: 600; white-space: nowrap; }
 .doc__title svg { color: var(--muted); }
 .doc__switch:active, .top:has(#scriptMenu:popover-open) .doc__switch { background: var(--pressed); }
-@media (hover: hover) and (pointer: fine) { .doc__switch:hover { background: var(--hover); } }
+@media (hover: hover) and (pointer: fine) { .doc__switch:enabled:hover { background: var(--hover); } }
+/* A guest can't switch scripts: the name is just a name. */
+.doc__switch:disabled { cursor: default; }
+.doc__switch:disabled:active { background: transparent; }
+.doc__switch:disabled .doc__title svg { display: none; }
 .doc__name { overflow: clip; text-overflow: ellipsis; }
 /* Save state and "Allow saving" sit beside the name, outside the button. */
 .doc__state { display: flex; flex: none; align-items: center; gap: 0.45rem; min-block-size: calc(1lh + 0.4rem); }
@@ -209,6 +213,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .pdot { flex: none; inline-size: 7px; block-size: 7px; border-radius: 50%; }
 .pdot--voice { background: transparent; border: 1.5px dashed var(--accent); }
 .pdot--ask { background: var(--accent); }
+.pdot--person { background: var(--c); }
 @media (hover: hover) and (pointer: fine) { .toc a:hover { background: var(--hover); color: var(--text); } }
 /* The left column: the section list. It stays in view and scrolls on its own. */
 @container app (width >= 52rem) {
@@ -239,7 +244,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 
 /* ---------- The script ---------- */
 .paper { padding-block: 1.5rem; }
-.sheet { max-inline-size: 40rem; margin-inline: auto; }
+.sheet { position: relative; max-inline-size: 40rem; margin-inline: auto; } /* other people's carets are drawn over it */
 
 .block {
   outline: 2px solid transparent; caret-color: var(--accent);
@@ -687,3 +692,44 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 @media (prefers-reduced-motion: no-preference) { .slash-menu:not([hidden]) { animation: lift-in 120ms var(--ease-out); } }
 /* "Type / for parts" on a brand-new script's empty first line (Lex to decide: remove this rule and its attribute to drop it). */
 .block[data-placeholder]:empty::before { content: attr(data-placeholder); position: absolute; color: var(--faint); pointer-events: none; }
+
+/* ---------- Working together (step D): people in the top bar, Share to edit, joining with a name ---------- */
+.people { display: flex; align-items: center; padding-inline: 0.3rem 0.2rem; }
+.avatar {
+  display: grid; place-items: center; flex: none; inline-size: 1.75rem; block-size: 1.75rem; margin-inline-start: -0.3rem; padding: 0;
+  border: 2px solid var(--bg); border-radius: 50%; background: var(--c, var(--raised)); color: var(--rc-on);
+  font-weight: 700; font-size: 0.75rem; line-height: 1; cursor: pointer;
+}
+.avatar--me { background: var(--raised); color: var(--text); cursor: default; }
+.avatar:disabled { cursor: default; }
+.avatar:enabled:active { scale: 0.94; }
+@media (prefers-reduced-motion: no-preference) { .avatar[data-new] { animation: pop-in 320ms var(--ease-out); } }
+@keyframes pop-in { from { scale: 0.4; opacity: 0; } }
+@container app (width < 46rem) { .people { display: none; } }
+/* While sharing, the people and the × join the actions: the voice and agent buttons show their icons only, as on
+   narrower screens, so the Script/Storyboard switch stays clear. */
+@container app (width < 100rem) {
+  .top:has(#stopShare:not([hidden])) :is(.voice-btn, .agent-btn) { position: relative; }
+  .top:has(#stopShare:not([hidden])) :is(.voice-btn, .agent-btn) .lbl { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+  .top:has(#stopShare:not([hidden])) .agent-btn > svg { display: block; }
+}
+/* Phones: the switch follows the name instead of sitting in the middle, so every action fits. */
+@container app (width < 36rem) {
+  .top { grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.35rem; }
+  .top__end { gap: 0.3rem; }
+}
+
+.share { display: flex; gap: 0.25rem; anchor-name: --share; }
+.share__icon { display: contents; }
+.share .tb--ink[data-done] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.tb--icon { inline-size: 2rem; padding: 0; }
+.menu--share { inline-size: min(24rem, calc(100vw - 1.5rem)); }
+@supports (position-area: block-end) {
+  .menu--share { position-anchor: --share; position-area: block-end span-inline-start; }
+}
+.menu__link { display: block; inline-size: 100%; padding: 0.4rem 0.55rem; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--raised); color: var(--text); font: 0.8rem/1.4 var(--mono); }
+.menu__link:focus-visible { outline-offset: 0; }
+
+.join { display: flex; gap: 0.5rem; }
+.join input { flex: 1; min-block-size: 2.75rem; padding-inline: 0.75rem; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; font-size: max(16px, 1rem); }
+.join input:focus-visible { outline-offset: 0; }

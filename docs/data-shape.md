@@ -88,17 +88,16 @@ Shot { id, what, over, how, kind: "broll" | "motion" | "screen", blockIds: strin
 
 The tab keeps `{ token, createdAt }` in local storage (`script-editor:agent`); a token lives at most eight hours. The relay (one Durable Object per `sha256(token)`) stores only `{ createdAt, revoked, agent: { name, version } }`. Asks, answers and script text pass through it in memory and are never stored. The voice guide (`{ name, text }`, at most 20 KB) stays in local storage and goes out with `like` and `voice` asks as `voiceGuide`.
 
-## How several people fit later
+## Working together (step D)
 
-- **Stable block ids** let edits, carets and asks point at a block while other people type in other blocks. A future edit message is `{ by, blockId, content, base }` (the content before and after), so a relay can merge edits block by block.
-- **An author on everything:** every ask has `by`, every answer has `answeredBy`, and the future edit message has `by`. Undo per person can then undo only that person's steps, like the Native Site Editor's undo on a name tag.
-- **Room for people and carets:** a shared session adds
-  ```js
-  people: [{ id, name, kind: "person" | "agent", colour }]
-  carets: [{ personId, blockId, offset, end? }]
-  ```
-  Carets use the same block ids and content offsets as asks, so they follow edits the same way.
-- The file on disk stays plain Markdown. Ids, asks, people and carets live only in the session.
+Built in `public/together/` (see `docs/together.md`). While a script is shared, the room sees it as blocks `{ id, text: contentOf(block), attrs: { type, sep, prefix } }` and edits as block operations (`{ type: "text", blockId, at, del, ins }`, split, merge, insert, remove, attrs). The session adds
+
+```js
+people: [{ pid, name, colour, kind: "person" | "agent" }]   // colour: an index into the fixed caret palette
+carets: { [pid]: { blockId, offset, selEnd? } }             // content offsets, like asks
+```
+
+Carets use the same block ids and content offsets as asks, so they follow edits the same way. Every ask has `by` and every answer `answeredBy`; each operation the host sends carries `by`, so Undo on a name tag undoes only that person's change. The file on disk stays plain Markdown: ids, people and carets live only in the session, and the room stores no script text.
 
 ## Files, recent scripts and the prompter link
 
