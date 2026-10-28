@@ -825,10 +825,11 @@ function placeBar(r) {
   bar.style.setProperty("--bar-y", y + "px");
 }
 function showBar() {
-  if (bar.contains(document.activeElement)) return;
+  if (bar.contains(document.activeElement) || !shotCard.hidden) return;
   const s = currentSelection();
   if (!s) { hideBar(); return; }
   barSel = s;
+  $("#addBroll").disabled = !canAddBroll() || !spokenSelection(s.range).length;
   const n = D.countWords(s.quote);
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
@@ -837,8 +838,8 @@ function showBar() {
 function hideBar() { bar.hidden = true; $("#askInput").value = ""; barSel = null; }
 let selTimer = 0;
 document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); });
-addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); if (!card.hidden && cardFor) positionCard(cardFor); }, { passive: true });
-addEventListener("resize", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); });
+addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
+addEventListener("resize", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); positionShotCard(); });
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
 bar.addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) makeAsk(b.dataset.act); });
 $("#askForm").addEventListener("submit", (e) => {
@@ -1403,6 +1404,8 @@ async function saveAs() {
       if (handle.name !== state.name) {
         store.del(draftKey());
         if (broll.link) idbSet(brollKey(handle.name), broll.link);
+        const kept = store.get(listKey());
+        if (typeof kept === "string") { store.set(listKey(handle.name), kept); store.del(listKey()); }
         state.name = handle.name;
       }
       state.handle = handle;
@@ -1615,7 +1618,7 @@ document.addEventListener("keydown", (e) => {
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); if (broll.lit) lightShot(broll.lit, false); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); closeShotCard(); if (broll.lit) lightShot(broll.lit, false); } });
 addEventListener("beforeunload", (e) => {
   persistDraft();
   flushSave();
@@ -1629,7 +1632,7 @@ $$("[data-icon]").forEach((el) => {
   if (el.classList.contains("menu-action__copy") || el.tagName === "BUTTON") el.innerHTML = icon(el.dataset.icon);
   else el.outerHTML = icon(el.dataset.icon);
 });
-$$(".edit-bar__button").forEach((b) => (b.innerHTML = icon(ACT_ICON[b.dataset.act]) + esc(D.ACTIONS[b.dataset.act].name)));
+$$(".edit-bar__button[data-act]").forEach((b) => (b.innerHTML = icon(ACT_ICON[b.dataset.act]) + esc(D.ACTIONS[b.dataset.act].name)));
 
 
 /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
@@ -1656,6 +1659,7 @@ function syncFlags() {
 // Leaving a script: the old list goes with it.
 function closeBroll() {
   broll.token++;
+  closeShotCard();
   ui.scriptY = 0;
   Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
   renderBroll();
@@ -1676,8 +1680,10 @@ async function readBroll(token, ask) {
   broll.status = "loading";
   renderBroll();
   let text = null;
+  const kept = link.handle ? null : store.get(listKey());
   try {
-    if (link.handle) {
+    if (typeof kept === "string") text = kept;
+    else if (link.handle) {
       if (!(await permitted(link.handle, ask, "read"))) {
         if (token === broll.token) { broll.status = "permission"; renderBroll(); }
         return;
@@ -1826,7 +1832,12 @@ scriptEl.addEventListener("click", (e) => {
   const act = e.target.closest(".shot-frame [data-act]");
   if (act) { e.preventDefault(); return act.dataset.act === "keep" ? keepSketch(act.dataset.b) : undoSketch(act.dataset.b); }
   const t = e.target.closest(".shot-frame__jump");
-  if (t) lightShot(t.dataset.b, false);
+  if (!t) return;
+  // Lighting a shot also opens its card to change or remove it; a second click puts both away.
+  const id = t.dataset.b;
+  lightShot(id, false);
+  if (broll.lit === id) openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
+  else closeShotCard();
 });
 // Frames are not text: a copy that runs across one gives only the script's words.
 scriptEl.addEventListener("copy", (e) => {
@@ -1869,6 +1880,7 @@ async function setLink(link) {
   // Changing the list closes the sketch ask made for the old one.
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
+  store.del(listKey());
   broll.link = link;
   broll.flags = {};
   broll.lit = null;
@@ -1882,6 +1894,7 @@ function unlinkBroll() {
   broll.token++;
   // The demo links its list by itself, so unlinking it is remembered.
   idbSet(brollKey(), state.name === SAMPLE.name ? { none: true } : null);
+  store.del(listKey());
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
   Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
@@ -1898,6 +1911,7 @@ function setView(v) {
   store.set("view", ui.view);
   hideBar();
   closeCard();
+  closeShotCard();
   renderView();
   scrollTo({ top: board ? 0 : ui.scriptY });
 }
@@ -1932,7 +1946,8 @@ function boardHead() {
     if (waiting || asking) action = `<span class="board__wait" data-taken="${ask.status === "taken"}"><span class="status-dot"></span>Waiting for sketches<button class="icon-btn" type="button" data-act="cancel" aria-label="Cancel">${icon("x")}</button></span>`;
     else if (!ask && missing.length) action = `<button class="board__ask" type="button" data-act="ask">${icon("sketch")}Ask for sketches</button>`;
   }
-  return `<div class="board__file">${icon("film")}<span class="board__name">${name}</span><button class="board__btn" type="button" data-act="link">Change…</button><button class="board__btn" type="button" data-act="unlink">Unlink</button></div>${action}`;
+  const unsaved = show.saveAs ? `<p class="board__unsaved">Not saved to a file${"showSaveFilePicker" in window ? `<span aria-hidden="true">·</span><button class="board__btn" type="button" data-act="save-list">Save as…</button>` : ""}${broll.err ? `<span class="board__problem" title="${esc(broll.err)}">Not saved</span>` : ""}</p>` : "";
+  return `<div class="board__file">${icon("film")}<span class="board__name">${name}</span><button class="board__btn" type="button" data-act="link">Change…</button><button class="board__btn" type="button" data-act="unlink">Unlink</button></div>${unsaved}${action}`;
 }
 function boardFrame(s, missing) {
   const check = s.check ? '<span class="check-note">Check</span>' : "";
@@ -1967,6 +1982,7 @@ $("#board").addEventListener("click", (e) => {
     else if (a === "unlink") unlinkBroll();
     else if (a === "allow") { const t = ++broll.token; readBroll(t, true); }
     else if (a === "filter") { broll.filter = act.dataset.filter; renderBoard(); }
+    else if (a === "save-list") saveListAs();
     else if (a === "ask") requestSketches();
     else if (a === "cancel") cancelSketches();
     else if (a === "keep") keepSketch(act.dataset.b);
@@ -1975,9 +1991,10 @@ $("#board").addEventListener("click", (e) => {
   }
   const jump = e.target.closest(".frame__jump");
   if (!jump) return;
-  // Back to the script, with this shot's lines lit.
+  // Back to the script, with this shot's lines lit and its card open.
   setView("script");
   lightShot(jump.dataset.b, true);
+  openShotCard({ mode: "edit", id: jump.dataset.b, anchor: shotFrameAnchor(jump.dataset.b) });
 });
 
 /* ---------- Sketch asks: the agent draws the missing frames, the person keeps or undoes each ---------- */
@@ -2073,12 +2090,234 @@ async function writeSketch(id, svg) {
     await writeHandle(link.handle, next);
     broll.text = next;
   } else {
-    // The demo list and lists opened without a file handle are kept in the browser with the link.
-    broll.text = B.setSketch(broll.text, id, svg);
-    link.text = broll.text;
-    await idbSet(brollKey(), link);
+    // The demo list and lists without a file handle are kept in this browser (see keepList).
+    const next = B.setSketch(broll.text, id, svg);
+    keepList(next);
+    broll.text = next;
   }
 }
+
+/* ---------- Add, change and remove a shot (step C3): the shot card ---------- */
+// Lists without a file (the demo, a list opened without a handle, a new list whose picker was cancelled) are kept
+// in this browser's local storage, per script, next to the draft. Discarding script changes leaves them alone.
+const listKey = (name = state.name) => `brollList:${name}`;
+function keepList(text, key = listKey()) {
+  if (!store.set(key, text)) throw new Error("This browser could not keep the B-roll list.");
+}
+// One write to the list at a time (the same queue as the sketch Keep): read the newest text, change it, write it.
+function changeList(mutate) {
+  const token = broll.token, link = broll.link, key = listKey();
+  const run = brollWrites.then(async () => {
+    if (!link || token !== broll.token) throw new Error("The B-roll list changed.");
+    if (link.handle) {
+      if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
+      const now = await (await link.handle.getFile()).text();
+      const next = mutate(now);
+      if (next !== now) await writeHandle(link.handle, next);
+      return next;
+    }
+    const next = mutate(broll.text);
+    keepList(next, key);
+    return next;
+  });
+  brollWrites = run.catch(() => {});
+  return run.then((next) => {
+    if (token !== broll.token) return next;
+    broll.flags = brollFlags() || {};
+    adoptBroll(next);
+    syncFlags();
+    return next;
+  });
+}
+// The first Add without a list makes one: a file next to the script where the browser can, else kept here.
+async function startList() {
+  const text = B.newList(D.titleOf(state.doc) || baseName());
+  const name = `${baseName()}-broll.md`;
+  const token = ++broll.token;
+  let link = null;
+  if ("showSaveFilePicker" in window) {
+    try {
+      const pick = (o) => window.showSaveFilePicker({ suggestedName: name, types: FILE_TYPES, ...o });
+      let handle;
+      try { handle = await pick(state.handle ? { startIn: state.handle } : {}); }
+      catch (e) { if (e?.name === "TypeError") handle = await pick({}); else throw e; }
+      const run = brollWrites.then(() => writeHandle(handle, text));
+      brollWrites = run.catch(() => {});
+      await run;
+      link = { handle, name: handle.name };
+    } catch { link = null; } // cancelled or refused: the list is kept in the browser
+  }
+  if (token !== broll.token) throw new Error("The script changed.");
+  if (!link) { link = { name, draft: true }; keepList(text); }
+  else store.del(listKey());
+  Object.assign(broll, { link, flags: {}, lit: null, saving: {}, problem: {} });
+  idbSet(brollKey(), link);
+  adoptBroll(text);
+}
+// "Not saved to a file · Save as…": the kept list becomes a file and the linked list.
+async function saveListAs() {
+  if (broll.status !== "ok" || !broll.link || broll.link.handle || !("showSaveFilePicker" in window)) return;
+  const token = broll.token;
+  let handle;
+  const pick = (o) => window.showSaveFilePicker({ suggestedName: broll.link.name || `${baseName()}-broll.md`, types: FILE_TYPES, ...o });
+  try {
+    try { handle = await pick(state.handle ? { startIn: state.handle } : {}); }
+    catch (e) { if (e?.name === "TypeError") handle = await pick({}); else throw e; }
+  } catch { return; }
+  const run = brollWrites.then(() => writeHandle(handle, broll.text));
+  brollWrites = run.catch(() => {});
+  try { await run; } catch (e) { if (token === broll.token) { broll.err = e?.message || "Could not save the list."; renderBoard(); } return; }
+  if (token !== broll.token) return;
+  broll.link = { handle, name: handle.name };
+  broll.err = "";
+  idbSet(brollKey(), broll.link);
+  store.del(listKey());
+  renderBroll();
+}
+
+// The spoken paras a selection touches, with the selected part of each (the matcher only reads spoken paras).
+function spokenSelection(range) {
+  if (!state.doc || !range) return [];
+  const spoken = new Set(B.spokenBlocks(state.doc).map((b) => b.id));
+  const out = [];
+  for (const el of $$(".block", scriptEl)) {
+    if (!range.intersectsNode(el) || !spoken.has(el.dataset.id) || el.closest("details:not([open])")) continue;
+    const content = readContent(el);
+    const start = el.contains(range.startContainer) ? offsetIn(el, range.startContainer, range.startOffset) : 0;
+    const end = el.contains(range.endContainer) ? offsetIn(el, range.endContainer, range.endOffset) : content.length;
+    const snap = D.snapToWords(content, start, end);
+    if (snap.end > snap.start) out.push({ id: el.dataset.id, start: snap.start, end: snap.end });
+  }
+  return out;
+}
+const canAddBroll = () => broll.status === "ok" || broll.status === "none";
+
+const shotCard = $("#shotCard");
+const sc = { mode: "add", id: null, sel: null, anchor: null, kind: "broll", busy: false };
+function renderShotCard() {
+  for (const b of $$("#scKind button")) b.setAttribute("aria-pressed", String(b.dataset.kind === sc.kind));
+  $("#scHowField").hidden = sc.kind === "screen";
+  $("#scSave").disabled = sc.busy || !$("#scWhat").value.trim();
+  $("#scRemove").disabled = sc.busy;
+}
+function positionShotCard() {
+  if (shotCard.hidden || !sc.anchor || matchMedia("(max-width: 40rem)").matches) return;
+  const a = sc.anchor();
+  if (!a) return;
+  const rects = a.getClientRects();
+  const r = rects[rects.length - 1] || a.getBoundingClientRect();
+  const w = shotCard.offsetWidth, ht = shotCard.offsetHeight;
+  const x = Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8));
+  let y = r.bottom + 8;
+  if (y + ht > innerHeight - 8) y = Math.max($(".top").getBoundingClientRect().bottom + 8, r.top - ht - 8);
+  shotCard.style.setProperty("--card-x", x + "px");
+  shotCard.style.setProperty("--card-y", y + "px");
+}
+function openShotCard(o) {
+  closeCard();
+  hideBar();
+  const s = o.mode === "edit" ? shotById(o.id) : null;
+  if (o.mode === "edit" && !s) return;
+  Object.assign(sc, { mode: o.mode, id: s?.id ?? null, sel: o.sel ?? null, anchor: o.anchor, kind: s?.kind || "broll", busy: false });
+  $("#scTitle").textContent = s ? `${s.id} · ${KIND_NAME[s.kind]}` : "Add B-roll";
+  $("#scWhat").value = s?.what || "";
+  $("#scHow").value = s?.how || "";
+  $("#scRemove").hidden = !s;
+  $("#scSave").textContent = s ? "Save" : "Add";
+  $("#scProblem").hidden = true;
+  renderShotCard();
+  shotCard.hidden = false;
+  positionShotCard();
+  $("#scWhat").focus({ preventScroll: true });
+}
+function closeShotCard(refocus = false) {
+  if (shotCard.hidden) return;
+  shotCard.hidden = true;
+  const id = sc.mode === "edit" ? sc.id : null;
+  sc.anchor = null;
+  if (refocus && id) scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+}
+function failShotCard(e) {
+  sc.busy = false;
+  const p = $("#scProblem");
+  p.hidden = false;
+  p.title = e?.message || "Could not save the B-roll list.";
+  renderShotCard();
+}
+$("#addBroll").addEventListener("click", () => {
+  const s = barSel;
+  if (!s?.range || !canAddBroll()) return;
+  const sel = spokenSelection(s.range);
+  if (!sel.length) return;
+  const range = s.range.cloneRange();
+  openShotCard({ mode: "add", sel, anchor: () => range });
+});
+$("#scKind").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-kind]");
+  if (!b || sc.busy) return;
+  sc.kind = b.dataset.kind;
+  renderShotCard();
+});
+$("#scWhat").addEventListener("input", renderShotCard);
+// One line that can wrap: Enter adds (or saves) instead of starting a new line.
+$("#scWhat").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); shotCard.requestSubmit(); }
+});
+shotCard.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeShotCard(true); } });
+$("#scCancel").addEventListener("click", () => closeShotCard(true));
+shotCard.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (sc.busy || !state.doc) return;
+  const what = $("#scWhat").value.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!what) return $("#scWhat").focus();
+  const how = sc.kind === "screen" ? "" : $("#scHow").value.replace(/\s+/g, " ").trim().slice(0, 120);
+  const { kind, mode, id } = sc;
+  sc.busy = true;
+  $("#scProblem").hidden = true;
+  renderShotCard();
+  try {
+    if (mode === "add") {
+      const over = B.overFor(state.doc, sc.sel || []);
+      if (broll.status === "none") await startList();
+      if (broll.status !== "ok") throw new Error("The B-roll list can't be read.");
+      // The id comes from the newest text, so a file changed elsewhere still gets a free one.
+      await changeList((md) => {
+        const now = B.parseBroll(md);
+        return B.addShot(md, { id: B.nextShotId(now.shots, kind, now.sketches), kind, what, over, how });
+      });
+    } else {
+      await changeList((md) => B.updateShot(md, id, { kind, what, how }));
+    }
+    sc.busy = false;
+    closeShotCard(true);
+  } catch (err) { failShotCard(err); }
+});
+$("#scRemove").addEventListener("click", async () => {
+  if (sc.busy || sc.mode !== "edit") return;
+  const id = sc.id;
+  sc.busy = true;
+  renderShotCard();
+  try {
+    await changeList((md) => B.removeShot(md, id));
+    // A sketch the agent was asked for, or one waiting for Keep or Undo, goes with the shot.
+    const ask = sketchAsk();
+    if (ask?.shots?.some((s) => s.id === id) && !ask.answer?.done?.[id]) {
+      ask.answer ??= { kind: "sketches", sketches: {}, done: {} };
+      delete ask.answer.sketches[id];
+      ask.answer.done[id] = "undone";
+      settleSketches(ask);
+      changed();
+    }
+    delete broll.problem[id];
+    if (broll.lit === id) broll.lit = null;
+    sc.busy = false;
+    closeShotCard();
+    renderBroll();
+  } catch (err) { failShotCard(err); }
+});
+// A press outside the card closes it (frames reopen it on their own click).
+document.addEventListener("pointerdown", (e) => { if (!shotCard.hidden && !shotCard.contains(e.target)) closeShotCard(); }, true);
+const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
 
 /* ---------- Your own agent over MCP (live relay) ---------- */
 const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;

@@ -92,6 +92,8 @@
     <button class="edit-bar__button" type="button" data-act="explain"></button>
     <button class="edit-bar__button" type="button" data-act="facts"></button>
     <span class="edit-bar__sep"></span>
+    <button class="edit-bar__button" type="button" id="addBroll"><span data-icon="film"></span>Add B-roll</button>
+    <span class="edit-bar__sep"></span>
     <form class="edit-bar__ask" id="askForm"><input id="askInput" type="text" placeholder="Ask…" aria-label="Ask about this selection" autocomplete="off" maxlength="500"><button type="submit" aria-label="Send" data-icon="send"></button></form>
   </div>
 </div>
@@ -102,6 +104,19 @@
   <div class="voice-card__actions"><button class="small-btn" type="button" id="vcKeep">Keep mine</button><button class="small-btn use" type="button" id="vcUse">Use this</button></div>
 </div>
 
+
+<form class="voice-card shot-card" id="shotCard" role="dialog" aria-labelledby="scTitle" hidden novalidate>
+  <p class="shot-card__title" id="scTitle">Add B-roll</p>
+  <div class="shot-card__kinds" id="scKind" role="group" aria-label="Kind">
+    <button type="button" data-kind="broll" aria-pressed="true">B-roll</button>
+    <button type="button" data-kind="motion" aria-pressed="false">Motion plate</button>
+    <button type="button" data-kind="screen" aria-pressed="false">Screen recording</button>
+  </div>
+  <label class="shot-card__field"><span>What to show</span><textarea id="scWhat" rows="2" maxlength="200" required autocomplete="off"></textarea></label>
+  <label class="shot-card__field" id="scHowField"><span>How to make it</span><input id="scHow" type="text" maxlength="120" autocomplete="off"></label>
+  <p class="shot-card__problem" id="scProblem" hidden>Not saved</p>
+  <div class="voice-card__actions"><button class="small-btn shot-card__remove" type="button" id="scRemove" hidden>Remove shot</button><button class="small-btn" type="button" id="scCancel">Cancel</button><button class="small-btn use" type="submit" id="scSave">Add</button></div>
+</form>
 
 <input type="file" id="fileInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
 <input type="file" id="brollInput" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>

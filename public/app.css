@@ -380,7 +380,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__ask button { display: grid; place-items: center; inline-size: 1.75rem; block-size: 1.75rem; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); cursor: pointer; }
 .edit-bar__ask button:active { background: var(--pressed); }
 @media (hover: hover) and (pointer: fine) {
-  .edit-bar__button:hover, .edit-bar__ask button:hover { background: var(--hover); }
+  .edit-bar__button:enabled:hover, .edit-bar__ask button:hover { background: var(--hover); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .edit-bar:not([hidden]) { animation: lift-in 160ms var(--ease-out); }
@@ -407,7 +407,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .voice-card__actions { display: flex; gap: 0.35rem; justify-content: flex-end; }
 .voice-card__actions .use { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .voice-card__actions .use:active { background: color-mix(in oklch, var(--accent), oklch(0% 0 none) 12%); }
-@media (hover: hover) and (pointer: fine) { .voice-card__actions .use:hover { background: color-mix(in oklch, var(--accent), oklch(100% 0 none) 10%); } }
+@media (hover: hover) and (pointer: fine) { .voice-card__actions .use:enabled:hover { background: color-mix(in oklch, var(--accent), oklch(100% 0 none) 10%); } }
 @media (prefers-reduced-motion: no-preference) { .voice-card:not([hidden]) { animation: lift-in 160ms var(--ease-out); } }
 @media (width < 40rem) {
   .voice-card { inset-block: auto max(0.5rem, env(safe-area-inset-bottom, 0px)); inset-inline: 0.5rem; inline-size: auto; }
@@ -614,3 +614,38 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .frame__jump:hover .frame__img { box-shadow: inset 0 0 0 1px var(--line-strong); }
   .frame[aria-current="true"] .frame__jump:hover .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
 }
+
+/* ---------- Shot card: add, change or remove a B-roll shot (in the style of the voice card) ---------- */
+.shot-card { inline-size: min(23rem, calc(100vw - 1rem)); gap: 0.6rem; }
+.shot-card__title { font-weight: 600; font-variant-numeric: tabular-nums; }
+.shot-card__kinds { justify-self: start; display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--line-strong); border-radius: calc(var(--radius) + 2px); }
+.shot-card__kinds button {
+  min-block-size: 1.75rem; padding-inline: 0.55rem; border: 0; border-radius: var(--radius-small);
+  background: transparent; color: var(--muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.shot-card__kinds button[aria-pressed="true"] { background: var(--pressed); color: var(--text); }
+.shot-card__kinds button:active { background: var(--pressed); }
+.shot-card__field { display: grid; gap: 0.25rem; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
+.shot-card__field :is(textarea, input) {
+  inline-size: 100%; padding: 0.4rem 0.55rem; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--raised); color: var(--text); font: inherit; font-size: max(16px, 1rem); font-weight: 400; line-height: 1.4;
+}
+.shot-card__field textarea { resize: none; field-sizing: content; min-block-size: calc(2lh + 0.8rem + 2px); max-block-size: calc(6lh + 0.8rem + 2px); }
+.shot-card__field :is(textarea, input):focus-visible { outline-offset: 0; }
+@media (pointer: fine) { .shot-card__field :is(textarea, input) { font-size: 0.9rem; } }
+.shot-card__problem { color: var(--accent-ink); font-size: 0.8rem; font-weight: 600; }
+.shot-card__remove { margin-inline-end: auto; color: var(--muted); }
+.shot-card .small-btn:disabled { opacity: 0.5; cursor: default; }
+.shot-card .small-btn:disabled:active { background: transparent; }
+.shot-card .use:disabled:active { background: var(--accent); }
+@media (hover: hover) and (pointer: fine) {
+  .shot-card__kinds button[aria-pressed="false"]:hover { background: var(--hover); color: var(--text); }
+  .shot-card__remove:enabled:hover { color: var(--text); }
+}
+.edit-bar__button:disabled { color: var(--faint); cursor: default; }
+.edit-bar__button:disabled svg { color: inherit; }
+.edit-bar__button:disabled:active { background: transparent; }
+
+/* A list kept in the browser: "Not saved to a file · Save as…". */
+.board__unsaved { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; color: var(--faint); font-size: 0.8rem; }
+.board__problem { color: var(--accent-ink); font-weight: 600; }

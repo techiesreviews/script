@@ -5,6 +5,7 @@ import { parse, contentOf, blockById, setContent, cloneDoc, checkAnswer, ACTIONS
 import {
   parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
+  addShot, updateShot, removeShot, nextShotId, overFor, newList,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -307,11 +308,120 @@ test("an empty or unknown Kind cell falls back to the heading and the How text",
 });
 
 test("the storyboard header offers Unlink whenever a list is linked, also when it can't be read", () => {
-  const link = { name: "list.md" };
+  const link = { name: "list.md", handle: {} };
+  const none = { link: false, file: false, note: false, allow: false, ask: false, saveAs: false };
   for (const status of ["ok", "loading", "error", "permission"]) assert.equal(boardHeadState(link, status).file, true, status);
-  assert.deepEqual(boardHeadState(link, "error"), { link: false, file: true, note: true, allow: false, ask: false });
-  assert.deepEqual(boardHeadState(link, "permission"), { link: false, file: true, note: false, allow: true, ask: false });
-  assert.deepEqual(boardHeadState(link, "ok"), { link: false, file: true, note: false, allow: false, ask: true });
-  assert.deepEqual(boardHeadState(link, "loading"), { link: false, file: true, note: false, allow: false, ask: false });
-  for (const [l, st] of [[null, "none"], [null, "ok"], [link, "none"]]) assert.deepEqual(boardHeadState(l, st), { link: true, file: false, note: false, allow: false, ask: false });
+  assert.deepEqual(boardHeadState(link, "error"), { ...none, file: true, note: true });
+  assert.deepEqual(boardHeadState(link, "permission"), { ...none, file: true, allow: true });
+  assert.deepEqual(boardHeadState(link, "ok"), { ...none, file: true, ask: true });
+  assert.deepEqual(boardHeadState(link, "loading"), { ...none, file: true });
+  for (const [l, st] of [[null, "none"], [null, "ok"], [link, "none"]]) assert.deepEqual(boardHeadState(l, st), { ...none, link: true });
+  // A list kept in the browser (the demo, or no file handle): "Not saved to a file · Save as…".
+  assert.deepEqual(boardHeadState({ demo: true, name: "demo.md" }, "ok"), { ...none, file: true, ask: true, saveAs: true });
+  assert.equal(boardHeadState({ name: "x.md", draft: true }, "loading").saveAs, false);
+});
+
+/* ---------- Step C3: shots added, changed and removed in the editor ---------- */
+const rowRe = (id) => new RegExp(`^\\| ${id} \\|.*\\n`, "m");
+
+test("addShot: one new row in the main table or Screen recordings; the rest of the file is unchanged byte for byte", () => {
+  const b9 = addShot(DEMO, { id: "B9", kind: "broll", what: "A | pipe", over: '"So, three things."', how: "" });
+  assert.match(b9, /\n\| B8 \|[^\n]*\n\| B9 \| A \\\| pipe \| "So, three things\." \|  \|\n/);
+  assert.equal(b9.replace(rowRe("B9"), ""), DEMO);
+  assert.deepEqual(parseBroll(b9).shots.find((s) => s.id === "B9"), { id: "B9", what: "A | pipe", over: '"So, three things."', how: "", kind: "broll" });
+  const s3 = addShot(DEMO, { id: "S3", kind: "screen", what: "Typing", over: '"So, three things."', how: "ignored" });
+  assert.match(s3, /\n\| S2 \|[^\n]*\n\| S3 \| Typing \| "So, three things\." \|\n/);
+  assert.equal(s3.replace(rowRe("S3"), ""), DEMO);
+  assert.equal(parseBroll(s3).shots.at(-1).kind, "screen");
+  // Motion plate without How: written so it reads back as motion.
+  const m = addShot(DEMO, { id: "B9", kind: "motion", what: "Map", over: '"x"', how: "" });
+  assert.equal(parseBroll(m).shots.find((s) => s.id === "B9").kind, "motion");
+  assert.match(m, /\| B9 \| Map \| "x" \| Motion plate \|/);
+  // CRLF files stay CRLF.
+  const crlf = DEMO.replace(/\n/g, "\r\n");
+  assert.equal(addShot(crlf, { id: "B9", kind: "broll", what: "x", over: '"y"' }).replace(/^\| B9 \|.*\r\n/m, ""), crlf);
+});
+
+test("addShot: creates Screen recordings before Sketches, or a main table, when missing", () => {
+  const list = "# List\n\nNotes stay.\n\n| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n| B1 | x | \"y\" | Slide |\n\n## Sketches\n\n```svg B1\n<svg viewBox=\"0 0 260 140\">\n<path class=\"s\" d=\"M0 0L9 9\"/>\n</svg>\n```\n";
+  const out = addShot(list, { id: "S1", kind: "screen", what: "Rec", over: '"z"' });
+  assert.equal(out, list.replace("\n## Sketches", "\n## Screen recordings\n\n| # | What to record | Over (A-roll line) |\n| --- | --- | --- |\n| S1 | Rec | \"z\" |\n\n## Sketches"));
+  assert.deepEqual(parseBroll(out).shots.map((s) => [s.id, s.kind]), [["B1", "broll"], ["S1", "screen"]]);
+  assert.deepEqual(Object.keys(parseBroll(out).sketches), ["B1"]);
+  const bare = "# Only notes\n\nNothing here yet.\n";
+  const made = addShot(bare, { id: "B1", kind: "broll", what: "x", over: '"y"', how: "Stock" });
+  assert.equal(made, "# Only notes\n\nNothing here yet.\n\n| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n| B1 | x | \"y\" | Stock |\n");
+  // A new list has both tables; shots go into the right one.
+  const fresh = addShot(addShot(newList("My | video"), { id: "B1", kind: "broll", what: "a", over: '"b"' }), { id: "S1", kind: "screen", what: "c", over: '"d"' });
+  assert.match(fresh, /^# My \\\| video · B-roll list\n/);
+  assert.deepEqual(parseBroll(fresh).shots.map((s) => [s.id, s.kind]), [["B1", "broll"], ["S1", "screen"]]);
+  // A list with a Kind column (an export) keeps every kind in its one table.
+  const exported = exportBroll(parseBroll(DEMO).shots, {});
+  const withS = addShot(exported, { id: "S3", kind: "screen", what: "x", over: '"y"' });
+  assert.doesNotMatch(withS, /## Screen recordings/);
+  assert.match(withS, /\| S3 \| Screen recording \| x \| "y" \|  \|  \|\n$/);
+});
+
+test("updateShot changes the row in place; removeShot takes the row and its sketch; other lines stay the same", () => {
+  const up = updateShot(DEMO, "B2", { what: "A new | description", how: "Screen capture" });
+  assert.equal(up.split("\n").filter((l, i) => l !== DEMO.split("\n")[i]).length, 1);
+  assert.match(up, /\n\| B2 \| A new \\\| description \| "Most of us write a video like a blog post\." \| Screen capture \|\n/);
+  assert.equal(parseBroll(up).shots[1].what, "A new | description");
+  assert.equal(updateShot(DEMO, "B2", { what: parseBroll(DEMO).shots[1].what }), DEMO); // nothing changed, nothing written
+  assert.equal(updateShot(DEMO, "Z1", { what: "x" }), DEMO);
+  // Kind changes: motion → B-roll drops the written default; B-roll → screen moves the row to Screen recordings.
+  const m = addShot(DEMO, { id: "B9", kind: "motion", what: "Map", over: '"x"' });
+  assert.equal(parseBroll(updateShot(m, "B9", { kind: "broll" })).shots.find((s) => s.id === "B9").kind, "broll");
+  const moved = updateShot(DEMO, "B1", { kind: "screen" });
+  assert.deepEqual(parseBroll(moved).shots.map((s) => s.id), ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "S1", "S2", "B1"]);
+  assert.equal(parseBroll(moved).shots.at(-1).kind, "screen");
+  // With a Kind column the kind changes in place.
+  const exported = exportBroll(parseBroll(DEMO).shots, {});
+  assert.match(updateShot(exported, "B1", { kind: "motion" }), /\n\| B1 \| Motion plate \| /);
+  // Remove: the row and the sketch block (with the blank line before it) go; everything else is byte for byte the same.
+  const fence = /\n\n```svg B4\n[\s\S]*?\n```/;
+  const gone = removeShot(DEMO, "B4");
+  assert.equal(gone, DEMO.replace(rowRe("B4"), "").replace(fence, ""));
+  assert.ok(!("B4" in parseBroll(gone).sketches));
+  assert.equal(parseBroll(gone).shots.length, 9);
+  assert.equal(removeShot(DEMO.replace(/\n/g, "\r\n"), "B4"), gone.replace(/\n/g, "\r\n"));
+});
+
+test("next free id: B<n> for B-roll and motion, S<n> for screen, after the highest in use", () => {
+  const { shots, sketches } = parseBroll(DEMO);
+  assert.equal(nextShotId(shots, "broll"), "B9");
+  assert.equal(nextShotId(shots, "motion"), "B9");
+  assert.equal(nextShotId(shots, "screen"), "S3");
+  assert.equal(nextShotId([], "broll"), "B1");
+  assert.equal(nextShotId(shots.filter((s) => s.id !== "B8"), "broll", { ...sketches, B12: "<svg/>" }), "B13");
+});
+
+test("Over from a selection matches back to the same blocks: one block, several blocks, a quote found earlier first", () => {
+  const doc = parse(SCRIPT);
+  const list = spokenBlocks(doc);
+  const at = (i) => ({ id: list[i].id, text: contentOf(blockById(doc, list[i].id)) });
+  // One block, a long selection from its start: the first 8 words and "…".
+  const b = at(0);
+  const one = overFor(doc, [{ id: b.id, start: 0, end: b.text.length }]);
+  assert.equal(one, `"${b.text.split(/\s+/).slice(0, 8).join(" ")}…"`);
+  assert.deepEqual(matchOver(list, one), [b.id]);
+  // A short selection inside a line: just those words, no "…".
+  const mid = b.text.indexOf("deadline");
+  assert.equal(overFor(doc, [{ id: b.id, start: mid, end: mid + "deadline".length }]), '"deadline."');
+  // Several blocks: a range from the first words to the last block's first words.
+  const c = at(1), d = at(3);
+  const range = overFor(doc, [{ id: c.id, start: 0, end: c.text.length }, { id: at(2).id, start: 0, end: 5 }, { id: d.id, start: 0, end: 3 }]);
+  assert.match(range, /^"[^"]+…" through "[^"]+"$/);
+  assert.deepEqual(matchOver(list, range), [c.id, at(2).id, d.id]);
+  // A quote that would first match an earlier line takes more words.
+  const tricky = parse("# T\n\n## 1 · A (0:00–0:10)\n\nWe fixed the roof and then we fixed the roof again.\n\nLater that day we fixed the roof again with new tiles.\n\nStep two is hard and we did it in the end.\n\nThen a break.\n\nStep two is hard and we did it anyway, said the team.\n");
+  const tl = spokenBlocks(tricky);
+  const second = contentOf(blockById(tricky, tl[1].id));
+  const s0 = second.indexOf("we fixed");
+  const q = overFor(tricky, [{ id: tl[1].id, start: s0, end: s0 + "we fixed the roof again".length }]);
+  assert.equal(q, '"we fixed the roof again with…"');
+  assert.deepEqual(matchOver(tl, q), [tl[1].id]);
+  const r = overFor(tricky, [{ id: tl[2].id, start: 0, end: 10 }, { id: tl[3].id, start: 0, end: 4 }, { id: tl[4].id, start: 0, end: 4 }]);
+  assert.match(r, / through "Step two is hard and we did it anyway,…"$/);
+  assert.deepEqual(matchOver(tl, r), [tl[2].id, tl[3].id, tl[4].id]);
 });

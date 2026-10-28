@@ -29,8 +29,15 @@ const kindOf = (cell) => (/screen/i.test(cell) ? "screen" : /motion/i.test(cell)
  * An optional "Kind" column (B-roll, Motion plate, Screen recording) decides the kind on its own.
  */
 export function parseBroll(markdown) {
+  const { rows, sketches } = scan(markdown);
+  return { shots: rows.map((r) => r.shot), sketches };
+}
+
+// Reads the list once, keeping where everything is: the tables (header, last row, columns), each row's line
+// and shot, the fenced blocks and the headings. parseBroll and the row edits below share it, so they agree on ids.
+function scan(markdown) {
   const lines = String(markdown ?? "").replace(/\r\n?/g, "\n").split("\n");
-  const shots = [], sketches = {}, seen = new Set();
+  const tables = [], rows = [], sketches = {}, fences = [], headings = [], seen = new Set();
   let heading = "";
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -43,34 +50,40 @@ export function parseBroll(markdown) {
         if (c && c[1][0] === f[1][0] && c[1].length >= f[1].length) break;
         body.push(lines[j]);
       }
-      if (f[2].toLowerCase() === "svg" && f[3]) {
+      const svgFence = f[2].toLowerCase() === "svg" && !!f[3];
+      fences.push({ start: i, end: Math.min(j, lines.length - 1), id: svgFence ? f[3] : "" });
+      if (svgFence) {
         const svg = sanitizeSvg(body.join("\n"));
         if (svg) sketches[f[3]] = svg;
       }
       i = j;
       continue;
     }
-    const h = line.match(/^[ \t]{0,3}#{1,6}[ \t]+(.*)$/);
-    if (h) { heading = h[1]; continue; }
+    const h = line.match(/^[ \t]{0,3}(#{1,6})[ \t]+(.*)$/);
+    if (h) { heading = h[2]; headings.push({ i, level: h[1].length, text: h[2] }); continue; }
     if (!/^[ \t]*\|/.test(line) || !SEP_ROW_RE.test(lines[i + 1] ?? "")) continue;
-    const col = columns(cells(line));
+    const head = cells(line);
+    const col = columns(head);
+    const start = i;
     i += 1;
     const table = [];
-    while (i + 1 < lines.length && /^[ \t]*\|/.test(lines[i + 1])) table.push(cells(lines[++i]));
+    while (i + 1 < lines.length && /^[ \t]*\|/.test(lines[i + 1])) table.push({ i: ++i, row: cells(lines[i]) });
     if (col.what < 0 || col.over < 0) continue;
     const screen = /screen/i.test(heading) || col.record;
-    for (const row of table) {
+    const t = { start, end: i, col, width: head.length, screen };
+    tables.push(t);
+    for (const { i: at, row } of table) {
       const get = (k) => (col[k] >= 0 ? clean(row[col[k]] ?? "") : "");
       const what = get("what"), over = get("over"), how = get("how");
       if (!what && !over) continue;
       // Ids double as sketch fence names: no spaces, at most 20 characters.
-      let id = (get("id") || `#${shots.length + 1}`).replace(/\s+/g, "-").slice(0, 20);
+      let id = (get("id") || `#${rows.length + 1}`).replace(/\s+/g, "-").slice(0, 20);
       for (let n = 2; seen.has(id); n++) id = `${get("id") || "#"}·${n}`;
       seen.add(id);
-      shots.push({ id, what, over, how, kind: kindOf(get("kind")) || (screen ? "screen" : /motion/i.test(how) ? "motion" : "broll") });
+      rows.push({ i: at, table: t, shot: { id, what, over, how, kind: kindOf(get("kind")) || (screen ? "screen" : /motion/i.test(how) ? "motion" : "broll") } });
     }
   }
-  return { shots, sketches };
+  return { lines, tables, rows, sketches, fences, headings };
 }
 
 /* ---------- Match "Over" to the spoken blocks ---------- */
@@ -294,15 +307,16 @@ export function checkSketch(ask, args) {
 
 /* ---------- The storyboard header: what it offers for the linked list's state ---------- */
 /**
- * boardHeadState(link, status) → { link, file, note, allow, ask }
+ * boardHeadState(link, status) → { link, file, note, allow, ask, saveAs }
  * link: only "Link B-roll list…" (nothing linked). file: the file row with its name, "Change…" and "Unlink",
  * shown whenever a list is linked, also when it can't be read. note: "Couldn't open …". allow: "Allow reading …".
- * ask: room for "Ask for sketches" or the waiting state.
+ * ask: room for "Ask for sketches" or the waiting state. saveAs: "Not saved to a file · Save as…" (a list kept
+ * in the browser: the demo, one opened without a file handle, or a new one whose save picker was cancelled).
  */
 export function boardHeadState(link, status) {
-  const out = { link: false, file: false, note: false, allow: false, ask: false };
+  const out = { link: false, file: false, note: false, allow: false, ask: false, saveAs: false };
   if (!link || status === "none") return { ...out, link: true };
-  return { ...out, file: true, note: status === "error", allow: status === "permission", ask: status === "ok" };
+  return { ...out, file: true, note: status === "error", allow: status === "permission", ask: status === "ok", saveAs: status === "ok" && !link.handle };
 }
 
 /* ---------- Export: the B-roll list and the storyboard ---------- */
@@ -387,4 +401,160 @@ ${BOARD_CSS}
 ${lost.length ? `<h2>Not found in the script</h2>\n<ol>${lost.map(frame).join("\n")}</ol>\n` : ""}</body>
 </html>
 `;
+}
+
+/* ---------- Shots added and changed in the editor (step C3) ---------- */
+// Every edit changes only its own lines: other rows, notes, headings, sketches and the line endings stay as they were.
+function lineEdit(markdown, change) {
+  const src = String(markdown ?? "");
+  const eol = /\r\n/.test(src) ? "\r\n" : "\n";
+  const lines = change(src.replace(/\r\n?/g, "\n"));
+  const out = lines.join("\n");
+  return eol === "\r\n" ? out.replace(/\n/g, "\r\n") : out;
+}
+// A Motion plate without "How" says so, so the list reads it back as motion without a Kind column.
+const howFor = (shot) => (shot.how || "").trim() || (shot.kind === "motion" ? "Motion plate" : "");
+function rowFor(table, shot) {
+  const out = Array(Math.max(table.width, 1)).fill("");
+  const { col } = table;
+  if (col.id >= 0) out[col.id] = shot.id;
+  if (col.kind >= 0) out[col.kind] = KIND_NAME[shot.kind] || KIND_NAME.broll;
+  out[col.what] = shot.what;
+  out[col.over] = shot.over;
+  if (col.how >= 0) out[col.how] = howFor(shot);
+  return `| ${out.map(cell).join(" | ")} |`;
+}
+// Where a shot of this kind goes: the main table, or the Screen recordings table when the main one has no Kind column.
+function tableFor(tables, kind) {
+  const main = tables.find((t) => !t.screen);
+  if (kind !== "screen" || main?.col.kind >= 0) return { table: main, screen: false };
+  return { table: tables.find((t) => t.screen), screen: true };
+}
+// A new table goes before the given headings (outside fences), else at the end, with blank lines around it.
+function insertBlock(lines, headings, before, block) {
+  const at = headings.find(before)?.i ?? -1;
+  if (at >= 0) {
+    const pad = at > 0 && lines[at - 1].trim() ? [""] : [];
+    lines.splice(at, 0, ...pad, ...block, "");
+    return;
+  }
+  let end = lines.length;
+  while (end > 0 && !lines[end - 1].trim()) end--;
+  lines.splice(end, 0, ...(end > 0 ? [""] : []), ...block);
+  if (lines.at(-1) !== "") lines.push("");
+}
+
+/**
+ * addShot(markdown, { id, kind, what, over, how }) → the list with one new row: in the main table, or for a screen
+ * recording in "## Screen recordings" (made when missing, before "## Sketches"). A list whose main table has a
+ * Kind column keeps every kind there. Pipes are escaped.
+ */
+export function addShot(markdown, shot) {
+  return lineEdit(markdown, (text) => {
+    const { lines, tables, headings } = scan(text);
+    const { table, screen } = tableFor(tables, shot.kind);
+    if (table) { lines.splice(table.end + 1, 0, rowFor(table, shot)); return lines; }
+    if (screen) {
+      const head = { width: 3, col: { id: 0, what: 1, over: 2, how: -1, kind: -1 } };
+      insertBlock(lines, headings, (h) => /^sketches\b/i.test(h.text.trim()) && h.level <= 2,
+        ["## Screen recordings", "", "| # | What to record | Over (A-roll line) |", "| --- | --- | --- |", rowFor(head, shot)]);
+    } else {
+      const head = { width: 4, col: { id: 0, what: 1, over: 2, how: 3, kind: -1 } };
+      insertBlock(lines, headings, (h) => h.level === 2,
+        ["| # | What to show | Over (A-roll line) | How to make it |", "| --- | --- | --- | --- |", rowFor(head, shot)]);
+    }
+    return lines;
+  });
+}
+
+/** updateShot(markdown, id, { kind, what, over, how }) → the list with that row changed in place (or moved to the
+ *  Screen recordings table and back when the kind needs it and there is no Kind column). Unknown id: unchanged. */
+export function updateShot(markdown, id, fields) {
+  const { lines, rows } = scan(markdown);
+  const r = rows.find((x) => x.shot.id === id);
+  if (!r) return String(markdown ?? "");
+  const next = { ...r.shot, ...Object.fromEntries(Object.entries(fields || {}).filter(([, v]) => v != null)) };
+  // A B-roll that was a Motion plate only because of the written default loses it.
+  if (next.kind !== "motion" && r.shot.kind === "motion" && next.how === "Motion plate") next.how = "";
+  const { col } = r.table;
+  if (col.kind < 0 && (next.kind === "screen") !== r.table.screen) return addShot(removeRow(markdown, r.i), next);
+  return lineEdit(markdown, () => {
+    const raw = cells(lines[r.i]);
+    while (raw.length < r.table.width) raw.push("");
+    const set = (k, v) => { if (col[k] >= 0 && clean(raw[col[k]] ?? "") !== v) raw[col[k]] = v; };
+    set("what", next.what);
+    set("over", next.over);
+    set("how", howFor(next));
+    if (col.kind >= 0 && kindOf(raw[col.kind]) !== next.kind) raw[col.kind] = KIND_NAME[next.kind];
+    const row = `| ${raw.map(cell).join(" | ")} |`;
+    if (row !== `| ${cells(lines[r.i]).map(cell).join(" | ")} |`) lines[r.i] = row;
+    return lines;
+  });
+}
+function removeRow(markdown, at) {
+  return lineEdit(markdown, (text) => { const lines = text.split("\n"); lines.splice(at, 1); return lines; });
+}
+
+/** removeShot(markdown, id) → the list without that row and without its sketch block. */
+export function removeShot(markdown, id) {
+  const { rows, fences } = scan(markdown);
+  const r = rows.find((x) => x.shot.id === id);
+  if (!r) return String(markdown ?? "");
+  return lineEdit(markdown, (text) => {
+    const lines = text.split("\n");
+    const cuts = [[r.i, r.i]];
+    for (const f of fences) {
+      if (f.id !== id) continue;
+      // The blank line before the block goes with it, so no double gap is left behind.
+      cuts.push([f.start > 0 && !lines[f.start - 1].trim() ? f.start - 1 : f.start, f.end]);
+    }
+    for (const [a, z] of cuts.sort((x, y) => y[0] - x[0])) lines.splice(a, z - a + 1);
+    return lines;
+  });
+}
+
+/** The next free id: B<n> for B-roll and Motion plate, S<n> for Screen recording, after the highest one in use. */
+export function nextShotId(shots, kind, sketches = {}) {
+  const prefix = kind === "screen" ? "S" : "B";
+  const re = new RegExp(`^${prefix}(\\d+)$`, "i");
+  const used = [...shots.map((s) => s.id), ...Object.keys(sketches)];
+  return `${prefix}${Math.max(0, ...used.map((id) => Number(id.match(re)?.[1] ?? 0))) + 1}`;
+}
+
+/** A new list for a script: its title, the main table and the Screen recordings table. */
+export const newList = (title) => `# ${cell(title) || "Script"} · B-roll list\n\n| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n\n## Screen recordings\n\n| # | What to record | Over (A-roll line) |\n| --- | --- | --- |\n`;
+
+const OVER_WORDS = 8;
+/**
+ * overFor(doc, selection) → the Over text for a selection, so matchOver finds the same spoken blocks again.
+ * selection: [{ id, start, end }] for the spoken paras it touches, in order. One block: its first words from the
+ * selection's start (about 8, "…" when cut). Several: '"first words…" through "first words of the last block…"'.
+ * When a quote would first match another line, it takes more words until it doesn't.
+ */
+export function overFor(doc, selection) {
+  const list = spokenBlocks(doc);
+  const sel = (selection || []).filter((s) => list.some((b) => b.id === s.id));
+  if (!sel.length) return "";
+  const a = list.findIndex((b) => b.id === sel[0].id), z = list.findIndex((b) => b.id === sel.at(-1).id);
+  const want = list.slice(a, z + 1).map((b) => b.id).join();
+  const first = contentOf(blockById(doc, sel[0].id));
+  const fromWords = first.slice(sel[0].start).match(/\S+/g) || [];
+  // One block: "…" when fewer words than selected are quoted (or, past the selection, fewer than the line has).
+  const selected = z > a ? fromWords.length : (first.slice(sel[0].start, sel[0].end).match(/\S+/g) || []).length;
+  const quote = (ws, n, whole) => `"${ws.slice(0, n).join(" ")}${n < whole ? "…" : ""}"`;
+  const fromQuote = (n) => quote(fromWords, n, n <= selected ? selected : fromWords.length);
+  const tries = (start, len) => { const out = []; for (let n = Math.max(1, start); n <= len; n++) out.push(n); return out.length ? out : [len]; };
+  let from = "";
+  for (const n of tries(Math.min(OVER_WORDS, selected || fromWords.length), fromWords.length)) {
+    from = fromQuote(n);
+    if (matchOver(list, from)[0] === list[a].id) break;
+  }
+  if (z === a) return from;
+  const lastWords = contentOf(blockById(doc, sel.at(-1).id)).match(/\S+/g) || [];
+  let over = "";
+  for (const m of tries(Math.min(OVER_WORDS, lastWords.length), lastWords.length)) {
+    over = `${from} through ${quote(lastWords, m, lastWords.length)}`;
+    if (matchOver(list, over).join() === want) break;
+  }
+  return over;
 }
