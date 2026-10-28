@@ -10,6 +10,7 @@
 // Links (step G): a "links" answer goes in the same way, as one change; its mark runs from the first new link to the
 // last. On the whole script each paragraph that gets links has its own marked change, as an ask of its own made
 // from the script ask (`from`), so every mark and Undo works as above; the landing is still one Ctrl/Cmd+Z step.
+// Links never land in text other open work points at (open asks, "Sounds like me" marks, marked changes).
 // Pure: no DOM. The editor (app.js) calls these and draws the mark; the room carries the text like any change.
 import * as D from "./doc.js";
 import * as L from "./links.js";
@@ -63,32 +64,58 @@ export function answerResult(kind, { linked = 0, skipped = [] } = {}) {
 }
 const skippedText = (skipped) => (skipped.length ? ` Skipped: ${skipped.map((x) => `${JSON.stringify(x.quote)} (${x.why})`).join("; ")}.` : "");
 /** The agent's answer_ask error when none of its links could go in. */
-export const noLinksError = (skipped) => `No link went in.${skippedText(skipped)} Quote words exactly as they are in the asked text, outside links, headings and reminders.`;
+export const noLinksError = (skipped) => `No link went in.${skippedText(skipped)} Quote words exactly as they are in the asked text, outside links, open asks and changes, headings and reminders.`;
 
+// Where other open work points in a block: open asks on a selection (waiting, taken, answered; not B-roll
+// suggestions, which live beside the lines), open "Sounds like me" marks and the agent's marked changes. Links never
+// land there, so that work keeps its text (and its mark and Undo). `except`: the links ask itself.
+function busyRanges(asks, except) {
+  const out = new Map();
+  const add = (id, start, end) => { if (!out.has(id)) out.set(id, []); out.get(id).push([start, end]); };
+  for (const a of asks || []) {
+    if (a.id === except) continue;
+    if (a.scope === "selection" && D.OPEN_STATUSES.includes(a.status) && a.answer?.kind !== "broll") add(a.blockId, a.start, a.end);
+    else if (isMarked(a)) add(a.blockId, a.start, a.end);
+    else if (a.scope === "script" && a.status === "answered" && Array.isArray(a.answer?.marks)) {
+      for (const m of a.answer.marks) if (m.state === "open" && m.blockId) add(m.blockId, m.start, m.end);
+    }
+  }
+  return out;
+}
 // Blocks a whole-script "Find links" may link: the spoken paragraphs; the other blocks only explain a skip.
-function scriptSegments(doc) {
+function scriptSegments(doc, busy) {
   const spoken = new Set(D.outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para").map((b) => b.id)));
   const segments = [], others = [];
   for (const b of doc.blocks) {
     const content = D.contentOf(b);
-    if (spoken.has(b.id)) segments.push({ id: b.id, content, from: 0, to: content.length });
+    if (spoken.has(b.id)) segments.push({ id: b.id, content, from: 0, to: content.length, avoid: busy.get(b.id) || [] });
     else if (b.type !== "para") others.push(content);
   }
   return { segments, others };
 }
 /** What a links answer would do now, without changing anything: { segments, skipped } (L.planLinks). The selection's
- *  quote must still be there (else null). */
-export function planFor(doc, ask, answer = ask.answer) {
+ *  quote must still be there (else null). `asks`: all the asks, so that links stay out of other open work. A
+ *  paragraph whose links would turn it into another kind of block gets none; its quotes are skipped. */
+export function planFor(doc, ask, answer = ask.answer, { asks = [] } = {}) {
+  const busy = busyRanges(asks, ask.id);
+  let plan;
   if (ask.scope === "script") {
-    const { segments, others } = scriptSegments(doc);
-    return L.planLinks(segments, answer.links, { others });
+    const { segments, others } = scriptSegments(doc, busy);
+    plan = L.planLinks(segments, answer.links, { others });
+  } else {
+    const b = D.blockById(doc, ask.blockId);
+    const r = b && D.reanchor(ask, D.contentOf(b));
+    if (!r) return null;
+    const content = D.contentOf(b);
+    const segment = b.type === "para" ? [{ id: b.id, content, from: r.start, to: r.end, avoid: busy.get(b.id) || [] }] : [];
+    plan = L.planLinks(segment, answer.links, { others: b.type === "para" ? [] : [content] });
   }
-  const b = D.blockById(doc, ask.blockId);
-  const r = b && D.reanchor(ask, D.contentOf(b));
-  if (!r) return null;
-  const content = D.contentOf(b);
-  const segment = b.type === "para" ? [{ id: b.id, content, from: r.start, to: r.end }] : [];
-  return L.planLinks(segment, answer.links, { others: b.type === "para" ? [] : [content] });
+  const segments = [], skipped = [...plan.skipped];
+  for (const seg of plan.segments) {
+    if (keepsType(seg.content, D.blockById(doc, seg.id)?.type)) segments.push(seg);
+    else for (const l of seg.links) skipped.push({ quote: l.quote.slice(0, 80), why: "its paragraph would become another kind of block" });
+  }
+  return { segments, skipped };
 }
 
 /**
@@ -99,10 +126,10 @@ export function planFor(doc, ask, answer = ask.answer) {
  * other marks followed this change); otherwise (a safety net: fitText keeps it so) it is null and the change goes
  * in unmarked. A change of only spaces is not marked.
  */
-export function land(doc, ask, now = Date.now()) {
+export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   const b = D.blockById(doc, ask.blockId);
   if (!b || !goesStraightIn(ask, ask.answer)) return null;
-  if (ask.answer.kind === "links") return landLinks(doc, ask, now);
+  if (ask.answer.kind === "links") return landLinks(doc, ask, now, asks);
   const content = D.contentOf(b), type = b.type;
   // The quote must still be there (found again near its place); otherwise nothing changes.
   const r = D.reanchor(ask, content);
@@ -134,8 +161,8 @@ function landSegment(doc, seg, now) {
   return { blockId: b.id, at: seg.to, delta: seg.delta, result, mark };
 }
 // A links answer on a selection: one change in its block, marked from the first new link to the last.
-function landLinks(doc, ask, now) {
-  const plan = planFor(doc, ask);
+function landLinks(doc, ask, now, asks) {
+  const plan = planFor(doc, ask, ask.answer, { asks });
   const seg = plan?.segments[0];
   if (!seg) return null;
   const res = landSegment(doc, seg, now);
@@ -150,10 +177,10 @@ function landLinks(doc, ask, now) {
  * Undo on the agent's name tag takes them back one paragraph at a time. The script ask becomes kept.
  * Returns { parts: [{ ask, blockId, at, delta, result }], skipped } or null (nothing changes) when no link can go in.
  */
-export function landScript(doc, ask, now = Date.now()) {
+export function landScript(doc, ask, now = Date.now(), { asks = [] } = {}) {
   if (ask.scope !== "script" || ask.answer?.kind !== "links") return null;
-  const plan = planFor(doc, ask);
-  const segs = plan.segments.filter((seg) => keepsType(seg.content, D.blockById(doc, seg.id)?.type));
+  const plan = planFor(doc, ask, ask.answer, { asks });
+  const segs = plan.segments;
   if (!segs.length) return null;
   const parts = [];
   for (const seg of segs) {

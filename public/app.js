@@ -309,6 +309,12 @@ function linkStart(el, a) {
   r.selectNodeContents(a);
   return offsetIn(el, r.startContainer, r.startOffset);
 }
+// A drawn link as L.textLinks gives it ({ start, end, words: { start, end } }), from its element and where it starts.
+function shownLink({ a, start }) {
+  const words = readContent(a.querySelector(".md-link__words")).length;
+  return { start, end: start + readContent(a).length, words: { start: start + 1, end: start + 1 + words } };
+}
+const closedLinks = (el) => [...el.querySelectorAll(".md-link:not([data-open])")].map((a) => shownLink({ a, start: linkStart(el, a) }));
 // Open the links in `el` that touch start…end (content offsets); close the others (start < 0: close all).
 // Returns the links that were closed and are open now, with their place: [{ a, start, end }].
 function openLinks(el, start, end) {
@@ -331,9 +337,8 @@ function refreshLinks(snap = false) {
     const s = r && r.intersectsNode(el) ? selectionIn(el) : null;
     const opened = openLinks(el, s ? s.start : -1, s ? s.end : -1);
     if (!snap || composingLinks || !s || s.start !== s.end || !sel.isCollapsed || opened.length !== 1) continue;
-    const { a, start, end } = opened[0], words = readContent(a.querySelector(".md-link__words")).length;
-    if (s.start === start + 1) setCaretAt(el, start);
-    else if (s.start === start + 1 + words) setCaretAt(el, end);
+    const to = L.edgeSnap(shownLink(opened[0]), s.start);
+    if (to !== s.start) setCaretAt(el, to);
   }
 }
 scriptEl.addEventListener("compositionstart", () => { composingLinks = true; });
@@ -352,15 +357,8 @@ addEventListener("keyup", modKey);
 addEventListener("blur", () => scriptEl.removeAttribute("data-mod"));
 // Others' carets are drawn where the text shows: an offset inside a closed link's hidden Markdown sits at its words.
 function visibleRange(el, start, end = start) {
-  const clamp = (o) => {
-    for (const a of el.querySelectorAll(".md-link:not([data-open])")) {
-      const s = linkStart(el, a), w = readContent(a.querySelector(".md-link__words")).length;
-      if (o > s && o <= s + 1) return s + 1;
-      if (o > s + 1 + w && o < s + readContent(a).length) return s + 1 + w;
-    }
-    return o;
-  };
-  return rangeAt(el, clamp(start), clamp(end));
+  const closed = closedLinks(el);
+  return rangeAt(el, L.shownOffset(closed, start), L.shownOffset(closed, end));
 }
 
 // When this tab got each of the agent's changes (its own clock): it shows a little stronger as it arrives.
@@ -751,23 +749,29 @@ function applyContent(id, content, caretOffset) {
 }
 
 /* ---------- Editing ---------- */
+// The links that were closed when a deletion began (beforeinput), so that their hidden Markdown survives it.
+let linksBefore = null;
 function syncFromDom(el) {
   const id = el.dataset.id, b = byId(id);
   if (!b) return;
   clearAskNote(id);
-  const content = readContent(el);
+  const typed = readContent(el);
+  const before = linksBefore?.id === id && linksBefore.content === D.contentOf(b) ? linksBefore.closed : null;
+  linksBefore = null;
+  const fix = before && L.keepHidden(D.contentOf(b), typed, before, getCaret()?.offset);
+  const content = fix ? fix.content : typed;
   if (content === D.contentOf(b)) {
-    if (!domMatches(el, id)) renderBlock(id, getCaret());
+    if (fix || !domMatches(el, id)) renderBlock(id, fix ? { id, offset: fix.caret } : getCaret());
     return;
   }
   checkpoint("type", id);
-  const caret = getCaret();
+  const caret = fix ? { id, offset: fix.caret } : getCaret();
   const r = D.setContent(state.doc, id, content);
   const moved = followPieces(id, r);
   if (r.changed || r.created.length) {
     renderAll(D.locate(r, caret?.offset ?? 0));
   } else {
-    if (moved || !domMatches(el, id)) renderBlock(id, caret);
+    if (moved || fix || !domMatches(el, id)) renderBlock(id, caret);
     if (b.type === "heading" || b.type === "title") { renderToc(); renderTop(); }
   }
   changed();
@@ -956,6 +960,7 @@ scriptEl.addEventListener("beforeinput", (e) => {
   const el = blockOf(e.target);
   if (!el) return;
   if (!state.preCaret) state.preCaret = getCaret();
+  if (e.inputType.startsWith("delete") && !e.isComposing) linksBefore = el.querySelector(".md-link:not([data-open])") ? { id: el.dataset.id, content: readContent(el), closed: closedLinks(el) } : null;
   if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
     e.preventDefault();
     e.inputType === "historyUndo" ? undo() : redo();
@@ -1180,7 +1185,7 @@ export function receiveAnswer(askId, answer) {
     ask.answeredBy = validBy(answer.by);
     ask.status = "answered";
     // A new text or an addition goes straight in (step F); a note shows beside its text.
-    if (C.goesStraightIn(ask, clean)) { emit("answered", ask); landAnswer(ask); return true; }
+    if (C.goesStraightIn(ask, clean)) { emit("answered", ask); return landAnswer(ask); }
     renderBlock(ask.blockId, getCaret());
   } else if (clean.kind === "links") {
     // The whole script's links (step G): nothing changes when none can go in, and the ask waits for another answer.
@@ -1276,13 +1281,14 @@ function glow(id, start, end) {
 }
 /* The agent's replace or add goes straight into the text (step F): one change (one Ctrl/Cmd+Z step when alone),
    the agent's in a shared script, lightly marked while untouched, with Undo on the agent's name tag. */
+// Returns whether it went in (when not, the ask is cancelled).
 function landAnswer(ask) {
   const b = byId(ask.blockId);
-  if (!b) return;
+  if (!b) return false;
   together?.local(); // the host's own typing goes out first, under the host's name
   const before = D.cloneDoc(state.doc);
-  const res = C.land(state.doc, ask);
-  if (!res) { closeAsk(ask, "cancelled"); renderBlock(b.id, getCaret()); changed(); return; }
+  const res = C.land(state.doc, ask, Date.now(), { asks: state.asks });
+  if (!res) { closeAsk(ask, "cancelled"); renderBlock(b.id, getCaret()); changed(); return false; }
   // One Ctrl/Cmd+Z step, taken only now the change happened; undoing it makes the ask undone again (restore).
   checkpoint("agent", b.id, before);
   if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "undone" };
@@ -1297,13 +1303,14 @@ function landAnswer(ask) {
   if (res.result.changed || res.result.created.length) renderAll(getCaret());
   else renderBlock(b.id, getCaret());
   changed();
+  return true;
 }
 // The whole script's links: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script), with a marked
 // change and Undo per paragraph (C.landScript).
 function landScriptLinks(ask, clean, by) {
   together?.local();
   const before = D.cloneDoc(state.doc);
-  const res = C.landScript(state.doc, { ...ask, answer: clean });
+  const res = C.landScript(state.doc, { ...ask, answer: clean }, Date.now(), { asks: state.asks });
   if (!res) return false;
   ask.answer = { ...clean, links: res.parts.flatMap((p) => p.ask.answer.links) };
   ask.answeredBy = by;
@@ -3254,9 +3261,9 @@ function handleCall({ id, tool, args = {} }) {
       if (checked.error) return send({ error: checked.error });
       if (checked.answer.kind === "links") {
         // Links (step G): the quotes that can't be linked are skipped and listed back; with none left, nothing changes.
-        const plan = C.planFor(state.doc, ask, checked.answer);
+        const plan = C.planFor(state.doc, ask, checked.answer, { asks: state.asks });
         if (plan && !plan.segments.length) return send({ error: C.noLinksError(plan.skipped) });
-        if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: plan ? C.noLinksError(plan.skipped) : "The text this ask was about has changed, so the ask was cancelled." });
+        if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: !plan || ask.status === "cancelled" ? "The text this ask was about has changed, so the ask was cancelled." : C.noLinksError(plan.skipped) });
         return send({ result: C.answerResult("links", { linked: ask.answer.links.length, skipped: plan.skipped }) });
       }
       if (!C.fits(state.doc, ask, checked.answer)) return send({ error: STAYS_IN_PARAGRAPH });

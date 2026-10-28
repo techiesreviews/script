@@ -123,7 +123,7 @@ test("planLinks: each quote's first unlinked occurrence in the asked text, on wh
   ]);
   assert.equal(plan.segments[0].content, "Try [Claude](https://claude.ai) and Claude Code. MAIL [AI](https://ai.com). [Docs](https://d.com) and [Docs](https://docs.com).");
   assert.deepEqual(plan.skipped, [
-    { quote: "Claude", why: "already linked" },
+    { quote: "Claude", why: "already linked in this answer" },
     { quote: "missing", why: "not found word for word in the asked text" },
     { quote: "Code", why: "not a full https:// address" },
   ]);
@@ -257,4 +257,134 @@ test("MCP: answer_ask takes links, at most 30, full https:// addresses only; the
   assert.match(INSTRUCTIONS, /official page/);
   assert.match(INSTRUCTIONS, /never a search page, a shortener or an affiliate link/);
   assert.match(WATCH_PROMPT, /links \(on a selection, or scope "script"/);
+});
+
+test("B-roll: a shot's Over still finds a line that got a link, and the link alone asks for no check", async () => {
+  const B = await import("../public/broll.js");
+  const doc = D.parse("# T\n\n## 1 · Hook\n\nRead the docs here before you start.\n");
+  const shots = [{ id: "B1", over: '"Read the docs here before"', what: "x", how: "", kind: "broll" }];
+  B.matchShots(doc, shots);
+  assert.equal(shots[0].blockIds.length, 1);
+  const p = doc.blocks.find((b) => b.type === "para");
+  D.setContent(doc, p.id, "Read [the docs](https://example.com/docs) here before you start.");
+  const again = [{ ...shots[0] }];
+  B.matchShots(doc, again);
+  assert.deepEqual(again[0].blockIds, shots[0].blockIds);
+  assert.deepEqual(B.touchShots(doc, shots), []);
+});
+
+test("links on the whole script stay out of other open work: a waiting ask and a marked change both survive", () => {
+  const doc = LINKS_SCRIPT(), p = doc.blocks[2];
+  const by = { id: "lex", name: "Lex" };
+  // "We use Claude and the prompter. Then Claude again."
+  const waiting = D.makeAsk(doc, { blockId: p.id, start: 18, end: 30, action: "simpler", by });
+  assert.equal(waiting.quote, "the prompter");
+  const c = D.contentOf(p), at = c.indexOf("again");
+  const marked = { id: "m1", scope: "selection", action: "simpler", status: "kept", by, blockId: p.id, start: at, end: at + 5, quote: "again", change: { text: "again", removed: "once more", at: 1 } };
+  const voice = Object.assign(D.makeAsk(doc, { scope: "script", action: "voice", by }), { status: "answered", answer: { kind: "marks", marks: [{ quote: "line", blockId: doc.blocks[4].id, start: 2, end: 6, state: "open" }] } });
+  const asks = [waiting, marked, voice];
+  const ask = Object.assign(D.makeAsk(doc, { scope: "script", action: "links", by }), { status: "taken" });
+  const answer = { kind: "links", links: [
+    { quote: "Claude", url: "https://claude.ai" },
+    { quote: "the prompter", url: "https://prompter.techies.tools" },
+    { quote: "again", url: "https://again.com" },
+    { quote: "Then", url: "https://then.com" },
+    { quote: "A line", url: "https://line.com" },
+    { quote: "Wikipedia", url: "https://wikipedia.org" },
+  ] };
+  const plan = C.planFor(doc, ask, answer, { asks });
+  assert.deepEqual(plan.skipped, [
+    { quote: "the prompter", why: "under an open ask or change" },
+    { quote: "again", why: "under an open ask or change" },
+    { quote: "Then", why: "an open ask or change sits between it and another link in its paragraph" },
+    { quote: "A line", why: "under an open ask or change" },
+  ]);
+  // Without the asks, the same answer would have reached into them.
+  assert.equal(C.planFor(doc, ask, answer).skipped.length, 0);
+  const before = C.blocksOf(doc);
+  const res = C.landScript(doc, { ...ask, answer }, 9, { asks });
+  for (const part of res.parts) D.moveAsks(asks, part.blockId, part.blockId, part.at, part.delta); // as the editor does
+  assert.equal(D.contentOf(p), "We use [Claude](https://claude.ai) and the prompter. Then Claude again.");
+  assert.equal(D.contentOf(doc.blocks[4]), "A line about [Wikipedia](https://wikipedia.org).");
+  // The waiting ask still points at its words, the marked change keeps its mark and Undo, the voice mark its text.
+  assert.equal(D.contentOf(p).slice(waiting.start, waiting.end), "the prompter");
+  assert.deepEqual(D.reanchor(waiting, D.contentOf(p)), { start: waiting.start, end: waiting.end });
+  C.follow(asks, before, C.blocksOf(doc));
+  assert.ok(C.isMarked(marked));
+  assert.equal(D.contentOf(p).slice(marked.start, marked.end), "again");
+  assert.equal(D.contentOf(doc.blocks[4]).slice(2, 6), "line");
+  assert.deepEqual(res.skipped.map((s) => s.quote), ["the prompter", "again", "Then", "A line"]);
+});
+
+test("links on a selection stay out of other open work in its block", () => {
+  const doc = LINKS_SCRIPT(), p = doc.blocks[2];
+  const ask = linksAsk(doc, p.id, "We use Claude and the prompter.", [{ quote: "Claude", url: "https://claude.ai" }, { quote: "the prompter", url: "https://prompter.techies.tools" }]);
+  const voice = Object.assign(D.makeAsk(doc, { scope: "script", action: "voice", by: ask.by }), { status: "answered", answer: { kind: "marks", marks: [{ quote: "prompter", blockId: p.id, start: 22, end: 30, state: "open" }] } });
+  const res = C.land(doc, ask, 3, { asks: [ask, voice] });
+  assert.equal(D.contentOf(p), "We use [Claude](https://claude.ai) and the prompter. Then Claude again.");
+  assert.deepEqual(res.skipped, [{ quote: "the prompter", why: "under an open ask or change" }]);
+  // With nothing else but the open work, nothing goes in and the ask is not touched.
+  const doc2 = LINKS_SCRIPT(), p2 = doc2.blocks[2];
+  const only = linksAsk(doc2, p2.id, "the prompter", [{ quote: "the prompter", url: "https://prompter.techies.tools" }]);
+  const voice2 = { ...voice, answer: { kind: "marks", marks: [{ quote: "prompter", blockId: p2.id, start: 22, end: 30, state: "open" }] } };
+  assert.equal(C.land(doc2, only, 3, { asks: [only, voice2] }), null);
+  assert.equal(only.status, "answered");
+});
+
+test("a quote copied from the spoken text lands across a soft line break or a double space", () => {
+  const doc = D.parse("## 1 · Hook\n\nWe use Claude\nCode daily with  the  prompter.\n");
+  const spoken = D.exportCamera(doc);
+  assert.match(spoken, /We use Claude Code daily with the prompter\./, "the agent reads one space");
+  const ask = Object.assign(D.makeAsk(doc, { scope: "script", action: "links", by: { id: "lex", name: "Lex" } }), { status: "taken" });
+  const answer = { kind: "links", links: [{ quote: "Claude Code", url: "https://claude.ai/code" }, { quote: "the prompter", url: "https://prompter.techies.tools" }, { quote: "Claude  Code", url: "https://x.com" }] };
+  const plan = C.planFor(doc, ask, answer);
+  assert.equal(plan.segments.length, 1);
+  assert.deepEqual(plan.skipped, [{ quote: "Claude  Code", why: "already linked in this answer" }]);
+  const old = D.contentOf(doc.blocks[1]);
+  const res = C.landScript(doc, { ...ask, answer }, 1);
+  // The link's words get one space (the spaces around them stay); Undo gives back the line break and the spaces.
+  assert.equal(D.contentOf(doc.blocks[1]), "We use [Claude Code](https://claude.ai/code) daily with  [the prompter](https://prompter.techies.tools).");
+  assert.equal(res.parts[0].ask.change.removed, "Claude\nCode daily with  the  prompter");
+  C.undo(doc, res.parts[0].ask);
+  assert.equal(D.contentOf(doc.blocks[1]), old);
+  // Still whole words only, and a run of spaces does not reach over a link line.
+  const lines = L.planLinks([{ id: "b", content: "Docs\n- Docs: https://d.com\nend", from: 0, to: 31 }], [{ quote: "Docs end", url: "https://x.com" }]);
+  assert.equal(lines.segments.length, 0);
+});
+
+test("closed links: a caret on a link's edge goes just outside it; hidden offsets show at the words", () => {
+  const content = "Try [Claude](https://claude.ai) now.";
+  const [link] = L.textLinks(content);
+  assert.deepEqual([link.start, link.end, link.words.start, link.words.end], [4, 31, 5, 11]);
+  assert.equal(L.edgeSnap(link, link.start + 1), link.start, "the words' start goes before the link");
+  assert.equal(L.edgeSnap(link, link.start + 1 + "Claude".length), link.end, "the words' end goes after the link");
+  for (const o of [0, 4, 7, 31, 33]) assert.equal(L.edgeSnap(link, o), o);
+  // Inside "](https://claude.ai)" an offset shows at the end of the words; inside "[" at their start.
+  for (let o = link.words.end + 1; o < link.end; o++) assert.equal(L.shownOffset([link], o), link.words.end);
+  assert.equal(L.shownOffset([link], link.words.end), link.words.end);
+  assert.equal(L.shownOffset([link], link.start), link.start);
+  assert.equal(L.shownOffset([link], link.end), link.end);
+  assert.equal(L.shownOffset([link], 8), 8, "inside the words stays");
+  assert.equal(L.shownOffset([], 20), 20);
+});
+
+test("closed links: a deletion that took a link's hidden Markdown gets it back; a link whose words all went goes whole", () => {
+  const old = "Try [Claude](https://claude.ai)Y now.";
+  const closed = L.textLinks(old);
+  // Chromium and WebKit: Backspace on the "Y" also takes "](https://claude.ai)"; the caret is left at the words' end.
+  assert.deepEqual(L.keepHidden(old, "Try [Claude now.", closed, 11), { content: "Try [Claude](https://claude.ai) now.", caret: 31 });
+  // The same read without a caret (by the text alone).
+  assert.deepEqual(L.keepHidden(old, "Try [Claude now.", closed, null), { content: "Try [Claude](https://claude.ai) now.", caret: 31 });
+  // A head "[" taken with the letter before the link.
+  const head = "XA[Claude](https://claude.ai) now.";
+  assert.deepEqual(L.keepHidden(head, "XClaude](https://claude.ai) now.", L.textLinks(head), 1), { content: "X[Claude](https://claude.ai) now.", caret: 1 });
+  // A word deletion that took all of the words and the tail: the whole link goes, as it was seen.
+  const word = "Try [Claude](https://claude.ai) now.";
+  assert.deepEqual(L.keepHidden(word, "Try [now.", L.textLinks(word), 5), { content: "Try now.", caret: 4 });
+  // Edits that lose no hidden Markdown are left alone: a letter of the words, a whole link, text elsewhere, typing.
+  assert.equal(L.keepHidden(word, "Try [Claud](https://claude.ai) now.", L.textLinks(word), 10), null);
+  assert.equal(L.keepHidden(word, "Try  now.", L.textLinks(word), 4), null);
+  assert.equal(L.keepHidden(word, "Try [Claude](https://claude.ai) no.", L.textLinks(word), 34), null);
+  assert.equal(L.keepHidden(word, word + "!", L.textLinks(word), 37), null);
+  assert.equal(L.keepHidden(word, "Try now.", [], 4), null, "no closed links: nothing to keep");
 });

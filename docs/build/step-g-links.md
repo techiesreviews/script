@@ -22,8 +22,8 @@ Lex's choice (2026-10-28): when a script mentions a tool, a site or a source, th
 
 ## 3. The agent finds links
 
-- **Find links** joins the edit bar's More menu. On a selection it asks about that text (also for guests); with nothing selected it asks about the whole script (host only, like the other whole-script jobs).
-- The agent answers with `answer_ask` kind `links`: `links: [{ quote, url }]`, at most 30, where `quote` is words copied exactly from the spoken text and `url` a full `https://` address. The host's tab turns each quote's first unlinked occurrence (inside the asked text) into `[quote](url)`, as one change that lands straight in, marked, with Undo on the agent's name tag (step F). Quotes not found, already linked, or inside reminders and headings are skipped and listed back to the agent.
+- **Find links** joins the edit bar's More menu: it asks about the selected text (also for guests). **Find links in the script**, in the agent menu, asks about the whole script (host only, like the other whole-script jobs); the edit bar only shows with a selection.
+- The agent answers with `answer_ask` kind `links`: `links: [{ quote, url }]`, at most 30, where `quote` is words copied exactly from the spoken text and `url` a full `https://` address. The host's tab turns each quote's first unlinked occurrence (inside the asked text) into `[quote](url)`, as one change that lands straight in, marked, with Undo on the agent's name tag (step F). Quotes not found, already linked, or inside reminders and headings are skipped and listed back to the agent. Links never land in text other open work points at (open asks, "Sounds like me" marks, the agent's marked changes); those quotes are skipped too, so that work keeps its text and Undo. A quote's spaces match line breaks and double spaces, as the agent read them as one space.
 - Agent instructions: link the official page (the maker's own site, the exact docs page or the original source), never a search page, a shortener or an affiliate link; skip a mention when unsure.
 - MCP checks: `https:`/`http:` only, length limits, no `javascript:` or `data:`.
 

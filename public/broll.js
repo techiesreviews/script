@@ -2,6 +2,7 @@
 // spoken blocks it covers, flag shots whose lines changed, and keep storyboard sketches in its
 // "## Sketches" section. Pure module: no DOM, no network. Imported by the app and by the tests.
 import { outline, contentOf, blockById } from "./doc.js";
+import { spokenText } from "./links.js";
 
 export const SKETCH_MAX = 8 * 1024;
 export const SKETCH_VIEWBOX = "0 0 260 140";
@@ -105,7 +106,7 @@ export function parseOver(over) {
 export function spokenBlocks(doc) {
   return outline(doc).sections.filter((s) => s.spoken)
     .flatMap((s) => s.blocks.filter((b) => b.type === "para"))
-    .map((b) => ({ id: b.id, n: ` ${normalize(contentOf(b))} ` }));
+    .map((b) => ({ id: b.id, n: ` ${normalize(spokenText(contentOf(b)))} ` })); // a link counts as its words (step G)
 }
 // Where the fragments occur in order (as whole words): the index of the first, or -1.
 function fragsAt(n, frags) {
@@ -150,7 +151,8 @@ export function matchShots(doc, shots) {
 
 /* ---------- Check flags ---------- */
 export function coverText(doc, blockIds) {
-  return blockIds.map((id) => { const b = blockById(doc, id); return b ? contentOf(b) : "\u0000"; }).join("\u0001");
+  // What is spoken, so adding a link to a covered line does not ask for a check.
+  return blockIds.map((id) => { const b = blockById(doc, id); return b ? spokenText(contentOf(b)) : "\u0000"; }).join("\u0001");
 }
 /** After an edit, Keep or undo: a shot whose covered text changed gets check = true. Returns the ids flagged now. */
 export function touchShots(doc, shots) {
