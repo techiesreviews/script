@@ -81,15 +81,18 @@ export class Room {
     const me = this.att(ws);
     if (me.role !== "host" && me.role !== "guest") return;
     const size = typeof data === "string" ? data.length : data.byteLength;
+    // Too large to pass on: a batch is refused by its seq, read from the start of the frame without parsing it (the
+    // client always sends {"type":"op","base":…,"seq":…} first), so the guest drops only that batch and keeps what it
+    // typed after it. Anything else that is too large is dropped.
+    if (me.role === "guest" && size > GUEST_MESSAGE_MAX) {
+      const head = typeof data === "string" ? data.slice(0, 64) : new TextDecoder().decode(data.slice(0, 64));
+      const m = head.match(/^\{"type":"op","base":-?\d+,"seq":(\d+)/);
+      if (m) this.send(ws, { type: "refused", seq: Number(m[1]) });
+      return;
+    }
     let msg;
     try { msg = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)); } catch { return; }
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return;
-    // Too large to pass on: a batch is refused by its seq, so the guest drops only that batch and keeps what it
-    // typed after it. Anything else that is too large is dropped.
-    if (me.role === "guest" && size > GUEST_MESSAGE_MAX) {
-      if (msg.type === "op" && Number.isInteger(msg.seq)) this.send(ws, { type: "refused", seq: msg.seq });
-      return;
-    }
     if (msg.type === "ping") return this.send(ws, { type: "pong" });
     if (me.role === "host") return this.fromHost(msg);
     return this.fromGuest(ws, me, msg);
