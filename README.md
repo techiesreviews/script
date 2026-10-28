@@ -15,7 +15,7 @@ A calm editor for video scripts. Open a Markdown script, edit it, and let **your
 
 The editor has no accounts and no built-in AI, so it costs nothing to use. Scripts are opened and saved in your browser with the File System Access API (Chrome and Edge; other browsers download a copy). A draft of unsaved changes stays in your browser's local storage.
 
-When you connect an agent, a small live relay (a Cloudflare Durable Object) passes asks and answers between your browser tab and your agent. It never stores script text: it keeps only when the connection was made, whether it was disconnected, and the agent's name. The prompter link carries the script in the part after `#`, which browsers never send to a server.
+When you connect an agent, a small live relay (a Cloudflare Durable Object) passes asks and answers between your browser tab and your agent. It never stores script text: it keeps only when the connection was made, whether it was disconnected, and the agent's name and version. The prompter link carries the script in the part after `#`, which browsers never send to a server.
 
 ## Connect your agent (MCP)
 
