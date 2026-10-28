@@ -1,0 +1,76 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root{--ink:color-mix(in oklch,var(--foreground) 78%,transparent);--soft:color-mix(in oklch,var(--foreground) 35%,transparent);--orange:oklch(70.4% 0.1915 37.1)}
+*{box-sizing:border-box}body{margin:0;font:13px/1.4 var(--font-sans)}
+h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:0 0 8px}
+.wrap{display:grid;grid-template-columns:250px 1fr;gap:20px}
+.panel{display:grid;gap:14px;align-content:start}
+.group{border:1px solid var(--border);border-radius:var(--radius);padding:8px}
+.ghead{display:flex;justify-content:space-between;font-weight:600;padding:2px 4px 8px}
+.ghead span{color:var(--muted-foreground);font-weight:500}
+.item{display:grid;grid-template-columns:72px 1fr;gap:8px;align-items:center;padding:5px 4px;border-radius:6px}
+.item.on{background:color-mix(in oklch,var(--orange) 12%,transparent)}
+.item svg{width:72px;height:auto;display:block;border-radius:4px;background:var(--card);border:1px solid var(--border)}
+.item b{font-variant-numeric:tabular-nums;color:var(--muted-foreground);font-size:11px;margin-right:4px}
+.item small{display:block;color:var(--muted-foreground);font-size:11px}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--orange);margin-left:4px;vertical-align:middle}
+.board{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;align-content:start}
+.frame svg{width:100%;height:auto;display:block;border-radius:6px;background:var(--card);border:1px solid var(--border)}
+.cap{margin-top:5px;font-size:12px}
+.cap .id{font-weight:700;margin-right:6px}
+.tag{font-size:10px;border:1px solid var(--border);border-radius:99px;padding:0 6px;color:var(--muted-foreground);margin-right:6px}
+.tag.m{border-color:var(--orange);color:var(--orange)}
+.over{color:var(--muted-foreground);font-style:italic}
+svg .s{fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+svg .l{fill:none;stroke:var(--soft);stroke-width:2;stroke-linecap:round}
+svg .o{fill:none;stroke:var(--orange);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+svg .of{fill:var(--orange);stroke:none}
+svg .mv{fill:none;stroke:var(--orange);stroke-width:1.6;stroke-dasharray:4 4;stroke-linecap:round}
+svg text{fill:var(--ink);font:600 11px var(--font-sans)}
+</style></head><body>
+<div class="wrap">
+  <div class="panel"><div><h2>Left column</h2>
+    <div class="group"><div class="ghead">B-roll <span>10</span></div><div id="list"></div></div></div>
+    <div class="group"><div class="ghead">Motion plates <span>3</span></div><div id="mlist"></div></div>
+  </div>
+  <div><h2>Storyboard</h2><div class="board" id="board"></div></div>
+</div>
+<script>
+const R=(x,y,w,h,c='s',r=6)=>`<rect class="${c}" x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}"/>`;
+const L=(x1,y1,x2,y2,c='l')=>`<path class="${c}" d="M${x1} ${y1}L${x2} ${y2}"/>`;
+const P=(d,c='s')=>`<path class="${c}" d="${d}"/>`;
+const C=(cx,cy,r,c='s')=>`<circle class="${c}" cx="${cx}" cy="${cy}" r="${r}"/>`;
+const T=(x,y,t,a='start')=>`<text x="${x}" y="${y}" text-anchor="${a}">${t}</text>`;
+const lines=(x,y,n,w,gap=10)=>Array.from({length:n},(_,i)=>L(x,y+i*gap,x+w*(i%3===2?.6:1),y+i*gap)).join('');
+const tick=(x,y,c='o')=>P(`M${x} ${y}l5 5l10-11`,c);
+const person=(x,y)=>C(x,y,9)+P(`M${x} ${y+9}v26M${x} ${y+16}l-12 10M${x} ${y+16}l12 10M${x} ${y+35}l-9 18M${x} ${y+35}l9 18`);
+const browser=(x,y,w,h)=>R(x,y,w,h)+L(x,y+14,x+w,y+14,'s')+C(x+8,y+7,2,'s')+C(x+15,y+7,2,'s')+C(x+22,y+7,2,'s');
+const SK={
+B1:R(70,22,100,96)+lines(84,46,0,0)+L(86,44,86,60,'o')+C(210,36,14)+P('M210 28v8l6 4'),
+B2:browser(30,16,180,104)+lines(44,42,7,150,10)+P('M222 50v50','mv')+P('M216 92l6 9l6-9','o'),
+B3:R(20,40,100,54)+T(70,72,'“In this video…”','middle')+L(28,52,112,86,'o')+L(28,86,112,52,'o')+R(140,40,100,54)+T(190,72,'“Your site…”','middle')+tick(184,100)+P('M124 67h12','mv'),
+B4:C(40,48,14)+P('M36 44q6-6 10 2q0 6-6 8')+R(70,30,170,14,'s',4)+P('M150 52v10','mv')+R(70,70,50,14,'s',4)+R(130,70,50,14,'s',4)+R(190,70,50,14,'s',4)+P('M95 52l0 14M155 52l0 14M215 52l0 14','mv'),
+B5:C(90,70,20)+C(90,70,7)+P('M110 70h70v14M160 70v10')+T(200,74,'backup')+T(200,90,'= spare key'),
+S1:browser(20,14,200,108)+lines(36,40,6,150,12)+P('M36 64h90','o')+P('M36 64h90','mv')+R(120,74,96,34,'s',5)+L(128,86,206,86,'l')+R(170,94,40,10,'o',3)+P('M150 60l8 10l4-6l8 8','s'),
+S2:person(70,40)+R(150,52,40,62,'s',8)+C(170,80,12)+P('M170 72v8l5 3')+P('M88 70q20-14 40-4','mv')+T(170,128,'2:31','middle'),
+B6:R(70,18,110,100)+tick(84,40,'o')+L(108,46,166,46)+tick(84,66,'o')+L(108,72,160,72)+tick(84,92,'o')+L(108,98,152,98),
+B7:browser(30,16,180,104)+R(48,40,140,22)+T(118,55,'Sounds like me · 3','middle')+P('M60 76h110','o')+P('M60 92h80','o')+P('M60 108h96','o'),
+B8:tick(56,64,'o')+T(64,92,'problem','middle')+tick(116,64,'o')+T(124,92,'ear','middle')+tick(176,64,'o')+T(184,92,'out loud','middle')+P('M40 108h184','mv'),
+};
+const SHOTS=[
+{id:'B1',kind:'B-roll',what:'Blank page, blinking cursor, a clock',over:'“A blank page. A deadline…”'},
+{id:'B2',kind:'B-roll',what:'A wall of blog-style text; the viewer scrolls away',over:'“Most of us write a video like a blog post.”'},
+{id:'B3',kind:'Motion',what:'Two first lines: one crossed out, one ticked',over:'“Not “In this video I will…””'},
+{id:'B4',kind:'Motion',what:'One long sentence splits into three short ones',over:'“A script is not read…” through “…show it on screen.”'},
+{id:'B5',kind:'B-roll',what:'Key icon: a backup is a spare key',over:'“A backup is a spare key.”',check:true},
+{id:'S1',kind:'Screen',what:'Script editor: three lines marked by “Sounds like me”',over:'“AI helps you write faster.”'},
+{id:'S2',kind:'Screen',what:'Reading the script out loud with a phone timer',over:'“Here\'s the part almost everyone skips.”'},
+{id:'B6',kind:'B-roll',what:'Checklist with three ticks',over:'“Keep one checklist next to every script.”'},
+{id:'B7',kind:'B-roll',what:'The voice check count in the top bar',over:'“Mark those lines…”'},
+{id:'B8',kind:'Motion',what:'Three ticks build up one by one',over:'“So, three things.”'},
+];
+const svg=(id)=>`<svg viewBox="0 0 260 140" role="img" aria-label="Sketch ${id}">${SK[id]||''}</svg>`;
+const item=(s)=>`<div class="item${s.id==='B4'?' on':''}">${svg(s.id)}<div><b>${s.id}</b>${s.what}${s.check?'<span class="dot"></span>':''}<small>${s.kind==='Screen'?'Screen recording':s.kind==='Motion'?'Motion plate':'B-roll'}</small></div></div>`;
+document.getElementById('list').innerHTML=SHOTS.map(item).join('');
+document.getElementById('mlist').innerHTML=SHOTS.filter(s=>s.kind==='Motion').map(item).join('');
+document.getElementById('board').innerHTML=SHOTS.map(s=>`<div class="frame">${svg(s.id)}<div class="cap"><span class="id">${s.id}</span><span class="tag${s.kind==='Motion'?' m':''}">${s.kind==='Motion'?'Motion plate':s.kind==='Screen'?'Screen recording':'B-roll'}</span>${s.what}<br><span class="over">Over: ${s.over}</span></div></div>`).join('');
+</script></body></html>

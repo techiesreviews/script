@@ -33,3 +33,17 @@ Goal: the script shows which lines have B-roll, and the B-roll list and motion p
 - **Unit tests:** parsing the table (including the demo and a copy of the shape of a real list with `…` and `through` ranges), quote-to-block matching, motion and screen detection, and a check flag after a change.
 - Run `kit doctor` and `kit specs`. Do the browser check at desktop and phone width (start `npx wrangler@4 dev` yourself and stop it afterwards).
 - Do not commit, push, deploy or stash. Report in at most 15 lines, including the RESULT lines.
+
+## Addition (Lex, 2026-10-28): storyboard sketches
+
+Reference: `docs/build/storyboard-sketch.html` (open it in a browser). It is the demo's 10 shots with simple line-drawing sketches, the left column with small thumbnails, and a storyboard grid.
+
+- **Demo shots:** use exactly these 10 shots, ids, "What to show" and "Over" lines for `public/samples/demo-good-script-broll.md`, and turn the SVG helpers into static SVG markup.
+- **Where sketches live:** in the B-roll file itself, under `## Sketches`, as fenced blocks: ```` ```svg B4 ```` … ```` ``` ````. They use a viewBox of `0 0 260 140` and only these classes: `s` (ink line), `l` (soft line), `o` (orange accent), `mv` (dashed orange movement) and plain `text`. The editor gives these classes their colours, so sketches follow light and dark mode.
+- **Sanitising:** allow only `svg`, `g`, `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon` and `text`, with geometry attributes, `class`, `text-anchor` and `transform`. Drop everything else: scripts, event handlers, `href` and `style`.
+- **Left column:** each shot row shows its sketch as a 72 px thumbnail, or an empty dashed frame when there is none.
+- **Storyboard view:** a "Storyboard" toggle at the top of the B-roll group opens a grid of all frames in script order, as in the reference: frame, id, kind tag, what, and Over. Clicking a frame jumps to its line. On phones it is one column.
+- **The agent draws missing sketches:** a quiet "Ask for sketches" in the storyboard view creates an ask with `scope: "broll"` and `action: "sketch"`, listing the shots that have no sketch. The agent answers with a new MCP tool `sketch_shot { askId, shotId, svg }` (one call per shot, svg at most 8 KB, sanitised by the tab).
+  - The tab shows each sketch with Keep or Undo in the frame.
+  - Keep writes the sketch into the B-roll file's `## Sketches` section through the linked file handle (asking permission when needed), so it stays with the file.
+  - Add the instruction text to `doc.js` ACTIONS. Add tests for the sanitiser, parsing and writing the Sketches section, and the tool's limits.
