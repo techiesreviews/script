@@ -23,11 +23,11 @@
       <button class="menu-action" id="menuOpen" type="button"><span data-icon="open"></span><span class="menu-action__text">Open a script…</span></button>
       <button class="menu-action" id="menuNew" type="button"><span data-icon="plus"></span><span class="menu-action__text">New script</span></button>
     </div>
+    <div class="view-switch" id="viewSwitch" role="group" aria-label="View" hidden>
+      <button type="button" data-view="script" aria-pressed="true" aria-label="Script"><span data-icon="doc"></span><span class="lbl">Script</span></button>
+      <button type="button" data-view="board" aria-pressed="false" aria-label="Storyboard"><span data-icon="board"></span><span class="lbl">Storyboard</span></button>
+    </div>
     <div class="top__end">
-      <div class="view-switch" id="viewSwitch" role="group" aria-label="View" hidden>
-        <button type="button" data-view="script" aria-pressed="true" aria-label="Script"><span data-icon="doc"></span><span class="lbl">Script</span></button>
-        <button type="button" data-view="board" aria-pressed="false" aria-label="Storyboard"><span data-icon="board"></span><span class="lbl">Storyboard</span></button>
-      </div>
       <button class="tb voice-btn" id="voiceBtn" type="button" disabled hidden><span data-icon="wave"></span><span class="lbl">Sounds like me</span><span class="status-dot"></span><span class="count" id="voiceCount" hidden>0</span></button>
       <button class="tb agent-btn" id="agentBtn" type="button" hidden popovertarget="agentMenu" data-state="off"><span class="status-dot"></span><span data-icon="plug"></span><span class="lbl" id="agentBtnLabel">Connect your agent</span></button>
       <div class="menu menu--agent" id="agentMenu" popover>
