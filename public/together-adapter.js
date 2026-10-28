@@ -133,8 +133,6 @@ export function fitAsks(asks, doc) {
   }
   return out;
 }
-/** The agent's caret, from the asks: at the end of the asked text while the agent works on it, at the change while
- *  its answer is shown; gone after Keep or Undo. The newest such ask wins. */
 /**
  * A guest's outbox for asks and Keep/Undo presses. Each item has a `ref` and stays until the host confirms it
  * (`ask-ack`) or refuses it (`ask-refused`); whatever was sent but not confirmed is sent again after the room was away.
@@ -161,6 +159,44 @@ export function createOutbox({ send, ready, ref = () => Math.random().toString(3
     clear() { items.length = 0; },
   };
 }
+/**
+ * The host's desk for guests' asks and presses (no DOM). Every message with a `ref` gets one answer, `ask-ack` or
+ * `ask-refused` (with a reason), kept per ref, so a repeat (sent again after the room was away) gets the same answer
+ * and is never done twice.
+ *   createAskDesk({ people: () => Map pid → { asker, name }, sendTo(pid, msg), doc(), asks(), add(spec, by), act(id, act, asker) })
+ */
+export function createAskDesk({ people, sendTo, doc, asks, add, act }) {
+  const answers = new Map(); // asker (or pid without one) → Map ref → { type, reason? }
+  return function handle(msg) {
+    if (typeof msg?.ref !== "string" || !msg.ref || msg.ref.length > 40) return;
+    const p = people().get(msg.from);
+    const who = p?.asker || `pid:${msg.from}`;
+    let mine = answers.get(who);
+    if (!mine) answers.set(who, (mine = new Map()));
+    const send = (a) => sendTo(msg.from, { type: a.type, ref: msg.ref, ...(a.reason ? { reason: a.reason } : {}) });
+    const known = mine.get(msg.ref);
+    if (known) return send(known);
+    const decide = () => {
+      // A tab the host could not tell apart (no secret): nothing it asks or presses can be done.
+      if (!p?.asker) return { type: "ask-refused", reason: "unknown" };
+      const by = { id: p.asker, name: p.name };
+      if (msg.ask) {
+        const spec = guestAsk(doc(), msg.ask);
+        if (!spec) return { type: "ask-refused", reason: "changed" };
+        // Someone else's open ask or answer on this text stays as it is, so this one can't go there too.
+        if (overlappingAsks(asks(), spec).some((a) => a.by?.id !== by.id)) return { type: "ask-refused", reason: "taken" };
+        add(spec, by);
+      } else if (typeof msg.id === "string" && ["keep", "undo", "dismiss"].includes(msg.act)) act(msg.id, msg.act, by.id);
+      return { type: "ask-ack" };
+    };
+    const answer = decide();
+    if (mine.size >= 500) mine.delete(mine.keys().next().value);
+    mine.set(msg.ref, answer);
+    send(answer);
+  };
+}
+/** The agent's caret, from the asks: at the end of the asked text while the agent works on it, at the change while
+ *  its answer is shown; gone after Keep or Undo. The newest such ask wins. */
 export function agentCaret(asks, doc) {
   const sel = asks.filter((a) => a.scope === "selection" && D.blockById(doc, a.blockId));
   const a = sel.filter((x) => x.status === "taken").at(-1) || sel.filter((x) => x.status === "answered" && x.answer && x.answer.kind !== "broll").at(-1);
@@ -218,7 +254,6 @@ export function createTogether(app) {
   const myId = () => (isGuest() ? room.asker : app.me.id);
   // A guest's asks and presses stay until the host confirms them; a new ask waits until the host has all my text.
   const outbox = createOutbox({ send: (m) => !!room?.send(m), ready: (wait) => room?.status === "live" && (!wait || room.settled()) });
-  const seen = new Map(); // host: asker → refs already handled (an item sent again after a lost confirmation)
   const agent = () => (app.doc() ? agentCaret(app.asks(), app.doc()) : null);
   const caretList = () => [...(room ? room.caretList() : []), ...[agent()].filter(Boolean)];
   const carets = createCarets({
@@ -243,26 +278,16 @@ export function createTogether(app) {
     if (as !== shared.asks) { shared.asks = as; room.sendAll(a); }
     if (bs !== shared.broll) { shared.broll = bs; room.sendAll(b); }
   }
-  // Host: a guest's ask or press, each answered to that guest by its ref (sent again after a lost answer: answered again).
-  function fromGuest(msg) {
-    const p = room.people.get(msg.from);
-    if (!p?.asker || typeof msg.ref !== "string" || msg.ref.length > 40) return;
-    const done = seen.get(p.asker) ?? new Set();
-    seen.set(p.asker, done);
-    const answer = (type, reason) => room.sendTo(msg.from, { type, ref: msg.ref, ...(reason ? { reason } : {}) });
-    if (done.has(msg.ref)) return answer("ask-ack");
-    if (done.size > 500) done.clear();
-    done.add(msg.ref);
-    const by = { id: p.asker, name: p.name };
-    if (msg.ask) {
-      const spec = guestAsk(app.doc(), msg.ask);
-      if (!spec) return answer("ask-refused", "changed");
-      // Someone else's open ask or answer on this text stays as it is, so this one can't go there too.
-      if (overlappingAsks(app.asks(), spec).some((a) => a.by?.id !== by.id)) return answer("ask-refused", "taken");
-      app.guestAsk(spec, by);
-    } else if (typeof msg.id === "string" && ["keep", "undo", "dismiss"].includes(msg.act)) app.guestAct(msg.id, msg.act, by.id);
-    answer("ask-ack");
-  }
+  // Host: a guest's ask or press, answered to that guest by its ref (a repeat gets the same answer).
+  const fromGuest = createAskDesk({
+    people: () => room.people,
+    sendTo: (pid, m) => room.sendTo(pid, m),
+    doc: () => app.doc(),
+    asks: () => app.asks(),
+    add: (spec, by) => app.guestAsk(spec, by),
+    act: (id, act, asker) => app.guestAct(id, act, asker),
+  });
+
 
   const on = {
     status(s) {

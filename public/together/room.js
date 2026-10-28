@@ -19,7 +19,9 @@ const GROUP_MS = 1500; // typing with pauses shorter than this is one change for
 const PING_MS = 30_000;
 const MINE_MAX = 100;
 
-/* ---------- SHA-256 (synchronous, so the host handles messages in order) ---------- */
+/* ---------- SHA-256 (synchronous, so the host handles messages in order) ----------
+   The host keeps only this hash of each guest tab's secret, so its memory (or a debugging dump) never holds a secret
+   that could be replayed to take over that guest's Keep/Undo rights. */
 const K = Uint32Array.from([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
   0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
@@ -97,6 +99,7 @@ export class RoomClient {
     this.secret = random(24);
     this.asker = null;
     this.askers = new Map(); // host: hash of a guest tab's secret → its opaque asker id
+    this.clientKeys = new Map(); // host: client id → the hash of the secret it first came with (for the whole session)
     this.pid = role === "host" ? "host" : null;
     this.v = 0;
     this.shadow = null; // host: the agreed document; guest: the agreed document plus the batch in flight
@@ -203,6 +206,12 @@ export class RoomClient {
     this.flush();
   }
   flush() {
+    this.flushOps();
+    // A guest whose text is now all with the host (sent and confirmed, or nothing left to send) says so: asks waiting
+    // for that text can go (also after a held "/" command was removed, or a refused batch dropped).
+    if (this.role === "guest" && !this.stopped && this.settled()) this.on.settled?.();
+  }
+  flushOps() {
     if (this.stopped || this.adapter.held?.()) return;
     if (this.role === "host") {
       const ops = diff(this.shadow, this.live, this.adapter.caret?.());
@@ -376,13 +385,19 @@ export class RoomClient {
         const known = this.people.get(msg.from);
         const client = typeof msg.client === "string" ? msg.client : known?.client ?? null;
         const key = typeof msg.secret === "string" && SECRET_RE.test(msg.secret) ? sha256hex(msg.secret) : known?.key ?? null;
-        // A client id that is already here under another pid: the same tab back (same secret) takes over from its old
-        // entry; anyone else (a copied id) is refused.
+        // Each client id belongs, for the whole session, to the first secret it came with: a join with that id and
+        // another secret (a copied id) is refused, whether or not the first tab is here now. The same tab back (same
+        // secret) takes over from its old entry.
+        if (client) {
+          const tied = this.clientKeys.get(client);
+          if (tied !== undefined && tied !== key) { this.sendTo(msg.from, { type: "join-refused" }); return; }
+          if (tied === undefined && key) this.clientKeys.set(client, key);
+        }
         for (const [pid, p] of [...this.people]) {
           if (pid === msg.from || !client || p.client !== client) continue;
-          if (!key || p.key !== key) { this.sendTo(msg.from, { type: "join-refused" }); return; }
           this.people.delete(pid);
           this.carets.delete(pid);
+          this.changes.delete(pid);
         }
         let asker = key ? this.askers.get(key) : null;
         if (key && !asker) { asker = `a${random(9)}`; this.askers.set(key, asker); }
@@ -553,7 +568,6 @@ export class RoomClient {
     this.setStatus("live");
     if (this.myCaret) this.caret(this.myCaret);
     this.flush();
-    if (this.settled()) this.on.settled?.();
   }
   // Back in the room with a known version: apply what was missed, then send the batch in flight again if the host
   // never got it (its seq is past what the host has seen), then the rest.
@@ -573,7 +587,6 @@ export class RoomClient {
     if (this.myCaret) this.caret(this.myCaret);
     this.on.carets?.();
     this.flush();
-    if (this.settled()) this.on.settled?.();
   }
   resync() {
     if (this.resyncing) return;
@@ -587,9 +600,7 @@ export class RoomClient {
       this.v = v;
       this.pending = null;
       this.confirmed = cloneBlocks(this.shadow);
-      this.flush();
-      if (this.settled()) this.on.settled?.();
-      return;
+      return this.flush();
     }
     try {
       let [r, p] = transformOps(ops, this.pending?.ops ?? [], true);

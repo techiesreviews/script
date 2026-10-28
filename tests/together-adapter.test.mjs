@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as D from "../public/doc.js";
-import { readBlocks, applyToDoc, docFromSnapshot, docMeta, validAttrs, validBlocks, guestAsk, mayAct, shareAsks, fitAsks, agentCaret, overlappingAsks, guestMayAct, scriptAdapter } from "../public/together-adapter.js";
+import { readBlocks, applyToDoc, docFromSnapshot, docMeta, validAttrs, validBlocks, guestAsk, mayAct, shareAsks, fitAsks, agentCaret, overlappingAsks, guestMayAct, scriptAdapter, createAskDesk } from "../public/together-adapter.js";
 import { diff, validOps } from "../public/together/ops.js";
 
 const sample = readFileSync(new URL("../public/samples/demo-good-script.md", import.meta.url), "utf8");
@@ -194,4 +194,31 @@ test("adapter: a guest places the host's asks in its own copy, and the agent's c
   assert.equal(agentCaret([a1, a2], doc), null, "gone after Keep or Undo");
   a2.status = "answered"; a2.answer = { kind: "broll", changes: [] };
   assert.equal(agentCaret([a2], doc), null, "B-roll suggestions live beside the lines");
+});
+
+test("adapter: the host's ask desk answers every ref, and a repeat gets the same answer, done once", () => {
+  const doc = script(), p = paraOf(doc);
+  const asks = [], sent = [], acts = [];
+  const people = new Map([["g1", { asker: "a-ana", name: "Ana" }], ["g2", { name: "No secret" }]]);
+  const desk = createAskDesk({
+    people: () => people, sendTo: (pid, m) => sent.push([pid, m]), doc: () => doc, asks: () => asks,
+    add: (spec, by) => asks.push({ ...D.makeAsk(doc, { ...spec, by }) }), act: (id, act, asker) => acts.push([id, act, asker]),
+  });
+  const gone = { type: "ask", from: "g1", ref: "r1", ask: { blockId: p.id, start: 0, quote: "not here", action: "simpler" } };
+  desk(gone);
+  desk(gone); // sent again after the room was away
+  assert.deepEqual(sent, [["g1", { type: "ask-refused", ref: "r1", reason: "changed" }], ["g1", { type: "ask-refused", ref: "r1", reason: "changed" }]], "the refusal is answered again, not turned into ack");
+  const ok = { type: "ask", from: "g1", ref: "r2", ask: { blockId: p.id, start: 3, quote: "start", action: "simpler" } };
+  desk(ok);
+  desk(ok);
+  assert.equal(asks.length, 1, "done once");
+  assert.deepEqual(sent.slice(2).map(([, m]) => m.type), ["ask-ack", "ask-ack"]);
+  desk({ type: "ask", from: "g1", ref: "r3", id: asks[0].id, act: "undo" });
+  assert.deepEqual(acts, [[asks[0].id, "undo", "a-ana"]]);
+  // A tab without a secret (no asker id) hears back too, and nothing is done.
+  desk({ type: "ask", from: "g2", ref: "r1", ask: ok.ask });
+  assert.deepEqual(sent.at(-1), ["g2", { type: "ask-refused", ref: "r1", reason: "unknown" }]);
+  assert.equal(asks.length, 1);
+  desk({ type: "ask", from: "g1", ask: ok.ask });
+  assert.equal(sent.length, 6, "a message without a ref gets no answer");
 });

@@ -72,9 +72,10 @@ function socketFactory(rooms) {
 }
 const plainAdapter = (blocks = []) => {
   const a = {
-    blocks, info: { name: "plain.md" }, at: null, applies: 0, busyNow: false,
+    blocks, info: { name: "plain.md" }, at: null, applies: 0, busyNow: false, heldNow: false,
     caret: () => a.at,
     busy: () => a.busyNow,
+    held: () => a.heldNow,
     read: () => cloneBlocks(a.blocks),
     apply: (ops) => { a.applies++; applyOps(a.blocks, ops); },
     meta: () => a.info,
@@ -614,6 +615,54 @@ test("together: an ask about typing not yet sent waits until the host has the te
   assert.deepEqual(heard, [{ quote: "words and more", hostText: "Hello. New words and more" }]);
   assert.deepEqual(answers, ["ask-ack"]);
   assert.equal(box.items.length, 0, "out of the box once confirmed");
+  host.stop();
+});
+
+test("together: an ask waiting for text goes when the text settles without a send (a held / removed, a refused batch)", async () => {
+  const { host, guest } = await session([para("p1", "Hello.")]);
+  const g = await guest("Ana");
+  await settle(20);
+  const asksSent = [];
+  let opsSent = 0;
+  const send = g.c.send.bind(g.c);
+  g.c.send = (m) => { if (m.type === "op") opsSent++; if (m.type === "ask") asksSent.push(m.ref); return send(m); };
+  const box = createOutbox({ send: (m) => g.c.send(m), ready: (wait) => g.c.status === "live" && (!wait || g.c.settled()) });
+  g.c.on.settled = () => box.flush();
+  // A "/" command being typed is held back: the ask waits.
+  g.a.heldNow = true;
+  g.a.type("p1", 6, " /re"); g.c.local();
+  box.push({ type: "ask", ask: { quote: "Hello" } }, { wait: true });
+  assert.deepEqual(asksSent, []);
+  // Escape and delete: nothing to send, the text is settled, the ask goes at once.
+  g.a.blocks[0].text = "Hello."; g.a.heldNow = false; g.c.local();
+  assert.equal(asksSent.length, 1, "sent on settling");
+  assert.equal(opsSent, 0, "without any batch or receipt");
+  // A batch the room refuses: dropped, then the waiting ask goes.
+  g.c.send = (m) => { if (m.type === "ask") asksSent.push(m.ref); return m.type === "op" ? true : send(m); };
+  g.a.type("p1", 0, "Big "); g.c.local();
+  const seq = g.c.pending.seq;
+  box.push({ type: "ask", ask: { quote: "Hello" } }, { wait: true });
+  assert.equal(asksSent.length, 1);
+  g.c.receive(JSON.stringify({ type: "refused", seq }));
+  assert.equal(asksSent.length, 2, "sent after the refused batch was dropped");
+  host.stop();
+});
+
+test("together: a copied client id stays refused while its tab is away, and the tab comes back with its rights", async () => {
+  const { host, guest } = await session([para("p1", "Hello.")]);
+  const ana = await guest("Ana");
+  await settle(20);
+  const asker = ana.c.asker;
+  ana.c.backoffMs = 200;
+  ana.c.ws.close(); // Ana is away; the room tells the host she left
+  assert.ok(await waitFor(() => !host.people.has(ana.c.pid)));
+  const eve = await guest("Eve");
+  eve.c.client = ana.c.client; // copied from an op broadcast
+  eve.c.hello();
+  await settle(20);
+  assert.equal(eve.c.status, "refused", "refused although Ana is not here");
+  assert.ok(await waitFor(() => ana.c.status === "live" && host.people.get(ana.c.pid)?.asker === asker), "Ana is back with her asker id");
+  assert.equal(ana.c.asker, asker);
   host.stop();
 });
 
