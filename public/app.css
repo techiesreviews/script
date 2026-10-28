@@ -368,7 +368,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   color: var(--muted); font-size: 0.75rem; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .edit-bar__controls {
-  display: flex; align-items: center; gap: 2px; padding: 4px; max-inline-size: 100%; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  display: flex; align-items: center; gap: 2px; padding: 4px; max-inline-size: 100%;
   border-radius: 0 var(--radius-panel) var(--radius-panel) var(--radius-panel);
   background: var(--surface); box-shadow: var(--shadow);
 }
@@ -380,9 +380,10 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__button svg { color: var(--muted); }
 .edit-bar__button--voice svg { color: var(--accent-ink); }
 .edit-bar__button:active { background: var(--pressed); }
-.edit-bar__sep { inline-size: 1px; align-self: stretch; margin: 0.3rem 0.2rem; background: var(--line); flex: none; }
 .edit-bar__ask { display: flex; align-items: center; flex: none; gap: 2px; padding-inline-start: 0.3rem; border-radius: var(--radius); background: var(--raised); }
-.edit-bar__ask input { inline-size: 9.5rem; min-block-size: 2rem; border: 0; padding: 0 0.25rem; background: transparent; color: inherit; font-size: 0.85rem; outline: 2px solid transparent; }
+.edit-bar__ask { margin-inline-start: 0.2rem; }
+.edit-bar__ask input { inline-size: 7rem; min-block-size: 2rem; border: 0; padding: 0 0.25rem; background: transparent; color: inherit; font-size: 0.85rem; outline: 2px solid transparent; }
+.edit-bar__ask input:focus { inline-size: 12rem; }
 .edit-bar__ask:focus-within { box-shadow: 0 0 0 2px var(--accent); }
 .edit-bar__ask button { display: grid; place-items: center; inline-size: 1.75rem; block-size: 1.75rem; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); cursor: pointer; }
 .edit-bar__ask button:active { background: var(--pressed); }
@@ -391,13 +392,25 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 }
 @media (prefers-reduced-motion: no-preference) {
   .edit-bar:not([hidden]) { animation: lift-in 160ms var(--ease-out); }
+  .edit-bar__ask input { transition: inline-size 180ms var(--ease-out); }
 }
+/* More ▾ and B-roll ▾ open a small menu in the script and export menus' style; the script places it. */
+.edit-bar__button[aria-haspopup] > svg:last-child { inline-size: 0.8em; block-size: 0.8em; margin-inline-start: -0.15rem; color: var(--faint); }
+.edit-bar__button[aria-expanded="true"] { background: var(--pressed); }
+.menu.bar-menu { position-area: none; margin: 0; inline-size: max-content; min-inline-size: 11rem; max-inline-size: calc(100vw - 1rem); }
 @keyframes lift-in { from { opacity: 0; translate: 0 3px; } }
 /* Phone: the bar docks at the bottom so the system's own selection handles stay free. */
+/* It fits the screen without scrolling sideways: Sound like me (and a guest's Suggest B-roll) show their icon only,
+   Shorter, Simpler and B-roll their words only, and the Ask field takes the rest. */
 @media (width < 40rem) {
   .edit-bar { inset-block: auto max(0.5rem, env(safe-area-inset-bottom, 0px)); inset-inline: 0.5rem; inline-size: auto; max-inline-size: none; }
   .edit-bar__controls { inline-size: 100%; }
-  .edit-bar__ask input { font-size: 16px; }
+  .edit-bar__button { gap: 0.25rem; padding-inline: 0.4rem; font-size: 0.82rem; }
+  /* Words carry these buttons on a phone; their icons give the room to the Ask field. */
+  .edit-bar__button:is([data-act="shorter"], [data-act="simpler"]) > svg:first-child, #brollBtn > svg:first-child { display: none; }
+  .edit-bar__button--voice .edit-bar__text, #suggestBroll .edit-bar__text { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+  .edit-bar__ask { flex: 1 1 auto; min-inline-size: 0; }
+  .edit-bar__ask input, .edit-bar__ask input:focus { flex: 1; inline-size: 100%; min-inline-size: 0; font-size: 16px; }
 }
 
 /* ---------- Voice card ---------- */

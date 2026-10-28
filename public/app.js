@@ -876,17 +876,61 @@ function showBar() {
   barSel = s;
   const spoken = spokenSelection(s.range).length > 0;
   $("#addBroll").disabled = !canAddBroll() || !spoken;
-  $("#addBroll").hidden = state.guest; // guests can't add shots; "Suggest B-roll" is an ask like any other
-  $('#editBar [data-act="broll"]').disabled = !spoken;
+  for (const b of $$('#editBar [data-act="broll"]')) b.disabled = !spoken;
+  // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
+  $("#brollBtn").hidden = state.guest;
+  $("#suggestBroll").hidden = !state.guest;
   const n = D.countWords(s.quote);
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
   placeBar(s.range);
 }
-function hideBar() { bar.hidden = true; $("#askInput").value = ""; barSel = null; }
+function hideBar() { closeBarMenus(); bar.hidden = true; $("#askInput").value = ""; barSel = null; }
+
+/* More ▾ and B-roll ▾: small menus in the bar. They never take the text selection (barSel keeps it), open below
+   their button or above it, whichever fits, and work with the keyboard: Enter or Space opens, the arrow keys move,
+   Escape closes and goes back to the button. */
+const barMenus = [["#moreMenu", "#moreBtn"], ["#brollMenu", "#brollBtn"]].map(([m, b]) => ({ menu: $(m), btn: $(b), keys: false }));
+function closeBarMenus() { for (const { menu } of barMenus) if (menu.matches(":popover-open")) menu.hidePopover(); }
+function placeBarMenu({ menu, btn }) {
+  const r = btn.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight;
+  const below = innerHeight - r.bottom - 8, above = r.top - 8;
+  const up = h + 6 > below && above > below;
+  menu.style.top = `${Math.max(8, up ? r.top - h - 6 : r.bottom + 6)}px`;
+  menu.style.left = `${Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8))}px`;
+}
+const menuItems = (menu) => $$(".menu-action:not(:disabled):not([hidden])", menu);
+for (const m of barMenus) {
+  m.btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") m.keys = true;
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); m.keys = true; m.menu.showPopover(); }
+  });
+  m.menu.addEventListener("toggle", (e) => {
+    const open = e.newState === "open";
+    m.btn.setAttribute("aria-expanded", String(open));
+    if (open) {
+      placeBarMenu(m);
+      if (m.keys) menuItems(m.menu)[0]?.focus();
+    }
+    m.keys = false;
+  });
+  m.menu.addEventListener("keydown", (e) => {
+    const items = menuItems(m.menu), i = items.indexOf(document.activeElement);
+    let to = null;
+    if (e.key === "ArrowDown") to = items[(i + 1) % items.length];
+    else if (e.key === "ArrowUp") to = items[(i - 1 + items.length) % items.length];
+    else if (e.key === "Home") to = items[0];
+    else if (e.key === "End") to = items.at(-1);
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); m.menu.hidePopover(); m.btn.focus(); return; }
+    else if (e.key === "Tab") { m.menu.hidePopover(); return; }
+    else return;
+    e.preventDefault();
+    to?.focus();
+  });
+}
 let selTimer = 0;
 document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
-addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
+addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
 addEventListener("resize", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); positionShotCard(); });
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
 bar.addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) makeAsk(b.dataset.act); });
@@ -1698,7 +1742,7 @@ $$("[data-icon]").forEach((el) => {
   if (el.classList.contains("menu-action__copy") || el.tagName === "BUTTON") el.innerHTML = icon(el.dataset.icon);
   else el.outerHTML = icon(el.dataset.icon);
 });
-$$(".edit-bar__button[data-act]").forEach((b) => (b.innerHTML = icon(ACT_ICON[b.dataset.act]) + esc(D.ACTIONS[b.dataset.act].name)));
+$$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.dataset.act])}<span class="edit-bar__text">${esc(D.ACTIONS[b.dataset.act].name)}</span>`));
 
 
 /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */

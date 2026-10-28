@@ -97,15 +97,20 @@
 <div class="edit-bar" id="editBar" role="toolbar" aria-label="Edit selection" hidden>
   <span class="edit-bar__label" id="ebLabel">0 words</span>
   <div class="edit-bar__controls">
-    <button class="edit-bar__button edit-bar__button--voice" type="button" data-act="like"></button>
-    <button class="edit-bar__button" type="button" data-act="simpler"></button>
     <button class="edit-bar__button" type="button" data-act="shorter"></button>
-    <button class="edit-bar__button" type="button" data-act="explain"></button>
-    <button class="edit-bar__button" type="button" data-act="facts"></button>
-    <span class="edit-bar__sep"></span>
-    <button class="edit-bar__button" type="button" id="addBroll"><span data-icon="film"></span>Add B-roll</button>
-    <button class="edit-bar__button" type="button" data-act="broll"></button>
-    <span class="edit-bar__sep"></span>
+    <button class="edit-bar__button" type="button" data-act="simpler"></button>
+    <button class="edit-bar__button edit-bar__button--voice" type="button" data-act="like"></button>
+    <button class="edit-bar__button" type="button" id="moreBtn" popovertarget="moreMenu" aria-haspopup="menu" aria-expanded="false">More<span data-icon="chevron"></span></button>
+    <div class="menu bar-menu" id="moreMenu" role="menu" aria-labelledby="moreBtn" popover>
+      <button class="menu-action" type="button" role="menuitem" data-act="explain"></button>
+      <button class="menu-action" type="button" role="menuitem" data-act="facts"></button>
+    </div>
+    <button class="edit-bar__button" type="button" id="brollBtn" popovertarget="brollMenu" aria-haspopup="menu" aria-expanded="false"><span data-icon="film"></span>B-roll<span data-icon="chevron"></span></button>
+    <div class="menu bar-menu" id="brollMenu" role="menu" aria-labelledby="brollBtn" popover>
+      <button class="menu-action" type="button" role="menuitem" id="addBroll"><span data-icon="film"></span>Add B-roll…</button>
+      <button class="menu-action" type="button" role="menuitem" data-act="broll"></button>
+    </div>
+    <button class="edit-bar__button" type="button" data-act="broll" id="suggestBroll" hidden></button>
     <form class="edit-bar__ask" id="askForm"><input id="askInput" type="text" placeholder="Ask…" aria-label="Ask about this selection" autocomplete="off" maxlength="500"><button type="submit" aria-label="Send" data-icon="send"></button></form>
   </div>
 </div>
