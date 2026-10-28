@@ -380,10 +380,10 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__button svg { color: var(--muted); }
 .edit-bar__button--voice svg { color: var(--accent-ink); }
 .edit-bar__button:active { background: var(--pressed); }
-.edit-bar__ask { display: flex; align-items: center; flex: none; gap: 2px; padding-inline-start: 0.3rem; border-radius: var(--radius); background: var(--raised); }
-.edit-bar__ask { margin-inline-start: 0.2rem; }
+.edit-bar__ask { display: flex; align-items: center; flex: none; gap: 2px; margin-inline-start: 0.2rem; padding-inline-start: 0.3rem; border-radius: var(--radius); background: var(--raised); }
 .edit-bar__ask input { inline-size: 7rem; min-block-size: 2rem; border: 0; padding: 0 0.25rem; background: transparent; color: inherit; font-size: 0.85rem; outline: 2px solid transparent; }
-.edit-bar__ask input:focus { inline-size: 12rem; }
+/* Grows when focused, never past the room on screen (--ask-max is set by the script on focus). */
+.edit-bar__ask input:focus { inline-size: min(12rem, var(--ask-max, 12rem)); }
 .edit-bar__ask:focus-within { box-shadow: 0 0 0 2px var(--accent); }
 .edit-bar__ask button { display: grid; place-items: center; inline-size: 1.75rem; block-size: 1.75rem; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); cursor: pointer; }
 .edit-bar__ask button:active { background: var(--pressed); }

@@ -877,6 +877,7 @@ function showBar() {
   const spoken = spokenSelection(s.range).length > 0;
   $("#addBroll").disabled = !canAddBroll() || !spoken;
   for (const b of $$('#editBar [data-act="broll"]')) b.disabled = !spoken;
+  $("#brollBtn").disabled = $("#addBroll").disabled && !spoken; // nothing usable in its menu
   // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
   $("#brollBtn").hidden = state.guest;
   $("#suggestBroll").hidden = !state.guest;
@@ -892,6 +893,16 @@ function hideBar() { closeBarMenus(); bar.hidden = true; $("#askInput").value = 
    Escape closes and goes back to the button. */
 const barMenus = [["#moreMenu", "#moreBtn"], ["#brollMenu", "#brollBtn"]].map(([m, b]) => ({ menu: $(m), btn: $(b), keys: false }));
 function closeBarMenus() { for (const { menu } of barMenus) if (menu.matches(":popover-open")) menu.hidePopover(); }
+// Escape: close the open bar menu and give its button the focus. Returns false when no menu was open.
+function closeBarMenu() {
+  const m = barMenus.find((x) => x.menu.matches(":popover-open"));
+  if (!m) return false;
+  m.menu.hidePopover();
+  m.btn.focus();
+  return true;
+}
+// The bar's controls in Tab order, as shown now (menus' items are not in it).
+const barControls = () => [...$$(".edit-bar__controls > button", bar), $("#askInput"), $("#askForm button")].filter((el) => !el.hidden && !el.disabled && el.offsetParent);
 function placeBarMenu({ menu, btn }) {
   const r = btn.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight;
   const below = innerHeight - r.bottom - 8, above = r.top - 8;
@@ -903,14 +914,14 @@ const menuItems = (menu) => $$(".menu-action:not(:disabled):not([hidden])", menu
 for (const m of barMenus) {
   m.btn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") m.keys = true;
-    else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); m.keys = true; m.menu.showPopover(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); m.keys = e.key === "ArrowUp" ? "last" : true; if (!m.menu.matches(":popover-open")) m.menu.showPopover(); }
   });
   m.menu.addEventListener("toggle", (e) => {
     const open = e.newState === "open";
     m.btn.setAttribute("aria-expanded", String(open));
     if (open) {
       placeBarMenu(m);
-      if (m.keys) menuItems(m.menu)[0]?.focus();
+      if (m.keys) menuItems(m.menu)[m.keys === "last" ? menuItems(m.menu).length - 1 : 0]?.focus();
     }
     m.keys = false;
   });
@@ -921,8 +932,15 @@ for (const m of barMenus) {
     else if (e.key === "ArrowUp") to = items[(i - 1 + items.length) % items.length];
     else if (e.key === "Home") to = items[0];
     else if (e.key === "End") to = items.at(-1);
-    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); m.menu.hidePopover(); m.btn.focus(); return; }
-    else if (e.key === "Tab") { m.menu.hidePopover(); return; }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeBarMenu(); return; }
+    else if (e.key === "Tab") {
+      // Tab leaves the menu for the next (Shift: previous) bar control; the closing menu never takes the focus.
+      e.preventDefault();
+      m.menu.hidePopover();
+      const list = barControls(), i = list.indexOf(m.btn);
+      (list[i + (e.shiftKey ? -1 : 1)] || m.btn).focus();
+      return;
+    }
     else return;
     e.preventDefault();
     to?.focus();
@@ -931,7 +949,7 @@ for (const m of barMenus) {
 let selTimer = 0;
 document.addEventListener("selectionchange", () => { clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
-addEventListener("resize", () => { if (!bar.hidden && barSel?.range) placeBar(barSel.range); positionShotCard(); });
+addEventListener("resize", () => { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } positionShotCard(); });
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
 bar.addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) makeAsk(b.dataset.act); });
 $("#askForm").addEventListener("submit", (e) => {
@@ -940,6 +958,15 @@ $("#askForm").addEventListener("submit", (e) => {
   if (q) makeAsk("ask", q);
 });
 $("#askInput").addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); } });
+// The field grows when focused, but only into the room the screen has; the bar is placed again as it grows and shrinks.
+function fitAsk(focused) {
+  const input = $("#askInput");
+  if (focused) input.style.setProperty("--ask-max", `${input.offsetWidth + Math.max(0, document.documentElement.clientWidth - 16 - bar.offsetWidth)}px`);
+  if (!bar.hidden && barSel?.range) placeBar(barSel.range);
+}
+$("#askInput").addEventListener("focusin", () => fitAsk(true));
+$("#askInput").addEventListener("focusout", () => fitAsk(false));
+$("#askInput").addEventListener("transitionend", () => fitAsk(false));
 
 function makeAsk(action, typed = "") {
   const s = barSel;
@@ -1728,7 +1755,12 @@ document.addEventListener("keydown", (e) => {
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { hideBar(); closeCard(); closeShotCard(); if (broll.lit) lightShot(broll.lit, false); } });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  // An open bar menu (from the mouse too, or with nothing usable in it) closes alone; the bar stays.
+  if (closeBarMenu()) { e.preventDefault(); return; }
+  hideBar(); closeCard(); closeShotCard(); if (broll.lit) lightShot(broll.lit, false);
+});
 addEventListener("beforeunload", (e) => {
   persistDraft();
   flushSave();

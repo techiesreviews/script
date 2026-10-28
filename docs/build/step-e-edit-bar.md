@@ -16,6 +16,7 @@ Lex (2026-10-28): "Can we simplify the edit bar, it is very long now." Today it 
 - **Ask…** stays a text field, a little narrower. It grows when focused.
 - The word count label stays.
 - On phones the bar fits the screen width without sideways scrolling: Sound like me shows its icon only, and the field takes the rest.
+- **Phone rule (approved by the lead, 2026-10-28, so the bar fits):** on phones Shorter, Simpler and B-roll show their words only (no icons), and Sound like me and a guest's Suggest B-roll show their icons only (the words stay for screen readers).
 - **Keyboard:** Tab moves through the bar, Enter or Space opens a menu, arrow keys move inside it, and Escape closes it and returns focus to its button. Opening a menu must not lose the text selection; the ask still uses the selected text.
 - The bar's behaviour stays the same otherwise: pending dots, the agent shimmer, disabled states, guests' limits (D2) and the `/` menu.
 - No tooltips that explain, and no new text beyond the menu labels.
