@@ -60,7 +60,8 @@ export function parseBroll(markdown) {
       const get = (k) => (col[k] >= 0 ? clean(row[col[k]] ?? "") : "");
       const what = get("what"), over = get("over"), how = get("how");
       if (!what && !over) continue;
-      let id = get("id") || `#${shots.length + 1}`;
+      // Ids double as sketch fence names: no spaces, at most 20 characters.
+      let id = (get("id") || `#${shots.length + 1}`).replace(/\s+/g, "-").slice(0, 20);
       for (let n = 2; seen.has(id); n++) id = `${get("id") || "#"}·${n}`;
       seen.add(id);
       shots.push({ id, what, over, how, kind: screen ? "screen" : /motion/i.test(how) ? "motion" : "broll" });
@@ -280,6 +281,7 @@ export function checkSketch(ask, args) {
   if (!["waiting", "taken", "answered"].includes(ask.status)) return { error: `This ask is finished (${ask.status}).` };
   const a = args && typeof args === "object" ? args : {};
   if (typeof a.shotId !== "string" || !(ask.shots || []).some((s) => s.id === a.shotId)) return { error: `shotId must be one of: ${(ask.shots || []).map((s) => s.id).join(", ")}.` };
+  if (ask.answer?.done?.[a.shotId]) return { error: `This shot is finished (${ask.answer.done[a.shotId]}).` };
   if (typeof a.svg !== "string" || !a.svg.trim()) return { error: "svg is required." };
   if (a.svg.length > SKETCH_MAX) return { error: `svg is longer than ${SKETCH_MAX} characters.` };
   const svg = sanitizeSvg(a.svg);

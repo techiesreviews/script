@@ -206,3 +206,11 @@ test("sketch asks: checkSketch limits, and answer_ask refuses them", () => {
   assert.match(ACTIONS.sketch.instruction, /0 0 260 140/);
   assert.match(ACTIONS.sketch.instruction, /sketch_shot/);
 });
+
+test("a finished shot does not reopen, and shot ids fit sketch fences", () => {
+  const ask = { scope: "broll", status: "answered", shots: [{ id: "B1" }], answer: { done: { B1: "undone" } } };
+  assert.match(checkSketch(ask, { shotId: "B1", svg: '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L10 10"/></svg>' }).error, /finished \(undone\)/);
+  const list = parseBroll("| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n| Screen 1 with a very long name here | x | \"y\" | Slide |\n");
+  const id = list.shots[0].id;
+  assert.ok(!/\s/.test(id) && id.length <= 20, id);
+});

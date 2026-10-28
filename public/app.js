@@ -1984,6 +1984,7 @@ function undoSketch(id) {
   changed();
 }
 // Keep writes the sketch into the B-roll file's "## Sketches" section, so it stays with the file.
+let brollWrites = Promise.resolve();
 async function keepSketch(id) {
   const ask = sketchAsk();
   const svg = ask?.answer?.sketches?.[id];
@@ -1993,7 +1994,10 @@ async function keepSketch(id) {
   delete broll.problem[id];
   renderBoard();
   try {
-    await writeSketch(id, svg);
+    // One file write at a time: two quick Keeps must not both read the old file.
+    const run = brollWrites.then(() => writeSketch(id, svg));
+    brollWrites = run.catch(() => {});
+    await run;
     if (token !== broll.token) return;
     broll.sketches[id] = svg;
     delete ask.answer.sketches[id];

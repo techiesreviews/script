@@ -16,7 +16,7 @@ export const WATCH_PROMPT = `Watch my script editor and answer my asks until I s
 
 Set up a loop, for example with a watchdog subagent:
 1. Call wait_for_asks (it waits up to 25 seconds). When it says there are no asks yet, call it again.
-2. For each ask, read its action, instruction, quote, context and section (call get_script when you need the whole script; use the voiceGuide when one is given), then answer it once with answer_ask:
+2. For each ask, read its action, instruction, quote, context and section (call get_script when you need the whole script; use the voiceGuide when one is given), then answer it once with answer_ask (or sketch_shot for sketch asks):
    - like, simpler, shorter: kind "replace" with the new text for the quote.
    - explain: kind "add" with one or two plain sentences that go after the quote.
    - facts: kind "note" with tone "ok" or "look".

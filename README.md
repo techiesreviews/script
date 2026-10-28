@@ -28,7 +28,7 @@ When you connect an agent, a small live relay (a Cloudflare Durable Object) pass
 
 3. Use the `watch_script` prompt. Your agent waits for asks and answers each one in place.
 
-Tools: `get_script`, `wait_for_asks`, `answer_ask`, `list_asks`. A connection lasts at most eight hours; **Disconnect MCP** ends it at once. Keep the token private.
+Tools: `get_script` (also returns the linked B-roll list), `wait_for_asks`, `answer_ask`, `sketch_shot` (draws a storyboard sketch for a shot), `list_asks`. A connection lasts at most eight hours; **Disconnect MCP** ends it at once. Keep the token private.
 
 ## Run it on your computer
 

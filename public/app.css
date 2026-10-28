@@ -632,8 +632,9 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .toc__chip[data-check]::after { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--accent); }
 @media (hover: hover) and (pointer: fine) { .toc__chip:hover { background: var(--hover); color: var(--text); } }
 .broll-sheet {
-  margin: auto 0 0; inset-inline: 0; inline-size: 100%; max-inline-size: 100%; max-block-size: 80dvh;
-  padding: 0 0.75rem max(0.75rem, env(safe-area-inset-bottom, 0px)); border: 0; border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  margin-block: auto 0; margin-inline: 0; inset-inline: 0; inline-size: 100%; max-inline-size: 100%; max-block-size: 80dvh;
+  padding-block: 0 max(0.75rem, env(safe-area-inset-bottom, 0px)); padding-inline: 0.75rem; border: 0; border-radius: 0;
+  border-start-start-radius: var(--radius-panel); border-start-end-radius: var(--radius-panel);
   background: var(--surface); color: var(--text); box-shadow: var(--shadow); overflow-y: auto; overscroll-behavior: contain;
   opacity: 0; transition: opacity 0.2s var(--ease-out), translate 0.2s var(--ease-out), display 0.2s allow-discrete, overlay 0.2s allow-discrete;
 }
