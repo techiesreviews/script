@@ -579,7 +579,7 @@ test("renumbering: a part at the start, in the middle and at the end; names, sep
   doc = parse("# New\n");
   insertPart(doc, at(doc, "New").id, "hook");
   assert.equal(serialize(doc), "# New\n\n## 1 · Hook\n\n\n");
-  // Spoken text without a heading above it: the heading goes above that text, unnumbered, so it stays spoken.
+  // Spoken text without a heading above it: the heading goes above that text and is numbered 1 (no headings yet), so the text stays spoken.
   doc = parse("# New\n\nFirst line.\n");
   insertPart(doc, at(doc, "First line.").id, "hook");
   assert.equal(serialize(doc), "# New\n\n## 1 · Hook\n\nFirst line.\n\n\n");

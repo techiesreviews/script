@@ -10,7 +10,7 @@ Lex (2026-10-28): "When starting a new script, allow me to add parts with / comm
 
 ## The parts (in this order)
 
-1. **Spoken parts.** Each adds a numbered spoken heading, `## N · <Name>`, below the current block, plus an empty spoken paragraph with the caret in it:
+1. **Spoken parts.** Each adds a numbered spoken heading, `## N · <Name>` (or `## <Name>` in a script whose headings have no numbers, see Numbering), below the current block, plus an empty spoken paragraph with the caret in it:
    - Hook
    - Intro
    - Problem
