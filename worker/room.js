@@ -81,7 +81,8 @@ export class Room {
     const me = this.att(ws);
     if (me.role !== "host" && me.role !== "guest") return;
     const size = typeof data === "string" ? data.length : data.byteLength;
-    if (me.role === "guest" && size > GUEST_MESSAGE_MAX) return;
+    // Too large to pass on: the guest hears so and drops that batch, keeping what it typed after it.
+    if (me.role === "guest" && size > GUEST_MESSAGE_MAX) return this.send(ws, { type: "refused" });
     let msg;
     try { msg = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)); } catch { return; }
     if (!msg || typeof msg !== "object" || typeof msg.type !== "string") return;

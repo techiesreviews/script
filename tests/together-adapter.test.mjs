@@ -70,6 +70,18 @@ test("adapter: blocks from someone else keep a blank line between them, so the f
   assert.ok(!validBlocks([b("a", "para", ""), b("p", "para", "\n")]));
   assert.ok(!validBlocks([b("a", "para", "x")]));
   // Only new or changed blocks are checked, so a host file outside the rules never blocks a guest.
+  // The block after a removed or changed one is checked again (the review's example).
+  const withHeading = [b("a", "para", ""), b("h", "heading", "\n\n", "## "), b("p", "para", "\n")];
+  assert.ok(validBlocks(withHeading));
+  assert.ok(!validBlocks([b("a", "para", ""), b("p", "para", "\n")], withHeading), "heading removed: p would merge into a");
+  assert.ok(!validBlocks([b("a", "para", ""), b("h", "para", "\n\n"), b("p", "para", "\n")], withHeading), "heading turned into a para");
+  // Spaces at the end of a separator would become the next block's text: "  ## x" reads back as a para.
+  assert.ok(!validBlocks([b("a", "para", ""), b("h", "heading", "\n\n  ", "## ")]));
+  assert.ok(!validBlocks([b("a", "para", ""), b("p", "para", "\n\n ")]));
+  // Any run of spaces after the hashes, as D.prefixOf reads it.
+  const nine = D.parse("#         Wide title\n\nText.\n");
+  assert.equal(D.prefixOf(nine.blocks[0]), "#         ");
+  assert.ok(validBlocks(readBlocks(nine)));
   const odd = [b("a", "raw", ""), b("p", "para", "\n")];
   assert.ok(validBlocks([...odd, b("n", "para", "\n\n")], odd));
   assert.ok(!validBlocks([...odd, b("n", "para", "")], odd));

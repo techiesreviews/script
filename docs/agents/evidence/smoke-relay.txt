@@ -7,13 +7,19 @@ ok serverInfo is script-editor
 ok notification gets 202
 ok tab learns the agent's name
 ok foreign Origin is refused
-ok tools/list has the four tools
+ok tools/list has the six tools
 ok get_script returns the tab's script
 ok wait_for_asks returns the new ask
 ok answer_ask reaches the tab
 ok tab received the answer
 ok over-long text is refused before the tab
 ok list_asks shows the answered status
+ok wait_for_asks returns the B-roll ask
+ok answer_broll: the tab refuses a quote that is not in the script
+ok answer_broll: a screen recording with how is refused before the tab
+ok answer_broll reaches the tab
+ok tab received the B-roll changes
+ok list_asks shows each B-roll change's state
 ok wait_for_asks says no asks yet after its wait
 ok an older tab is closed with 4001
 ok a revoked token gets 401

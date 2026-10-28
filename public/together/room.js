@@ -6,12 +6,12 @@
 // A guest never drops its own changes: it sends only while the room is live, keeps the batch in flight and the
 // rest unsent across a lost connection or an away host, and on rejoining catches up from its last confirmed
 // version (or rebases onto a snapshot) before sending them again.
-import { diff, applyOps, transformOps, cloneBlocks, validOps, validCaret, movePoint, opEnd } from "./ops.js";
+import { diff, applyOps, transformOps, cloneBlocks, validOps, validCaret, movePoint, opEnd, Conflict } from "./ops.js";
 
 export const PROTOCOL = "script-editor-room";
 export const CARET_MS = Math.ceil(1000 / 15); // at most 15 caret messages a second
 export const COLOURS = 6;
-const LOG_MAX = 500;
+export const LOG_MAX = 500;
 const GROUP_MS = 1500; // typing with pauses shorter than this is one change for Undo
 const PING_MS = 30_000;
 const MINE_MAX = 100;
@@ -125,7 +125,7 @@ export class RoomClient {
     try { msg = JSON.parse(data); } catch { return; }
     if (!msg || typeof msg.type !== "string" || msg.type === "pong") return;
     // While the person composes text (an input method), changes wait so the composition is not broken.
-    if (this.adapter.busy?.() && (msg.type === "op" || msg.type === "snapshot")) { this.queue.push(msg); return; }
+    if (this.adapter.busy?.() && (msg.type === "op" || msg.type === "snapshot" || msg.type === "catchup")) { this.queue.push(msg); return; }
     this.retry = 0;
     if (this.role === "host") this.hostMessage(msg);
     else this.guestMessage(msg);
@@ -358,12 +358,14 @@ export class RoomClient {
     if (this.myCaret) carets.host = this.myCaret;
     this.send({ type: "to", to: pid, msg: { type: "catchup", v: this.v, entries: this.log.filter((e) => e.v > v).map(({ v: ev, ops, by, client: c, seq }) => ({ v: ev, ops, by, client: c, seq })), seen: this.applied.get(client) ?? 0, people: this.publicPeople(), carets } });
   }
-  snapshotTo(pid) {
+  // `refused`: the seq of the guest's batch that the host will not take (not valid for this document). The guest
+  // drops that batch instead of sending it again.
+  snapshotTo(pid, { refused } = {}) {
     if (!this.people.has(pid)) return;
     const carets = Object.fromEntries([...this.carets].filter(([p]) => p !== pid));
     if (this.myCaret) carets.host = this.myCaret;
     const seen = this.applied.get(this.people.get(pid)?.client) ?? 0;
-    this.send({ type: "to", to: pid, msg: { type: "snapshot", v: this.v, doc: { blocks: this.shadow, meta: this.adapter.meta() }, people: this.publicPeople(), carets, seen } });
+    this.send({ type: "to", to: pid, msg: { type: "snapshot", v: this.v, doc: { blocks: this.shadow, meta: this.adapter.meta() }, people: this.publicPeople(), carets, seen, ...(refused != null ? { refused } : {}) } });
   }
   commit(ops, by, client = null, seq = null) {
     this.v++;
@@ -377,20 +379,22 @@ export class RoomClient {
     if (!this.people.has(from) || !Number.isInteger(seq)) return;
     if (client && seq <= (this.applied.get(client) ?? 0)) return; // a batch sent again that is already in
     const oldest = this.log.length ? this.log[0].v - 1 : this.v;
-    if (!Number.isInteger(base) || base > this.v || base < oldest || !validOps(ops, this.adapter.validAttrs)) return this.snapshotTo(from);
+    if (!validOps(ops, this.adapter.validAttrs)) return this.snapshotTo(from, { refused: seq });
+    if (!Number.isInteger(base) || base > this.v || base < oldest) return this.snapshotTo(from);
     try {
       let g = ops;
       for (const e of this.log) if (e.v > base) [g] = transformOps(g, e.ops, false);
       const shadow = applyOps(cloneBlocks(this.shadow), g);
-      if (this.adapter.validBlocks && !this.adapter.validBlocks(shadow, this.shadow)) throw new Error("blocks");
+      if (this.adapter.validBlocks && !this.adapter.validBlocks(shadow, this.shadow)) return this.snapshotTo(from, { refused: seq });
       // The host's own changes not sent yet (a "/" command being typed) stay on top.
       const [gl] = transformOps(g, diff(this.shadow, this.live), true);
       const next = applyOps(cloneBlocks(this.live), gl);
       this.shadow = shadow;
       this.commit(g, from, client, seq);
       this.applyRemote(gl, from, next);
-    } catch {
-      this.snapshotTo(from);
+    } catch (e) {
+      // A clash on the same block: a snapshot the guest rebases onto. Anything else that would not apply is refused.
+      this.snapshotTo(from, e instanceof Conflict ? {} : { refused: seq });
     }
   }
 
@@ -404,6 +408,7 @@ export class RoomClient {
         return;
       case "snapshot": return this.snapshot(msg);
       case "catchup": return this.catchup(msg);
+      case "refused": return this.refused(); // the room would not pass a batch on (too large)
       case "op": return this.joining ? undefined : this.remoteOps(msg);
       case "people": return this.setPeople((msg.people || []).filter((p) => p && typeof p.pid === "string"));
       case "caret": return this.setCaret(msg.from, msg.c);
@@ -420,10 +425,33 @@ export class RoomClient {
   hello() {
     this.joining = true;
     this.setStatus("connecting");
-    this.send({ type: "hello", name: this.name, client: this.client, v: this.confirmed ? this.v : null });
+    // While a resync is open, ask for a snapshot: a resync lost with a connection must not leave us waiting.
+    this.send({ type: "hello", name: this.name, client: this.client, v: this.confirmed && !this.resyncing ? this.v : null });
   }
-  snapshot({ v, doc, people, carets, seen = 0 }) {
+  // Drop the batch in flight (the host refused it): keep only what was typed after it, rebased onto the agreed
+  // document. On a clash, the agreed document wins.
+  dropPending() {
+    if (!this.pending) return;
+    let live = cloneBlocks(this.confirmed);
+    try {
+      const [after] = transformOps(diff(this.shadow, this.live), diff(this.shadow, this.confirmed), false);
+      live = applyOps(cloneBlocks(this.confirmed), after);
+    } catch { /* keep the agreed document */ }
+    this.pending = null;
+    this.shadow = cloneBlocks(this.confirmed);
+    this.live = live;
+    this.mine = [];
+  }
+  refused() {
+    if (!this.pending) return;
+    this.dropPending();
+    this.applying = true;
+    try { this.adapter.load({ blocks: cloneBlocks(this.live), meta: this.meta }); } finally { this.applying = false; }
+    this.flush();
+  }
+  snapshot({ v, doc, people, carets, seen = 0, refused = null }) {
     if (!doc || !Array.isArray(doc.blocks)) return;
+    if (refused != null && this.pending?.seq === refused) this.dropPending();
     const fresh = cloneBlocks(doc.blocks);
     // Keep what this guest typed: rebase it onto the snapshot. The batch in flight counts as in when the host has it.
     let live = fresh;
@@ -442,6 +470,7 @@ export class RoomClient {
     this.live = live;
     this.carets = new Map(Object.entries(carets || {}).filter(([, c]) => validCaret(c) && c));
     this.applying = true;
+    this.meta = doc.meta;
     try { this.adapter.load({ blocks: cloneBlocks(live), meta: doc.meta }); } finally { this.applying = false; }
     this.setPeople(people || []);
     this.setStatus("live");
@@ -453,7 +482,7 @@ export class RoomClient {
   catchup({ v, entries, people, carets, seen = 0 }) {
     this.joining = false;
     for (const e of entries || []) this.remoteOps(e);
-    if (this.resyncing || this.v !== v) return this.resync();
+    if (this.resyncing || this.v !== v) { this.resyncing = false; return this.resync(); }
     this.setPeople(people || []);
     for (const [pid, c] of Object.entries(carets || {})) if (validCaret(c) && c) this.carets.set(pid, c);
     this.setStatus("live");

@@ -3095,7 +3095,7 @@ function fitTop() {
   const top = $(".top"), sw = $("#viewSwitch"), end = $(".top__end");
   const cs = getComputedStyle(top);
   const room = top.clientWidth - parseFloat(cs.paddingInlineEnd) - end.offsetWidth;
-  const crowded = !sw.hidden && room < top.clientWidth / 2 + sw.offsetWidth / 2 + (parseFloat(cs.columnGap) || 8);
+  const crowded = !sw.hidden && room < top.clientWidth / 2 + sw.offsetWidth / 2 + (parseFloat(cs.columnGap) || 0);
   if (crowded !== ("crowded" in top.dataset)) top.toggleAttribute("data-crowded", crowded);
 }
 const topFit = new ResizeObserver(() => fitTop());

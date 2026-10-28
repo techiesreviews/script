@@ -17,8 +17,10 @@ const ATTRS = ["type", "sep", "prefix"];
 // same content offsets as asks.
 export const readBlocks = (doc) => doc.blocks.map((b) => ({ id: b.id, text: D.contentOf(b), attrs: { type: b.type, sep: b.sep, prefix: D.prefixOf(b) } }));
 
-// The "# " / "## " marker belongs to its type: titles have "#", headings "##", every other block none.
-const PREFIX = { title: /^#[ \t]{1,8}$/, heading: /^##[ \t]{1,8}$/ };
+// The "# " / "## " marker belongs to its type: titles have "#", headings "##", every other block none. Like
+// D.prefixOf, any run of spaces and tabs after the hashes counts.
+const PREFIX_MAX = 1000;
+const PREFIX = { title: /^#[ \t]+$/, heading: /^##[ \t]+$/ };
 const prefixFits = (type, prefix) => (PREFIX[type] ? PREFIX[type].test(prefix) : prefix === "");
 export function validAttrs(a, partial) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
@@ -26,23 +28,26 @@ export function validAttrs(a, partial) {
   if (!keys.length || keys.some((k) => !ATTRS.includes(k)) || (!partial && keys.length !== ATTRS.length)) return false;
   if ("type" in a && !TYPES.includes(a.type)) return false;
   if ("sep" in a && !(typeof a.sep === "string" && a.sep.length <= 400 && /^[ \t\r\n]*$/.test(a.sep))) return false;
-  if ("prefix" in a && !(typeof a.prefix === "string" && /^(?:#{1,2}[ \t]{1,8})?$/.test(a.prefix))) return false;
+  if ("prefix" in a && !(typeof a.prefix === "string" && a.prefix.length <= PREFIX_MAX && /^(?:#{1,2}[ \t]+)?$/.test(a.prefix))) return false;
   if ("type" in a && "prefix" in a && !prefixFits(a.type, a.prefix)) return false;
   return true;
 }
 /** The script after someone else's change: every marker fits its type, and blocks stay apart the way the file is
  *  read back (a blank line between blocks; only a title or heading may be followed by a single line break).
- *  With `before`, only blocks whose attrs are new or changed are checked, so a host file that already differs
- *  from these rules never blocks a guest's ordinary edits. */
+ *  With `before`, a block is checked when it is new or changed, or when the block before it is new, changed or
+ *  another one (removed or moved), so a host file that already differs from these rules never blocks a guest's
+ *  edits elsewhere. A separator never ends in spaces: the file would read them as the next block's text. */
 export function validBlocks(blocks, before = null) {
-  const old = before && new Map(before.map((b) => [b.id, JSON.stringify(b.attrs)]));
+  const key = (b, prev) => `${JSON.stringify(b.attrs)}|${prev?.id ?? ""}`;
+  const old = before && new Map(before.map((b, i) => [b.id, key(b, before[i - 1])]));
+  const same = (i) => !!old && old.get(blocks[i].id) === key(blocks[i], blocks[i - 1]);
   return blocks.every((b, i) => {
-    if (old && old.get(b.id) === JSON.stringify(b.attrs)) return true;
+    if (same(i) && (i === 0 || same(i - 1))) return true;
     const { type, sep, prefix } = b.attrs || {};
     if (!validAttrs(b.attrs, false) || !prefixFits(type, prefix)) return false;
     if (i === 0) return /^(?:[ \t]*\r?\n)*$/.test(sep);
     const prev = blocks[i - 1].attrs?.type;
-    return /^\r?\n(?:[ \t]*\r?\n)+[ \t]*$/.test(sep) || ((prev === "title" || prev === "heading") && /^\r?\n$/.test(sep));
+    return /^\r?\n(?:[ \t]*\r?\n)+$/.test(sep) || ((prev === "title" || prev === "heading") && /^\r?\n$/.test(sep));
   });
 }
 
@@ -173,6 +178,7 @@ export function createTogether(app) {
     more.className = "people__more";
     more.textContent = `+${others - 2}`;
     more.title = list.filter((p) => !p.me).slice(2).map((p) => p.name).join(", ");
+    more.setAttribute("aria-label", `${others - 2} more: ${more.title}`);
     el.replaceChildren(...[...list].sort((a, b) => b.me - a.me).map((p) => {
       const a = document.createElement(p.me ? "span" : "button");
       a.className = p.me ? "avatar avatar--me" : "avatar";

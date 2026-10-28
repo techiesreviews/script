@@ -1,0 +1,24 @@
+ok /api/room without a WebSocket gets 426
+ok the host opens the room
+ok the host proves its keys with subprotocols
+ok the socket URL holds no room id and no key
+ok the room answers with the script-editor-room subprotocol
+ok two guests join
+ok guests get the script
+ok a guest sends no host key
+ok guests get the file name
+ok everyone sees three people
+ok a wrong key is refused
+ok everyone ends on the same text
+ok no typed word is lost
+ok the host gave each batch a version
+ok a guest's typing survives a lost connection
+ok and arrives once
+ok guests see the host is away
+ok typing while the host is away arrives when it is back
+ok a caret reaches everyone
+ok the host's caret reaches the guests
+ok a guest's ask reaches the host
+ok stop sharing ends the room for guests
+ok an ended room refuses new joins
+RESULT: ok smoke-room

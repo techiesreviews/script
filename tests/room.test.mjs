@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Room, CLOSE, HOST_GRACE_MS, GUESTS_MAX } from "../worker/room.js";
-import { RoomClient, newRoom, makeLink, parseLink, protocols } from "../public/together/room.js";
+import { RoomClient, newRoom, makeLink, parseLink, protocols, LOG_MAX } from "../public/together/room.js";
 import { applyOps, cloneBlocks } from "../public/together/ops.js";
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -70,10 +70,11 @@ function socketFactory(rooms) {
 }
 const plainAdapter = (blocks = []) => {
   const a = {
-    blocks, info: { name: "plain.md" }, at: null,
+    blocks, info: { name: "plain.md" }, at: null, applies: 0, busyNow: false,
     caret: () => a.at,
+    busy: () => a.busyNow,
     read: () => cloneBlocks(a.blocks),
-    apply: (ops) => { applyOps(a.blocks, ops); },
+    apply: (ops) => { a.applies++; applyOps(a.blocks, ops); },
     meta: () => a.info,
     load: (doc) => { a.blocks = doc.blocks; a.info = doc.meta; },
     text: () => a.blocks.map((b) => b.text).join("|"),
@@ -365,6 +366,83 @@ test("together: Ctrl+Z in a room undoes an Enter and a Backspace for everyone", 
   await settle(60);
   assert.equal(ha.text(), start);
   assert.equal(g.a.text(), start);
+  host.stop();
+});
+
+test("together: a resync lost with the host's connection ends in a snapshot, and typing goes on", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello.")]);
+  const g = await guest("Ana");
+  host.backoffMs = 150; // away long enough for the resync to be lost
+  host.ws.close();
+  await waitFor(() => g.c.status === "away");
+  // A version gap makes the guest ask for a resync while the host is away: the room answers "host away".
+  g.c.status = "live";
+  g.c.receive(JSON.stringify({ type: "op", v: g.c.v + 2, ops: [{ type: "text", blockId: "p1", at: 0, del: 0, ins: "?" }], by: "host" }));
+  assert.ok(g.c.resyncing);
+  await settle(10);
+  assert.equal(host.status, "away", "the resync went nowhere");
+  ha.type("p1", 6, " World."); host.local();
+  assert.ok(await waitFor(() => host.status === "live" && g.c.status === "live" && allSame(ha, g)), `${ha.text()} / ${g.a.text()} / ${g.c.status}`);
+  assert.ok(!g.c.resyncing);
+  g.a.type("p1", 0, "Yes. "); g.c.local();
+  assert.ok(await waitFor(() => ha.text() === "Yes. Hello. World." && allSame(ha, g)), ha.text());
+  host.stop();
+});
+
+test("together: a batch the host refuses is sent once, then dropped, with no loop", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello.")]);
+  ha.validBlocks = (blocks) => !blocks.some((b) => b.text.includes("BAD"));
+  const g = await guest("Ana");
+  let snapshots = 0, sent = 0;
+  const load = g.a.load;
+  g.a.load = (doc) => { snapshots++; load(doc); };
+  const send = g.c.send.bind(g.c);
+  g.c.send = (m) => { if (m.type === "op") sent++; return send(m); };
+  try {
+    g.a.type("p1", 6, " BAD"); g.c.local();
+    await settle(200);
+    assert.equal(sent, 1, "sent once");
+    assert.equal(snapshots, 1, "one snapshot, no loop");
+    assert.equal(g.a.text(), "Hello.");
+    assert.ok(allSame(ha, g));
+    g.a.type("p1", 6, " Fine."); g.c.local();
+    await settle(60);
+    assert.equal(ha.text(), "Hello. Fine.");
+  } finally {
+    g.c.stop();
+    host.stop();
+  }
+});
+
+test("together: back after the log moved on, a batch the host already applied arrives once", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello."), para("p2", "")]);
+  const g = await guest("Ana");
+  g.c.backoffMs = 40;
+  g.a.type("p1", 6, " Once."); g.c.local();
+  g.c.ws.close(); // the host applies the batch, the receipt is lost
+  await settle(8);
+  assert.equal(ha.text(), "Hello. Once.|");
+  for (let i = 0; i < LOG_MAX + 5; i++) { ha.type("p2", ha.blocks[1].text.length, "x"); host.local(); }
+  assert.ok(host.log[0].v > g.c.v + 1, "the guest's version is out of the host's log");
+  assert.ok(await waitFor(() => g.c.status === "live" && allSame(ha, g)), `${g.c.status}`);
+  assert.equal(ha.text().split("Once.").length, 2, "the batch is in once");
+  host.stop();
+});
+
+test("together: a catch-up waits while an input method composes", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello.")]);
+  const g = await guest("Ana");
+  g.c.ws.close();
+  await waitFor(() => g.c.status === "away");
+  ha.type("p1", 6, " World."); host.local();
+  g.a.busyNow = true;
+  const before = g.a.applies;
+  await waitFor(() => g.c.queue.some((m) => m.type === "catchup"));
+  assert.equal(g.a.applies, before, "nothing applied while composing");
+  g.a.busyNow = false;
+  g.c.resume();
+  assert.ok(await waitFor(() => g.c.status === "live" && allSame(ha, g)));
+  assert.equal(g.a.text(), "Hello. World.");
   host.stop();
 });
 
