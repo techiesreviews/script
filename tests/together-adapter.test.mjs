@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as D from "../public/doc.js";
-import { readBlocks, applyToDoc, docFromSnapshot, docMeta, validAttrs, validBlocks, guestAsk, guestId, mayAct, shareAsks, fitAsks, agentCaret } from "../public/together-adapter.js";
+import { readBlocks, applyToDoc, docFromSnapshot, docMeta, validAttrs, validBlocks, guestAsk, mayAct, shareAsks, fitAsks, agentCaret, overlappingAsks, guestMayAct, scriptAdapter } from "../public/together-adapter.js";
 import { diff, validOps } from "../public/together/ops.js";
 
 const sample = readFileSync(new URL("../public/samples/demo-good-script.md", import.meta.url), "utf8");
@@ -87,11 +87,10 @@ test("adapter: blocks from someone else keep a blank line between them, so the f
   assert.ok(!validBlocks([...odd, b("n", "para", "")], odd));
 });
 
-test("adapter: a "/" command is held back from the others for the host and guests alike, until it is text", () => {
+test('adapter: a "/" command is held back from the others for the host and guests alike, until it is text', () => {
   const cmd = { id: "b1", start: 4, end: 7, query: "ho" };
   assert.equal(D.slashHold({ open: true }), true);
   assert.equal(D.slashHold({ focused: true, cmd, matches: 1 }), true, "about to open the menu");
-  assert.equal(D.slashHold({ guest: true, focused: true, cmd, matches: 1 }), true, "guests too (step D2)");
   assert.equal(D.slashHold({ focused: true, cmd, matches: 0 }), false, "no part matches: it is text");
   assert.equal(D.slashHold({ focused: false, cmd, matches: 1 }), false, "the person left the script");
   assert.equal(D.slashHold({ focused: true, cmd, dismissed: { id: "b1", start: 4 }, matches: 1 }), false, "dismissed with Escape");
@@ -119,18 +118,59 @@ test("adapter: the host takes a guest's ask only when it fits its script", () =>
 });
 
 test("adapter: only the person who asked, and the host, may Keep or Undo", () => {
-  const ask = { by: { id: guestId("abc123abc123"), name: "Ana" } };
+  const ask = { by: { id: "a-ana", name: "Ana" } };
   assert.ok(mayAct(ask, { host: true, id: "someone" }));
-  assert.ok(mayAct(ask, { id: guestId("abc123abc123") }));
-  assert.ok(!mayAct(ask, { id: guestId("other") }));
+  assert.ok(mayAct(ask, { id: "a-ana" }));
+  assert.ok(!mayAct(ask, { id: "a-ben" }));
   assert.ok(!mayAct({ by: { id: "lex" } }, { id: "" }));
+});
+
+test("adapter: the host's check of a guest's Keep, Undo or dismiss", () => {
+  const own = (status, answer) => ({ scope: "selection", by: { id: "a-ana" }, status, ...(answer ? { answer } : {}) });
+  const text = { kind: "replace", text: "x" };
+  assert.ok(guestMayAct(own("answered", text), "keep", "a-ana"));
+  assert.ok(!guestMayAct(own("answered", text), "keep", "a-ben"), "another guest's ask");
+  assert.ok(!guestMayAct(own("answered", text), "keep", ""), "no asker id");
+  assert.ok(!guestMayAct(own("answered", { kind: "broll", changes: [] }), "undo", "a-ana"), "an answered B-roll ask stays with the host");
+  assert.ok(!guestMayAct(own("waiting"), "keep", "a-ana"), "Keep needs an answer");
+  assert.ok(guestMayAct(own("taken"), "undo", "a-ana"));
+  assert.ok(guestMayAct(own("taken"), "dismiss", "a-ana"));
+  assert.ok(!guestMayAct(own("kept", text), "undo", "a-ana"), "already done");
+  assert.ok(!guestMayAct({ ...own("answered", text), scope: "script" }, "keep", "a-ana"));
+  assert.ok(!guestMayAct(own("answered", text), "eval", "a-ana"));
+});
+
+test("adapter: a guest's ask over someone else's answer leaves it alone; its own older ask gives way", () => {
+  const doc = script(), p = paraOf(doc);
+  const hosts = { ...D.makeAsk(doc, { blockId: p.id, start: 3, end: 8, action: "simpler", by: { id: "lex" } }), status: "answered", answer: { kind: "replace", text: "begin" } };
+  const anas = D.makeAsk(doc, { blockId: p.id, start: 0, end: 5, action: "shorter", by: { id: "a-ana" } });
+  const bens = D.makeAsk(doc, { blockId: p.id, start: 20, end: 25, action: "facts", by: { id: "a-ben" } });
+  const asks = [hosts, anas, bens];
+  assert.deepEqual(overlappingAsks(asks, { blockId: p.id, start: 2, end: 9 }, "a-ana").map((a) => a.id), [anas.id], "Ana's new ask closes only her own");
+  assert.deepEqual(overlappingAsks(asks, { blockId: p.id, start: 2, end: 9 }, "a-ben").map((a) => a.id), [], "Ben's closes none of the others'");
+  assert.deepEqual(overlappingAsks(asks, { blockId: p.id, start: 2, end: 9 }).map((a) => a.id), [hosts.id, anas.id], "the host's own ask wins as before");
+  assert.equal(hosts.status, "answered");
+});
+
+test("adapter: the snapshot carries the B-roll list, and a guest's load passes it on", () => {
+  const doc = script();
+  const broll = { status: "ok", name: "list.md", text: "| # | What |", flags: { B1: true } };
+  const meta = docMeta(doc, "x.md", broll);
+  assert.deepEqual(meta.broll, broll);
+  assert.equal(docMeta(doc, "x.md").broll, undefined);
+  const loads = [];
+  const adapter = scriptAdapter({ loadGuest: (d, name, b) => loads.push({ d, name, b }) });
+  adapter.load({ blocks: readBlocks(doc), meta });
+  assert.equal(loads[0].name, "x.md");
+  assert.deepEqual(loads[0].b, broll);
+  assert.equal(D.serialize(loads[0].d), D.serialize(doc));
 });
 
 test("adapter: a guest places the host's asks in its own copy, and the agent's caret follows them", () => {
   const doc = script(), p = paraOf(doc);
   const now = new Date("2026-10-28T12:00:00Z");
   const a1 = D.makeAsk(doc, { blockId: p.id, start: 3, end: 8, action: "simpler", by: { id: "lex", name: "Lex" }, now });
-  const a2 = D.makeAsk(doc, { blockId: p.id, start: 15, end: 29, action: "shorter", by: { id: guestId("abc123abc123"), name: "Ana" }, now });
+  const a2 = D.makeAsk(doc, { blockId: p.id, start: 15, end: 29, action: "shorter", by: { id: "a-ana", name: "Ana" }, now });
   const done = { ...D.makeAsk(doc, { blockId: p.id, start: 0, end: 2, action: "facts", by: { id: "lex" }, now }), status: "kept" };
   const shared = shareAsks([a1, a2, done]);
   assert.deepEqual(shared.map((a) => a.id), [a1.id, a2.id], "only open asks are shared");
@@ -145,7 +185,7 @@ test("adapter: a guest places the host's asks in its own copy, and the agent's c
   // The agent's caret: none while waiting, at the end of the text while taken, at the change while answered.
   assert.equal(agentCaret([a1], doc), null);
   a1.status = "taken"; a1.takenBy = { id: "agent:claude-code", name: "Claude Code" };
-  assert.deepEqual(agentCaret([a1, a2], doc), { pid: "agent", kind: "agent", name: "Claude Code (agent)", colour: 0, blockId: p.id, offset: 8 });
+  assert.deepEqual(agentCaret([a1, a2], doc), { pid: "agent", kind: "agent", name: "Claude Code (agent)", colour: null, blockId: p.id, offset: 8 });
   a2.status = "answered"; a2.answer = { kind: "replace", text: "Go on." }; a2.answeredBy = { id: "agent:x", name: "Claude" };
   assert.equal(agentCaret([a1, a2], doc).offset, 8, "the ask it works on wins");
   a1.status = "kept";

@@ -2,7 +2,7 @@
 import * as D from "./doc.js";
 import * as Q from "./save-queue.js";
 import * as B from "./broll.js";
-import { createTogether, parseLink, fitAsks } from "./together-adapter.js";
+import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -325,7 +325,12 @@ function fillBlock(el, b) {
   const msgs = decos.filter((d) => d.kind === "ask" && d.ask.status === "answered" && d.ask.answer.message);
   const host = wrap || null;
   if (host) {
-    host.querySelectorAll(":scope > .line__msg").forEach((m) => m.remove());
+    host.querySelectorAll(":scope > .line__msg, :scope > .ask-note").forEach((m) => m.remove());
+    if (askNotes.has(b.id)) {
+      const n = h("p", "banner ask-note", { role: "status" });
+      n.textContent = askNotes.get(b.id);
+      host.append(n);
+    }
     for (const d of msgs) {
       const p = h("p", "line__msg", { "data-ask": d.ask.id });
       p.innerHTML = icon("message") + "<span></span>";
@@ -605,6 +610,7 @@ function applyContent(id, content, caretOffset) {
 function syncFromDom(el) {
   const id = el.dataset.id, b = byId(id);
   if (!b) return;
+  clearAskNote(id);
   const content = readContent(el);
   if (content === D.contentOf(b)) {
     if (!domMatches(el, id)) renderBlock(id, getCaret());
@@ -906,14 +912,15 @@ function makeAsk(action, typed = "") {
   hideBar();
   getSelection().removeAllRanges();
   // A guest's ask goes to the host, which adds it for everyone and hands it to its agent.
-  if (state.guest) return void together.ask({ blockId: s.id, start, end, quote: content.slice(start, end), action, instruction: typed });
+  if (state.guest) {
+    clearAskNote(s.id);
+    return void together.ask({ blockId: s.id, start, end, quote: content.slice(start, end), action, instruction: typed });
+  }
   return addAsk({ blockId: s.id, start, end, action, typed, by: me });
 }
-function addAsk({ blockId, start, end, action, typed = "", by }) {
-  // The newest ask wins where two overlap.
-  for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === blockId && isOpen(a) && !isBrollAnswer(a) && a.start < end && a.end > start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
-  }
+// onlyBy: a guest's ask closes only that guest's own overlapping asks; the host's closes any ("the newest ask wins").
+function addAsk({ blockId, start, end, action, typed = "", by, onlyBy = null }) {
+  for (const a of overlappingAsks(state.asks, { blockId, start, end }, onlyBy)) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
   const ask = D.makeAsk(state.doc, { blockId, start, end, action, instruction: action === "ask" ? typed : undefined, by });
   state.asks.push(ask);
   emit("created", ask);
@@ -3046,14 +3053,23 @@ function afterRoomOps(ops, sel) {
 // Host: a guest's ask, already checked and found in this script (together-adapter.js guestAsk).
 function guestAsk(spec, by) {
   if (!state.doc || !byId(spec.blockId)) return;
-  addAsk({ blockId: spec.blockId, start: spec.start, end: spec.end, action: spec.action, typed: spec.instruction || "", by });
+  addAsk({ blockId: spec.blockId, start: spec.start, end: spec.end, action: spec.action, typed: spec.instruction || "", by, onlyBy: by.id });
 }
 // Host: Keep, Undo or dismiss from the guest who asked. B-roll suggestions stay with the host.
 function guestAct(id, act, askerId) {
-  const ask = state.asks.find((a) => a.id === id);
-  if (!ask || !isOpen(ask) || ask.scope !== "selection" || isBrollAnswer(ask) || ask.by?.id !== askerId) return;
-  if (act === "keep" && ask.status !== "answered") return;
-  doAsk(id, act);
+  if (guestMayAct(state.asks.find((a) => a.id === id), act, askerId)) doAsk(id, act);
+}
+// Guest: the host could not take an ask (its text changed meanwhile, or someone else's ask is on it). A quiet line under that line says so, until the
+// person types there or asks again.
+const askNotes = new Map();
+function askRefused(ask, reason = "changed") {
+  if (!byId(ask?.blockId)) return;
+  askNotes.set(ask.blockId, reason === "taken" ? "Couldn't ask: someone else's ask is on this text" : "Couldn't ask: this text changed");
+  renderBlock(ask.blockId, getCaret());
+}
+function clearAskNote(id) {
+  if (!askNotes.delete(id)) return;
+  wrapOf(id)?.querySelector(":scope > .ask-note")?.remove();
 }
 // Guest: the host's open asks, already placed in this copy (fitAsks). Only blocks whose asks changed are drawn again.
 function setRoomAsks(asks) {
@@ -3162,6 +3178,7 @@ together = createTogether({
   setRoomAsks,
   guestAsk,
   guestAct,
+  askRefused,
   brollShare,
   setRoomBroll,
   sheet: $(".sheet"),
@@ -3205,7 +3222,7 @@ window.__scriptEditor = {
     return true;
   },
   dropRoom: () => { try { together.room?.ws?.close(); } catch { /* closed */ } },
-  room: () => (together.room ? { role: together.room.role, status: together.room.status, v: together.room.v, people: together.room.peopleList(), carets: together.room.caretList(), link: together.room.role === "host" ? together.room.link(location.origin) : null } : null),
+  room: () => (together.room ? { role: together.room.role, status: together.room.status, v: together.room.v, people: together.room.peopleList(), carets: together.room.caretList(), link: together.room.role === "host" ? together.room.link(location.origin) : null, settled: together.room.role === "guest" ? together.room.settled() : null, outbox: together.outbox.length } : null),
   ask: (blockIndex, start, end, action = "simpler", typed = "") => {
     const b = state.doc?.blocks[blockIndex];
     if (!b) return null;

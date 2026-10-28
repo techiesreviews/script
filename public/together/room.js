@@ -19,10 +19,52 @@ const GROUP_MS = 1500; // typing with pauses shorter than this is one change for
 const PING_MS = 30_000;
 const MINE_MAX = 100;
 
+/* ---------- SHA-256 (synchronous, so the host handles messages in order) ---------- */
+const K = Uint32Array.from([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+/** SHA-256 of a string (UTF-8), as hex. */
+export function sha256hex(text) {
+  const bytes = new TextEncoder().encode(String(text));
+  const n = ((bytes.length + 9 + 63) >> 6) << 6;
+  const m = new Uint8Array(n);
+  m.set(bytes);
+  m[bytes.length] = 0x80;
+  const bits = bytes.length * 8;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(n - 8, Math.floor(bits / 2 ** 32));
+  dv.setUint32(n - 4, bits >>> 0);
+  const h = Uint32Array.from([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const w = new Uint32Array(64);
+  const rot = (x, r) => (x >>> r) | (x << (32 - r));
+  for (let o = 0; o < n; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rot(w[i - 15], 7) ^ rot(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rot(w[i - 2], 17) ^ rot(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, k] = h;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (k + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+      const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      [k, g, f, e, d, c, b, a] = [g, f, e, (d + t1) >>> 0, c, b, a, (t1 + t2) >>> 0];
+    }
+    [a, b, c, d, e, f, g, k].forEach((x, i) => { h[i] = (h[i] + x) >>> 0; });
+  }
+  return [...h].map((x) => x.toString(16).padStart(8, "0")).join("");
+}
+
 /* ---------- Links and keys ---------- */
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const random = (n) => b64url(crypto.getRandomValues(new Uint8Array(n)));
 export const ROOM_RE = /^[A-Za-z0-9_-]{22}$/;
+export const SECRET_RE = /^[A-Za-z0-9_-]{32}$/;
 export const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 /** A new room: its id, the edit key in the link, and the host key that never leaves the host's tab. */
 export const newRoom = () => ({ room: random(16), key: random(32), hostKey: random(32) });
@@ -40,7 +82,8 @@ export const protocols = ({ room, key, hostKey }) => [PROTOCOL, `r.${room}`, `k.
 /**
  * new RoomClient({ role: "host" | "guest", room, key, hostKey?, url, name, adapter, on })
  *   adapter: { read(), apply(ops, { by }), meta(), load({ blocks, meta }), caret?(), held?(), busy?(), validAttrs?(attrs, partial), validBlocks?(blocks, before) }
- *   on: { status(s), people(list), carets(), message(msg), changed(), joined(pid) }
+ *   on: { status(s), people(list), carets(), message(msg), changed(), joined(pid), settled() }
+ *   settled (guest): the host now has all of this guest's text (nothing in flight or unsent).
  *   Apps add their own messages: the host sends them with sendAll / sendTo, a guest with send({ type: "ask", … }) (the
  *   room passes only "ask" from a guest to the host); they arrive through on.message.
  *   status: connecting | live | away (connection lost, or the host is away) | ended | refused | full (final: the last three)
@@ -49,6 +92,11 @@ export class RoomClient {
   constructor({ role, room, key, hostKey = null, url, name = "", adapter, on = {}, WebSocketImpl = globalThis.WebSocket, now = () => Date.now(), timers = globalThis, backoffMs = 500 }) {
     Object.assign(this, { role, room, key, hostKey: role === "host" ? hostKey : null, url, name, adapter, on, WS: WebSocketImpl, now, timers, backoffMs });
     this.client = random(12); // stays the same across reconnects, so the host knows which batches it already has
+    // Private to this tab: sent with hello, so the host can tell this tab from one that copied its client id. The host
+    // keeps only its hash and answers with an opaque id of its own (`asker`) that carries this tab's rights.
+    this.secret = random(24);
+    this.asker = null;
+    this.askers = new Map(); // host: hash of a guest tab's secret → its opaque asker id
     this.pid = role === "host" ? "host" : null;
     this.v = 0;
     this.shadow = null; // host: the agreed document; guest: the agreed document plus the batch in flight
@@ -326,9 +374,22 @@ export class RoomClient {
       }
       case "join": {
         const known = this.people.get(msg.from);
-        this.people.set(msg.from, { ...this.person(msg.from, msg.name), client: typeof msg.client === "string" ? msg.client : known?.client ?? null });
+        const client = typeof msg.client === "string" ? msg.client : known?.client ?? null;
+        const key = typeof msg.secret === "string" && SECRET_RE.test(msg.secret) ? sha256hex(msg.secret) : known?.key ?? null;
+        // A client id that is already here under another pid: the same tab back (same secret) takes over from its old
+        // entry; anyone else (a copied id) is refused.
+        for (const [pid, p] of [...this.people]) {
+          if (pid === msg.from || !client || p.client !== client) continue;
+          if (!key || p.key !== key) { this.sendTo(msg.from, { type: "join-refused" }); return; }
+          this.people.delete(pid);
+          this.carets.delete(pid);
+        }
+        let asker = key ? this.askers.get(key) : null;
+        if (key && !asker) { asker = `a${random(9)}`; this.askers.set(key, asker); }
+        this.people.set(msg.from, { ...this.person(msg.from, msg.name), client, key, asker });
         this.local();
         this.catchUp(msg.from, msg.v);
+        if (asker) this.sendTo(msg.from, { type: "you", asker });
         this.setPeople([...this.people.values()]);
         this.sendPeople();
         this.on.joined?.(msg.from);
@@ -357,7 +418,7 @@ export class RoomClient {
   /** Host: send an app message to every guest, or to one. */
   sendAll(msg) { return this.role === "host" && this.send({ type: "all", msg }); }
   sendTo(pid, msg) { return this.role === "host" && this.send({ type: "to", to: pid, msg }); }
-  publicPeople() { return this.peopleList().map(({ me, client, ...p }) => p); }
+  publicPeople() { return this.peopleList().map(({ me, client, key, asker, ...p }) => p); }
   sendPeople() { this.send({ type: "all", msg: { type: "people", people: this.publicPeople() } }); }
   // A guest that comes back with a version still in the log gets what it missed; otherwise a snapshot.
   catchUp(pid, v) {
@@ -411,6 +472,8 @@ export class RoomClient {
   /* ---------- Guest ---------- */
   guestMessage(msg) {
     switch (msg.type) {
+      case "you": this.asker = typeof msg.asker === "string" ? msg.asker : null; return void this.on.people?.(this.peopleList());
+      case "join-refused": return this.finish("refused"); // another tab is here with this tab's id
       case "welcome":
         this.pid = msg.pid;
         if (msg.host) this.hello();
@@ -431,12 +494,16 @@ export class RoomClient {
       default: this.on.message?.(msg);
     }
   }
+  /** Guest: nothing of mine is in flight or unsent, so the host has all my text. */
+  settled() {
+    return this.role === "guest" && this.synced && !this.resyncing && !this.pending && !!this.live && !diff(this.shadow, this.live).length;
+  }
   // Say who we are, with the last version we agreed on, so the host can send only what we missed.
   hello() {
     this.joining = true;
     this.setStatus("connecting");
     // While a resync is open, ask for a snapshot: a resync lost with a connection must not leave us waiting.
-    this.send({ type: "hello", name: this.name, client: this.client, v: this.confirmed && !this.resyncing ? this.v : null });
+    this.send({ type: "hello", name: this.name, client: this.client, secret: this.secret, v: this.confirmed && !this.resyncing ? this.v : null });
   }
   // Drop the batch in flight (the host refused it): keep only what was typed after it, rebased onto the agreed
   // document. On a clash, the agreed document wins.
@@ -486,6 +553,7 @@ export class RoomClient {
     this.setStatus("live");
     if (this.myCaret) this.caret(this.myCaret);
     this.flush();
+    if (this.settled()) this.on.settled?.();
   }
   // Back in the room with a known version: apply what was missed, then send the batch in flight again if the host
   // never got it (its seq is past what the host has seen), then the rest.
@@ -505,6 +573,7 @@ export class RoomClient {
     if (this.myCaret) this.caret(this.myCaret);
     this.on.carets?.();
     this.flush();
+    if (this.settled()) this.on.settled?.();
   }
   resync() {
     if (this.resyncing) return;
@@ -518,7 +587,9 @@ export class RoomClient {
       this.v = v;
       this.pending = null;
       this.confirmed = cloneBlocks(this.shadow);
-      return this.flush();
+      this.flush();
+      if (this.settled()) this.on.settled?.();
+      return;
     }
     try {
       let [r, p] = transformOps(ops, this.pending?.ops ?? [], true);

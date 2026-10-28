@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Room, CLOSE, HOST_GRACE_MS, GUESTS_MAX } from "../worker/room.js";
-import { RoomClient, newRoom, makeLink, parseLink, protocols, LOG_MAX } from "../public/together/room.js";
+import { RoomClient, newRoom, makeLink, parseLink, protocols, LOG_MAX, sha256hex } from "../public/together/room.js";
+import { createOutbox } from "../public/together-adapter.js";
+import { createHash } from "node:crypto";
 import { applyOps, cloneBlocks } from "../public/together/ops.js";
 
 const tick = () => new Promise((r) => setImmediate(r));
@@ -559,6 +561,79 @@ test("together: asks and B-roll from the host wait while an input method compose
   g.c.resume();
   assert.deepEqual(got, ["asks", "broll"]);
   host.stop();
+});
+
+test("together: sha256hex matches SHA-256", () => {
+  for (const t of ["", "abc", "x".repeat(55), "x".repeat(56), "x".repeat(130), "é漢字🙂".repeat(9)]) assert.equal(sha256hex(t), createHash("sha256").update(t).digest("hex"));
+});
+
+test("together: a copied client id is refused; the same tab back with its secret keeps its asker id", async () => {
+  const { host, guest } = await session([para("p1", "Hello.")]);
+  const ana = await guest("Ana");
+  await settle(20);
+  const asker = ana.c.asker;
+  assert.match(asker, /^a[\w-]{12}$/, "the host gave Ana an opaque id");
+  assert.ok(![...host.people.values()].some((p) => JSON.stringify(p).includes(ana.c.secret)), "the host keeps no secret");
+  assert.equal(host.people.get(ana.c.pid).key, sha256hex(ana.c.secret), "only its hash");
+  // Eve copies Ana's client id (visible in every op) but not her secret.
+  const eve = await guest("Eve");
+  eve.c.client = ana.c.client;
+  eve.c.hello();
+  await settle(20);
+  assert.equal(eve.c.status, "refused");
+  assert.ok(![...host.people.values()].some((p) => p.name === "Eve" && p.asker === asker));
+  assert.equal(host.people.get(ana.c.pid).asker, asker, "Ana keeps her rights");
+  // Ana's own tab says hello again under a new connection: same secret, same asker id, old entry replaced.
+  ana.c.ws.close();
+  assert.ok(await waitFor(() => ana.c.status === "live" && host.people.has(ana.c.pid)));
+  assert.equal(ana.c.asker, asker);
+  assert.equal([...host.people.values()].filter((p) => p.client === ana.c.client).length, 1);
+  host.stop();
+});
+
+test("together: an ask about typing not yet sent waits until the host has the text, then the host finds it", async () => {
+  const { host, ha, guest } = await session([para("p1", "Hello.")]);
+  const g = await guest("Ana");
+  await settle(20);
+  const heard = [];
+  host.on.message = (m) => {
+    if (m.type !== "ask") return;
+    heard.push({ quote: m.ask.quote, hostText: ha.text() });
+    host.sendTo(m.from, { type: ha.text().includes(m.ask.quote) ? "ask-ack" : "ask-refused", ref: m.ref });
+  };
+  const box = createOutbox({ send: (m) => g.c.send(m), ready: (wait) => g.c.status === "live" && (!wait || g.c.settled()) });
+  g.c.on.settled = () => box.flush();
+  const answers = [];
+  g.c.on.message = (m) => { answers.push(m.type); box.done(m.ref); };
+  g.a.type("p1", 6, " New words"); g.c.local(); // in flight
+  g.a.type("p1", 16, " and more"); g.c.local(); // unsent behind it
+  assert.ok(g.c.pending && !g.c.settled());
+  box.push({ type: "ask", ask: { blockId: "p1", start: 7, quote: "words and more", action: "simpler" } }, { wait: true });
+  assert.equal(heard.length, 0, "not sent yet");
+  assert.ok(await waitFor(() => answers.length === 1));
+  assert.deepEqual(heard, [{ quote: "words and more", hostText: "Hello. New words and more" }]);
+  assert.deepEqual(answers, ["ask-ack"]);
+  assert.equal(box.items.length, 0, "out of the box once confirmed");
+  host.stop();
+});
+
+test("together: an unconfirmed ask goes again after the host was away; a refused one is handed back", () => {
+  const sent = [];
+  let live = true;
+  const box = createOutbox({ send: (m) => (sent.push(m), true), ready: () => live, ref: (() => { let n = 0; return () => `r${++n}`; })() });
+  box.push({ type: "ask", ask: { quote: "a" } }, { wait: true });
+  box.push({ type: "ask", id: "x", act: "keep" });
+  assert.deepEqual(sent.map((m) => m.ref), ["r1", "r2"]);
+  live = false;
+  box.away();
+  box.push({ type: "ask", ask: { quote: "b" } });
+  assert.equal(sent.length, 2, "nothing goes while away");
+  live = true;
+  box.done("r2");
+  box.flush();
+  assert.deepEqual(sent.map((m) => m.ref), ["r1", "r2", "r1", "r3"], "the unconfirmed ask is sent again, in order");
+  assert.equal(box.done("r3").msg.ask.quote, "b");
+  assert.deepEqual(box.items.map((i) => i.ref), ["r1"]);
 });
 
 test("together: links keep the key after #, and keys travel as subprotocols", () => {

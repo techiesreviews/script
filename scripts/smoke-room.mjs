@@ -113,7 +113,7 @@ try {
   host.caret({ blockId: "p2", offset: 4 });
   check(await until(() => g1.carets.get("host")?.offset === 4), "the host's caret reaches the guests");
 
-  // A guest's ask reaches the host (answers come with step D2).
+  // A guest's ask reaches the host.
   g2.send({ type: "ask", ask: { id: "smoke-ask", action: "simpler", quote: "second line" } });
   check(await until(() => asks.some((m) => m.type === "ask" && m.ask?.id === "smoke-ask" && m.from === g2.pid)), "a guest's ask reaches the host", JSON.stringify(asks));
   // The host shares the ask, then the agent's answer, with everyone (as the editor's adapter does).

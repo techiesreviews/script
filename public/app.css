@@ -237,6 +237,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   margin-block-end: 1rem; padding: 0.4rem 0.6rem; border-radius: var(--radius);
   background: var(--raised); color: var(--muted); font-size: 0.85rem; font-variant-numeric: tabular-nums;
 }
+/* A guest's ask the host could not take: the same quiet line, under the line it was about. */
+.ask-note { margin-block: 0.35rem 0; }
 .banner button { padding: 0.15rem 0.3rem; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--text); font-weight: 600; cursor: pointer; }
 .banner button::before { content: "·"; margin-inline-end: 0.5rem; color: var(--faint); font-weight: 400; }
 .banner button:active { background: var(--pressed); }

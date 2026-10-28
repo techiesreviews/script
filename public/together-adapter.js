@@ -81,7 +81,6 @@ export const docMeta = (doc, name, broll = null) => ({ name, tail: doc.tail, eol
 // The host keeps the asks: guests send theirs to the host, which checks them, adds them, hands them to its agent and
 // shares every open ask (with its answer) with everyone. Only the person who asked, and the host, may Keep or Undo.
 export const GUEST_ACTIONS = ["like", "simpler", "shorter", "explain", "facts", "ask", "broll"];
-export const guestId = (client) => `guest:${client}`;
 /** A guest's new ask as the host takes it: its quote found again in the host's script near the guest's place.
  *  Returns { blockId, start, end, action, instruction? } or null. */
 export function guestAsk(doc, a) {
@@ -93,6 +92,19 @@ export function guestAsk(doc, a) {
   if (a.action === "broll" && !B.spokenBlocks(doc).some((x) => x.id === b.id)) return null;
   const r = D.reanchor({ start: a.start, quote: a.quote }, D.contentOf(b));
   return r ? { blockId: b.id, start: r.start, end: r.end, action: a.action, ...(a.action === "ask" ? { instruction: typed } : {}) } : null;
+}
+/** The open asks a new ask closes where they overlap ("the newest ask wins"). The host's own ask closes any; a
+ *  guest's ask (`onlyBy` = its asker id) closes only that guest's own, so nobody undoes someone else's answer. */
+export function overlappingAsks(asks, { blockId, start, end }, onlyBy = null) {
+  return asks.filter((a) => a.scope === "selection" && a.blockId === blockId && D.OPEN_STATUSES.includes(a.status) && a.answer?.kind !== "broll"
+    && a.start < end && a.end > start && (!onlyBy || a.by?.id === onlyBy));
+}
+/** The host's check of a guest's Keep, Undo or dismiss: only on that guest's own open ask in the text (B-roll
+ *  suggestions stay with the host), and Keep only once there is an answer. */
+export function guestMayAct(ask, act, askerId) {
+  if (!ask || !askerId || ask.by?.id !== askerId || !D.OPEN_STATUSES.includes(ask.status) || ask.scope !== "selection" || ask.answer?.kind === "broll") return false;
+  if (act === "keep") return ask.status === "answered";
+  return act === "undo" || act === "dismiss";
 }
 /** May this person Keep, Undo or cancel this ask? The person who asked, and the host. */
 export const mayAct = (ask, { host = false, id = "" } = {}) => host || (!!id && ask?.by?.id === id);
@@ -123,12 +135,38 @@ export function fitAsks(asks, doc) {
 }
 /** The agent's caret, from the asks: at the end of the asked text while the agent works on it, at the change while
  *  its answer is shown; gone after Keep or Undo. The newest such ask wins. */
+/**
+ * A guest's outbox for asks and Keep/Undo presses. Each item has a `ref` and stays until the host confirms it
+ * (`ask-ack`) or refuses it (`ask-refused`); whatever was sent but not confirmed is sent again after the room was away.
+ * A new ask waits until the host has all of this guest's text (`ready(true)`), so its quote is there.
+ *   createOutbox({ send(msg) → bool, ready(waitForText) → bool, ref?() })
+ */
+export function createOutbox({ send, ready, ref = () => Math.random().toString(36).slice(2, 12) }) {
+  const items = [];
+  const flush = () => {
+    for (const it of items) {
+      if (it.sent) continue;
+      if (!ready(it.wait) || !send(it.msg)) return;
+      it.sent = true;
+    }
+  };
+  return {
+    items,
+    push(msg, { wait = false } = {}) { const r = ref(); items.push({ ref: r, msg: { ...msg, ref: r }, wait, sent: false }); flush(); return r; },
+    flush,
+    /** Confirmed or refused by the host: out of the box. Returns the item. */
+    done(r) { const i = items.findIndex((it) => it.ref === r); return i < 0 ? null : items.splice(i, 1)[0]; },
+    /** The room was away: nothing sent is known to have arrived. */
+    away() { for (const it of items) it.sent = false; },
+    clear() { items.length = 0; },
+  };
+}
 export function agentCaret(asks, doc) {
   const sel = asks.filter((a) => a.scope === "selection" && D.blockById(doc, a.blockId));
   const a = sel.filter((x) => x.status === "taken").at(-1) || sel.filter((x) => x.status === "answered" && x.answer && x.answer.kind !== "broll").at(-1);
   if (!a) return null;
   const who = String((a.status === "taken" ? a.takenBy : a.answeredBy)?.name || "Agent").trim().slice(0, 60) || "Agent";
-  return { pid: "agent", kind: "agent", name: `${who} (agent)`, colour: 0, blockId: a.blockId, offset: a.end };
+  return { pid: "agent", kind: "agent", name: `${who} (agent)`, colour: null, blockId: a.blockId, offset: a.end };
 }
 export function docFromSnapshot({ blocks, meta }) {
   const doc = { blocks: [], tail: typeof meta?.tail === "string" && /^\s{0,200}$/.test(meta.tail) ? meta.tail : "\n", eol: meta?.eol === "\r\n" ? "\r\n" : "\n" };
@@ -143,35 +181,18 @@ export function docFromSnapshot({ blocks, meta }) {
 /**
  * createTogether(app): app = { doc(), name(), me, held(), selection(), restore(sel), element(id), applied(ops, sel),
  *   loadGuest(doc, name, broll), guestEnded(status), joinFailed(status), sharing(on), renderTop(), renderDots(),
- *   asks(), setRoomAsks(asks), guestAsk(spec, by), guestAct(id, act, byId), brollShare(), setRoomBroll(b),
- *   sheet, scriptEl, icon(name) }
+ *   asks(), setRoomAsks(asks), guestAsk(spec, by), guestAct(id, act, askerId), askRefused(ask), brollShare(),
+ *   setRoomBroll(b), sheet, scriptEl, icon(name) }
  */
-export function createTogether(app) {
-  let room = null, composing = false, last = "", shared = { asks: "", broll: "" };
-  const outbox = []; // a guest's asks and Keep/Undo while the room is not live: sent when it is
-  const $ = (s) => document.querySelector(s);
-  const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/room`;
-  const isGuest = () => room?.role === "guest";
-  const myId = () => (isGuest() ? guestId(room.client) : app.me.id);
-  const agent = () => (app.doc() ? agentCaret(app.asks(), app.doc()) : null);
-  const caretList = () => [...(room ? room.caretList() : []), ...[agent()].filter(Boolean)];
-  const carets = createCarets({
-    container: app.sheet,
-    element: (id) => app.element(id),
-    onUndo: (pid) => room?.undoFor(pid),
-    icon: (n) => app.icon(n),
-  });
-
-  app.scriptEl.addEventListener("compositionstart", () => { composing = true; });
-  app.scriptEl.addEventListener("compositionend", () => { composing = false; queueMicrotask(() => room?.resume()); });
-
-  const adapter = {
+/** The script editor's adapter for RoomClient (no DOM of its own: everything goes through `app`). */
+export function scriptAdapter(app, { busy = () => false } = {}) {
+  return {
     read: () => readBlocks(app.doc()),
     meta: () => docMeta(app.doc(), app.name(), app.brollShare()),
     load: (snap) => app.loadGuest(docFromSnapshot(snap), String(snap.meta?.name || "script.md").slice(0, 120), snap.meta?.broll ?? null),
     caret: () => { const s = app.selection(); return s ? { blockId: s.id, offset: s.focus } : null; },
     held: () => app.held(),
-    busy: () => composing,
+    busy,
     validAttrs,
     validBlocks,
     apply(ops) {
@@ -187,6 +208,30 @@ export function createTogether(app) {
       app.applied(ops, sel);
     },
   };
+}
+export function createTogether(app) {
+  let room = null, composing = false, last = "", shared = { asks: "", broll: "" };
+  const $ = (s) => document.querySelector(s);
+  const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/room`;
+  const isGuest = () => room?.role === "guest";
+  // My asker id: the host's own id, or the opaque id the host gave this guest tab.
+  const myId = () => (isGuest() ? room.asker : app.me.id);
+  // A guest's asks and presses stay until the host confirms them; a new ask waits until the host has all my text.
+  const outbox = createOutbox({ send: (m) => !!room?.send(m), ready: (wait) => room?.status === "live" && (!wait || room.settled()) });
+  const seen = new Map(); // host: asker → refs already handled (an item sent again after a lost confirmation)
+  const agent = () => (app.doc() ? agentCaret(app.asks(), app.doc()) : null);
+  const caretList = () => [...(room ? room.caretList() : []), ...[agent()].filter(Boolean)];
+  const carets = createCarets({
+    container: app.sheet,
+    element: (id) => app.element(id),
+    onUndo: (pid) => room?.undoFor(pid),
+    icon: (n) => app.icon(n),
+  });
+
+  app.scriptEl.addEventListener("compositionstart", () => { composing = true; });
+  app.scriptEl.addEventListener("compositionend", () => { composing = false; queueMicrotask(() => room?.resume()); });
+
+  const adapter = scriptAdapter(app, { busy: () => composing });
 
   // What the host shares besides the text: the open asks and the B-roll list, each sent again only when it changed.
   const asksMsg = () => ({ type: "asks", asks: shareAsks(app.asks()) });
@@ -198,8 +243,25 @@ export function createTogether(app) {
     if (as !== shared.asks) { shared.asks = as; room.sendAll(a); }
     if (bs !== shared.broll) { shared.broll = bs; room.sendAll(b); }
   }
-  function flushOutbox() {
-    while (outbox.length && room?.status === "live" && room.send(outbox[0])) outbox.shift();
+  // Host: a guest's ask or press, each answered to that guest by its ref (sent again after a lost answer: answered again).
+  function fromGuest(msg) {
+    const p = room.people.get(msg.from);
+    if (!p?.asker || typeof msg.ref !== "string" || msg.ref.length > 40) return;
+    const done = seen.get(p.asker) ?? new Set();
+    seen.set(p.asker, done);
+    const answer = (type, reason) => room.sendTo(msg.from, { type, ref: msg.ref, ...(reason ? { reason } : {}) });
+    if (done.has(msg.ref)) return answer("ask-ack");
+    if (done.size > 500) done.clear();
+    done.add(msg.ref);
+    const by = { id: p.asker, name: p.name };
+    if (msg.ask) {
+      const spec = guestAsk(app.doc(), msg.ask);
+      if (!spec) return answer("ask-refused", "changed");
+      // Someone else's open ask or answer on this text stays as it is, so this one can't go there too.
+      if (overlappingAsks(app.asks(), spec).some((a) => a.by?.id !== by.id)) return answer("ask-refused", "taken");
+      app.guestAsk(spec, by);
+    } else if (typeof msg.id === "string" && ["keep", "undo", "dismiss"].includes(msg.act)) app.guestAct(msg.id, msg.act, by.id);
+    answer("ask-ack");
   }
 
   const on = {
@@ -208,21 +270,22 @@ export function createTogether(app) {
         if (room?.role === "guest") { if (room.synced) app.guestEnded(s); else app.joinFailed(s); }
         else { share.set(false); app.sharing(false); }
         room = null;
-        outbox.length = 0;
+        outbox.clear();
       }
-      if (s === "live") flushOutbox();
+      if (s === "away") outbox.away();
+      if (s === "live") outbox.flush();
       render();
     },
     people: () => render(),
     carets: () => { carets.set(caretList()); app.renderDots(); renderPeople(); },
     joined: (pid) => { room.sendTo(pid, asksMsg()); room.sendTo(pid, brollMsg()); },
+    settled: () => outbox.flush(),
     message(msg) {
-      if (room?.role === "host" && msg.type === "ask") {
-        const p = room.people.get(msg.from);
-        if (!p?.client) return;
-        const by = { id: guestId(p.client), name: p.name };
-        if (msg.ask) { const spec = guestAsk(app.doc(), msg.ask); if (spec) app.guestAsk(spec, by); }
-        else if (typeof msg.id === "string" && ["keep", "undo", "dismiss"].includes(msg.act)) app.guestAct(msg.id, msg.act, by.id);
+      if (room?.role === "host" && msg.type === "ask") fromGuest(msg);
+      else if (isGuest() && msg.type === "ask-ack") outbox.done(msg.ref);
+      else if (isGuest() && msg.type === "ask-refused") {
+        const it = outbox.done(msg.ref);
+        if (it?.msg.ask) app.askRefused(it.msg.ask, msg.reason === "taken" ? "taken" : "changed");
       } else if (isGuest() && msg.type === "asks" && app.doc()) {
         app.setRoomAsks(fitAsks(msg.asks, app.doc()));
         render();
@@ -261,7 +324,7 @@ export function createTogether(app) {
   function renderPeople() {
     const el = $("#people");
     const a = room ? agent() : null;
-    const list = [...(room?.peopleList() || []), ...(a ? [{ pid: "agent", name: a.name, kind: "agent", colour: 0, me: false }] : [])];
+    const list = [...(room?.peopleList() || []), ...(a ? [{ pid: "agent", name: a.name, kind: "agent", colour: null, me: false }] : [])];
     el.hidden = list.length < 2;
     const has = (pid) => pid === "agent" || !!room?.carets.has(pid);
     const sig = JSON.stringify(list.map((p) => [p.pid, p.name, p.colour, p.me, has(p.pid)]));
@@ -303,12 +366,12 @@ export function createTogether(app) {
     app.renderTop();
     app.renderDots();
   }
-  const guestSend = (msg) => { outbox.push(msg); flushOutbox(); };
 
   return {
     get active() { return !!room && !room.stopped; },
     get guest() { return isGuest(); },
     get room() { return room; },
+    get outbox() { return outbox.items; },
     /** Guest: join the room in the link with a name. */
     join(link, name) {
       room?.stop();
@@ -332,8 +395,8 @@ export function createTogether(app) {
     /** May I Keep, Undo or cancel this ask? */
     may: (ask) => mayAct(ask, { host: !isGuest(), id: myId() }),
     /** Guest: a new ask for the host, or Keep / Undo / dismiss on my own ask. */
-    ask: (spec) => guestSend({ type: "ask", ask: spec }),
-    act: (id, act) => guestSend({ type: "ask", id, act }),
+    ask: (spec) => outbox.push({ type: "ask", ask: spec }, { wait: true }),
+    act: (id, act) => outbox.push({ type: "ask", id, act }),
     /** Coloured dots for the people (and the agent) whose caret is in these blocks (the section list). */
     dots(ids) {
       const list = room ? caretList() : [];

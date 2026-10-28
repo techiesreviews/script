@@ -121,7 +121,9 @@ export class Room {
       // `client` stays the same across the guest's reconnects; `v` is the last version it agreed on (or null).
       const client = typeof msg.client === "string" && /^[A-Za-z0-9_-]{8,40}$/.test(msg.client) ? msg.client : null;
       const v = Number.isInteger(msg.v) && msg.v >= 0 ? msg.v : null;
-      if (host) this.send(host, { type: "join", from: me.pid, name, client, v });
+      // The tab's private secret goes to the host only, which keeps just its hash (see RoomClient).
+      const secret = typeof msg.secret === "string" && /^[A-Za-z0-9_-]{32}$/.test(msg.secret) ? msg.secret : null;
+      if (host) this.send(host, { type: "join", from: me.pid, name, client, v, ...(secret ? { secret } : {}) });
       else this.send(ws, { type: "host", online: false });
     } else if (!me.name) {
       // Nothing else before the guest has said who they are.
