@@ -1,6 +1,6 @@
 # Script editor
 
-A calm editor for video scripts. Open a Markdown script, edit it, and let **your own AI agent** help over MCP: select a sentence, pick "Simpler", "Shorter", "Sound like me" or ask anything, and the answer shows in place as before/after with Keep or Undo.
+A calm editor for video scripts. Open a Markdown script, edit it, and let **your own AI agent** help over MCP: select a sentence, pick "Simpler", "Shorter", "Sound like me" or ask anything, and the change goes straight into the text, lightly marked, with Undo on your agent's name tag.
 
 **Live:** https://script.techies.tools
 

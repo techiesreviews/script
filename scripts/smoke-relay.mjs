@@ -62,10 +62,12 @@ function onTabMessage(m) {
   if (m.tool === "answer_ask") {
     const a = asks.find((x) => x.id === m.args.askId);
     if (!a || (a.status !== "waiting" && a.status !== "taken")) return reply(m.id, { error: "Unknown ask." });
-    a.status = "answered";
+    // Like the editor (step F): a replace or add goes straight into the text and the ask is kept at once.
+    const inText = m.args.kind === "replace" || m.args.kind === "add";
+    a.status = inText ? "kept" : "answered";
     a.answer = { kind: m.args.kind, text: m.args.text };
     received.answers.push(m.args);
-    return reply(m.id, { result: "Shown to the person. They choose Keep or Undo." });
+    return reply(m.id, { result: inText ? "Done: the change is in the text now. The person can undo it." : "Shown to the person." });
   }
   if (m.tool === "answer_broll") {
     // The fake tab checks the ask and the changes the way the editor does, in short.
@@ -157,14 +159,14 @@ try {
   check(delivered.length === 1 && delivered[0].id === "ask0" && delivered[0].quote === "Hello there.", "wait_for_asks returns the new ask", toolText(got));
 
   const answered = await mcp("tools/call", { name: "answer_ask", arguments: { askId: "ask0", kind: "replace", text: "Hi." } });
-  check(!answered.body.result?.isError && toolText(answered).includes("Shown to the person"), "answer_ask reaches the tab", toolText(answered));
+  check(!answered.body.result?.isError && toolText(answered).includes("the change is in the text now"), "answer_ask reaches the tab", toolText(answered));
   check(received.answers[0]?.text === "Hi.", "tab received the answer");
 
   const tooLong = await mcp("tools/call", { name: "answer_ask", arguments: { askId: "ask0", kind: "replace", text: "x".repeat(4001) } });
   check(tooLong.body.result?.isError === true, "over-long text is refused before the tab");
 
   const listed = await mcp("tools/call", { name: "list_asks", arguments: {} });
-  check(JSON.parse(toolText(listed) || "{}").asks?.[0]?.status === "answered", "list_asks shows the answered status", toolText(listed));
+  check(JSON.parse(toolText(listed) || "{}").asks?.[0]?.status === "kept", "list_asks shows the replace as kept at once", toolText(listed));
 
   // A "Suggest B-roll" ask, answered with answer_broll.
   makeAsk("broll", "Suggest 1–3 B-roll shots for these lines with answer_broll.");

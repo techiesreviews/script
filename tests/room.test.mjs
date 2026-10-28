@@ -285,6 +285,37 @@ async function session(blocks) {
   return { rooms, creds, host, ha, guest };
 }
 
+test("together: a change made for the agent goes out under its name; the host's held \"/\" text stays back", async () => {
+  const { host, ha, guest } = await session([para("p1", "We start here. Then we go on."), para("p2", "Second line.")]);
+  const g = await guest("Ana");
+  const ops = [];
+  const seen = g.c.applyRemote.bind(g.c);
+  g.c.applyRemote = (o, by, next) => { ops.push(by); return seen(o, by, next); };
+  // The agent's answer goes straight in on the host's tab.
+  ha.blocks[0].text = "We begin. Then we go on.";
+  host.localAs("agent");
+  await settle(60);
+  assert.equal(g.a.text(), ha.text());
+  assert.deepEqual(ops, ["agent"], "attributed to the agent, not the host");
+  assert.equal(host.log.at(-1).by, "agent");
+  assert.equal(host.undoMine(), false, "the host's Ctrl/Cmd+Z doesn't take the agent's change");
+  assert.ok(!g.c.canUndo("host"), "the host's name tag offers no Undo for it");
+  // The host types a "/" command (held back), and the agent's change lands after it in the same line.
+  ha.heldNow = true;
+  ha.type("p1", 0, "/po");
+  host.local();
+  ha.blocks[0].text = ha.blocks[0].text.replace("Then we go on.", "Next.");
+  host.localAs("agent");
+  await settle(60);
+  assert.equal(g.a.text(), "We begin. Next.|Second line.", "the guest gets the agent's change without the command");
+  assert.equal(ha.text(), "/poWe begin. Next.|Second line.");
+  ha.heldNow = false;
+  ha.blocks[0].text = ha.blocks[0].text.slice(3);
+  host.local();
+  await settle(60);
+  assert.equal(g.a.text(), ha.text());
+});
+
 test("together: guests get the script, type at the same time in one paragraph, and all end on the same text", async () => {
   const { host, ha, guest } = await session([para("p1", "We start here."), para("p2", "Second line.")]);
   const g1 = await guest("Ana"), g2 = await guest("Ben");

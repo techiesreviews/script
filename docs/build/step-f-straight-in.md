@@ -1,0 +1,29 @@
+# Step F: the agent's change goes straight into the text
+
+Lex (2026-10-28): an answer used to show as before/after with Keep / Undo. Now **the change goes straight into the text**, stays **lightly marked**, with **Undo on the agent's name tag**, until the person edits there or presses Undo. **The same for everyone's asks, guests' too.**
+
+## Scope
+
+- Goes straight in: `replace` and `add` answers on selection asks (the edit bar and "Ask…"), and "Use this" on a "Sounds like me" line (it makes a `voice` replace).
+- Unchanged: `note` answers (shown beside the text, ✕ to dismiss), the whole-script "Sounds like me" `marks` (suggestions per line), B-roll suggestions and sketches (not script text).
+- If the quoted text changed before the answer arrives, the ask is refused and cancelled, as before.
+
+## Rules
+
+1. **Applying.** The answer is applied at once as one change: one Ctrl/Cmd+Z step when alone (and that step makes the ask `undone`). The ask becomes `kept` at once, so the agent's `list_asks` says `kept`; after Undo it says `undone`. The Keep/Undo before/after bar is gone for these answers (an answered replace kept in a draft from before this step still shows it).
+2. **Shared.** The host's tab applies it and sends it to the room under the agent's name (`room.localAs("agent")`, `by: "agent"`), so the host's own Ctrl/Cmd+Z and name tag never take it back. The host shares the kept ask with its marked change like an open ask; guests place it by its new text.
+3. **The mark.** The changed text gets a light tint in `--agent` (`.agent-change`; a little stronger as it arrives, motion only with `prefers-reduced-motion: no-preference`). It follows edits around it (`public/changes.js`: the edit as block operations, `movePoint`; text typed right at its edges stays outside). It goes when someone edits inside it, makes a new ask on it, or undoes it. It is kept with the draft like open asks, so it comes back after a reload (found again by its text).
+4. **The caret.** The agent's caret sits at the end of the newest marked change; its name tag shows Undo. Undo puts back exactly what was there (only while the marked text is untouched) and the caret moves to the next newest marked change, or leaves. While the agent works on another ask its caret is there, without Undo. This works alone, not only in a room.
+5. **Rights.** In a room Undo is offered to the host and to the guest who asked (`mayAct`). A guest's Undo goes as `{ type: "ask", ref, id, act: "undo" }`; the host checks `guestMayAct` and applies it for everyone. Others see the mark and the caret without Undo.
+6. The answer's optional `message` shows as one small line under the block while the change is marked.
+7. Agent-facing words (`worker/mcp.js` INSTRUCTIONS, the watch prompt, `answer_ask` and `list_asks`, and the tab's `answer_ask` result "Done: the change is in the text now. The person can undo it.") say this.
+
+An answer that would make new paragraphs or change the line's type (a "## " at its start, say) still goes in at once, but unmarked: Ctrl/Cmd+Z takes it out when alone; there is no Undo on the tag.
+
+## Tests
+
+`tests/changes.test.mjs`: replace and add (exact text, one operation, the spaces an add brings), Undo restoring the exact text, refused when the quote changed, notes/marks/B-roll untouched, new paragraphs unmarked, the mark following edits before it and Enter/joins and vanishing on an edit inside, the caret at the newest mark with Undo and moving to the one before, `kept` → `undone`, a guest's change shared, placed in a guest's copy and undone by that guest or the host but not another guest, found again after a reload. `tests/room.test.mjs`: a change made for the agent goes out under its name, and the host's held "/" text stays back. `tests/together-adapter.test.mjs` and `tests/mcp.test.mjs`: rights and words. `scripts/smoke-relay.mjs` and `scripts/smoke-room.mjs` expect `kept` and the agent's change.
+
+## Browser check
+
+Demo at desktop and 390 px, light and dark, alone and shared (host, the guest who asked, another guest): the change is in the text with a light tint; the agent's caret and "Claude" tag with Undo; Undo restores the text and moves the caret to the change before; Ctrl/Cmd+Z right after makes the ask undone; typing inside ends the mark, typing before it keeps it; Restore after a reload brings the mark back; in a room the other guest sees no Undo and the asker's Undo reaches everyone.

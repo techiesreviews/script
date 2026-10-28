@@ -3,6 +3,7 @@
 // The room itself (public/together/) knows nothing about scripts; see docs/together.md.
 import * as D from "./doc.js";
 import * as B from "./broll.js";
+import * as C from "./changes.js";
 import { agentBrand } from "./agent-brand.js";
 import { RoomClient, newRoom, parseLink } from "./together/room.js";
 import { applyOp, movePoint } from "./together/ops.js";
@@ -80,7 +81,8 @@ export const docMeta = (doc, name, broll = null) => ({ name, tail: doc.tail, eol
 
 /* ---------- Asks in a shared script (step D2, pure: no DOM) ---------- */
 // The host keeps the asks: guests send theirs to the host, which checks them, adds them, hands them to its agent and
-// shares every open ask (with its answer) with everyone. Only the person who asked, and the host, may Keep or Undo.
+// shares every open ask (with its answer) with everyone, and every kept change that is still marked (step F). Only
+// the person who asked, and the host, may Keep or Undo.
 export const GUEST_ACTIONS = ["like", "simpler", "shorter", "explain", "facts", "ask", "broll"];
 /** A guest's new ask as the host takes it: its quote found again in the host's script near the guest's place.
  *  Returns { blockId, start, end, action, instruction? } or null. */
@@ -101,22 +103,28 @@ export function overlappingAsks(asks, { blockId, start, end }, onlyBy = null) {
     && a.start < end && a.end > start && (!onlyBy || a.by?.id === onlyBy));
 }
 /** The host's check of a guest's Keep, Undo or dismiss: only on that guest's own open ask in the text (B-roll
- *  suggestions stay with the host), and Keep only once there is an answer. */
+ *  suggestions stay with the host), and Keep only once there is an answer. A change that went straight in can be
+ *  undone while it is marked. */
 export function guestMayAct(ask, act, askerId) {
-  if (!ask || !askerId || ask.by?.id !== askerId || !D.OPEN_STATUSES.includes(ask.status) || ask.scope !== "selection" || ask.answer?.kind === "broll") return false;
+  if (!ask || !askerId || ask.by?.id !== askerId || ask.scope !== "selection" || ask.answer?.kind === "broll") return false;
+  if (C.isMarked(ask)) return act === "undo";
+  if (!D.OPEN_STATUSES.includes(ask.status)) return false;
   if (act === "keep") return ask.status === "answered";
   return act === "undo" || act === "dismiss";
 }
 /** May this person Keep, Undo or cancel this ask? The person who asked, and the host. */
 export const mayAct = (ask, { host = false, id = "" } = {}) => host || (!!id && ask?.by?.id === id);
-/** What the host shares: the open asks, copied. */
-export const shareAsks = (asks) => structuredClone(asks.filter((a) => D.OPEN_STATUSES.includes(a.status)));
-/** A guest places the host's asks in its own copy of the script: each quote is found again near its place. An ask
- *  whose text is not here (yet) is left out; B-roll suggestions stay, as they live beside the lines. */
+/** What the host shares: the open asks and the marked changes, copied. */
+export const shareAsks = (asks) => structuredClone(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)));
+/** A guest places the host's asks in its own copy of the script: each quote (a marked change: its new text) is
+ *  found again near its place. An ask whose text is not here (yet) is left out; B-roll suggestions stay, as they
+ *  live beside the lines. */
 export function fitAsks(asks, doc) {
   const out = [];
   for (const a of Array.isArray(asks) ? asks : []) {
-    if (!a || typeof a.id !== "string" || !D.OPEN_STATUSES.includes(a.status)) continue;
+    if (!a || typeof a.id !== "string") continue;
+    if (C.isMarked(a)) { if (C.place(a, doc)) out.push(a); continue; }
+    if (!D.OPEN_STATUSES.includes(a.status)) continue;
     if (a.scope === "selection") {
       const b = D.blockById(doc, a.blockId);
       const r = b && D.reanchor(a, D.contentOf(b));
@@ -196,15 +204,19 @@ export function createAskDesk({ people, sendTo, doc, asks, add, act }) {
     send(answer);
   };
 }
-/** The agent's caret, from the asks: at the end of the asked text while the agent works on it, at the change while
- *  its answer is shown; gone after Keep or Undo. The newest such ask wins. It is named and drawn as its model
- *  ("Claude" with Claude's logo; agent-brand.js), so guests work out the same from the shared asks. */
-export function agentCaret(asks, doc) {
+/** The agent's caret, from the asks: at the end of the asked text while the agent works on it; else at the end of
+ *  its newest change that went straight in and is still marked (step F), where its name tag offers Undo to those
+ *  who `may(ask)`; else at a note while it shows. Gone when none is left. The newest such ask wins. It is named and
+ *  drawn as its model ("Claude" with Claude's logo; agent-brand.js), so guests work out the same from the shared
+ *  asks. `askId` says which ask the caret's Undo is for. */
+export function agentCaret(asks, doc, may = () => false) {
   const sel = asks.filter((a) => a.scope === "selection" && D.blockById(doc, a.blockId));
-  const a = sel.filter((x) => x.status === "taken").at(-1) || sel.filter((x) => x.status === "answered" && x.answer && x.answer.kind !== "broll").at(-1);
+  const marked = C.newestMarked(sel);
+  const a = sel.filter((x) => x.status === "taken").at(-1) || marked || sel.filter((x) => x.status === "answered" && x.answer && x.answer.kind !== "broll").at(-1);
   if (!a) return null;
   const { name, icon } = agentBrand(String((a.status === "taken" ? a.takenBy : a.answeredBy)?.name || "").slice(0, 200));
-  return { pid: "agent", kind: "agent", name, icon, colour: null, blockId: a.blockId, offset: a.end };
+  const undo = a === marked && !!may(a);
+  return { pid: "agent", kind: "agent", name, icon, colour: null, blockId: a.blockId, offset: a === marked ? C.markRange(a).end : a.end, undo, askId: a.id };
 }
 export function docFromSnapshot({ blocks, meta }) {
   const doc = { blocks: [], tail: typeof meta?.tail === "string" && /^\s{0,200}$/.test(meta.tail) ? meta.tail : "\n", eol: meta?.eol === "\r\n" ? "\r\n" : "\n" };
@@ -220,7 +232,7 @@ export function docFromSnapshot({ blocks, meta }) {
  * createTogether(app): app = { doc(), name(), me, held(), selection(), restore(sel), element(id), applied(ops, sel),
  *   loadGuest(doc, name, broll), guestEnded(status), joinFailed(status), sharing(on), renderTop(), renderDots(),
  *   asks(), setRoomAsks(asks), guestAsk(spec, by), guestAct(id, act, askerId), askRefused(ask), brollShare(),
- *   setRoomBroll(b), sheet, scriptEl, icon(name) }
+ *   setRoomBroll(b), undoAgent(askId), sheet, scriptEl, icon(name) }
  */
 /** The script editor's adapter for RoomClient (no DOM of its own: everything goes through `app`). */
 export function scriptAdapter(app, { busy = () => false } = {}) {
@@ -256,12 +268,13 @@ export function createTogether(app) {
   const myId = () => (isGuest() ? room.asker : app.me.id);
   // A guest's asks and presses stay until the host confirms them; a new ask waits until the host has all my text.
   const outbox = createOutbox({ send: (m) => !!room?.send(m), ready: (wait) => room?.status === "live" && (!wait || room.settled()) });
-  const agent = () => (app.doc() ? agentCaret(app.asks(), app.doc()) : null);
+  const agent = () => (app.doc() ? agentCaret(app.asks(), app.doc(), (a) => mayAct(a, { host: !isGuest(), id: myId() })) : null);
   const caretList = () => [...(room ? room.caretList() : []), ...[agent()].filter(Boolean)];
   const carets = createCarets({
     container: app.sheet,
     element: (id) => app.element(id),
-    onUndo: (pid) => room?.undoFor(pid),
+    // The agent's Undo is the app's (its marked change, alone or shared); people's go through the room.
+    onUndo: (pid) => (pid === "agent" ? app.undoAgent(agent()?.askId) : room?.undoFor(pid)),
     icon: (n) => app.icon(n),
   });
 
@@ -409,6 +422,9 @@ export function createTogether(app) {
     stop() { if (room && room.role === "host") { room.stop(); share.set(false); } },
     /** After every change: the text goes to the room, and the host shares its asks and B-roll when they changed. */
     local() { room?.local(); sync(); },
+    /** Host: the change just made is the agent's (an answer that went straight in, or its Undo): it goes to the room
+     *  under the agent's name, so nobody's own Undo takes it back. */
+    localAs(by) { room?.localAs(by); sync(); },
     sync,
     caret() {
       if (!room || room.stopped) return;

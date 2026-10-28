@@ -279,3 +279,12 @@ test("answer_broll: schema, limits and refusals before the tab; the prompt and i
   assert.match(prompt.body.result.messages[0].content.text, /answer_broll for B-roll asks/);
   assert.match(INSTRUCTIONS, /answer_broll/);
 });
+
+test("mcp: the agent hears that replace and add go into the text at once and can be undone (step F)", () => {
+  const answer = TOOLS.find((t) => t.name === "answer_ask").description;
+  assert.match(answer, /go into the text at once/);
+  assert.match(answer, /undo/);
+  assert.doesNotMatch(answer, /chooses Keep or Undo/);
+  assert.match(INSTRUCTIONS, /goes into the text at once/);
+  assert.match(TOOLS.find((t) => t.name === "list_asks").description, /undone when the person undoes it/);
+});

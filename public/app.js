@@ -2,6 +2,7 @@
 import * as D from "./doc.js";
 import * as Q from "./save-queue.js";
 import * as B from "./broll.js";
+import * as C from "./changes.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
 
@@ -246,11 +247,13 @@ function blockShell(b) {
   return wrap;
 }
 
-// Decorations for a block: open asks on a selection, and open "Sounds like me" marks.
+// Decorations for a block: open asks on a selection, the agent's marked changes (step F), and open "Sounds like
+// me" marks.
 function decorationsFor(id) {
   const items = [];
   for (const a of state.asks) {
     if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) items.push({ kind: "ask", ask: a, start: a.start, end: a.end });
+    else if (C.isMarked(a) && a.blockId === id) items.push({ kind: "landed", ask: a, ...C.markRange(a) });
   }
   for (const a of state.asks) {
     if (a.scope !== "script" || a.status !== "answered") continue;
@@ -282,6 +285,12 @@ function fillBlock(el, b) {
       const m = h("mark", "voice", { tabindex: "0", "data-deco": "", "data-ask": d.ask.id, "data-mark": String(d.i) });
       m.textContent = quote;
       nodes.push(m);
+    } else if (d.kind === "landed") {
+      // The agent's change went straight in: a light tint in the agent's colour while it is untouched.
+      const m = h("span", "agent-change", { "data-deco": "", "data-ask": d.ask.id });
+      if (d.ask.change.at > Date.now() - 1500) m.dataset.new = "";
+      m.textContent = quote;
+      nodes.push(m);
     } else if (d.ask.status === "answered" && d.ask.answer.kind === "note") {
       const c = h("span", "checked", { "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
       c.textContent = quote;
@@ -306,7 +315,8 @@ function fillBlock(el, b) {
         c.append(from, ins);
       }
       const bar = h("span", "change__bar", { "data-skip": "" });
-      // Keep and Undo for the person who asked, and the host (step D2); everyone else sees the change.
+      // Keep and Undo for the person who asked, and the host (step D2); everyone else sees the change. Answers that
+      // go straight in (step F) never show this; only an answer kept from before (a draft) still can.
       bar.innerHTML = `<span class="change__what">${icon(ACT_ICON[d.ask.action])}<span></span></span>${may(d.ask) ? `<button type="button" class="undo">${icon("undo")}Undo</button><button type="button" class="keep">${icon("check")}Keep</button>` : ""}`;
       bar.querySelector(".change__what span").textContent = actName(d.ask);
       c.append(bar);
@@ -331,7 +341,7 @@ function fillBlock(el, b) {
   el._chips = chips;
   // Messages from the agent: one small line under the block.
   const wrap = el.closest(".line") || el.parentElement?.closest(".line");
-  const msgs = decos.filter((d) => d.kind === "ask" && d.ask.status === "answered" && d.ask.answer.message);
+  const msgs = decos.filter((d) => ((d.kind === "ask" && d.ask.status === "answered") || d.kind === "landed") && d.ask.answer?.message);
   const host = wrap || null;
   if (host) {
     host.querySelectorAll(":scope > .line__msg, :scope > .ask-note").forEach((m) => m.remove());
@@ -354,7 +364,7 @@ function domMatches(el, id) {
   if (el.querySelector(":not(br):not([data-deco]):not([data-deco] *)")) return false;
   const brs = el.querySelectorAll("br:not([data-skip])");
   if (brs.length > 1 || (brs.length === 1 && el.lastChild !== brs[0])) return false;
-  const decos = el.querySelectorAll(".ask, .checked, .change, mark.voice");
+  const decos = el.querySelectorAll(".ask, .checked, .change, .agent-change, mark.voice");
   if (decos.length !== (el._decos || 0)) return false;
   if (el.querySelectorAll(".ask-chip, .note, .change__bar").length !== (el._chips || 0)) return false;
   const expected = decorationsFor(id);
@@ -502,6 +512,7 @@ function renderDerived() {
 
 let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
 function changed() {
+  followMarks();
   together?.local();
   together?.redraw();
   renderSaveState();
@@ -543,9 +554,12 @@ function checkpoint(kind, id) {
   state.lastStep = { kind, id, at: now };
 }
 function restore(snap, from, to) {
-  to.push({ doc: D.cloneDoc(state.doc), caret: getCaret() });
+  // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
+  const ask = snap.land && state.asks.find((a) => a.id === snap.land.id && (a.status === "kept" || a.status === "undone"));
+  to.push({ doc: D.cloneDoc(state.doc), caret: getCaret(), ...(ask ? { land: { id: ask.id, status: ask.status } } : {}) });
   state.doc = D.cloneDoc(snap.doc);
   state.lastStep = null;
+  if (ask && ask.status !== snap.land.status) { delete ask.change; closeAsk(ask, snap.land.status); }
   reanchorAll();
   renderAll(snap.caret && byId(snap.caret.id) ? snap.caret : null);
   hideBar();
@@ -594,6 +608,21 @@ function reanchorAll() {
   for (const id of ids) reanchorBlock(id);
 }
 const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, fromId, toId, fromStart, shift);
+// The agent's marked changes (step F) follow every edit from the script as it was when they last followed
+// (changeBase); an edit inside one ends its mark. `ops`: the room's operations, when they are known.
+let changeBase = null;
+function followMarks(ops = null) {
+  if (!state.doc || !state.asks.some(C.isMarked)) { changeBase = null; return; }
+  const now = C.blocksOf(state.doc);
+  const c = ops ? null : getCaret();
+  const touched = C.follow(state.asks, changeBase, now, { ops, caret: c && { blockId: c.id, offset: c.offset } });
+  changeBase = now;
+  if (!touched.size) return;
+  const caret = getCaret();
+  for (const id of touched) if (byId(id)) renderBlock(id, caret);
+}
+// The script as it is now is where the marks are (after they were made, placed or adopted).
+function markBase() { changeBase = state.doc && state.asks.some(C.isMarked) ? C.blocksOf(state.doc) : null; }
 // After setContent split or retyped a block: anchors move into the blocks their text went to.
 function followPieces(id, r) {
   for (let i = r.pieces.length - 1; i >= 0; i--) {
@@ -1010,9 +1039,14 @@ function makeAsk(action, typed = "") {
   }
   return addAsk({ blockId: s.id, start, end, action, typed, by: me });
 }
+// A new ask on the agent's marked change: the text is being worked on again, so its mark (and Undo) goes.
+function unmarkOver(blockId, start, end) {
+  for (const a of state.asks) if (C.isMarked(a) && a.blockId === blockId && a.start < end && a.end > start) delete a.change;
+}
 // onlyBy: a guest's ask closes only that guest's own overlapping asks; the host's closes any ("the newest ask wins").
 function addAsk({ blockId, start, end, action, typed = "", by, onlyBy = null }) {
   for (const a of overlappingAsks(state.asks, { blockId, start, end }, onlyBy)) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
+  unmarkOver(blockId, start, end);
   const ask = D.makeAsk(state.doc, { blockId, start, end, action, instruction: action === "ask" ? typed : undefined, by });
   state.asks.push(ask);
   emit("created", ask);
@@ -1039,6 +1073,8 @@ export function receiveAnswer(askId, answer) {
     ask.answer = clean;
     ask.answeredBy = validBy(answer.by);
     ask.status = "answered";
+    // A new text or an addition goes straight in (step F); a note shows beside its text.
+    if (C.goesStraightIn(ask, clean)) { emit("answered", ask); landAnswer(ask); return true; }
     renderBlock(ask.blockId, getCaret());
   } else {
     clean.marks = clean.marks.map((m) => ({ ...m, ...(D.findQuote(state.doc, m.quote) || {}), state: "open" })).filter((m) => m.blockId);
@@ -1116,8 +1152,55 @@ function glow(id, start, end) {
     }, 1500);
   } catch { /* the glow is only decoration */ }
 }
+/* The agent's replace or add goes straight into the text (step F): one change (one Ctrl/Cmd+Z step when alone),
+   the agent's in a shared script, lightly marked while untouched, with Undo on the agent's name tag. */
+function landAnswer(ask) {
+  const b = byId(ask.blockId);
+  if (!b) return;
+  together?.local(); // the host's own typing goes out first, under the host's name
+  checkpoint("agent", b.id);
+  // Ctrl/Cmd+Z of this step makes the ask undone again (restore).
+  if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "undone" };
+  const res = C.land(state.doc, ask);
+  if (!res) { closeAsk(ask, "cancelled"); renderBlock(b.id, getCaret()); changed(); return; }
+  closeAsk(ask, "kept");
+  moveAsks(b.id, b.id, res.at, res.delta);
+  followPieces(b.id, res.result);
+  followMarks(); // the agent's earlier changes follow this one
+  C.setMark(ask, res.mark);
+  markBase();
+  together?.localAs("agent");
+  if (res.result.changed || res.result.created.length) renderAll(getCaret());
+  else renderBlock(b.id, getCaret());
+  changed();
+}
+// Undo on the agent's name tag: its marked change goes back to what was there; its caret moves to the newest
+// change still marked, or leaves.
+function undoChange(ask) {
+  const b = byId(ask.blockId);
+  if (!b || !C.isMarked(ask)) return;
+  together?.local();
+  checkpoint("agent-undo", b.id);
+  if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "kept" };
+  const res = C.undo(state.doc, ask);
+  if (!res) { renderBlock(b.id, getCaret()); changed(); return; }
+  emit("undone", ask);
+  moveAsks(b.id, b.id, res.at, res.delta);
+  reanchorBlock(b.id);
+  followMarks();
+  together?.localAs("agent");
+  renderBlock(b.id, getCaret());
+  changed();
+}
+function undoAgent(askId) {
+  const ask = state.asks.find((a) => a.id === askId);
+  if (!ask || !C.isMarked(ask) || !may(ask)) return;
+  if (state.guest) return void together.act(ask.id, "undo"); // the host undoes it, for everyone
+  undoChange(ask);
+}
 function undoAnswer(askId) {
   const ask = state.asks.find((a) => a.id === askId);
+  if (C.isMarked(ask)) return undoChange(ask);
   if (!ask || !isOpen(ask)) return;
   closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled");
   renderBlock(ask.blockId, getCaret());
@@ -1221,8 +1304,10 @@ $("#vcUse").addEventListener("click", () => {
     ask.status = "answered";
     ask.answer = { kind: "replace", text: mark.rewrite };
     ask.answeredBy = voice.answeredBy ?? null;
+    unmarkOver(b.id, r.start, r.end);
     state.asks.push(ask);
     emit("answered", ask);
+    landAnswer(ask); // the person picked the rewrite: it goes straight in, with Undo on the agent's name tag
   }
   if (b) renderBlock(b.id, getCaret());
   renderVoice();
@@ -1264,7 +1349,8 @@ const draftKey = (name = state.name) => `draft:${name}`;
 function persistDraft() {
   clearTimeout(draftTimer);
   if (!state.doc || state.pendingDraft || state.guest) return;
-  const open = state.asks.filter(isOpen);
+  // Open asks, and the agent's changes still marked (so their mark and Undo come back after a reload).
+  const open = state.asks.filter((a) => isOpen(a) || C.isMarked(a));
   const dirty = isDirty();
   const flags = brollFlags();
   if (!dirty && !open.length && !flags) { store.del(draftKey()); return; }
@@ -1295,6 +1381,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   state.redo = [];
   state.lastStep = null;
   state.asks = [];
+  changeBase = null;
   state.pendingDraft = null;
   state.frontOpen = false;
   state.hint = null;
@@ -1318,6 +1405,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
 function adoptAsks(asks) {
   if (!Array.isArray(asks)) return;
   for (const a of asks) {
+    if (C.isMarked(a)) { if (C.place(a, state.doc)) state.asks.push(a); continue; } // its new text, found again
     if (!a?.id || !isOpen(a)) continue;
     if (a.scope === "selection" && !byId(a.blockId)) {
       // Ids are new after a reload: find the quote again. B-roll suggestions stay even when it is gone.
@@ -1336,6 +1424,7 @@ function adoptAsks(asks) {
   }
   reanchorAll();
   for (const a of state.asks) if (a.scope === "script") settleVoice(a);
+  markBase();
 }
 function showBanner(text, actions) {
   const banner = $("#banner");
@@ -1372,7 +1461,7 @@ function discardDraft() {
   const draft = state.pendingDraft;
   state.pendingDraft = null;
   hideBanner();
-  if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || D.findQuote(state.doc, a.quote)));
+  if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || C.isMarked(a) || D.findQuote(state.doc, a.quote)));
   if (broll.status === "ok" || broll.status === "none") dropGoneSuggestions();
   store.del(draftKey());
   renderAll(getCaret());
@@ -2992,7 +3081,7 @@ function handleCall({ id, tool, args = {} }) {
       const checked = D.checkAnswer(ask, args, state.doc);
       if (checked.error) return send({ error: checked.error });
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
-      return send({ result: checked.answer.kind === "note" ? "Shown to the person." : "Shown to the person. They choose Keep or Undo." });
+      return send({ result: checked.answer.kind === "note" ? "Shown to the person." : checked.answer.kind === "marks" ? "Shown to the person. They choose Keep or Undo." : "Done: the change is in the text now. The person can undo it." });
     }
     if (tool === "answer_broll") {
       const ask = state.asks.find((a) => a.id === args.askId);
@@ -3159,6 +3248,7 @@ function restoreSelection(sel) {
 }
 // Someone else's change (or an undo on a name tag) is in state.doc: asks follow the text, then the script redraws.
 function afterRoomOps(ops, sel) {
+  followMarks(ops);
   const touched = new Set();
   let structure = false;
   for (const op of ops) {
@@ -3204,7 +3294,7 @@ function setRoomAsks(asks) {
     const m = new Map();
     for (const a of list) {
       const ids = a.scope === "selection" ? [a.blockId] : (a.answer?.marks || []).map((x) => x.blockId);
-      const sig = JSON.stringify([a.id, a.status, a.start, a.end, a.answer, a.action, a.by?.id]);
+      const sig = JSON.stringify([a.id, a.status, a.start, a.end, a.answer, a.action, a.by?.id, a.change]);
       for (const id of ids) m.set(id, (m.get(id) || "") + sig);
     }
     return m;
@@ -3212,6 +3302,7 @@ function setRoomAsks(asks) {
   const brollSig = (list) => JSON.stringify(list.filter((a) => a.scope === "broll" || isBrollAnswer(a)));
   const before = perBlock(state.asks), after = perBlock(asks), brollBefore = brollSig(state.asks);
   state.asks = asks;
+  markBase();
   const caret = getCaret();
   for (const id of new Set([...before.keys(), ...after.keys()])) if (before.get(id) !== after.get(id) && byId(id)) renderBlock(id, caret);
   renderTocDots();
@@ -3248,6 +3339,7 @@ function loadGuest(doc, name, sharedBroll = null) {
     // A fresh snapshot keeps the host's asks, placed again in the new copy; the first one starts with none.
     asks: first ? [] : fitAsks(state.asks, doc),
   });
+  markBase();
   hideBanner();
   renderTop();
   renderAll();
@@ -3308,6 +3400,7 @@ together = createTogether({
   askRefused,
   brollShare,
   setRoomBroll,
+  undoAgent,
   sheet: $(".sheet"),
   scriptEl,
   icon,

@@ -30,7 +30,8 @@ Ask {
   createdAt,                           // ISO time
   status: "waiting" | "taken" | "answered" | "kept" | "undone" | "cancelled",
   takenAt?, takenBy?: { id, name },    // when and by which agent the ask was picked up; id "agent:<clientInfo name>", name the model ("Claude", public/agent-brand.js)
-  answer?, answeredBy?: { id, name }
+  answer?, answeredBy?: { id, name },
+  change?: { text, removed, at }       // step F: a replace or add that went straight in, while it is marked
 }
 ```
 
@@ -48,11 +49,13 @@ Standard instructions (`ACTIONS` in `doc.js`):
 Answers (an optional `message` of at most 200 characters fits any kind):
 
 ```js
-{ kind: "replace", text }                         // old text struck through, new text marked, Keep / Undo
-{ kind: "add", text }                             // new text after the quote, Keep / Undo
+{ kind: "replace", text }                         // goes straight into the text in place of the quote (step F)
+{ kind: "add", text }                             // goes straight into the text after the quote (step F)
 { kind: "note", text, tone: "ok" | "look" }       // a note chip, dismissed with ✕
 { kind: "marks", marks: [{ quote, why, rewrite }] }  // script scope only: dashed underlines with a voice card
 ```
+
+**Straight in (step F, Lex 2026-10-28).** A `replace` or `add` answer on a selection goes into the text at once, as one change (one Ctrl/Cmd+Z step when alone; in a shared script the host's tab applies it and sends it under the agent's name, `by: "agent"`). The ask becomes `kept`, its `start`/`end` cover the changed text, and `change = { text, removed, at }` holds the new text, what it replaced (`""` for an add) and when (`at`, ms). While that text is untouched it is lightly tinted in the agent colour and the agent's caret sits at the newest such change; Undo on its name tag puts `removed` back in place of `text` and makes the ask `undone`. The mark follows edits around it (`public/changes.js`); an edit inside it, a new ask on it, or Ctrl/Cmd+Z of that step ends it (`change` is dropped; the ask stays `kept`, or becomes `undone` for Ctrl/Cmd+Z). An answer that would make new paragraphs or change the block's type still goes in, unmarked. The answer's `message` shows under the line while the change is marked.
 
 When a `marks` answer arrives, the editor anchors each mark like a selection and tracks it:
 
@@ -60,9 +63,9 @@ When a `marks` answer arrives, the editor anchors each mark like a selection and
 Mark { quote, why, rewrite, blockId, start, end, state: "open" | "kept" | "used" | "gone" }
 ```
 
-`open` shows the dashed underline. "Keep mine" sets `kept`; "Use this" sets `used` and makes a new **selection-scope ask with `action: "voice"`** at the mark's place, already `answered` with `{ kind: "replace", text: rewrite }`, so it shows the usual Keep / Undo. A mark whose quote disappears after an edit becomes `gone`. The script ask is `kept` once no mark is open.
+`open` shows the dashed underline. "Keep mine" sets `kept`; "Use this" sets `used` and makes a new **selection-scope ask with `action: "voice"`** at the mark's place, already `answered` with `{ kind: "replace", text: rewrite }`, which goes straight in like any replace (step F), with Undo on the agent's name tag. A mark whose quote disappears after an edit becomes `gone`. The script ask is `kept` once no mark is open.
 
-Life of an ask: `waiting` → `taken` (an agent picked it up with `wait_for_asks`; an ask taken more than two minutes ago without an answer is offered again) → `answered` → `kept` or `undone`. The person can cancel a waiting ask (`cancelled`). Anchors follow edits: the editor keeps `start`/`end` and the `quote`; after an edit in that block it finds the quote nearest the old offset, or cancels the ask when the quote is gone. Open asks (`waiting`, `taken`, `answered`) are kept in memory and in the browser's local storage with the draft, never in the file.
+Life of an ask: `waiting` → `taken` (an agent picked it up with `wait_for_asks`; an ask taken more than two minutes ago without an answer is offered again) → `answered` (a note) → `kept` or `undone`; a replace or add is `kept` as soon as it is in the text, and `undone` when the person undoes it. The person can cancel a waiting ask (`cancelled`). Anchors follow edits: the editor keeps `start`/`end` and the `quote`; after an edit in that block it finds the quote nearest the old offset, or cancels the ask when the quote is gone. Open asks (`waiting`, `taken`, `answered`) and marked changes are kept in memory and in the browser's local storage with the draft, never in the file; after a reload a marked change is found again by its text.
 
 ## B-roll list and sketches (step C)
 
@@ -101,7 +104,7 @@ carets: { [pid]: { blockId, offset, selEnd? } }             // content offsets, 
 
 A person's id is `pid` (the plan called it `personId`): `"host"` for the host, a fresh id per connection for a guest; messages carry it as `from`, and an operation's author as `by`. Carets use the same block ids and content offsets as asks, so they follow edits the same way. Every ask has `by` and every answer `answeredBy`; each operation the host sends carries `by`, so Undo on a name tag undoes only that person's change. The file on disk stays plain Markdown: ids, people and carets live only in the session, and the room stores no script text.
 
-Asks in a shared script (step D2): the host keeps them. A guest's ask has `by: { id: <asker>, name }`, where `asker` is an opaque id the host made at random for that guest tab and tied to the hash of a private secret the tab sent (see docs/together.md); the host shares every open ask as it is in `state.asks`, and each guest places them in its own copy by their quotes. Only `by` and the host may Keep, Undo or dismiss. The agent's caret is not stored: every tab works it out from the asks (`takenBy` / `answeredBy` name, the ask's `end`). `agentBrand(name)` turns that name into the caret's name and logo (`{ name: "Claude", icon: "ai-claude" }`, an unknown agent keeps its name with `ai-sparkle`), so older names such as "Claude Code" map too.
+Asks in a shared script (step D2): the host keeps them. A guest's ask has `by: { id: <asker>, name }`, where `asker` is an opaque id the host made at random for that guest tab and tied to the hash of a private secret the tab sent (see docs/together.md); the host shares every open ask as it is in `state.asks`, and each guest places them in its own copy by their quotes. Only `by` and the host may Keep, Undo or dismiss; that includes Undo on the agent's name tag for a marked change, which the host shares with the open asks. The agent's caret is not stored: every tab works it out from the asks (`takenBy` / `answeredBy` name, the ask's `end`, or the newest marked change). `agentBrand(name)` turns that name into the caret's name and logo (`{ name: "Claude", icon: "ai-claude" }`, an unknown agent keeps its name with `ai-sparkle`), so older names such as "Claude Code" map too.
 
 ## Files, recent scripts and the prompter link
 

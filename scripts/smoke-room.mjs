@@ -117,12 +117,20 @@ try {
   // A guest's ask reaches the host.
   g2.send({ type: "ask", ask: { id: "smoke-ask", action: "simpler", quote: "second line" } });
   check(await until(() => asks.some((m) => m.type === "ask" && m.ask?.id === "smoke-ask" && m.from === g2.pid)), "a guest's ask reaches the host", JSON.stringify(asks));
-  // The host shares the ask, then the agent's answer, with everyone (as the editor's adapter does).
+  // The host shares the ask; the agent's answer goes straight into the host's text (step F) and reaches everyone as
+  // the agent's change, then the host shares the ask as kept with its marked change (as the editor's adapter does).
   const ask = { id: "smoke-ask", scope: "selection", action: "simpler", status: "waiting", by: { id: "guest:ben", name: "Ben" } };
   host.sendAll({ type: "asks", asks: [ask] });
-  host.sendAll({ type: "asks", asks: [{ ...ask, status: "answered", answer: { kind: "replace", text: "Shorter line." }, answeredBy: { id: "agent:smoke", name: "Smoke" } }] });
-  const answered = (list) => list.some((m) => m.type === "asks" && m.asks[0]?.answer?.text === "Shorter line.");
-  check(await until(() => answered(shared.g1) && answered(shared.g2)), "an answer reaches everyone", JSON.stringify(shared.g1.slice(-1)));
+  const ops = { g1: [], g2: [] };
+  for (const [k, c] of [["g1", g1], ["g2", g2]]) { const apply = c.applyRemote.bind(c); c.applyRemote = (o, by, next) => { ops[k].push(by); return apply(o, by, next); }; }
+  ha.blocks[2].text += " Shorter line.";
+  host.localAs("agent");
+  const at = ha.blocks[2].text.indexOf(" Shorter line.");
+  host.sendAll({ type: "asks", asks: [{ ...ask, status: "kept", blockId: "p2", start: at, end: at + 14, answer: { kind: "replace", text: "Shorter line." }, answeredBy: { id: "agent:smoke", name: "Smoke" }, change: { text: " Shorter line.", removed: "", at: Date.now() } }] });
+  check(await until(() => same() && g1a.text().includes("Shorter line.") && g2a.text().includes("Shorter line.")), "the agent's change reaches everyone", `${ha.text()} / ${g1a.text()}`);
+  check(ops.g1.includes("agent") && ops.g2.includes("agent") && host.log.at(-1).by === "agent", "as the agent's change, not the host's", JSON.stringify(ops));
+  const answered = (list) => list.some((m) => m.type === "asks" && m.asks[0]?.status === "kept" && m.asks[0]?.change?.text === " Shorter line.");
+  check(await until(() => answered(shared.g1) && answered(shared.g2)), "the kept ask with its marked change reaches everyone", JSON.stringify(shared.g1.slice(-1)));
   check(shared.g1.filter((m) => m.type === "asks").length === 2, "in order, once each", shared.g1.length);
 
   // Stop sharing: guests see the end, and the link no longer opens the room.

@@ -1,6 +1,6 @@
 # script-editor (script.techies.tools)
 
-A very simple, clean editor for video scripts. You open a Markdown script and edit it; it saves itself to the file. The file name opens a switcher of recent scripts. Export gives the camera script, the prompter file, or opens the script on prompter.techies.tools. Select text and use the edit bar ("Sound like me", "Simpler", "Shorter", "Explain how it works", "Check facts", "Ask…"): this makes an **ask**. The person's **own connected agent** (over MCP) answers it, and the answer shows in place as before/after with Keep / Undo.
+A very simple, clean editor for video scripts. You open a Markdown script and edit it; it saves itself to the file. The file name opens a switcher of recent scripts. Export gives the camera script, the prompter file, or opens the script on prompter.techies.tools. Select text and use the edit bar ("Sound like me", "Simpler", "Shorter", "Explain how it works", "Check facts", "Ask…"): this makes an **ask**. The person's **own connected agent** (over MCP) answers it: a new text or an addition goes straight into the script, lightly marked, with Undo on the agent's name tag (step F); a note shows beside the text.
 
 Owner: Lex (non-technical; explain in plain words). The approved mock-up and the plan are kept outside this repository; this file, `docs/data-shape.md` and the code are the reference here.
 

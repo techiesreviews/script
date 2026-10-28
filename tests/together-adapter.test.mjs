@@ -136,6 +136,13 @@ test("adapter: the host's check of a guest's Keep, Undo or dismiss", () => {
   assert.ok(guestMayAct(own("taken"), "undo", "a-ana"));
   assert.ok(guestMayAct(own("taken"), "dismiss", "a-ana"));
   assert.ok(!guestMayAct(own("kept", text), "undo", "a-ana"), "already done");
+  // A change that went straight in (step F) can be undone by the guest who asked while it is marked, nothing else.
+  const marked = { ...own("kept", text), change: { text: "x", removed: "y", at: 1 } };
+  assert.ok(guestMayAct(marked, "undo", "a-ana"));
+  assert.ok(!guestMayAct(marked, "undo", "a-ben"), "not by another guest");
+  assert.ok(!guestMayAct(marked, "keep", "a-ana"));
+  assert.ok(!guestMayAct(marked, "dismiss", "a-ana"));
+  assert.ok(!guestMayAct({ ...marked, status: "undone" }, "undo", "a-ana"), "undone already");
   assert.ok(!guestMayAct({ ...own("answered", text), scope: "script" }, "keep", "a-ana"));
   assert.ok(!guestMayAct(own("answered", text), "eval", "a-ana"));
 });
@@ -186,7 +193,7 @@ test("adapter: a guest places the host's asks in its own copy, and the agent's c
   assert.equal(agentCaret([a1], doc), null);
   a1.status = "taken"; a1.takenBy = { id: "agent:claude-code", name: "Claude Code" };
   // Named and drawn as its model, no "(agent)" (Lex, 2026-10-28); old asks named "Claude Code" map too.
-  assert.deepEqual(agentCaret([a1, a2], doc), { pid: "agent", kind: "agent", name: "Claude", icon: "ai-claude", colour: null, blockId: p.id, offset: 8 });
+  assert.deepEqual(agentCaret([a1, a2], doc), { pid: "agent", kind: "agent", name: "Claude", icon: "ai-claude", colour: null, blockId: p.id, offset: 8, undo: false, askId: a1.id });
   a2.status = "answered"; a2.answer = { kind: "replace", text: "Go on." }; a2.answeredBy = { id: "agent:x", name: "Codex" };
   assert.equal(agentCaret([a1, a2], doc).offset, 8, "the ask it works on wins");
   a1.status = "kept";

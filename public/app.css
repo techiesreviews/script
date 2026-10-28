@@ -342,6 +342,12 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 @media (prefers-reduced-motion: no-preference) { .landed { animation: landed 1400ms var(--ease-out); } }
 @keyframes landed { from { background: var(--accent-soft); } }
 
+/* The agent's change went straight in (step F): a light tint in the agent's colour while it is untouched; Undo is on
+   the agent's name tag. A new one arrives a little stronger. */
+.agent-change { border-radius: 3px; background: light-dark(color-mix(in oklch, var(--agent) 13%, transparent), color-mix(in oklch, var(--agent) 17%, transparent)); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+@media (prefers-reduced-motion: no-preference) { .agent-change[data-new] { animation: agent-in 900ms var(--ease-out); } }
+@keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
+
 /* A note in place (check facts) */
 .checked { text-decoration: underline solid var(--line-strong); text-decoration-thickness: 2px; text-underline-offset: 0.3em; }
 .checked[data-tone="look"] { text-decoration-color: var(--accent); }

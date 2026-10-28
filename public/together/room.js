@@ -211,6 +211,33 @@ export class RoomClient {
     this.on.changed?.();
     this.flush();
   }
+  /** Host: call after a change made in this tab on someone else's behalf (`by`, an agent's answer, say). It goes out
+   *  under their name, so it is their change for Undo on name tags, not the host's. The host's own changes not sent
+   *  yet (a held "/" command) stay on top; when they can't be kept apart, the change goes out as the host's. */
+  localAs(by) {
+    if (this.role !== "host" || by === this.pid || !this.live || this.applying || this.stopped) return this.local();
+    const cur = this.adapter.read();
+    const step = diff(this.live, cur, this.adapter.caret?.());
+    if (!step.length) return this.flush();
+    let ops = step;
+    const held = diff(this.shadow, this.live);
+    if (held.length) {
+      if (held.some((op) => op.type !== "text")) return this.local();
+      // The change as it applies to the agreed document: moved back over the held text (one text op per block).
+      const was = (id) => this.shadow.find((b) => b.id === id)?.text ?? "";
+      const back = held.map((op) => ({ type: "text", blockId: op.blockId, at: op.at, del: op.ins.length, ins: was(op.blockId).slice(op.at, op.at + op.del) }));
+      try { [ops] = transformOps(step, back, true); } catch { return this.local(); }
+    }
+    let shadow;
+    try { shadow = applyOps(cloneBlocks(this.shadow), ops); } catch { return this.local(); }
+    this.see(step, by, cloneBlocks(this.live), { record: true });
+    this.live = cur;
+    this.shadow = shadow;
+    this.commit(ops, by);
+    this.on.changed?.();
+    this.on.carets?.();
+    this.flush();
+  }
   flush() {
     this.flushOps();
     // A guest whose text is now all with the host (sent and confirmed, or nothing left to send) says so: asks waiting
