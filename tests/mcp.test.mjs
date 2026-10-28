@@ -58,9 +58,9 @@ test("initialize passes the client's name and version to the relay, cut short", 
   assert.equal(agent.token, TOKEN);
 });
 
-test("tools/list has the four tools with input schemas and limits", async () => {
+test("tools/list has the six tools with input schemas and limits", async () => {
   const r = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "get_script", "list_asks", "sketch_shot", "wait_for_asks"]);
+  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "answer_broll", "get_script", "list_asks", "sketch_shot", "wait_for_asks"]);
   const answer = TOOLS.find((t) => t.name === "answer_ask").inputSchema;
   assert.equal(answer.properties.text.maxLength, 4000);
   assert.equal(answer.properties.message.maxLength, 200);
@@ -196,4 +196,43 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
   assert.deepEqual(relay.ops.at(-1).args, { askId: "a", shotId: "B4", svg });
   const tooLong = await call("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(9000) }, { relay });
   assert.equal(tooLong.body.result.isError, true);
+});
+
+test("answer_broll: schema, limits and refusals before the tab; the prompt and instructions name it", async () => {
+  const tool = TOOLS.find((t) => t.name === "answer_broll");
+  assert.deepEqual(tool.inputSchema.required, ["askId", "changes"]);
+  assert.equal(tool.inputSchema.properties.changes.maxItems, 20);
+  const item = tool.inputSchema.properties.changes.items.properties;
+  assert.deepEqual([item.what.maxLength, item.how.maxLength, item.quote.maxLength, item.why.maxLength], [200, 120, 500, 160]);
+  assert.equal(tool.inputSchema.properties.message.maxLength, 200);
+  const add = { op: "add", kind: "broll", what: "A clock", quote: "Hello there." };
+  for (const [args, re] of [
+    [{ changes: [add] }, /askId is required/],
+    [{ askId: "a" }, /changes must be a list/],
+    [{ askId: "a", changes: [] }, /changes must be a list/],
+    [{ askId: "a", changes: Array(21).fill(add) }, /At most 20 changes/],
+    [{ askId: "a", changes: [add], message: "x".repeat(201) }, /message is longer than 200/],
+    [{ askId: "a", changes: [{ ...add, op: "move" }] }, /op must be add, update or remove/],
+    [{ askId: "a", changes: [{ ...add, kind: "photo" }] }, /kind must be broll, motion or screen/],
+    [{ askId: "a", changes: [{ ...add, what: "x".repeat(201) }] }, /what is longer than 200/],
+    [{ askId: "a", changes: [{ ...add, how: "x".repeat(121) }] }, /how is longer than 120/],
+    [{ askId: "a", changes: [{ ...add, quote: "x".repeat(501) }] }, /quote is longer than 500/],
+    [{ askId: "a", changes: [{ ...add, why: "x".repeat(161) }] }, /why is longer than 160/],
+    [{ askId: "a", changes: [{ op: "add", kind: "broll", what: "x" }] }, /add needs kind, what and quote/],
+    [{ askId: "a", changes: [{ ...add, kind: "screen", how: "Phone" }] }, /screen recording has no how/],
+    [{ askId: "a", changes: [{ op: "remove" }] }, /remove needs id/],
+    [{ askId: "a", changes: [{ op: "update", id: "B1", colour: "red" }] }, /unknown field colour/],
+    [{ askId: "a", changes: [add], extra: 1 }, /Unknown argument/],
+  ]) assert.match(checkArgs("answer_broll", args), re);
+  assert.equal(checkArgs("answer_broll", { askId: "a", changes: [add, { op: "update", id: "B1", how: "Stock" }, { op: "remove", id: "B2", why: "Repeats B1" }], message: "Three ideas" }), "");
+  const relay = fakeRelay({ results: { answer_broll: "Shown to the person. They choose Keep or Undo per change." } });
+  const r = await call("answer_broll", { askId: "a", changes: [add] }, { relay });
+  assert.equal(text(r), "Shown to the person. They choose Keep or Undo per change.");
+  assert.deepEqual(relay.ops.at(-1).args, { askId: "a", changes: [add] });
+  const refused = await call("answer_broll", { askId: "a", changes: Array(21).fill(add) }, { relay });
+  assert.equal(refused.body.result.isError, true);
+  assert.equal(relay.ops.filter((o) => o.tool === "answer_broll").length, 1);
+  const prompt = await rpc({ jsonrpc: "2.0", id: 4, method: "prompts/get", params: { name: "watch_script" } });
+  assert.match(prompt.body.result.messages[0].content.text, /answer_broll for B-roll asks/);
+  assert.match(INSTRUCTIONS, /answer_broll/);
 });

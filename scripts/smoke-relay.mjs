@@ -15,7 +15,7 @@ const token = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("
 /* ---------- The fake tab ---------- */
 const asks = [];
 const waiters = [];
-const received = { agent: null, answers: [] };
+const received = { agent: null, answers: [], broll: [] };
 let ws;
 function tabConnect() {
   return new Promise((resolve, reject) => {
@@ -48,11 +48,22 @@ function onTabMessage(m) {
     received.answers.push(m.args);
     return reply(m.id, { result: "Shown to the person. They choose Keep or Undo." });
   }
+  if (m.tool === "answer_broll") {
+    // The fake tab checks the ask and the changes the way the editor does, in short.
+    const a = asks.find((x) => x.id === m.args.askId);
+    if (!a || (a.status !== "waiting" && a.status !== "taken")) return reply(m.id, { error: "Unknown ask." });
+    if (a.action !== "broll") return reply(m.id, { error: "This ask is not about B-roll. Answer it with answer_ask." });
+    if (m.args.changes.some((c) => c.op === "add" && !"Hello there.".includes(c.quote))) return reply(m.id, { error: "Change 1: the quote is not in the spoken text word for word." });
+    a.status = "answered";
+    a.answer = { kind: "broll", changes: m.args.changes.map((c) => ({ ...c, state: "waiting" })) };
+    received.broll.push(m.args);
+    return reply(m.id, { result: "Shown to the person. They choose Keep or Undo per change." });
+  }
   if (m.tool === "list_asks") return reply(m.id, { result: { asks: asks.map(({ id, action, status, answer }) => ({ id, action, status, answer })) } });
   reply(m.id, { error: "Unknown tool" });
 }
-function makeAsk() {
-  const a = { id: "ask" + asks.length, scope: "selection", action: "simpler", instruction: "Use simpler words.", quote: "Hello there.", context: "Hello there.", section: "1 · Hook (0:00)", createdAt: new Date().toISOString(), status: "waiting" };
+function makeAsk(action = "simpler", instruction = "Use simpler words.") {
+  const a = { id: "ask" + asks.length, scope: "selection", action, instruction, quote: "Hello there.", context: "Hello there.", section: "1 · Hook (0:00)", createdAt: new Date().toISOString(), status: "waiting" };
   asks.push(a);
   const w = waiters.shift();
   if (w) { clearTimeout(w.timer); reply(w.id, { result: { asks: take(unseen()) } }); }
@@ -97,7 +108,7 @@ try {
 
   const list = await mcp("tools/list");
   const names = list.body.result?.tools?.map((t) => t.name).sort().join(",");
-  check(names === "answer_ask,get_script,list_asks,sketch_shot,wait_for_asks", "tools/list has the five tools", names);
+  check(names === "answer_ask,answer_broll,get_script,list_asks,sketch_shot,wait_for_asks", "tools/list has the six tools", names);
 
   const script = await mcp("tools/call", { name: "get_script", arguments: {} });
   check(JSON.parse(toolText(script) || "{}").title === "Smoke", "get_script returns the tab's script", toolText(script));
@@ -118,6 +129,20 @@ try {
 
   const listed = await mcp("tools/call", { name: "list_asks", arguments: {} });
   check(JSON.parse(toolText(listed) || "{}").asks?.[0]?.status === "answered", "list_asks shows the answered status", toolText(listed));
+
+  // A "Suggest B-roll" ask, answered with answer_broll.
+  makeAsk("broll", "Suggest 1–3 B-roll shots for these lines with answer_broll.");
+  const brollAsk = await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 0 } });
+  check(JSON.parse(toolText(brollAsk) || "{}").asks?.[0]?.action === "broll", "wait_for_asks returns the B-roll ask", toolText(brollAsk));
+  const badQuote = await mcp("tools/call", { name: "answer_broll", arguments: { askId: "ask1", changes: [{ op: "add", kind: "broll", what: "A wave", quote: "Goodbye." }] } });
+  check(badQuote.body.result?.isError === true && toolText(badQuote).includes("not in the spoken text"), "answer_broll: the tab refuses a quote that is not in the script", toolText(badQuote));
+  const screenHow = await mcp("tools/call", { name: "answer_broll", arguments: { askId: "ask1", changes: [{ op: "add", kind: "screen", what: "Typing", how: "Phone", quote: "Hello there." }] } });
+  check(screenHow.body.result?.isError === true && received.broll.length === 0, "answer_broll: a screen recording with how is refused before the tab", toolText(screenHow));
+  const suggested = await mcp("tools/call", { name: "answer_broll", arguments: { askId: "ask1", changes: [{ op: "add", kind: "broll", what: "A friendly wave", how: "Stock clip", quote: "Hello there.", why: "Sets the tone" }], message: "One idea" } });
+  check(!suggested.body.result?.isError && toolText(suggested) === "Shown to the person. They choose Keep or Undo per change.", "answer_broll reaches the tab", toolText(suggested));
+  check(received.broll[0]?.changes?.[0]?.what === "A friendly wave", "tab received the B-roll changes");
+  const listed2 = await mcp("tools/call", { name: "list_asks", arguments: {} });
+  check(JSON.parse(toolText(listed2) || "{}").asks?.[1]?.answer?.changes?.[0]?.state === "waiting", "list_asks shows each B-roll change's state", toolText(listed2));
 
   const quiet = await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 1 } });
   check(toolText(quiet).includes("No asks yet"), "wait_for_asks says no asks yet after its wait", toolText(quiet));

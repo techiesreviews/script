@@ -6,6 +6,7 @@ import {
   parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
+  quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -524,4 +525,105 @@ test("a new Kind column is filled in for every row", () => {
   assert.ok(added.startsWith("| # | Kind | What to show | Over |"));
   assert.ok(added.includes('| B1 | B-roll | a | "b" |'));
   assert.equal(kindOfId(added, "B1"), "broll");
+});
+
+/* ---------- Step C4: the agent suggests B-roll ---------- */
+const brollAsk = (over = {}) => ({ id: "a1", scope: "selection", action: "broll", status: "taken", ...over });
+
+test("quoteSelection finds a quote across lines, word for word, and overFor turns it into a matching Over", () => {
+  const doc = parse(SCRIPT);
+  const list = spokenBlocks(doc);
+  const t = (i) => contentOf(blockById(doc, list[i].id));
+  // The end of one line and the start of the next, joined by a space or a line break.
+  const tail = t(0).split(" ").slice(-3).join(" "), head = t(1).split(" ").slice(0, 4).join(" ");
+  for (const quote of [`${tail} ${head}`, `${tail}\n\n${head}`, `  ${tail}\n${head} `]) {
+    const sel = quoteSelection(doc, quote);
+    assert.deepEqual(sel.map((s) => s.id), [list[0].id, list[1].id]);
+    assert.equal(t(0).slice(sel[0].start, sel[0].end), tail);
+    assert.equal(t(1).slice(sel[1].start, sel[1].end), head);
+    assert.deepEqual(matchOver(list, overFor(doc, sel)), [list[0].id, list[1].id]);
+  }
+  const one = quoteSelection(doc, "A backup is a spare key.");
+  assert.equal(one.length, 1);
+  assert.deepEqual(matchOver(list, overFor(doc, one)), [one[0].id]);
+  assert.deepEqual(quoteSelection(doc, "A backup is a spare lock."), []);
+  assert.deepEqual(quoteSelection(doc, "Before recording"), []); // only spoken paras
+  assert.deepEqual(quoteSelection(doc, "  "), []);
+});
+
+test("checkBrollAnswer: which asks, ids, quotes, screen with how, limits; adds get an Over", () => {
+  const doc = parse(SCRIPT);
+  const { shots } = parseBroll(DEMO);
+  matchShots(doc, shots);
+  const ctx = { doc, shots };
+  const add = { op: "add", kind: "broll", what: "A spare key", how: "Macro shot", quote: "A backup is a spare key.", why: "Makes the idea visible" };
+  const ok = checkBrollAnswer(brollAsk(), { changes: [add, { op: "update", id: "B2", what: "A long post scrolls by" }, { op: "remove", id: "B7" }], message: " Three ideas " }, ctx);
+  assert.equal(ok.error, undefined);
+  assert.equal(ok.answer.kind, "broll");
+  assert.equal(ok.answer.message, "Three ideas");
+  assert.deepEqual(ok.answer.changes.map((c) => [c.op, c.state]), [["add", "open"], ["update", "open"], ["remove", "open"]]);
+  assert.deepEqual(matchOver(spokenBlocks(doc), ok.answer.changes[0].over), quoteSelection(doc, add.quote).map((s) => s.id));
+  for (const a of [brollAsk(), brollAsk({ action: "ask" }), brollAsk({ scope: "broll", action: "plan", status: "waiting" })]) assert.ok(brollAskAllowed(a) && checkBrollAnswer(a, { changes: [add] }, ctx).answer);
+  for (const [ask, args, re] of [
+    [null, { changes: [add] }, /Unknown ask/],
+    [brollAsk({ action: "simpler" }), { changes: [add] }, /answer_ask/],
+    [brollAsk({ scope: "broll", action: "sketch" }), { changes: [add] }, /sketch_shot/],
+    [brollAsk({ status: "kept" }), { changes: [add] }, /finished \(kept\)/],
+    [brollAsk(), { changes: [] }, /1 to 20/],
+    [brollAsk(), { changes: Array(21).fill(add) }, /At most 20/],
+    [brollAsk(), { changes: [add], message: "x".repeat(201) }, /message is longer than 200/],
+    [brollAsk(), { changes: [{ ...add, what: "x".repeat(201) }] }, /what is longer than 200/],
+    [brollAsk(), { changes: [{ ...add, how: "x".repeat(121) }] }, /how is longer than 120/],
+    [brollAsk(), { changes: [{ ...add, why: "x".repeat(161) }] }, /why is longer than 160/],
+    [brollAsk(), { changes: [{ ...add, quote: "Not in the script at all." }] }, /not in the spoken text word for word/],
+    [brollAsk(), { changes: [{ ...add, kind: "screen" }] }, /screen recording has no how/],
+    [brollAsk(), { changes: [{ op: "update", id: "S1", how: "Phone" }] }, /screen recording has no how/],
+    [brollAsk(), { changes: [{ op: "update", id: "B1", kind: "screen", how: "Phone" }] }, /screen recording has no how/],
+    [brollAsk(), { changes: [{ op: "update", id: "B99", what: "x" }] }, /unknown shot id "B99". Shot ids: B1, B2/],
+    [brollAsk(), { changes: [{ op: "remove", id: "Z1" }] }, /unknown shot id/],
+    [brollAsk(), { changes: [{ op: "update", id: "B1" }] }, /needs what, how or kind/],
+    [brollAsk(), { changes: [{ op: "add", kind: "broll", quote: add.quote }] }, /needs what/],
+  ]) assert.match(checkBrollAnswer(ask, args, ctx).error, re);
+  // No list yet: adds only.
+  assert.match(checkBrollAnswer(brollAsk(), { changes: [{ op: "remove", id: "B1" }] }, { doc, shots: [] }).error, /Shot ids: none yet/);
+  // answer_ask refuses a Suggest B-roll ask; sketch_shot refuses a plan ask.
+  assert.match(checkAnswer(brollAsk({ quote: "x" }), { kind: "replace", text: "y" }, doc).error, /answer_broll/);
+  assert.match(checkAnswer({ scope: "broll", action: "plan", status: "taken" }, { kind: "note", text: "y" }, doc).error, /answer_broll/);
+  assert.match(checkSketch({ scope: "broll", action: "plan", status: "taken", shots: [{ id: "B4" }] }, { shotId: "B4", svg: '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/></svg>' }).error, /answer_broll/);
+  assert.match(ACTIONS.broll.instruction, /1–3/);
+  assert.match(ACTIONS.plan.instruction, /at most 20/);
+});
+
+test("Keep gives the same file as the C3 functions; Keep all is one write in order; Undo writes nothing", () => {
+  const doc = parse(SCRIPT);
+  const { shots } = parseBroll(DEMO);
+  matchShots(doc, shots);
+  const ctx = { doc, shots };
+  const { answer } = checkBrollAnswer(brollAsk(), { changes: [
+    { op: "add", kind: "motion", what: "Map", how: "After Effects", quote: "A backup is a spare key." },
+    { op: "update", id: "B2", what: "A long post scrolls by", kind: "motion" },
+    { op: "remove", id: "B7", why: "Repeats S1" },
+    { op: "add", kind: "screen", what: "Typing", quote: "So, three things." },
+  ] }, ctx);
+  const [add, up, rm, screen] = answer.changes;
+  assert.equal(applyBrollChange(DEMO, add), addShot(DEMO, { id: "B9", kind: "motion", what: "Map", how: "After Effects", over: add.over }));
+  assert.equal(applyBrollChange(DEMO, up), updateShot(DEMO, "B2", { what: "A long post scrolls by", kind: "motion" }));
+  assert.equal(applyBrollChange(DEMO, rm), removeShot(DEMO, "B7"));
+  // Keep all: one write with every change in order; the adds get B9 and S3 at that moment.
+  const all = applyBrollChanges(DEMO, changesToKeep(answer, [0, 1, 2, 3]));
+  const step = [add, up, rm, screen].reduce((md, c) => applyBrollChange(md, c), DEMO);
+  assert.equal(all, step);
+  const back = parseBroll(all);
+  assert.deepEqual(back.shots.map((s) => s.id), ["B1", "B2", "B3", "B4", "B5", "B6", "B8", "B9", "S1", "S2", "S3"]);
+  assert.equal(back.shots.find((s) => s.id === "B9").kind, "motion");
+  assert.equal(back.shots.find((s) => s.id === "B2").kind, "motion");
+  assert.ok(!("B7" in back.sketches));
+  // Undo: the change is done without a write; a later Keep of it writes nothing either.
+  up.state = "undone";
+  assert.deepEqual(changesToKeep(answer, [1]), []);
+  assert.equal(applyBrollChanges(DEMO, changesToKeep(answer, [1])), DEMO);
+  assert.equal(settleBroll(answer), null);
+  for (const c of answer.changes) if (c.state === "open") c.state = "kept";
+  assert.equal(settleBroll(answer), "kept");
+  assert.equal(settleBroll({ changes: [{ state: "undone" }] }), "undone");
 });

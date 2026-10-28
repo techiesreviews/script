@@ -294,7 +294,7 @@ export function setSketch(markdown, id, svg) {
 /** Check sketch_shot { askId, shotId, svg } against the ask. Returns { svg } (sanitised) or { error }. */
 export function checkSketch(ask, args) {
   if (!ask) return { error: "Unknown ask. Call list_asks or wait_for_asks for current ask ids." };
-  if (ask.scope !== "broll") return { error: "sketch_shot only answers \"Ask for sketches\" asks. Use answer_ask for this one." };
+  if (ask.scope !== "broll" || (ask.action && ask.action !== "sketch")) return { error: ask.action === "plan" ? "This is a \"Plan B-roll\" ask. Answer it with answer_broll." : "sketch_shot only answers \"Ask for sketches\" asks. Use answer_ask for this one." };
   if (!["waiting", "taken", "answered"].includes(ask.status)) return { error: `This ask is finished (${ask.status}).` };
   const a = args && typeof args === "object" ? args : {};
   if (typeof a.shotId !== "string" || !(ask.shots || []).some((s) => s.id === a.shotId)) return { error: `shotId must be one of: ${(ask.shots || []).map((s) => s.id).join(", ")}.` };
@@ -602,4 +602,96 @@ export function overFor(doc, selection) {
     if (matchOver(list, over).join() === want) break;
   }
   return over;
+}
+
+/* ---------- The agent suggests B-roll (step C4): answer_broll ---------- */
+export const BROLL_LIMITS = { changes: 20, what: 200, how: 120, quote: 500, why: 160, message: 200, id: 20 };
+const OPS = ["add", "update", "remove"];
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+const oneLine = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
+
+/** The spoken text a quote stands for, as a selection [{ id, start, end }] across spoken paras ([] when not found).
+ *  The quote must be word for word; any run of spaces or line breaks matches any other, so it may span lines. */
+export function quoteSelection(doc, quote) {
+  const words = String(quote ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const paras = outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para"));
+  let joined = "";
+  const spans = paras.map((b) => { const text = contentOf(b), start = joined.length ? joined.length + 2 : 0; joined += (joined.length ? "\n\n" : "") + text; return { id: b.id, start, end: start + text.length }; });
+  const m = new RegExp(words.map(escRe).join("\\s+")).exec(joined);
+  if (!m) return [];
+  const a = m.index, z = m.index + m[0].length;
+  return spans.filter((p) => p.start < z && p.end > a).map((p) => ({ id: p.id, start: Math.max(a, p.start) - p.start, end: Math.min(z, p.end) - p.start }));
+}
+
+/** Asks answer_broll may answer: "Suggest B-roll" on a selection, a free "Ask…" on a selection, and "Plan B-roll". */
+export const brollAskAllowed = (ask) => (ask?.scope === "selection" && (ask.action === "broll" || ask.action === "ask")) || (ask?.scope === "broll" && ask.action === "plan");
+
+/**
+ * checkBrollAnswer(ask, args, { doc, shots }) → { answer: { kind: "broll", changes, message? } } or { error } for the agent.
+ * Each add gets its Over from the quote (quoteSelection + overFor), so it matches the same lines as a person's selection.
+ */
+export function checkBrollAnswer(ask, args, { doc, shots = [] } = {}) {
+  if (!ask) return { error: "Unknown ask. Call list_asks or wait_for_asks for current ask ids." };
+  if (!brollAskAllowed(ask)) return { error: ask.scope === "broll" ? "This ask is for sketches. Answer it with sketch_shot." : "This ask is not about B-roll. Answer it with answer_ask." };
+  if (ask.status !== "waiting" && ask.status !== "taken") return { error: `This ask is finished (${ask.status}).` };
+  const a = isObj(args) ? args : {};
+  const L = BROLL_LIMITS;
+  if (!Array.isArray(a.changes) || !a.changes.length) return { error: `changes must be a list of 1 to ${L.changes} changes.` };
+  if (a.changes.length > L.changes) return { error: `At most ${L.changes} changes.` };
+  if (a.message != null && typeof a.message !== "string") return { error: "message must be text." };
+  if (typeof a.message === "string" && a.message.length > L.message) return { error: `message is longer than ${L.message} characters.` };
+  const known = new Map(shots.map((s) => [s.id, s]));
+  const idList = shots.length ? shots.map((s) => s.id).join(", ") : "none yet";
+  const changes = [];
+  for (const [i, c] of a.changes.entries()) {
+    const at = `Change ${i + 1}`;
+    if (!isObj(c) || !OPS.includes(c.op)) return { error: `${at}: op must be add, update or remove.` };
+    for (const k of ["id", "kind", "what", "how", "quote", "why"]) {
+      if (c[k] != null && typeof c[k] !== "string") return { error: `${at}: ${k} must be text.` };
+      if (typeof c[k] === "string" && L[k] && c[k].length > L[k]) return { error: `${at}: ${k} is longer than ${L[k]} characters.` };
+    }
+    if (c.kind != null && !KINDS.includes(c.kind)) return { error: `${at}: kind must be broll, motion or screen.` };
+    const why = oneLine(c.why);
+    if (c.op === "add") {
+      if (!c.kind) return { error: `${at}: an add needs kind (broll, motion or screen).` };
+      if (!oneLine(c.what)) return { error: `${at}: an add needs what.` };
+      if (!oneLine(c.quote)) return { error: `${at}: an add needs quote, the exact spoken text the shot goes over.` };
+      if (c.kind === "screen" && oneLine(c.how)) return { error: `${at}: a screen recording has no how.` };
+      const sel = quoteSelection(doc, c.quote);
+      if (!sel.length) return { error: `${at}: the quote is not in the spoken text word for word: ${JSON.stringify(oneLine(c.quote).slice(0, 80))}.` };
+      changes.push({ op: "add", kind: c.kind, what: oneLine(c.what), how: c.kind === "screen" ? "" : oneLine(c.how), quote: oneLine(c.quote), over: overFor(doc, sel), why, state: "open" });
+      continue;
+    }
+    const shot = known.get(c.id);
+    if (!shot) return { error: `${at}: unknown shot id ${JSON.stringify(c.id ?? "")}. Shot ids: ${idList}.` };
+    if (c.op === "remove") { changes.push({ op: "remove", id: c.id, why, state: "open" }); continue; }
+    if (c.what == null && c.how == null && c.kind == null) return { error: `${at}: an update needs what, how or kind.` };
+    if (c.what != null && !oneLine(c.what)) return { error: `${at}: what can't be empty.` };
+    if ((c.kind ?? shot.kind) === "screen" && oneLine(c.how)) return { error: `${at}: a screen recording has no how.` };
+    changes.push({ op: "update", id: c.id, ...(c.what != null ? { what: oneLine(c.what) } : {}), ...(c.how != null ? { how: oneLine(c.how) } : {}), ...(c.kind != null ? { kind: c.kind } : {}), why, state: "open" });
+  }
+  const message = oneLine(a.message);
+  return { answer: { kind: "broll", changes, ...(message ? { message } : {}) } };
+}
+
+/** Keep one change: the same file the C3 functions give. An add gets the next free id at that moment. */
+export function applyBrollChange(markdown, c) {
+  if (c.op === "add") {
+    const now = parseBroll(markdown);
+    return addShot(markdown, { id: nextShotId(now.shots, c.kind, now.sketches), kind: c.kind, what: c.what, over: c.over, how: c.how });
+  }
+  if (c.op === "update") return updateShot(markdown, c.id, { what: c.what, how: c.kind === "screen" ? undefined : c.how, kind: c.kind });
+  if (c.op === "remove") return removeShot(markdown, c.id);
+  return String(markdown ?? "");
+}
+/** Keep several in order, in one write: each change sees the ones before it. */
+export const applyBrollChanges = (markdown, changes) => changes.reduce(applyBrollChange, String(markdown ?? ""));
+/** The changes a Keep writes: only the ones still open. An undone change writes nothing. */
+export const changesToKeep = (answer, ns) => ns.map((n) => answer?.changes?.[n]).filter((c) => c?.state === "open");
+/** After a Keep or Undo: the ask's final status once every change is done ("kept" when any was kept), else null. */
+export function settleBroll(answer) {
+  const list = answer?.changes || [];
+  if (list.some((c) => c.state === "open")) return null;
+  return list.some((c) => c.state === "kept") ? "kept" : "undone";
 }

@@ -37,9 +37,10 @@ const ICONS = {
   doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M9 11h6M9 15h6"/>',
   board: '<rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/>',
   sketch: '<path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/>',
+  suggest: '<rect x="3" y="7" width="14" height="13" rx="2"/><path d="M7 7v13M3 11.5h4M3 15.5h4"/><path d="M19.5 2.5v5M17 5h5"/>',
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
-const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch" };
+const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest" };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
 
@@ -92,6 +93,9 @@ const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 
 /* ---------- Small helpers ---------- */
 const scriptEl = $("#script");
 const isOpen = (a) => D.OPEN_STATUSES.includes(a.status);
+// A selection or plan ask answered with B-roll changes: its suggestions live beside the lines, not in the text,
+// so the text decorations, anchors and "newest ask wins" leave it alone.
+const isBrollAnswer = (a) => a.status === "answered" && a.answer?.kind === "broll";
 const byId = (id) => (state.doc ? D.blockById(state.doc, id) : null);
 const blockNode = (id) => scriptEl.querySelector(`.block[data-id="${id}"]`);
 const blockOf = (node) => {
@@ -226,7 +230,7 @@ function blockShell(b) {
 function decorationsFor(id) {
   const items = [];
   for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === id && isOpen(a)) items.push({ kind: "ask", ask: a, start: a.start, end: a.end });
+    if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) items.push({ kind: "ask", ask: a, start: a.start, end: a.end });
   }
   for (const a of state.asks) {
     if (a.scope !== "script" || a.status !== "answered") continue;
@@ -409,7 +413,7 @@ function renderTocDots() {
     if (!dots) continue;
     const ids = new Set([s.heading.id, ...s.blocks.map((b) => b.id)]);
     const voice = state.asks.some((a) => a.scope === "script" && a.status === "answered" && a.answer.marks.some((m) => m.state === "open" && ids.has(m.blockId)));
-    const asks = state.asks.some((a) => a.scope === "selection" && isOpen(a) && ids.has(a.blockId));
+    const asks = state.asks.some((a) => a.scope === "selection" && isOpen(a) && !isBrollAnswer(a) && ids.has(a.blockId));
     dots.innerHTML = (voice ? '<span class="pdot pdot--voice"></span>' : "") + (asks ? '<span class="pdot pdot--ask"></span>' : "");
   }
 }
@@ -458,6 +462,7 @@ function renderDerived() {
   $("#prompterNote").hidden = !tooLong;
   if (!tooLong) prompterUrl(pro);
   rematchBroll(false);
+  refreshSuggestions();
 }
 
 let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
@@ -520,7 +525,7 @@ function reanchorBlock(id) {
   const b = byId(id);
   let moved = false;
   for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === id && isOpen(a)) {
+    if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) {
       const r = b && D.reanchor(a, D.contentOf(b));
       if (!r) { closeAsk(a, "cancelled"); moved = true; }
       else if (r.start !== a.start) { a.start = r.start; a.end = r.end; moved = true; }
@@ -829,8 +834,9 @@ function showBar() {
   const s = currentSelection();
   if (!s) { hideBar(); return; }
   barSel = s;
-  const add = $("#addBroll");
-  add.disabled = !canAddBroll() || !spokenSelection(s.range).length;
+  const spoken = spokenSelection(s.range).length > 0;
+  $("#addBroll").disabled = !canAddBroll() || !spoken;
+  $('#editBar [data-act="broll"]').disabled = !spoken;
   const n = D.countWords(s.quote);
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
@@ -864,7 +870,7 @@ function makeAsk(action, typed = "") {
   }
   // The newest ask wins where two overlap.
   for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === s.id && isOpen(a) && a.start < end && a.end > start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
+    if (a.scope === "selection" && a.blockId === s.id && isOpen(a) && !isBrollAnswer(a) && a.start < end && a.end > start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
   }
   const ask = D.makeAsk(state.doc, { blockId: s.id, start, end, action, instruction: action === "ask" ? typed : undefined, by: me });
   state.asks.push(ask);
@@ -1066,7 +1072,7 @@ $("#vcUse").addEventListener("click", () => {
   mark.state = "used";
   settleVoice(voice);
   if (r) {
-    for (const a of state.asks) if (a.scope === "selection" && a.blockId === b.id && isOpen(a) && a.start < r.end && a.end > r.start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
+    for (const a of state.asks) if (a.scope === "selection" && a.blockId === b.id && isOpen(a) && !isBrollAnswer(a) && a.start < r.end && a.end > r.start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
     const ask = D.makeAsk(state.doc, { blockId: b.id, start: r.start, end: r.end, action: "voice", by: me });
     ask.status = "answered";
     ask.answer = { kind: "replace", text: mark.rewrite };
@@ -1166,10 +1172,10 @@ function adoptAsks(asks) {
   for (const a of asks) {
     if (!a?.id || !isOpen(a)) continue;
     if (a.scope === "selection" && !byId(a.blockId)) {
-      // Ids are new after a reload: find the quote again.
+      // Ids are new after a reload: find the quote again. B-roll suggestions stay even when it is gone.
       const hit = D.findQuote(state.doc, a.quote, null);
-      if (!hit) continue;
-      Object.assign(a, hit);
+      if (hit) Object.assign(a, hit);
+      else if (!isBrollAnswer(a)) continue;
     }
     if (a.scope === "script" && a.answer?.marks) {
       for (const m of a.answer.marks) {
@@ -1643,7 +1649,8 @@ const brollKey = (name = state.name) => `broll:${name}`;
 const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
 const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
 const covered = (s) => (s.blockIds || []).filter((id) => byId(id));
-const sketchAsk = () => state.asks.find((a) => a.scope === "broll" && isOpen(a)) || null;
+const sketchAsk = () => state.asks.find((a) => a.scope === "broll" && a.action === "sketch" && isOpen(a)) || null;
+const planAsk = () => state.asks.find((a) => a.scope === "broll" && a.action === "plan" && isOpen(a)) || null;
 const pendingSketch = (id) => sketchAsk()?.answer?.sketches?.[id] || "";
 function brollFlags() {
   const out = {};
@@ -1758,11 +1765,11 @@ function keepBar(s) {
 function focusKey(root) {
   const f = document.activeElement?.closest?.("[data-b], [data-act]");
   if (!f || !root.contains(f)) return null;
-  return { b: f.dataset.b, act: f.dataset.act || "" };
+  return { b: f.dataset.b, s: f.dataset.s, act: f.dataset.act || "" };
 }
 function refocus(root, key) {
   if (!key) return;
-  const sel = (act) => `${key.b ? `[data-b="${CSS.escape(key.b)}"]` : ""}${act ? `[data-act="${CSS.escape(act)}"]` : ":not([data-act])"}`;
+  const sel = (act) => `${key.b ? `[data-b="${CSS.escape(key.b)}"]` : ""}${key.s ? `[data-s="${CSS.escape(key.s)}"]` : ""}${act ? `[data-act="${CSS.escape(act)}"]` : ":not([data-act])"}`;
   (root.querySelector(sel(key.act)) || (key.b && root.querySelector(sel(""))))?.focus({ preventScroll: true });
 }
 
@@ -1771,9 +1778,13 @@ function renderBrollMarks() {
   const key = focusKey(scriptEl);
   for (const t of $$(".broll-tags", scriptEl)) t.remove();
   for (const l of $$(".line[data-covered]", scriptEl)) { delete l.dataset.covered; delete l.dataset.last; delete l.dataset.lit; }
-  if (broll.status !== "ok") return;
   const goesOn = new Set();
-  for (const s of broll.shots) {
+  const boxFor = (first) => {
+    let box = first.querySelector(":scope > .broll-tags");
+    if (!box) { box = h("div", "broll-tags", { "data-skip": "", contenteditable: "false" }); first.prepend(box); }
+    return box;
+  };
+  for (const s of broll.status === "ok" ? broll.shots : []) {
     const ids = covered(s);
     ids.forEach((id, i) => {
       const w = wrapOf(id);
@@ -1784,13 +1795,19 @@ function renderBrollMarks() {
     });
     const first = wrapOf(ids[0]);
     if (!first) continue;
-    let box = first.querySelector(":scope > .broll-tags");
-    if (!box) { box = h("div", "broll-tags", { "data-skip": "", contenteditable: "false" }); first.prepend(box); }
+    const box = boxFor(first);
     const lit = broll.lit === s.id;
     const label = `${KIND_NAME[s.kind]} ${s.id}: ${s.what}${s.check ? " · Check" : ""}`;
-    box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}>`
+    const sug = suggestionsFor(s.id);
+    box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
       + `<button class="shot-frame__jump" type="button" data-b="${esc(s.id)}" aria-pressed="${lit}" aria-label="${esc(label)}" title="${esc(s.what)}">${frameImg(s, false)}`
-      + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${keepBar(s)}</div>`);
+      + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${keepBar(s)}${sug.map((x) => suggestBlock(x, s)).join("")}</div>`);
+  }
+  const adds = suggestedAdds();
+  addsSig = adds.map((x) => `${x.key}=${x.blockIds.join()}`).join("|");
+  for (const x of adds) {
+    const first = wrapOf(covered(x)[0]);
+    if (first) boxFor(first).insertAdjacentHTML("beforeend", suggestedFrame(x));
   }
   for (const l of $$(".line[data-covered]", scriptEl)) if (!goesOn.has(l)) l.dataset.last = "";
   refocus(scriptEl, key);
@@ -1831,7 +1848,13 @@ function lightShot(id, scroll) {
 
 scriptEl.addEventListener("click", (e) => {
   const act = e.target.closest(".shot-frame [data-act]");
-  if (act) { e.preventDefault(); return act.dataset.act === "keep" ? keepSketch(act.dataset.b) : undoSketch(act.dataset.b); }
+  if (act) {
+    e.preventDefault();
+    const a = act.dataset.act;
+    if (a === "s-keep") return keepSuggestions([act.dataset.s]);
+    if (a === "s-undo") return undoSuggestions([act.dataset.s]);
+    return a === "keep" ? keepSketch(act.dataset.b) : undoSketch(act.dataset.b);
+  }
   const t = e.target.closest(".shot-frame__jump");
   if (!t) return;
   // A click lights the shot and opens its card to change or remove it; a click while its card is open puts both away.
@@ -1935,7 +1958,8 @@ const FILTERS = [
 ];
 function boardHead() {
   const show = B.boardHeadState(broll.link, broll.status);
-  if (show.link) return `<button class="board__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>`;
+  const more = planAction() + keepAllAction();
+  if (show.link) return `<button class="board__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>${more}`;
   const name = esc(broll.link.name || "B-roll list");
   const ask = sketchAsk();
   let action = "";
@@ -1949,13 +1973,15 @@ function boardHead() {
     else if (!ask && missing.length) action = `<button class="board__ask" type="button" data-act="ask">${icon("sketch")}Ask for sketches</button>`;
   }
   const unsaved = show.saveAs ? `<p class="board__unsaved">Not saved to a file${"showSaveFilePicker" in window ? `<span aria-hidden="true">·</span><button class="board__btn" type="button" data-act="save-list">Save as…</button>` : ""}${broll.err ? `<span class="board__problem" title="${esc(broll.err)}">Not saved</span>` : ""}</p>` : "";
-  return `<div class="board__file">${icon("film")}<span class="board__name">${name}</span><button class="board__btn" type="button" data-act="link">Change…</button><button class="board__btn" type="button" data-act="unlink">Unlink</button></div>${unsaved}${action}`;
+  return `<div class="board__file">${icon("film")}<span class="board__name">${name}</span><button class="board__btn" type="button" data-act="link">Change…</button><button class="board__btn" type="button" data-act="unlink">Unlink</button></div>${unsaved}${action}${more}`;
 }
 function boardFrame(s, missing) {
+  if (s.suggested) return suggestedBoardFrame(s, missing);
   const check = s.check ? '<span class="check-note">Check</span>' : "";
-  return `<li class="frame" data-b="${esc(s.id)}"${broll.lit === s.id ? ' aria-current="true"' : ""}${missing ? " data-missing" : ""}>`
+  const sug = suggestionsFor(s.id);
+  return `<li class="frame" data-b="${esc(s.id)}"${broll.lit === s.id ? ' aria-current="true"' : ""}${missing ? " data-missing" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
     + `<button class="frame__jump" type="button" data-b="${esc(s.id)}">${frameImg(s, true)}`
-    + `<span class="frame__cap"><b>${esc(s.id)}</b><span class="kind-tag" data-kind="${s.kind}">${KIND_NAME[s.kind]}</span>${check} ${esc(s.what)}<span class="frame__over">Over: ${esc(s.over || "–")}</span></span></button>${keepBar(s)}</li>`;
+    + `<span class="frame__cap"><b>${esc(s.id)}</b><span class="kind-tag" data-kind="${s.kind}">${KIND_NAME[s.kind]}</span>${check} ${esc(s.what)}<span class="frame__over">Over: ${esc(s.over || "–")}</span></span></button>${keepBar(s)}${sug.map((x) => suggestBlock(x, s)).join("")}</li>`;
 }
 function renderBoard() {
   const el = $("#board");
@@ -1963,13 +1989,16 @@ function renderBoard() {
   const key = focusKey(el);
   el.hidden = false;
   let body = "";
-  if (broll.status === "ok" && broll.shots.length) {
-    const counts = FILTERS.map(([id, name, keep]) => [id, name, keep, broll.shots.filter(keep).length]).filter((f) => f[3] > 0);
-    const current = counts.find((f) => f[0] === broll.filter) || counts[0];
+  const real = broll.status === "ok" ? broll.shots : [];
+  const adds = suggestedAdds();
+  if (real.length || adds.length) {
+    // Suggested adds count in no filter until they are kept; they show under "All".
+    const counts = FILTERS.map(([id, name, keep]) => [id, name, keep, real.filter(keep).length]).filter((f) => f[3] > 0);
+    const current = counts.find((f) => f[0] === broll.filter) || counts[0] || ["all", "All", () => true, 0];
     const chips = counts.map(([id, name, , n]) => `<button class="chip" type="button" data-act="filter" data-filter="${id}" aria-pressed="${id === current[0]}">${name} · ${n}</button>`).join("");
-    const order = B.scriptOrder(state.doc, broll.shots).filter(current[2]);
+    const order = B.scriptOrder(state.doc, [...real.filter(current[2]), ...(current[0] === "all" ? adds : [])]);
     const found = order.filter((s) => covered(s).length), lost = order.filter((s) => !covered(s).length);
-    body = `<div class="board__filters" role="group" aria-label="Show">${chips}</div>`
+    body = (chips ? `<div class="board__filters" role="group" aria-label="Show">${chips}</div>` : "")
       + (found.length ? `<ol class="board__grid">${found.map((s) => boardFrame(s, false)).join("")}</ol>` : "")
       + (lost.length ? `<h2 class="board__lost">Not found in the script</h2><ol class="board__grid" data-missing>${lost.map((s) => boardFrame(s, true)).join("")}</ol>` : "");
   }
@@ -1985,6 +2014,12 @@ $("#board").addEventListener("click", (e) => {
     else if (a === "allow") { const t = ++broll.token; readBroll(t, true); }
     else if (a === "filter") { broll.filter = act.dataset.filter; renderBoard(); }
     else if (a === "save-list") saveListAs();
+    else if (a === "plan") requestPlan();
+    else if (a === "plan-cancel") cancelPlan();
+    else if (a === "s-keep") keepSuggestions([act.dataset.s]);
+    else if (a === "s-undo") undoSuggestions([act.dataset.s]);
+    else if (a === "s-keep-all") keepSuggestions(openSuggestions().map((x) => x.key));
+    else if (a === "s-undo-all") undoSuggestions(openSuggestions().map((x) => x.key));
     else if (a === "ask") requestSketches();
     else if (a === "cancel") cancelSketches();
     else if (a === "keep") keepSketch(act.dataset.b);
@@ -2328,6 +2363,150 @@ document.addEventListener("pointerdown", (e) => {
 }, true);
 const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
 
+/* ---------- B-roll suggestions from the agent (step C4): Keep or Undo per change ---------- */
+function receiveBroll(ask, answer, by) {
+  ask.answer = answer;
+  ask.answeredBy = validBy(by);
+  ask.status = "answered";
+  emit("answered", ask);
+  // The selection's highlight and chip give way to the suggestions beside the lines.
+  if (ask.scope === "selection" && byId(ask.blockId)) renderBlock(ask.blockId, getCaret());
+  renderBroll();
+  renderTocDots();
+  renderAgent();
+  changed();
+}
+// Every change still waiting for Keep or Undo, in ask order, with a stable key "askId:index".
+function openSuggestions() {
+  const out = [];
+  for (const a of state.asks) {
+    if (!isBrollAnswer(a)) continue;
+    a.answer.changes.forEach((c, n) => { if (c.state === "open") out.push({ ask: a, n, c, key: `${a.id}:${n}` }); });
+  }
+  return out;
+}
+const suggestionsFor = (id) => openSuggestions().filter((x) => x.c.op !== "add" && x.c.id === id);
+// Suggested adds look like shots; their lines are found from the Over each time, so an edit can move one to
+// "Not found in the script", where it can still be kept or undone.
+function suggestedAdds() {
+  const list = state.doc ? B.spokenBlocks(state.doc) : [];
+  return openSuggestions().filter((x) => x.c.op === "add")
+    .map((x) => ({ ...x, suggested: true, kind: x.c.kind, what: x.c.what, how: x.c.how, over: x.c.over, why: x.c.why, blockIds: B.matchOver(list, x.c.over) }));
+}
+let addsSig = "";
+function refreshSuggestions() {
+  const sig = suggestedAdds().map((x) => `${x.key}=${x.blockIds.join()}`).join("|");
+  if (sig !== addsSig) { addsSig = sig; renderBroll(); }
+}
+function suggestBar(x) {
+  const k = esc(x.key);
+  return `<span class="change__bar suggest__bar">${broll.problem[x.key] ? '<span class="suggest__problem">Not saved</span>' : ""}`
+    + `<button type="button" class="undo" data-act="s-undo" data-s="${k}">${icon("undo")}Undo</button>`
+    + `<button type="button" class="keep" data-act="s-keep" data-s="${k}"${broll.saving[x.key] ? " disabled" : ""}>${icon("check")}Keep</button></span>`;
+}
+const struck = (old, now) => `<del>${esc(old || "–")}</del> <ins>${esc(now || "–")}</ins>`;
+// A change or a removal shown on the shot it is about.
+function suggestBlock(x, s) {
+  const c = x.c;
+  let body = "";
+  if (c.op === "remove") body = '<p class="suggest__head">Remove?</p>';
+  else {
+    body = '<p class="suggest__head">Suggested</p>';
+    if (c.kind && c.kind !== s.kind) body += `<p>${struck(KIND_NAME[s.kind], KIND_NAME[c.kind])}</p>`;
+    if (c.what != null && c.what !== s.what) body += `<p>${struck(s.what, c.what)}</p>`;
+    if (c.how != null && c.how !== s.how) body += `<p class="suggest__how">${struck(s.how, c.how)}</p>`;
+  }
+  if (c.why) body += `<p class="suggest__why">${esc(c.why)}</p>`;
+  return `<div class="suggest" data-op="${c.op}">${body}${suggestBar(x)}</div>`;
+}
+const addText = (x) => `<p class="suggest__what">${esc(x.what)}</p>${x.how ? `<p class="suggest__how">${esc(x.how)}</p>` : ""}${x.why ? `<p class="suggest__why">${esc(x.why)}</p>` : ""}`;
+// A suggested add beside its line: the frame dashed in orange, the tag "Suggested", What, How, Keep and Undo.
+const suggestedFrame = (x) => `<div class="shot-frame" data-suggested data-kind="${x.kind}"><div class="shot-frame__pic"><span class="frame__img" data-empty></span>`
+  + `<span class="broll-tag">${icon(KIND_ICON[x.kind])}Suggested</span></div><div class="suggest" data-op="add">${addText(x)}${suggestBar(x)}</div></div>`;
+const suggestedBoardFrame = (x, missing) => `<li class="frame" data-suggested${missing ? " data-missing" : ""}><div class="frame__body"><span class="frame__img" data-empty></span>`
+  + `<span class="frame__cap"><span class="kind-tag" data-kind="suggested">Suggested</span><span class="kind-tag" data-kind="${x.kind}">${KIND_NAME[x.kind]}</span> ${esc(x.what)}`
+  + `${x.how ? `<span class="frame__over">${esc(x.how)}</span>` : ""}<span class="frame__over">Over: ${esc(x.over || "–")}</span>${x.why ? `<span class="frame__over suggest__why">${esc(x.why)}</span>` : ""}</span></div>${suggestBar(x)}</li>`;
+
+/* "Plan B-roll": one ask for the whole script. */
+function requestPlan() {
+  if (!state.doc || planAsk()) return null;
+  const ask = D.makeAsk(state.doc, { scope: "broll", action: "plan", by: me });
+  state.asks.push(ask);
+  emit("created", ask);
+  renderBroll();
+  changed();
+  offerAsks();
+  return ask;
+}
+function cancelPlan() {
+  const ask = planAsk();
+  if (!ask || ask.status === "answered") return;
+  closeAsk(ask, "cancelled");
+  renderBroll();
+  changed();
+}
+function planAction() {
+  if (!state.doc || !(broll.status === "ok" || broll.status === "none")) return "";
+  const ask = planAsk();
+  if (!ask) return `<button class="board__ask" type="button" data-act="plan">${icon("suggest")}Plan B-roll</button>`;
+  if (ask.status === "answered") return "";
+  return `<span class="board__wait" data-taken="${ask.status === "taken"}"><span class="status-dot"></span>Waiting for a B-roll plan<button class="icon-btn" type="button" data-act="plan-cancel" aria-label="Cancel">${icon("x")}</button></span>`;
+}
+// "Keep all · Undo all", once, while an answer with several changes still has some waiting.
+function keepAllAction() {
+  const many = state.asks.some((a) => isBrollAnswer(a) && a.answer.changes.length > 1 && a.answer.changes.some((c) => c.state === "open"));
+  if (!many) return "";
+  return `<span class="board__all"><button class="board__btn" type="button" data-act="s-keep-all">Keep all</button><span aria-hidden="true">·</span><button class="board__btn" type="button" data-act="s-undo-all">Undo all</button></span>`;
+}
+
+/* Keep writes through addShot / updateShot / removeShot and the one-write-at-a-time queue; Undo writes nothing. */
+function findSuggestion(key) {
+  const i = String(key).lastIndexOf(":");
+  const ask = state.asks.find((a) => a.id === key.slice(0, i));
+  const n = Number(key.slice(i + 1));
+  const c = ask && isBrollAnswer(ask) ? ask.answer.changes[n] : null;
+  return c ? { ask, n, c, key } : null;
+}
+function settleSuggestions(ask) {
+  const status = B.settleBroll(ask.answer);
+  if (!status) return;
+  closeAsk(ask, status);
+  if (ask.scope === "selection" && byId(ask.blockId)) renderBlock(ask.blockId, getCaret());
+}
+function undoSuggestions(keys) {
+  for (const key of keys) {
+    const x = findSuggestion(key);
+    if (!x || x.c.state !== "open" || broll.saving[key]) continue;
+    x.c.state = "undone";
+    delete broll.problem[key];
+    settleSuggestions(x.ask);
+  }
+  renderBroll();
+  renderTocDots();
+  changed();
+}
+async function keepSuggestions(keys) {
+  const items = keys.map(findSuggestion).filter((x) => x && x.c.state === "open" && !broll.saving[x.key]);
+  if (!items.length) return;
+  for (const x of items) { broll.saving[x.key] = true; delete broll.problem[x.key]; }
+  renderBroll();
+  try {
+    // No list yet: the first Keep makes one, as "Add B-roll" does.
+    if (broll.status === "none") await startList();
+    if (broll.status !== "ok") throw new Error("The B-roll list can't be read.");
+    // One queued write: every change in order, each add with the next free id at that moment.
+    await changeList((md) => B.applyBrollChanges(md, items.map((x) => x.c)));
+    for (const x of items) x.c.state = "kept";
+    for (const ask of new Set(items.map((x) => x.ask))) settleSuggestions(ask);
+    changed();
+  } catch (e) {
+    for (const x of items) broll.problem[x.key] = e?.message || "Could not save the B-roll list.";
+  }
+  for (const x of items) delete broll.saving[x.key];
+  renderBroll();
+  renderTocDots();
+}
+
 /* ---------- Your own agent over MCP (live relay) ---------- */
 const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
 const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
@@ -2436,8 +2615,9 @@ function voiceGuide() { return store.get("voiceGuide"); }
 function askForAgent(a) {
   const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, createdAt: a.createdAt };
   if (a.scope === "selection") Object.assign(out, { quote: a.quote, context: a.context, section: a.section });
-  else if (a.scope === "broll") out.shots = a.shots;
+  else if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots;
   else if (state.doc) out.spokenText = D.exportCamera(state.doc);
+  if (a.action === "plan") out.broll = broll.status === "ok" ? broll.shots.map(B.forAgent) : [];
   const guide = voiceGuide();
   if ((a.action === "like" || a.action === "voice") && guide?.text) out.voiceGuide = guide.text;
   return out;
@@ -2445,8 +2625,10 @@ function askForAgent(a) {
 function askForList(a) {
   const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, status: a.status, createdAt: a.createdAt };
   if (a.scope === "selection") Object.assign(out, { quote: a.quote, section: a.section });
-  if (a.scope === "broll") out.shots = a.shots.map((s) => ({ id: s.id, state: a.answer?.done?.[s.id] || (a.answer?.sketches?.[s.id] ? "shown" : "waiting") }));
-  else if (a.answer) out.answer = a.answer.kind === "marks" ? { kind: "marks", marks: a.answer.marks.map((m) => ({ quote: m.quote, state: m.state })) } : a.answer;
+  if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots.map((s) => ({ id: s.id, state: a.answer?.done?.[s.id] || (a.answer?.sketches?.[s.id] ? "shown" : "waiting") }));
+  else if (a.answer?.kind === "broll") {
+    out.answer = { kind: "broll", changes: a.answer.changes.map(({ op, id, kind, what, how, quote, state }) => ({ op, ...(id ? { id } : {}), ...(kind ? { kind } : {}), ...(what != null ? { what } : {}), ...(how != null ? { how } : {}), ...(quote ? { quote } : {}), state: state === "open" ? "waiting" : state })), ...(a.answer.message ? { message: a.answer.message } : {}) };
+  } else if (a.answer) out.answer = a.answer.kind === "marks" ? { kind: "marks", marks: a.answer.marks.map((m) => ({ quote: m.quote, state: m.state })) } : a.answer;
   return out;
 }
 function offerAsks() {
@@ -2493,6 +2675,13 @@ function handleCall({ id, tool, args = {} }) {
       if (checked.error) return send({ error: checked.error });
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
       return send({ result: checked.answer.kind === "note" ? "Shown to the person." : "Shown to the person. They choose Keep or Undo." });
+    }
+    if (tool === "answer_broll") {
+      const ask = state.asks.find((a) => a.id === args.askId);
+      const checked = B.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
+      if (checked.error) return send({ error: checked.error });
+      receiveBroll(ask, checked.answer, agentBy());
+      return send({ result: "Shown to the person. They choose Keep or Undo per change." });
     }
     if (tool === "sketch_shot") {
       const ask = state.asks.find((a) => a.id === args.askId);
@@ -2616,6 +2805,14 @@ window.__scriptEditor = {
   markdown: () => (state.doc ? D.serialize(state.doc) : null),
   broll: () => (broll.status === "ok" ? broll.shots.map(B.forAgent) : null),
   sketchAsk: () => requestSketches()?.id ?? null,
+  planAsk: () => requestPlan()?.id ?? null,
+  answerBroll: (askId, args) => {
+    const ask = state.asks.find((a) => a.id === askId);
+    const checked = B.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
+    if (checked.error) return checked.error;
+    receiveBroll(ask, checked.answer, { id: "test", name: "Test" });
+    return true;
+  },
   sketch: (askId, shotId, svg) => {
     const ask = state.asks.find((a) => a.id === askId);
     const checked = B.checkSketch(ask, { shotId, svg });

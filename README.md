@@ -8,6 +8,7 @@ A calm editor for video scripts. Open a Markdown script, edit it, and let **your
 - Saves itself to the file you opened (about 1.5 s after you stop typing). If the file changed on disk, it asks before overwriting.
 - A section list with spoken times, a word count and the spoken length.
 - Export: the camera script (spoken text only), a prompter file, or **Open in prompter**, which opens the script on [prompter.techies.tools](https://prompter.techies.tools).
+- B-roll beside the lines: link a B-roll list, add a shot to selected text yourself, or let your agent suggest shots ("Suggest B-roll" on a selection, "Plan B-roll" for the whole script). Every suggested add, change or removal waits for your Keep or Undo.
 - A switcher with your recent scripts and a search.
 - "Try a demo script" on the start screen loads a made-up example.
 
@@ -28,7 +29,7 @@ When you connect an agent, a small live relay (a Cloudflare Durable Object) pass
 
 3. Use the `watch_script` prompt. Your agent waits for asks and answers each one in place.
 
-Tools: `get_script` (also returns the linked B-roll list), `wait_for_asks`, `answer_ask`, `sketch_shot` (draws a storyboard sketch for a shot), `list_asks`. A connection lasts at most eight hours; **Disconnect MCP** ends it at once. Keep the token private.
+Tools: `get_script` (also returns the linked B-roll list), `wait_for_asks`, `answer_ask`, `answer_broll` (suggests B-roll adds, changes and removals), `sketch_shot` (draws a storyboard sketch for a shot), `list_asks`. A connection lasts at most eight hours; **Disconnect MCP** ends it at once. Keep the token private.
 
 ## Run it on your computer
 

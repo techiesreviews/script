@@ -649,3 +649,23 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 /* A list kept in the browser: "Not saved to a file · Save as…". */
 .board__unsaved { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; color: var(--faint); font-size: 0.8rem; }
 .board__problem { color: var(--accent-ink); font-weight: 600; }
+
+/* ---------- B-roll suggestions from the agent: dashed orange, Keep or Undo per change ---------- */
+.shot-frame__pic { position: relative; display: block; }
+:is(.shot-frame, .frame)[data-suggested] .frame__img[data-empty] { border: 1.5px dashed var(--accent); background: var(--accent-faint); }
+.shot-frame[data-suggested] .broll-tag { border-color: var(--accent); color: var(--accent-ink); }
+:is(.shot-frame, .frame)[data-remove] :is(.shot-frame__jump, .frame__jump) { opacity: 0.45; }
+.suggest { display: grid; justify-items: start; gap: 0.2rem; margin-block-start: 0.45rem; font-size: 0.78rem; line-height: 1.35; }
+.frame .suggest { font-size: 0.82rem; }
+.suggest__head { color: var(--accent-ink); font-size: 0.72rem; font-weight: 600; }
+.suggest__what { font-weight: 600; }
+.suggest__how, .suggest__why { color: var(--muted); }
+.suggest__why { font-style: italic; }
+.suggest del { color: var(--faint); text-decoration-color: color-mix(in oklch, var(--text) 45%, transparent); text-decoration-thickness: 1.5px; }
+.suggest ins { padding-inline: 0.1em; border-radius: 3px; background: var(--accent-soft); text-decoration: none; }
+.suggest__bar { margin: 0.15rem 0 0; }
+.frame > .suggest__bar { margin-block-start: 0.45rem; }
+.suggest__problem { padding-inline: 0.45rem 0.2rem; color: var(--accent-ink); }
+.frame__body { display: grid; gap: 0.45rem; }
+.kind-tag[data-kind="suggested"] { border-style: dashed; border-color: var(--accent); color: var(--accent-ink); }
+.board__all { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--faint); font-size: 0.8rem; }

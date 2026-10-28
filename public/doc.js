@@ -10,6 +10,8 @@ export const ACTIONS = {
   facts: { name: "Check facts", instruction: "Check names, numbers and dates against what you know or can look up. Answer with a note." },
   ask: { name: "Ask", instruction: "" },
   voice: { name: "Sounds like me", instruction: "Mark lines in the spoken text that sound generic or AI-like, with a one-line reason and a rewrite in the speaker's voice." },
+  broll: { name: "Suggest B-roll", instruction: "Suggest 1–3 B-roll shots for these lines with answer_broll, only where a picture helps the viewer. Each add has a short \"What to show\", a short \"How to make it\" (none for a screen recording) and quote: the exact spoken text it goes over." },
+  plan: { name: "Plan B-roll", instruction: "Go through the whole script and suggest B-roll with answer_broll: adds, changes and removals, at most 20 in all, without repeating shots that are already there (get_script returns them). Each add quotes the exact spoken text it goes over." },
   sketch: { name: "Ask for sketches", instruction: "Draw a simple storyboard sketch for each listed B-roll shot: an SVG line drawing with viewBox 0 0 260 140, using only g, path, rect, circle, ellipse, line, polyline, polygon and text, with class s (ink line), l (soft line), o (orange accent) or mv (dashed orange movement). No colours, styles or images. Send each one with sketch_shot." },
 };
 export const OPEN_STATUSES = ["waiting", "taken", "answered"];
@@ -517,7 +519,8 @@ export function moveAsks(asks, fromId, toId, fromStart, shift) {
 // Returns { answer } ready for receiveAnswer, or { error } with a short reason for the agent.
 export function checkAnswer(ask, args, doc) {
   if (!ask) return { error: "Unknown ask. Call list_asks or wait_for_asks for current ask ids." };
-  if (ask.scope === "broll") return { error: "This ask is for B-roll sketches. Answer it with sketch_shot, one call per shot." };
+  if (ask.scope === "broll") return { error: ask.action === "plan" ? "This is a \"Plan B-roll\" ask. Answer it with answer_broll." : "This ask is for B-roll sketches. Answer it with sketch_shot, one call per shot." };
+  if (ask.scope === "selection" && ask.action === "broll") return { error: "This is a \"Suggest B-roll\" ask. Answer it with answer_broll." };
   if (ask.status !== "waiting" && ask.status !== "taken") return { error: `This ask is finished (${ask.status}).` };
   const a = args && typeof args === "object" ? args : {};
   if (!ANSWER_KINDS.includes(a.kind)) return { error: "kind must be replace, add, note or marks." };
