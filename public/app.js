@@ -1213,7 +1213,7 @@ function restoreDraft() {
   state.pendingDraft = null;
   state.asks = [];
   adoptAsks(draft.asks);
-  if (broll.status === "ok") dropGoneSuggestions();
+  if (broll.status === "ok" || broll.status === "none") dropGoneSuggestions();
   hideBanner();
   rematchBroll(true);
   renderAll();
@@ -1225,6 +1225,7 @@ function discardDraft() {
   state.pendingDraft = null;
   hideBanner();
   if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || D.findQuote(state.doc, a.quote)));
+  if (broll.status === "ok" || broll.status === "none") dropGoneSuggestions();
   store.del(draftKey());
   renderAll(getCaret());
   changed();
