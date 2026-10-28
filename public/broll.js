@@ -151,8 +151,8 @@ export function matchShots(doc, shots) {
 
 /* ---------- Check flags ---------- */
 export function coverText(doc, blockIds) {
-  // What is spoken, so adding a link to a covered line does not ask for a check.
-  return blockIds.map((id) => { const b = blockById(doc, id); return b ? spokenText(contentOf(b)) : "\u0000"; }).join("\u0001");
+  // What is spoken, as words, so adding a link to a covered line (even across a line break) asks for no check.
+  return blockIds.map((id) => { const b = blockById(doc, id); return b ? normalize(spokenText(contentOf(b))) : "\u0000"; }).join("\u0001");
 }
 /** After an edit, Keep or undo: a shot whose covered text changed gets check = true. Returns the ids flagged now. */
 export function touchShots(doc, shots) {

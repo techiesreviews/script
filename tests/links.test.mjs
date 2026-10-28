@@ -388,3 +388,29 @@ test("closed links: a deletion that took a link's hidden Markdown gets it back; 
   assert.equal(L.keepHidden(word, word + "!", L.textLinks(word), 37), null);
   assert.equal(L.keepHidden(word, "Try now.", [], 4), null, "no closed links: nothing to keep");
 });
+
+test("B-roll: a link placed across a soft line break asks for no check", async () => {
+  const B = await import("../public/broll.js");
+  const doc = D.parse("# T\n\n## 1 · Hook\n\nWe use Claude\nCode every day.\n");
+  const shots = [{ id: "B1", over: '"We use Claude Code every day."', what: "x", how: "", kind: "broll" }];
+  B.matchShots(doc, shots);
+  assert.equal(shots[0].blockIds.length, 1);
+  const by = { id: "lex", name: "Lex" };
+  const ask = Object.assign(D.makeAsk(doc, { scope: "script", action: "links", by }), { status: "taken", answer: { kind: "links", links: [{ quote: "Claude Code", url: "https://claude.com/claude-code" }] } });
+  assert.ok(C.landScript(doc, ask, 1));
+  assert.match(D.contentOf(doc.blocks.find((b) => b.type === "para")), /\[Claude Code\]\(https:\/\/claude\.com\/claude-code\)/);
+  assert.deepEqual(B.touchShots(doc, shots), []);
+});
+
+test("a B-roll suggestion is not open work for links, waiting or answered", () => {
+  const doc = LINKS_SCRIPT(), p = doc.blocks[2];
+  const by = { id: "guest", name: "Ana" };
+  const s = D.contentOf(p).indexOf("the prompter");
+  const broll = D.makeAsk(doc, { blockId: p.id, start: s, end: s + 12, action: "broll", by });
+  const ask = Object.assign(D.makeAsk(doc, { scope: "script", action: "links", by: { id: "lex", name: "Lex" } }), { status: "taken" });
+  const answer = { kind: "links", links: [{ quote: "the prompter", url: "https://prompter.techies.tools" }] };
+  for (const status of ["waiting", "answered"]) {
+    Object.assign(broll, { status }, status === "answered" ? { answer: { kind: "broll", changes: [] } } : {});
+    assert.deepEqual(C.planFor(doc, ask, answer, { asks: [broll] }).skipped, [], status);
+  }
+});
