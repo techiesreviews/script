@@ -1213,6 +1213,7 @@ function restoreDraft() {
   state.pendingDraft = null;
   state.asks = [];
   adoptAsks(draft.asks);
+  if (broll.status === "ok") dropGoneSuggestions();
   hideBanner();
   rematchBroll(true);
   renderAll();
@@ -2467,9 +2468,9 @@ function planAction() {
   if (ask.status === "answered") return "";
   return `<span class="board__wait" data-taken="${ask.status === "taken"}"><span class="status-dot"></span>Waiting for a B-roll plan<button class="icon-btn" type="button" data-act="plan-cancel" aria-label="Cancel">${icon("x")}</button></span>`;
 }
-// "Keep all · Undo all", once, while an answer with several changes still has some waiting.
-// The open changes of answers that still have more than one waiting: what "Keep all · Undo all" acts on.
-const bulkKeys = () => openSuggestions().filter((x) => x.ask.answer.changes.filter((c) => c.state === "open").length > 1).map((x) => x.key);
+// "Keep all · Undo all" shows once while an answer with several changes still has some waiting,
+// and acts on the waiting changes of those answers only (one-change answers keep their own Keep and Undo).
+const bulkKeys = () => openSuggestions().filter((x) => x.ask.answer.changes.length > 1).map((x) => x.key);
 function keepAllAction() {
   if (!bulkKeys().length) return "";
   return `<span class="board__all"><button class="board__btn" type="button" data-act="s-keep-all">Keep all</button><span aria-hidden="true">·</span><button class="board__btn" type="button" data-act="s-undo-all">Undo all</button></span>`;
