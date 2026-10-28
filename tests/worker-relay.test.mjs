@@ -215,6 +215,8 @@ test("worker /api/agent-token: a fresh token with the Worker's time, POST from t
   assert.ok(body.createdAt >= before && body.createdAt <= Date.now());
   const foreign = await worker.fetch(new Request("https://script.techies.tools/api/agent-token", { method: "POST", headers: { Origin: "https://evil.example" } }), {});
   assert.equal(foreign.status, 403);
+  const noOrigin = await worker.fetch(new Request("https://script.techies.tools/api/agent-token", { method: "POST" }), {});
+  assert.equal(noOrigin.status, 200, "a request without Origin (not a browser page) still gets a token; it touches nothing");
   const get = await worker.fetch(new Request("https://script.techies.tools/api/agent-token"), {});
   assert.equal(get.status, 405);
   assert.equal(get.headers.get("Allow"), "POST");
@@ -222,13 +224,13 @@ test("worker /api/agent-token: a fresh token with the Worker's time, POST from t
 
 test("worker /api/relay: a token past its time or from the future is closed with 4003, no relay object touched", async () => {
   const now = Date.now();
-  for (const token of [newToken(now - 9 * 3600_000).token, newToken(now + 3600_000).token]) {
+  for (const [token, reason] of [[newToken(now - 9 * 3600_000).token, "expired"], [newToken(now + 3600_000).token, "invalid"]]) {
     const { env, calls } = relayEnv();
     const res = await worker.fetch(relayRequest(token, "https://script.techies.tools"), env);
     assert.equal(res.status, 101);
     assert.equal(res.headers.get("Sec-WebSocket-Protocol"), "script-editor", "browsers need the subprotocol to hear the close");
     const server = lastServer();
-    assert.deepEqual([server.accepted, server.code, server.reason], [true, 4003, "expired"]);
+    assert.deepEqual([server.accepted, server.code, server.reason], [true, 4003, reason]);
     assert.equal(res.socket, pairs.at(-1)[0], "the tab gets the other end");
     assert.deepEqual([calls.idFromName.length, calls.fetch.length], [0, 0]);
   }
@@ -245,11 +247,26 @@ test("worker /api/relay: a good token reaches its relay with its birth time; a l
   assert.equal(await res.text(), "to the relay");
   assert.deepEqual(calls.idFromName, [sha(token)]);
   assert.equal(calls.fetch[0].init.headers["X-Token-Born"], String(born));
-  if (Date.now() < LEGACY_UNTIL) {
-    const legacy = relayEnv();
-    await worker.fetch(relayRequest("A".repeat(43)), legacy.env);
-    assert.equal(legacy.calls.fetch[0].init.headers["X-Token-Born"], undefined);
-  }
+});
+
+// The Worker reads Date.now(); these pin the clock to either side of the switch-over.
+async function at(time, fn) {
+  const real = Date.now;
+  Date.now = () => time;
+  try { return await fn(); } finally { Date.now = real; }
+}
+test("worker /api/relay: a legacy token reaches its relay until the switch-over, then is closed with 4003", async () => {
+  await at(LEGACY_UNTIL - 1, async () => {
+    const { env, calls } = relayEnv();
+    assert.equal(await (await worker.fetch(relayRequest("A".repeat(43)), env)).text(), "to the relay");
+    assert.equal(calls.fetch[0].init.headers["X-Token-Born"], undefined);
+  });
+  await at(LEGACY_UNTIL, async () => {
+    const { env, calls } = relayEnv();
+    assert.equal((await worker.fetch(relayRequest("A".repeat(43)), env)).status, 101);
+    assert.deepEqual([lastServer().code, lastServer().reason], [4003, "expired"]);
+    assert.deepEqual([calls.idFromName.length, calls.fetch.length], [0, 0]);
+  });
 });
 
 test("worker /mcp: an expired token gets 401 without touching a relay; a good one passes its birth time", async () => {

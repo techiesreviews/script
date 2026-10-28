@@ -50,7 +50,7 @@ export default {
       if (!protocols.includes("script-editor") || !TOKEN_RE.test(token)) return noindex(Response.json({ error: "Unauthorized" }, { status: 401 }));
       // Past its time (or from the future): refused here, before any relay object is touched.
       const t = checkToken(token);
-      if (!t.ok) return closedSocket(4003, "expired");
+      if (!t.ok) return closedSocket(4003, t.reason);
       const stub = await relayStub(env, token);
       const headers = { Upgrade: "websocket" };
       if (t.born != null) headers["X-Token-Born"] = String(t.born);

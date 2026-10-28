@@ -85,7 +85,7 @@ test("checkToken: a token lives 8 hours from its birth on the Worker's clock", (
 
 test("/mcp: a token past its time, or from the future, is refused without asking the relay", async () => {
   const now = Date.UTC(2026, 9, 28, 20);
-  for (const [token, label] of [[newToken(now - MAX_AGE_MS).token, "9 hours old"], [newToken(now + 2 * FUTURE_SLACK_MS).token, "from the future"], ["A".repeat(43), "legacy after the switch-over"]]) {
+  for (const [token, label] of [[newToken(now - MAX_AGE_MS).token, "8 hours old"], [newToken(now + 2 * FUTURE_SLACK_MS).token, "from the future"], ["A".repeat(43), "legacy after the switch-over"]]) {
     let asked = 0;
     const relay = { relayFor: () => { asked++; return { op: async () => ({ status: "ok" }) }; } };
     const at = token.length === 43 ? () => LEGACY_UNTIL : () => now;

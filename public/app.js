@@ -3066,11 +3066,15 @@ $("#mcpAction").addEventListener("click", async () => {
     spareToken = null;
     if (!t) {
       tokenWait = true;
+      $("#mcpAction").setAttribute("aria-busy", "true");
       t = await (spareFetch ?? fetchToken());
       tokenWait = false;
+      $("#mcpAction").removeAttribute("aria-busy");
       if (spareToken === t) spareToken = null;
     }
-    if (!t || liveToken()) return; // no token from the Worker: stays off
+    if (liveToken()) return;
+    // No token from the Worker (offline, say): it stays off, and the button says so until the next try.
+    if (!t) { $("#mcpActionText").textContent = "No connection, try again"; return; }
     agent.token = t.token;
     agent.createdAt = t.at;
     store.set("agent", { token: agent.token, createdAt: agent.createdAt });
