@@ -1836,7 +1836,7 @@ scriptEl.addEventListener("copy", (e) => {
   if (!$$(".broll-tags", scriptEl).some((f) => r.intersectsNode(f))) return;
   const parts = [];
   for (const el of $$(".block", scriptEl)) {
-    if (!r.intersectsNode(el)) continue;
+    if (!r.intersectsNode(el) || el.closest("details:not([open])")) continue;
     const content = readContent(el);
     const start = el.contains(r.startContainer) ? offsetIn(el, r.startContainer, r.startOffset) : 0;
     const end = el.contains(r.endContainer) ? offsetIn(el, r.endContainer, r.endOffset) : content.length;
@@ -1918,14 +1918,14 @@ const FILTERS = [
   ["screen", "Screen", (s) => s.kind === "screen"],
 ];
 function boardHead() {
-  const name = esc(broll.link?.name || "B-roll list");
-  const linkBtn = `<button class="board__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>`;
-  if (!broll.link || broll.status === "none") return linkBtn;
-  if (broll.status === "error") return `<p class="board__note">Couldn't open ${name}</p>${linkBtn}`;
-  if (broll.status === "permission") return `<button class="board__link" type="button" data-act="allow">${icon("film")}Allow reading ${name}</button>`;
+  const show = B.boardHeadState(broll.link, broll.status);
+  if (show.link) return `<button class="board__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>`;
+  const name = esc(broll.link.name || "B-roll list");
   const ask = sketchAsk();
   let action = "";
-  if (broll.status === "ok") {
+  if (show.note) action = `<p class="board__note">Couldn't open ${name}</p>`;
+  else if (show.allow) action = `<button class="board__link" type="button" data-act="allow">${icon("film")}Allow reading ${name}</button>`;
+  else if (show.ask) {
     const missing = broll.shots.filter((s) => !broll.sketches[s.id] && !pendingSketch(s.id));
     const waiting = ask && (ask.status === "waiting" || ask.status === "taken");
     const asking = ask && ask.status === "answered" && ask.shots.some((s) => !ask.answer.done?.[s.id] && !ask.answer.sketches?.[s.id]);

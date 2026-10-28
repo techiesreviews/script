@@ -73,6 +73,8 @@ Shot { id, what, over, how, kind: "broll" | "motion" | "screen", blockIds: strin
 ```
 
 - Main table `# | What to show | Over (A-roll line) | How to make it`; a table under a "Screen recordings" heading gives `kind: "screen"`; a "How" that mentions motion gives `kind: "motion"`.
+- Optional `Kind` column (step C2): a cell naming "Screen…", "Motion…" or "B-roll" decides the kind and wins over the heading and the "How" text. An empty or unknown cell (for example "Photo") falls back to the heading and "How" rules.
+- Export "B-roll list (.md)" (`exportBroll`) writes one table in script order, unmatched shots last, with the columns `# | Kind | What to show | Over (A-roll line) | How to make it | Check`, then `## Sketches` (the shots' sketches first, then any others; ids with spaces are left out). `Check` is written for people only and never read back: check flags live with the draft. The file can be linked again and gives the same shots and sketches.
 - `over` is matched to spoken paras, ignoring quotes, `…`, case and punctuation: the block that starts with the words wins, else the first that contains them. `"A…" through "B"` covers every spoken para from A to B. No match: `blockIds: []` ("Not found in the script").
 - `check` turns on when a covered block's text changes (typing, Keep, undo) and off when the shot is lit. Flags are kept with the draft as `broll: { [shotId]: true }`.
 - Sketches live in the B-roll file under `## Sketches` as fenced blocks: ```` ```svg B4 ```` + one `<svg viewBox="0 0 260 140">` + ```` ``` ````, using only `svg g path rect circle ellipse line polyline polygon text`, geometry attributes, `class` (`s`, `l`, `o`, `mv`), `text-anchor` and `transform`. `sanitizeSvg` drops everything else, on read and on every agent sketch.

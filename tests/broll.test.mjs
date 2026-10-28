@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { parse, contentOf, blockById, setContent, cloneDoc, checkAnswer, ACTIONS } from "../public/doc.js";
 import {
   parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
-  sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard,
+  sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -282,4 +282,36 @@ test("storyboard export: one self-contained page, every shot in order, sketches 
   assert.match(html, /<h2>Not found in the script<\/h2>\n<ol><li class="missing">[^\n]*<b>B6<\/b>/);
   assert.match(html, /<span class="kind screen">Screen recording<\/span>/);
   assert.equal((html.match(/class="img empty"/g) || []).length, ordered.length - 2);
+});
+
+test("B-roll export: extra sketches go last and survive a re-parse; an id with a space is left out", () => {
+  const doc = parse(SCRIPT);
+  const { shots, sketches } = parseBroll(DEMO);
+  matchShots(doc, shots);
+  const svg = '<svg viewBox="0 0 260 140"><circle class="o" cx="130" cy="70" r="20"/></svg>';
+  const md = exportBroll(scriptOrder(doc, shots), { ...sketches, Z9: svg, "bad id": svg });
+  const fences = [...md.matchAll(/^```svg (\S+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(fences, ["B1", "B2", "B3", "B4", "B5", "S1", "B7", "S2", "B6", "B8", "Z9"]);
+  assert.doesNotMatch(md, /bad id/);
+  const back = parseBroll(md);
+  assert.equal(back.sketches.Z9, svg);
+  assert.deepEqual(Object.keys(back.sketches).sort(), [...Object.keys(sketches), "Z9"].sort());
+});
+
+test("an empty or unknown Kind cell falls back to the heading and the How text", () => {
+  const md = "## Screen recordings\n\n| # | Kind | What to record | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- | --- |\n"
+    + "| S1 |  | x | \"y\" | Capture |\n| S2 | Photo | x | \"y\" | Capture |\n| S3 | Motion plate | x | \"y\" | Capture |\n\n"
+    + "## Main\n\n| # | Kind | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- | --- |\n"
+    + "| B1 |  | x | \"y\" | Motion plate |\n| B2 | Photo | x | \"y\" | Motion graphic |\n| B3 | Photo | x | \"y\" | Stock clip |\n";
+  assert.deepEqual(parseBroll(md).shots.map((s) => [s.id, s.kind]), [["S1", "screen"], ["S2", "screen"], ["S3", "motion"], ["B1", "motion"], ["B2", "motion"], ["B3", "broll"]]);
+});
+
+test("the storyboard header offers Unlink whenever a list is linked, also when it can't be read", () => {
+  const link = { name: "list.md" };
+  for (const status of ["ok", "loading", "error", "permission"]) assert.equal(boardHeadState(link, status).file, true, status);
+  assert.deepEqual(boardHeadState(link, "error"), { link: false, file: true, note: true, allow: false, ask: false });
+  assert.deepEqual(boardHeadState(link, "permission"), { link: false, file: true, note: false, allow: true, ask: false });
+  assert.deepEqual(boardHeadState(link, "ok"), { link: false, file: true, note: false, allow: false, ask: true });
+  assert.deepEqual(boardHeadState(link, "loading"), { link: false, file: true, note: false, allow: false, ask: false });
+  for (const [l, st] of [[null, "none"], [null, "ok"], [link, "none"]]) assert.deepEqual(boardHeadState(l, st), { link: true, file: false, note: false, allow: false, ask: false });
 });

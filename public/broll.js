@@ -292,6 +292,19 @@ export function checkSketch(ask, args) {
   return { svg };
 }
 
+/* ---------- The storyboard header: what it offers for the linked list's state ---------- */
+/**
+ * boardHeadState(link, status) → { link, file, note, allow, ask }
+ * link: only "Link B-roll list…" (nothing linked). file: the file row with its name, "Change…" and "Unlink",
+ * shown whenever a list is linked, also when it can't be read. note: "Couldn't open …". allow: "Allow reading …".
+ * ask: room for "Ask for sketches" or the waiting state.
+ */
+export function boardHeadState(link, status) {
+  const out = { link: false, file: false, note: false, allow: false, ask: false };
+  if (!link || status === "none") return { ...out, link: true };
+  return { ...out, file: true, note: status === "error", allow: status === "permission", ask: status === "ok" };
+}
+
 /* ---------- Export: the B-roll list and the storyboard ---------- */
 export const KIND_NAME = { broll: "B-roll", motion: "Motion plate", screen: "Screen recording" };
 const cell = (s) => String(s ?? "").replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
@@ -305,6 +318,8 @@ function sketchOrder(shots, sketches) {
 /**
  * exportBroll(shots, sketches, { title }) → Markdown: one table in the given (script) order with the columns
  * # | Kind | What to show | Over (A-roll line) | How to make it | Check, then "## Sketches". parseBroll reads it back.
+ * "Check" is written for people only: parseBroll never reads it, because check flags live with the script's draft.
+ * Sketches of the shots come first, then any others the list holds; ids with spaces can't name a fence and are left out.
  */
 export function exportBroll(shots, sketches = {}, { title = "" } = {}) {
   const rows = shots.map((s) => `| ${[s.id, KIND_NAME[s.kind] || KIND_NAME.broll, s.what, s.over, s.how, s.check ? "Check" : ""].map(cell).join(" | ")} |`);
@@ -322,8 +337,8 @@ const BOARD_CSS = `@page { size: A4; margin: 14mm; }
 :root { color-scheme: light; --ink: oklch(22% 0 none); --muted: oklch(47% 0 none); --line: oklch(86% 0 none); --accent: oklch(70.4% 0.1915 37.1); --accent-ink: oklch(52% 0.17 37); }
 * { box-sizing: border-box; }
 body { margin: 0 auto; max-inline-size: 64rem; padding: 2rem 1.5rem; background: oklch(100% 0 none); color: var(--ink); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-h1 { margin: 0 0 1.25rem; font-size: 1.35rem; line-height: 1.25; }
-h2 { margin: 1.75rem 0 0.75rem; color: var(--muted); font-size: 0.8rem; }
+h1 { margin-block: 0 1.25rem; font-size: 1.35rem; line-height: 1.25; }
+h2 { margin-block: 1.75rem 0.75rem; color: var(--muted); font-size: 0.8rem; }
 ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 1.25rem 1rem; margin: 0; padding: 0; list-style: none; }
 li { break-inside: avoid; }
 .img { display: block; aspect-ratio: 260 / 140; overflow: clip; margin-block-end: 0.45rem; border: 1px solid var(--line); border-radius: 6px; }

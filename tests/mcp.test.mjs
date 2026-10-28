@@ -190,9 +190,9 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
     [{ askId: "a", shotId: "B4", svg, style: "x" }, /Unknown argument/],
   ]) assert.match(checkArgs("sketch_shot", args), re);
   assert.equal(checkArgs("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(8192) }), "");
-  const relay = fakeRelay({ results: { sketch_shot: "Shown to the person in the storyboard." } });
+  const relay = fakeRelay({ results: { sketch_shot: "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo." } });
   const r = await call("sketch_shot", { askId: "a", shotId: "B4", svg }, { relay });
-  assert.equal(text(r), "Shown to the person in the storyboard.");
+  assert.equal(text(r), "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.");
   assert.deepEqual(relay.ops.at(-1).args, { askId: "a", shotId: "B4", svg });
   const tooLong = await call("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(9000) }, { relay });
   assert.equal(tooLong.body.result.isError, true);

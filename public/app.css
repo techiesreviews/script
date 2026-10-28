@@ -44,7 +44,6 @@
 }
 html { scroll-padding-block-start: calc(var(--top) + 1rem); overscroll-behavior-y: none; }
 @media (any-pointer: coarse) { html { overscroll-behavior-y: auto; } }
-html:has(dialog:modal) { overflow: hidden; }
 body { margin: 0; min-block-size: 100svh; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 h1, h2, h3, p, ol, ul { margin: 0; }
 ol, ul { padding: 0; list-style: none; }
