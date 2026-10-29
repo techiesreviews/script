@@ -2798,23 +2798,32 @@ function receiveSketch(ask, shotId, svg, by) {
 }
 // A picture for a shot in the list (step K2) goes into the list at once, lightly marked, with Undo, like a replace
 // answer; a line drawing still waits for Keep. If the write fails it stays waiting, with Keep and "Not saved".
-const PICTURE_IN = "Put into the B-roll list at once: it shows beside the script line and in the storyboard, lightly marked, and the person can undo it.";
 const putsInAtOnce = (shotId, sketch) => B.isImage(sketch) && broll.status === "ok" && !!shotById(shotId) && !state.guest;
+// → "in", "waits" (not written: Keep, Undo and "Not saved" show, or another write for the shot runs) or "changed" (the
+// list changed meanwhile, so nothing waits).
 async function pictureInAtOnce(ask, id, pic) {
-  const prev = broll.sketches[id] || "";
+  const prev = broll.sketches[id] || "", token = broll.token;
   await keepSketch(id);
-  if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return false;
+  if (token !== broll.token) return "changed";
+  if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return "waits";
   broll.marked[id] = { prev, pic, askId: ask.id };
   renderBroll();
-  return true;
+  return "in";
 }
-const PICTURE_WAITS = "The B-roll list could not be written just now, so the picture waits beside the script line and in the storyboard for the person's Keep or Undo.";
+// sketch_shot answers once the picture is written, but within the Worker's 10 s for a call: after 7 s it says the
+// picture is still being written.
+const WRITE_ANSWER_MS = 7000;
+function sketchAnswer(atOnce, left = []) {
+  const late = new Promise((res) => setTimeout(() => res("writing"), WRITE_ANSWER_MS));
+  return Promise.race([atOnce, late]).then((outcome) => (outcome === "changed" ? { error: B.SKETCH_LIST_CHANGED } : { result: B.sketchResult(outcome, left) }));
+}
 // Undo puts back what the shot had before (a sketch, or none), if the agent's picture is still there.
 async function undoMarked(id) {
   const m = broll.marked[id];
   if (!m || broll.saving[id]) return;
   if (broll.sketches[id] !== m.pic) { delete broll.marked[id]; return renderBroll(); }
-  // Like keepSketch: if the list changes meanwhile, this Undo is gone with it and touches nothing of the new one.
+  // Like keepSketch: if the list changes meanwhile, this Undo is gone with it and touches nothing of the new one (whoever
+  // moves the token resets `saving` and `marked` for the list it brings).
   const token = broll.token;
   broll.saving[id] = true;
   delete broll.problem[id];
@@ -3671,9 +3680,8 @@ function handleCall({ id, tool, args = {} }) {
       const checked = B.checkSketch(ask, args);
       if (checked.error) return send({ error: checked.error });
       const atOnce = receiveSketch(ask, args.shotId, checked.svg, agentBy());
-      const shown = "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.";
-      if (!atOnce) return send({ result: shown });
-      return void atOnce.then((ok) => send({ result: ok ? PICTURE_IN : PICTURE_WAITS }), failed);
+      if (!atOnce) return send({ result: B.sketchResult("shown") });
+      return void sketchAnswer(atOnce).then(send, failed);
     }
     send({ error: `Unknown tool: ${tool}` });
   } catch (e) {
@@ -3829,10 +3837,9 @@ function ownSketch(args) {
   if (!ask.shots.some((s) => s.id === shot.id)) ask.shots.push({ id: shot.id, what: shot.what, over: shot.over, kind: shot.kind });
   const atOnce = receiveSketch(ask, shot.id, svg.svg, agentBy());
   const left = ask.own ? [] : ask.shots.filter((s) => !ask.answer.sketches[s.id] && !ask.answer.done[s.id]).map((s) => s.id);
-  const also = left.length ? ` They also asked for sketches of ${left.join(", ")}.` : "";
-  if (!atOnce) return { result: `Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.${also}` };
-  // The answer waits for the write, so it says what really happened.
-  return atOnce.then((ok) => ({ result: `${ok ? PICTURE_IN : PICTURE_WAITS}${also}` }));
+  if (!atOnce) return { result: B.sketchResult("shown", left) };
+  // The answer waits for the write (at most 7 s), so it says what really happened.
+  return sketchAnswer(atOnce, left);
 }
 function brollUnreadable() {
   return broll.status === "permission" ? "The editor needs the person's OK to read the B-roll list. Ask them to allow it in the storyboard first."

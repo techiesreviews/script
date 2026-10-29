@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -806,4 +806,16 @@ test("removeSketch (step K2): a shot's sketch of either kind goes, its row and o
   assert.equal(removeSketch(DEMO, "Z9"), DEMO);
   const crlf = withPic.replace(/\n/g, "\r\n");
   assert.equal(removeSketch(crlf, "B2"), gone.replace(/\n/g, "\r\n"));
+});
+
+test("sketch_shot's answers (step K2): each outcome says what happened, with the shots still asked for", () => {
+  assert.match(sketchResult("shown"), /They choose Keep or Undo\.$/);
+  assert.match(sketchResult("in"), /^Put into the B-roll list at once.*the person can undo it\.$/);
+  assert.match(sketchResult("waits"), /could not be written just now.*Keep or Undo\.$/);
+  assert.match(sketchResult("writing"), /being written.*list_asks shows when it is in/);
+  for (const o of ["shown", "in", "waits", "writing"]) {
+    assert.equal(sketchResult(o, ["B2", "B3"]), `${sketchResult(o)} They also asked for sketches of B2, B3.`);
+    assert.equal(sketchResult(o, []), sketchResult(o));
+  }
+  assert.match(SKETCH_LIST_CHANGED, /changed meanwhile.*imageId still works/);
 });

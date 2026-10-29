@@ -665,6 +665,19 @@ export function noRoomMessage(room, max, now) {
   return `${room.free} of ${max} places for pictures are free: ${room.waiting} picture${room.waiting === 1 ? " is" : "s are"} sent but not used yet. Use them with sketch_shot or an answer_broll add (each use frees its place at once).${when}`;
 }
 
+/** What sketch_shot answers (step K2). outcome: "shown" (a line drawing waits for Keep or Undo), "in" (a picture went
+ *  into the list at once), "waits" (it could not be written, so it waits for Keep), "writing" (still being written when
+ *  the answer had to go). `left`: shots the person's sketch ask still waits for. */
+const SKETCH_RESULTS = {
+  shown: "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.",
+  in: "Put into the B-roll list at once: it shows beside the script line and in the storyboard, lightly marked, and the person can undo it.",
+  waits: "The B-roll list could not be written just now, so the picture waits beside the script line and in the storyboard for the person's Keep or Undo.",
+  writing: "It is being written into the B-roll list (a large list takes a moment); list_asks shows when it is in. The person can undo it.",
+};
+export const sketchResult = (outcome, left = []) => SKETCH_RESULTS[outcome] + (left.length ? ` They also asked for sketches of ${left.join(", ")}.` : "");
+/** The refusal when the list changed while a picture was being put in: the picture was not used and stays usable. */
+export const SKETCH_LIST_CHANGED = "The B-roll list changed meanwhile, so the picture was not put in. Its imageId still works: call sketch_shot again if the shot is still there.";
+
 /** The next free id: B<n> for B-roll and Motion plate, S<n> for Screen recording, after the highest one in use. */
 export function nextShotId(shots, kind, sketches = {}) {
   const prefix = kind === "screen" ? "S" : "B";
