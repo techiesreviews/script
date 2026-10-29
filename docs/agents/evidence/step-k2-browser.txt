@@ -1,0 +1,27 @@
+# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:15:45Z, run on the code of the commit "Step K2: …"
+ok Connect your agent shows on the start screen
+ok a script is open
+ok 30 uploads, each used in an answer_broll add: none refused (no 'At most 12')
+ok each use freed its place: every upload saw 23 free places
+ok the 30 suggestions keep their pictures
+ok and show them beside the line
+ok a used imageId is gone (used once)
+ok a refused add
+ok the same imageId still works after a refused call
+ok 24 unused pictures fit
+ok the 25th is refused with the free count and when the oldest runs out
+ok no 'At most 12' message
+ok Keep on a suggestion made shot B1
+ok sketch_shot with a picture on the kept shot
+ok that use freed a place at once
+ok the list holds the new picture without a Keep
+ok beside the line: Undo, no Keep
+ok in the storyboard at once, lightly marked, with Undo
+ok Undo puts the earlier picture back exactly
+ok and the Undo is gone
+ok a kept shot without a sketch
+ok its picture went in at once
+ok Undo removes it again
+ok list_asks tells the agent both were undone
+ok a line drawing still waits for Keep
+RESULT: ok e2e

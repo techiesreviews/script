@@ -633,6 +633,38 @@ export function removeShot(markdown, id) {
   });
 }
 
+/** removeSketch(markdown, id) → the list without that shot's sketch (a ```svg fence or a picture line), the shot's row
+ *  left as it is (step K2: Undo on a picture put in at once, where the shot had no sketch before). */
+export function removeSketch(markdown, id) {
+  const { fences } = scan(markdown);
+  const own = fences.filter((f) => f.id === id);
+  if (!own.length) return String(markdown ?? "");
+  return lineEdit(markdown, (text) => {
+    const lines = text.split("\n");
+    for (const f of own.reverse()) {
+      const a = f.start > 0 && !lines[f.start - 1].trim() ? f.start - 1 : f.start;
+      lines.splice(a, f.end - a + 1);
+    }
+    return lines;
+  });
+}
+
+/* ---------- Waiting pictures (step K2) ---------- */
+/** The places for pictures sent with upload_image: only pictures not used yet hold one (a use frees it at once).
+ *  pictureRoom(entries, now, { max, uploadMs, pictureMs }) → { free, waiting, oldest }: oldest is when the first of
+ *  them runs out (a file still to come after uploadMs, a received picture after pictureMs), or 0. */
+export function pictureRoom(entries, now, { max, uploadMs, pictureMs }) {
+  const list = [...entries];
+  const ends = list.filter((p) => !p.busy).map((p) => p.at + (p.data ? pictureMs : uploadMs));
+  return { free: Math.max(0, max - list.length), waiting: list.length, oldest: ends.length ? Math.min(...ends) : 0 };
+}
+/** upload_image's refusal when no place is free: how many are free (none), and when the oldest unused one runs out. */
+export function noRoomMessage(room, max, now) {
+  const mins = room.oldest ? Math.max(1, Math.ceil((room.oldest - now) / 60_000)) : 0;
+  const when = room.oldest ? ` The oldest unused one runs out in ${mins} minute${mins === 1 ? "" : "s"} (${new Date(room.oldest).toISOString()}).` : "";
+  return `${room.free} of ${max} places for pictures are free: ${room.waiting} picture${room.waiting === 1 ? " is" : "s are"} sent but not used yet. Use them with sketch_shot or an answer_broll add (each use frees its place at once).${when}`;
+}
+
 /** The next free id: B<n> for B-roll and Motion plate, S<n> for Screen recording, after the highest one in use. */
 export function nextShotId(shots, kind, sketches = {}) {
   const prefix = kind === "screen" ? "S" : "B";

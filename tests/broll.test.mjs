@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -775,4 +775,35 @@ test("pictures as sketches (step K): read, written, replacing line drawings, exp
   assert.equal((kept.match(/^!\[B9\]\(/gm) || []).length, 1);
   assert.equal(parseBroll(kept).sketches.B9, big);
   assert.equal(parseBroll(kept).sketches.B1, parseBroll(DEMO).sketches.B1);
+});
+
+test("waiting pictures (step K2): only unused ones hold a place; the refusal says how many are free and when one runs out", () => {
+  const opts = { max: 24, uploadMs: 15 * 60_000, pictureMs: 30 * 60_000 };
+  const now = Date.UTC(2026, 9, 29, 15, 0);
+  assert.deepEqual(pictureRoom([], now, opts), { free: 24, waiting: 0, oldest: 0 });
+  // A received picture runs out 30 minutes after it came, a file still to come 15 minutes after its address.
+  const list = [{ at: now - 20 * 60_000, data: "data:image/jpeg;base64,AA==" }, { at: now - 10 * 60_000, data: "" }, { at: now - 29 * 60_000, data: "", busy: true }];
+  assert.deepEqual(pictureRoom(list, now, opts), { free: 21, waiting: 3, oldest: now + 5 * 60_000 });
+  const full = Array.from({ length: 24 }, (_, i) => ({ at: now - (24 - i) * 60_000, data: "data:image/jpeg;base64,AA==" }));
+  const room = pictureRoom(full, now, opts);
+  assert.equal(room.free, 0);
+  const msg = noRoomMessage(room, 24, now);
+  assert.match(msg, /^0 of 24 places for pictures are free: 24 pictures are sent but not used yet\./);
+  assert.match(msg, /each use frees its place at once/);
+  assert.match(msg, /runs out in 6 minutes \(2026-10-29T15:06:00\.000Z\)/);
+  assert.doesNotMatch(msg, /At most 12/);
+});
+
+test("removeSketch (step K2): a shot's sketch of either kind goes, its row and other sketches stay", () => {
+  const pic = "data:image/jpeg;base64,/9j/AA==";
+  const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/></svg>';
+  const withPic = setSketch(DEMO, "B2", pic);
+  const gone = removeSketch(withPic, "B2");
+  assert.equal(parseBroll(gone).sketches.B2, undefined);
+  assert.deepEqual(parseBroll(gone).shots, parseBroll(withPic).shots);
+  assert.equal(parseBroll(gone).sketches.B1, parseBroll(DEMO).sketches.B1);
+  assert.equal(removeSketch(setSketch(DEMO, "B2", svg), "B2"), removeSketch(DEMO, "B2"));
+  assert.equal(removeSketch(DEMO, "Z9"), DEMO);
+  const crlf = withPic.replace(/\n/g, "\r\n");
+  assert.equal(removeSketch(crlf, "B2"), gone.replace(/\n/g, "\r\n"));
 });

@@ -111,6 +111,7 @@ const roomLink = parseLink(location.hash);
 const broll = {
   token: 0, link: null, status: "none", err: "", text: "",
   shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {},
+  marked: {}, // step K2: pictures put in at once, per shot { prev, pic, askId }, with Undo until the list changes
 };
 // Script or Storyboard (the switch in the top bar), remembered; where the script was scrolled.
 const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 0 };
@@ -2369,7 +2370,7 @@ function closeBroll() {
   broll.token++;
   closeShotCard();
   ui.scriptY = 0;
-  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
+  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
   renderBroll();
 }
 async function loadBroll() {
@@ -2455,15 +2456,21 @@ function renderBroll() {
 // A line drawing, or a picture (step K; its data address was checked where it came in).
 const sketchSvg = (svg, label) => (svg.startsWith("data:image/") ? `<img src="${svg}" alt="${esc(label)}" decoding="async">`
   : svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" '));
+const markedSketch = (id) => { const m = broll.marked[id]; return !!m && !state.guest && broll.sketches[id] === m.pic; };
 function frameImg(s, label) {
   const pending = pendingSketch(s.id);
   const svg = pending || broll.sketches[s.id] || "";
   const ask = sketchAsk();
   const waiting = !svg && ask && ask.shots.some((x) => x.id === s.id) && !ask.answer?.done?.[s.id];
-  return `<span class="frame__img"${svg ? "" : " data-empty"}${pending ? " data-pending" : ""}${waiting ? " data-waiting" : ""}>${svg ? sketchSvg(svg, label ? `Sketch ${s.id}` : "") : ""}</span>`;
+  const marked = !pending && markedSketch(s.id);
+  return `<span class="frame__img"${svg ? "" : " data-empty"}${pending || marked ? " data-pending" : ""}${waiting ? " data-waiting" : ""}>${svg ? sketchSvg(svg, label ? `Sketch ${s.id}` : "") : ""}</span>`;
 }
 function keepBar(s) {
   const ask = sketchAsk();
+  // A picture put in at once (step K2): only Undo.
+  if (!pendingSketch(s.id) && markedSketch(s.id)) {
+    return `<span class="change__bar frame__bar">${broll.problem[s.id] ? `<span class="frame__problem" title="${esc(broll.problem[s.id])}">Not saved</span>` : ""}<button type="button" class="undo" data-act="mark-undo" data-b="${esc(s.id)}"${broll.saving[s.id] ? " disabled" : ""}>${icon("undo")}Undo</button></span>`;
+  }
   if (!pendingSketch(s.id) || state.guest) return ""; // guests see the sketch; the host keeps or undoes it
   return `<span class="change__bar frame__bar" data-ask="${esc(ask.id)}">${broll.problem[s.id] ? `<span class="frame__problem" title="${esc(broll.problem[s.id])}">Not saved</span>` : ""}<button type="button" class="undo" data-act="undo" data-b="${esc(s.id)}">${icon("undo")}Undo</button><button type="button" class="keep" data-act="keep" data-b="${esc(s.id)}"${broll.saving[s.id] ? " disabled" : ""}>${icon("check")}Keep</button></span>`;
 }
@@ -2559,6 +2566,7 @@ scriptEl.addEventListener("click", (e) => {
     const a = act.dataset.act;
     if (a === "s-keep") return keepSuggestions([act.dataset.s]);
     if (a === "s-undo") return undoSuggestions([act.dataset.s]);
+    if (a === "mark-undo") return undoMarked(act.dataset.b);
     return a === "keep" ? keepSketch(act.dataset.b) : undoSketch(act.dataset.b);
   }
   const t = e.target.closest(".shot-frame__jump");
@@ -2614,6 +2622,7 @@ async function setLink(link) {
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
   delKept();
   broll.link = link;
+  broll.marked = {};
   broll.flags = {};
   broll.lit = null;
   broll.saving = {};
@@ -2629,7 +2638,7 @@ function unlinkBroll() {
   delKept();
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
-  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
+  Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
   dropGoneSuggestions();
   syncFlags();
   renderBroll();
@@ -2734,6 +2743,7 @@ $("#board").addEventListener("click", (e) => {
     else if (a === "cancel") cancelSketches();
     else if (a === "keep") keepSketch(act.dataset.b);
     else if (a === "undo") undoSketch(act.dataset.b);
+    else if (a === "mark-undo") undoMarked(act.dataset.b);
     return;
   }
   const jump = e.target.closest(".frame__jump");
@@ -2783,6 +2793,41 @@ function receiveSketch(ask, shotId, svg, by) {
   renderBroll();
   renderAgent();
   changed();
+  if (putsInAtOnce(shotId, svg)) pictureInAtOnce(ask, shotId, svg);
+}
+// A picture for a shot in the list (step K2) goes into the list at once, lightly marked, with Undo, like a replace
+// answer; a line drawing still waits for Keep. If the write fails it stays waiting, with Keep and "Not saved".
+const PICTURE_IN = "Put into the B-roll list at once: it shows beside the script line and in the storyboard, lightly marked, and the person can undo it.";
+const putsInAtOnce = (shotId, sketch) => B.isImage(sketch) && broll.status === "ok" && !!shotById(shotId) && !state.guest;
+async function pictureInAtOnce(ask, id, pic) {
+  const prev = broll.sketches[id] || "";
+  await keepSketch(id);
+  if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return;
+  broll.marked[id] = { prev, pic, askId: ask.id };
+  renderBroll();
+}
+// Undo puts back what the shot had before (a sketch, or none), if the agent's picture is still there.
+async function undoMarked(id) {
+  const m = broll.marked[id];
+  if (!m || broll.saving[id]) return;
+  if (broll.sketches[id] !== m.pic) { delete broll.marked[id]; return renderBroll(); }
+  broll.saving[id] = true;
+  delete broll.problem[id];
+  renderBroll();
+  try {
+    await changeList((md) => (m.prev ? B.setSketch(md, id, m.prev) : B.removeSketch(md, id)));
+    delete broll.marked[id];
+    const ask = state.asks.find((a) => a.id === m.askId);
+    if (ask?.answer?.done) {
+      ask.answer.done[id] = "undone";
+      if (!isOpen(ask)) ask.status = Object.values(ask.answer.done).includes("kept") ? "kept" : "undone";
+    }
+    changed();
+  } catch (e) {
+    broll.problem[id] = e?.message || "Could not save the B-roll list.";
+  }
+  delete broll.saving[id];
+  renderBroll();
 }
 function settleSketches(ask) {
   const done = ask.answer?.done || {};
@@ -3555,7 +3600,7 @@ function scriptInfo() {
 }
 function handleCall({ id, tool, args = {} }) {
   const ws = agent.ws;
-  const send = (payload) => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ } };
+  let send = (payload) => { try { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ } };
   if (state.guest) return send({ error: NOT_HERE });
   try {
     if (tool === "wait_for_asks") {
@@ -3574,6 +3619,11 @@ function handleCall({ id, tool, args = {} }) {
       const used = withPictures(args);
       if (used.error) return send({ error: used.error });
       args = used.args;
+      // Gone through: the pictures now live in the shot or the suggestion, and their places are free (step K2).
+      if (used.used.length) {
+        const reply = send;
+        send = (payload) => { if (!payload.error) for (const u of used.used) pictures.delete(u); reply(payload); };
+      }
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
     if (!state.doc) return send({ error: NO_SCRIPT });
@@ -3613,8 +3663,9 @@ function handleCall({ id, tool, args = {} }) {
       const ask = state.asks.find((a) => a.id === args.askId);
       const checked = B.checkSketch(ask, args);
       if (checked.error) return send({ error: checked.error });
+      const atOnce = putsInAtOnce(args.shotId, checked.svg);
       receiveSketch(ask, args.shotId, checked.svg, agentBy());
-      return send({ result: "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo." });
+      return send({ result: atOnce ? PICTURE_IN : "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo." });
     }
     send({ error: `Unknown tool: ${tool}` });
   } catch (e) {
@@ -3624,8 +3675,11 @@ function handleCall({ id, tool, args = {} }) {
 
 /* ---------- Pictures from the agent as sketches (step K, Lex 2026-10-29) ---------- */
 // upload_image gives a one-time address; the agent sends the file there, the Worker passes it through the relay in
-// parts, and the tab shrinks it and keeps it here, in memory only, until sketch_shot or answer_broll uses its id.
-const UPLOAD_MS = 15 * 60_000, PICTURE_MS = 30 * 60_000, PICTURES_MAX = 12;
+// parts, and the tab shrinks it and keeps it here, in memory only, until sketch_shot or answer_broll uses its id:
+// a call that uses it frees its place at once (step K2); the picture then lives in the shot or the suggestion.
+// Only pictures not used yet hold a place: 24, a whole storyboard in one go (at most about 10 MB in memory).
+const UPLOAD_MS = 15 * 60_000, PICTURE_MS = 30 * 60_000, PICTURES_MAX = 24;
+const pictureRoom = () => B.pictureRoom(pictures.values(), Date.now(), { max: PICTURES_MAX, uploadMs: UPLOAD_MS, pictureMs: PICTURE_MS });
 const pictures = new Map(); // id → { at, data: "" (waiting for the file) | data address }
 function prunePictures() {
   const now = Date.now();
@@ -3635,13 +3689,14 @@ function prunePictures() {
 }
 async function pictureAddress() {
   prunePictures();
-  if (pictures.size >= PICTURES_MAX) return { error: `At most ${PICTURES_MAX} pictures can wait at once. Use the ones you sent first (an id is good for 30 minutes).` };
+  const room = pictureRoom();
+  if (!room.free) return { error: B.noRoomMessage(room, PICTURES_MAX, Date.now()) };
   const id = D.newId(22);
   pictures.set(id, { at: Date.now(), data: "" });
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(agent.token));
   const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const url = `${location.origin}/mcp/images/${hash}/${id}`;
-  return { result: { url, how: `curl -sS -X PUT -H "Content-Type: image/png" --data-binary @picture.png "${url}"`, note: "The answer gives the imageId for sketch_shot or an answer_broll add." } };
+  return { result: { url, how: `curl -sS -X PUT -H "Content-Type: image/png" --data-binary @picture.png "${url}"`, note: "The answer gives the imageId for sketch_shot or an answer_broll add; using it frees its place.", freePlaces: room.free - 1 } };
 }
 // The relay sends a JSON head, then the picture's bytes in binary parts (each: the head's id, 36 bytes; its number,
 // 4 bytes; the bytes). The tab answers the head's id once: the imageId, or why not.
@@ -3703,22 +3758,24 @@ function withPictures(args) {
   prunePictures();
   const lookup = (id) => pictures.get(id)?.data || "";
   const unknown = (id) => ({ error: `Unknown imageId ${JSON.stringify(String(id).slice(0, 40))}: send the picture with upload_image first (an id is good for 30 minutes).` });
+  // `used`: the ids to free once the call has gone through (a refused call keeps them, so the agent can try again).
   if (args.imageId != null) {
     const data = lookup(args.imageId);
     if (!data) return unknown(args.imageId);
     const { imageId, ...rest } = args;
-    return { args: { ...rest, svg: data } };
+    return { args: { ...rest, svg: data }, used: [imageId] };
   }
-  if (!Array.isArray(args.changes) || !args.changes.some((c) => c?.imageId != null)) return { args };
-  const changes = [];
+  if (!Array.isArray(args.changes) || !args.changes.some((c) => c?.imageId != null)) return { args, used: [] };
+  const changes = [], used = [];
   for (const c of args.changes) {
     if (c?.imageId == null) { changes.push(c); continue; }
     const data = lookup(c.imageId);
     if (!data) return unknown(c.imageId);
     const { imageId, ...rest } = c;
     changes.push({ ...rest, sketch: data });
+    used.push(imageId);
   }
-  return { args: { ...args, changes } };
+  return { args: { ...args, changes }, used };
 }
 
 /* ---------- B-roll and sketches the person asked for in the agent's own chat (step I, Lex 2026-10-29) ---------- */
@@ -3762,9 +3819,10 @@ function ownSketch(args) {
     emit("created", ask);
   }
   if (!ask.shots.some((s) => s.id === shot.id)) ask.shots.push({ id: shot.id, what: shot.what, over: shot.over, kind: shot.kind });
+  const atOnce = putsInAtOnce(shot.id, svg.svg);
   receiveSketch(ask, shot.id, svg.svg, agentBy());
   const left = ask.own ? [] : ask.shots.filter((s) => !ask.answer.sketches[s.id] && !ask.answer.done[s.id]).map((s) => s.id);
-  return { result: `Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.${left.length ? ` They also asked for sketches of ${left.join(", ")}.` : ""}` };
+  return { result: `${atOnce ? PICTURE_IN : "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo."}${left.length ? ` They also asked for sketches of ${left.join(", ")}.` : ""}` };
 }
 function brollUnreadable() {
   return broll.status === "permission" ? "The editor needs the person's OK to read the B-roll list. Ask them to allow it in the storyboard first."
@@ -4126,7 +4184,7 @@ function setRoomBroll(b) {
     broll.flags = b.flags && typeof b.flags === "object" ? { ...b.flags } : {};
     adoptBroll(b.text);
   } else {
-    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null });
+    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, marked: {} });
     renderBroll();
   }
 }

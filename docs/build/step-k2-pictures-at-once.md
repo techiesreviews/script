@@ -1,0 +1,15 @@
+# Step K2: pictures free their place when used, and go in at once
+
+Request (2026-10-29): pictures from agents should show in the editor right away, without hitting the 12-picture limit. The tab kept every uploaded picture in its waiting map until it was 30 minutes old, also after `sketch_shot` or `answer_broll` had used it, so after 12 uploads `upload_image` refused ("At most 12 pictures can wait at once") even with all 12 in shots: a 24-shot storyboard with pictures got stuck for up to 30 minutes.
+
+## What changes
+
+1. **A use frees the place at once.** When `sketch_shot` or an `answer_broll` add uses an `imageId` and the call goes through, the picture leaves the waiting map (`handleCall` frees the ids `withPictures` reports as `used`). Its data lives on in the shot or the suggestion. A refused call (a bad quote, an unknown shot) keeps the picture, so the agent can try again. An `imageId` is used once.
+2. **Only pictures not used yet count**, at most **24** (a whole storyboard in one go; at most about 10 MB of shrunk pictures in the tab's memory). `upload_image`'s answer gives `freePlaces`.
+3. **The refusal says how many places are free and when the oldest unused one runs out** (`pictureRoom` and `noRoomMessage` in `public/broll.js`), for example: "0 of 24 places for pictures are free: 24 pictures are sent but not used yet. Use them with sketch_shot or an answer_broll add (each use frees its place at once). The oldest unused one runs out in 6 minutes (2026-10-29T15:06:00.000Z)."
+4. **A `sketch_shot` picture for a shot in the list goes in at once**, like a replace answer: it is written into the B-roll list straight away, shows beside the line and in the storyboard lightly marked (the orange ring), with **Undo** only. Undo writes back the shot's earlier sketch (or removes the sketch when it had none), while the picture is still there; the ask's shot then counts as undone. The Undo lasts until the list changes (another list, unlink, another script) or the tab reloads. If the write fails, the picture waits with Keep, Undo and "Not saved", as before. Line drawings and `answer_broll` adds still wait for Keep or Undo.
+5. The tool descriptions (`upload_image`, `sketch_shot`), `INSTRUCTIONS` (VERSION 0.7.0), `docs/data-shape.md` and step K's doc say so.
+
+## Checks
+
+`tests/broll.test.mjs` (`pictureRoom`, `noRoomMessage`, `removeSketch`) and `tests/mcp.test.mjs` (the texts). In a real browser (headless Chrome, local Worker, MCP over fetch, pictures sent with HTTP PUT): 30 pictures uploaded one after another, each used in an `answer_broll` add, with no refusal; 24 unused pictures fill the places and the 25th upload is refused with the free count and the expiry; a use frees a place at once; a `sketch_shot` picture on a kept shot is in the list and the storyboard at once, with Undo restoring the earlier sketch; desktop and 390 px. The run is in `docs/agents/evidence/step-k2-browser.txt`.
