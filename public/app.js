@@ -2820,12 +2820,12 @@ async function pictureInAtOnce(ask, id, pic) {
         settleSketches(ask);
         broll.marked[id] = { prev, pic, askId: ask.id };
         // The read may have taken the file before the write: read it again, so what shows and later writes have it.
-        // It waits its turn in the write queue (no write queued before it is overtaken), keeps the token (writes
-        // under way go on) and is skipped if the list changes meanwhile (the token, taken first). No browser step
-        // covers a list change during this wait.
+        // It waits its turn in the write queue (no write queued before it is overtaken) and keeps the token (writes
+        // under way go on). The token is taken before waiting, so any list change while it waits skips the read.
+        // No browser step covers a list change during this wait; B.rereadAfterIn is unit-tested.
         const t = broll.token;
         await broll.reading?.catch(() => {});
-        const run = brollWrites.then(() => (t === broll.token && broll.sketches[id] !== pic && broll.link ? readBroll(t, false) : null));
+        const run = brollWrites.then(() => (B.rereadAfterIn({ token: t, now: broll.token, shown: broll.sketches[id], pic, link: broll.link }) ? readBroll(t, false) : null));
         brollWrites = run.catch(() => {});
         await run.catch(() => {});
       }

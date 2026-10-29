@@ -1,4 +1,4 @@
-# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:59:58Z, run on the working tree on top of 1117e15, committed as "Step K2: the extra read waits its turn…"
+# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T16:02:26Z, run on the working tree on top of a737d91, committed as "Step K2: rereadAfterIn…"
 ok Connect your agent shows on the start screen
 ok a script is open
 ok 30 uploads, each used in an answer_broll add: none refused (no 'At most 12')
@@ -41,7 +41,7 @@ ok the list file has both
 ok both keep their Undo after all reads
 ok nothing is left saving
 ok a line drawing still waits for Keep
-ok a slow write answers in time (7028 ms) and says it is being written
+ok a slow write answers in time (7023 ms) and says it is being written
 ok then it is in (list_asks: kept)
 ok with its Undo
 ok a second use in the first second, before any answer, is refused

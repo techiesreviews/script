@@ -688,6 +688,9 @@ export const sketchTwice = (id) => `The picture ${JSON.stringify(String(id).slic
  *  the picture (the same list read again), "in" if the write went into the file, else "waits" (Keep works again);
  *  otherwise "changed" (another list or script: the picture's id works again). */
 export const afterListMoved = ({ live, pending, written }) => (live && pending ? (written ? "in" : "waits") : "changed");
+/** The extra read after a picture went in during a re-read: only on the same list (token unchanged), with a list
+ *  linked, and while what shows doesn't have the picture yet. */
+export const rereadAfterIn = ({ token, now, shown, pic, link }) => token === now && !!link && shown !== pic;
 /** A closed sketch ask's status from its shots: kept when any was kept, else undone. */
 export const sketchStatus = (done = {}) => (Object.values(done).includes("kept") ? "kept" : "undone");
 /** sketchAnswer(atOnce, left, ms) → the answer once the write settles ("in", "waits", "changed"), or after `ms` the

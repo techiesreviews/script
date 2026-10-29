@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -877,4 +877,12 @@ test("afterListMoved and sketchStatus (step K2): a list read again vs another li
   assert.equal(sketchStatus({ B1: "kept", B2: "undone" }), "kept");
   assert.equal(sketchStatus({ B1: "undone" }), "undone");
   assert.equal(sketchStatus({}), "undone");
+});
+
+test("rereadAfterIn (step K2): the extra read only on the same list, with a list, while the picture doesn't show", () => {
+  const base = { token: 4, now: 4, shown: "old", pic: "new", link: { name: "x.md" } };
+  assert.equal(rereadAfterIn(base), true);
+  assert.equal(rereadAfterIn({ ...base, now: 5 }), false, "the list changed while it waited");
+  assert.equal(rereadAfterIn({ ...base, shown: "new" }), false, "it shows already");
+  assert.equal(rereadAfterIn({ ...base, link: null }), false, "no list");
 });
