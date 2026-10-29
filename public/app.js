@@ -2906,11 +2906,13 @@ async function keepSketch(id) {
   renderBroll();
   try {
     // One file write at a time: two quick Keeps must not both read the old file.
-    const run = brollWrites.then(() => writeSketch(id, svg));
+    // The list, its token and the script's name as the Keep is made: the write waits its turn and then checks them.
+    const at = { link: broll.link, token, name: state.name };
+    const run = brollWrites.then(() => writeSketch(id, svg, at));
     brollWrites = run.catch(() => {});
     await run;
     if (token !== broll.token) return "written";
-    broll.sketches[id] = B.parseBroll(broll.text).sketches[id] ?? svg; // as saved
+    broll.sketches[id] ??= svg; // writeSketch set them as saved
     delete ask.answer.sketches[id];
     ask.answer.done[id] = "kept";
     settleSketches(ask);
@@ -2926,12 +2928,14 @@ async function keepSketch(id) {
   renderBroll();
   return "kept";
 }
-async function writeSketch(id, svg) {
-  // The list's token and the script's name as the write starts: making pictures lighter takes a while, and the person
-  // may open another script or list meanwhile (then this write stops before it touches anything of theirs).
-  const link = broll.link, token = broll.token, name = state.name;
+// `at`: the list, its token and the script's name as the Keep was made. The write waits its turn in the queue, and
+// making pictures lighter takes a while: if the person opened another script or list meanwhile, it stops before it
+// reads or writes anything of theirs.
+async function writeSketch(id, svg, at = { link: broll.link, token: broll.token, name: state.name }) {
+  const { link, token, name } = at;
   if (!link) throw new Error("No B-roll list is linked.");
   const still = () => { if (token !== broll.token) throw new Error("The B-roll list changed."); };
+  still();
   if (link.handle) {
     if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
     const now = await (await link.handle.getFile()).text();
@@ -3054,7 +3058,15 @@ async function saveListAs() {
     try { handle = await pick(state.handle ? { startIn: state.handle } : {}); }
     catch (e) { if (e?.name === "TypeError") handle = await pick({}); else throw e; }
   } catch { return; }
-  const run = brollWrites.then(async () => { const text = await lighterList(broll.text); await writeHandle(handle, text); return text; });
+  // This list's text when the write's turn comes (the token says it is still this list); nothing is written if
+  // another list or script opened since.
+  const run = brollWrites.then(async () => {
+    if (token !== broll.token) throw new Error("The B-roll list changed.");
+    const text = await lighterList(broll.text);
+    if (token !== broll.token) throw new Error("The B-roll list changed.");
+    await writeHandle(handle, text);
+    return text;
+  });
   brollWrites = run.catch(() => {});
   let saved;
   try { saved = await run; } catch (e) { if (token === broll.token) { broll.err = e?.message || "Could not save the list."; renderBoard(); } return; }
