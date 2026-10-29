@@ -1,0 +1,11 @@
+# Top bar (Export last and primary, Export all, icon-only Share, MCP mark): headless Chrome, local Worker; 1280 px and 390 px, light and dark. 2026-10-29T15:06:55Z
+ok Export is the last button
+ok Export is the orange primary button
+ok Share shows only its icon, with its name kept
+ok Connect your agent shows the MCP mark, not the dot, at 1280 px
+ok at 390 px (light) the MCP mark shows without the dot
+ok at 390 px (dark) the MCP mark shows without the dot
+ok Export all is the menu's first item
+ok at 390 px the menu stays on screen
+ok Export all downloads one zip
+RESULT: ok topbar

@@ -8,6 +8,7 @@ export function createShareButton({ button, stop, iconSlot, label, icons, share,
   function render() {
     iconSlot.innerHTML = icons[copied ? "check" : sharing ? "link" : "share"];
     label.textContent = copied ? "Link copied" : sharing ? "Copy edit link" : "Share to edit";
+    button.title = label.textContent; // the button shows only its icon (Lex, 2026-10-29)
     button.toggleAttribute("data-done", copied);
     stop.hidden = !sharing;
   }

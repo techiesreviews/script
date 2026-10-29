@@ -6,6 +6,7 @@ import * as C from "./changes.js";
 import * as L from "./links.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
+import { makeZip } from "./zip.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -26,6 +27,8 @@ const ICONS = {
   prompter: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 9h10M8 12h8M10 21h4M12 17v4"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/>',
+  // The Model Context Protocol mark, drawn on 195 units: "Connect your agent" while it can be connected.
+  mcp: '<g transform="scale(.1231)" stroke-width="14"><path d="M25 97.85 92.88 29.97a24 24 0 0 1 33.94 0 24 24 0 0 1 0 33.94L75.56 115.18"/><path d="M76.27 114.47 126.82 63.91a24 24 0 0 1 33.94 0l.36.36a24 24 0 0 1 0 33.94L99.72 159.6a8 8 0 0 0 0 11.31l12.61 12.61"/><path d="M109.85 46.94 59.65 97.15a24 24 0 0 0 0 33.94 24 24 0 0 0 33.94 0l50.2-50.21"/></g>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   open: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   save: '<path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8M7 21v-7h10v7"/>',
@@ -1938,7 +1941,7 @@ async function reloadFromDisk() {
   await openHandle(state.handle);
 }
 function download(text, name, type) {
-  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
+  const url = URL.createObjectURL(new Blob([text], { type: typeof text === "string" ? `${type};charset=utf-8` : type }));
   const a = h("a", "", { href: url, download: name });
   document.body.append(a);
   a.click();
@@ -1951,11 +1954,29 @@ function exportFile(kind) {
   else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
   else if (kind === "prompter-open") openPrompter();
   else if (kind === "markdown") saveAs();
+  else if (kind === "all") exportAll();
   else if ((kind === "broll" || kind === "storyboard") && broll.status === "ok") {
     const shots = B.scriptOrder(state.doc, broll.shots), title = D.titleOf(state.doc) || baseName();
     if (kind === "broll") download(B.exportBroll(shots, broll.sketches, { title }), `${baseName()}-broll.md`, "text/markdown");
     else download(B.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }), `${baseName()}-storyboard.html`, "text/html");
   }
+}
+
+// "Export all" (Lex, 2026-10-29): one zip with the script, the camera script, the prompter file and, with a B-roll
+// list, the list and the storyboard.
+function exportAll() {
+  const base = baseName();
+  const files = [
+    { name: /\.(md|markdown|txt)$/i.test(state.name) ? state.name : `${base}.md`, text: saveText() },
+    { name: `${base}-camera.txt`, text: D.exportCamera(state.doc) },
+    { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc) },
+  ];
+  if (broll.status === "ok") {
+    const shots = B.scriptOrder(state.doc, broll.shots), title = D.titleOf(state.doc) || base;
+    files.push({ name: `${base}-broll.md`, text: B.exportBroll(shots, broll.sketches, { title }) });
+    files.push({ name: `${base}-storyboard.html`, text: B.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }) });
+  }
+  download(makeZip(files), `${base}.zip`, "application/zip");
 }
 
 async function openSample() {
@@ -3879,8 +3900,8 @@ function renderAgent() {
   btn.dataset.state = agent.state;
   act.dataset.state = agent.state === "elsewhere" ? "off" : agent.state;
   const brand = agentBrand(agent.info?.name), name = brand.name;
-  // While connected, the button shows the agent's own logo instead of the plug.
-  const key = agent.state === "on" ? brand.icon : "plug", mark = btn.querySelector("svg.i");
+  // While connected, the button shows the agent's own logo; until then the MCP mark (Lex, 2026-10-29).
+  const key = agent.state === "on" ? brand.icon : "mcp", mark = btn.querySelector("svg.i");
   if (mark && mark.dataset.key !== key) mark.outerHTML = icon(key).replace("<svg ", `<svg data-key="${key}" `);
   $("#agentBtnLabel").textContent = agent.state === "on" ? name : agent.state === "waiting" ? "Waiting for MCP" : agent.state === "elsewhere" ? "Open in another tab" : "Connect your agent";
   btn.title = agent.state === "elsewhere" ? "Open in another tab" : agent.state === "on" ? name : "";
