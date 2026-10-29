@@ -1,4 +1,4 @@
-# Step I browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch. 2026-10-29T12:55:52Z, commit base bfcf75d
+# Step I browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; frames checked at 1280 px and 390 px. 2026-10-29T12:58:49Z, working tree on 0bef28d
 ok Connect your agent shows on the start screen
 ok a script is open
 ok sketch_shot with no list points at answer_broll
@@ -7,13 +7,16 @@ ok an own answered plan ask with the sketch
 ok the own ask is not handed back to the agent
 ok list_asks marks it own, with sketch: true
 ok the suggested frame beside the line shows the sketch
+ok at 390 px the suggested frame shows the sketch
 ok the storyboard shows the sketch too
+ok at 390 px the storyboard shows the sketch
 ok an add whose quote is not there is refused
 ok a sketch with nothing drawable is refused
 ok refused calls leave no ask behind
 ok Keep adds the shot as B1
 ok the kept shot's sketch is in the list under B1
 ok the kept shot shows its sketch
+ok Undo on the other add writes nothing
 ok the own ask settles as kept
 ok an unknown shot is refused
 ok sketch_shot without askId
@@ -21,10 +24,15 @@ ok an own sketch ask for B1
 ok the new sketch shows, waiting for Keep
 ok Keep replaces B1's sketch in the list
 ok the own sketch ask settles as kept
+ok another own sketch of B1
+ok Undo on an own sketch keeps the list's sketch
+ok and the kept sketch shows again
+ok the own sketch ask settles
 ok the person asks for sketches of the shot without one
 ok a no-ask sketch joins the person's open ask and names what is left
 ok still one open sketch ask
 ok 20 more own changes
 ok 40 waiting is still fine
 ok a 41st waiting change is refused
+ok a bad change gets its own error, not the limit
 RESULT: ok e2e

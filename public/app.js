@@ -2196,7 +2196,8 @@ function renderBroll() {
 /* One sketch frame, as in the script and the storyboard. Pending agent sketches carry Keep / Undo. */
 const sketchSvg = (svg, label) => svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" ');
 function frameImg(s, label) {
-  const pending = pendingSketch(s.id);
+  // Cleaned again here: a restored draft or a guest's copy holds what storage or the room gave it.
+  const pending = B.sanitizeSvg(pendingSketch(s.id));
   const svg = pending || broll.sketches[s.id] || "";
   const ask = sketchAsk();
   const waiting = !svg && ask && ask.shots.some((x) => x.id === s.id) && !ask.answer?.done?.[s.id];
@@ -2884,10 +2885,10 @@ function suggestBlock(x, s) {
   return `<div class="suggest" data-op="${c.op}">${body}${suggestBar(x)}</div>`;
 }
 const addText = (x) => `<p class="suggest__what">${esc(x.what)}</p>${x.how ? `<p class="suggest__how">${esc(x.how)}</p>` : ""}${x.why ? `<p class="suggest__why">${esc(x.why)}</p>` : ""}`;
-// A suggested add beside its line: the frame dashed in orange, the tag "Suggested", What, How, Keep and Undo.
-// A suggested add's own sketch (step I), or an empty frame.
-// Cleaned again here: a guest's copy and a restored draft come from storage or the room, not from checkBrollAnswer.
+// A suggested add's own sketch (step I), or an empty frame. Cleaned again here: a guest's copy and a restored draft
+// come from storage or the room, not from checkBrollAnswer.
 const suggestedImg = (x) => { const svg = x.sketch ? B.sanitizeSvg(x.sketch) : ""; return svg ? `<span class="frame__img" data-pending>${sketchSvg(svg, "")}</span>` : '<span class="frame__img" data-empty></span>'; };
+// A suggested add beside its line: the frame dashed in orange, the tag "Suggested", What, How, Keep and Undo.
 const suggestedFrame = (x) => `<div class="shot-frame" data-suggested data-kind="${x.kind}"><div class="shot-frame__pic">${suggestedImg(x)}`
   + `<span class="broll-tag">${icon(KIND_ICON[x.kind])}Suggested</span></div><div class="suggest" data-op="add">${addText(x)}${suggestBar(x)}</div></div>`;
 const suggestedBoardFrame = (x, missing) => `<li class="frame" data-suggested${missing ? " data-missing" : ""}><div class="frame__body">${suggestedImg(x)}`
@@ -3346,15 +3347,17 @@ function ownAsk(action, instruction) {
   return ask;
 }
 // At most this many of the agent's own changes wait at once: each may carry an 8 KB sketch, and open answers go
-// into the draft and to guests.
+// into the draft and to guests. Own sketches need no limit: one per shot in the list, in one sketch ask at a time.
 const OWN_OPEN_MAX = 2 * B.BROLL_LIMITS.changes;
 function ownBroll(args) {
   if (broll.status !== "ok" && broll.status !== "none") return { error: brollUnreadable() };
-  const waiting = openSuggestions().filter((x) => x.ask.own).length;
-  if (waiting + (Array.isArray(args.changes) ? args.changes.length : 0) > OWN_OPEN_MAX) return { error: `${waiting} of your suggestions still wait for the person's Keep or Undo; at most ${OWN_OPEN_MAX} can wait at once. Ask them to keep or undo some first.` };
   const ask = ownAsk("plan", "Your own B-roll suggestions, asked for in your chat.");
   const checked = B.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
   if (checked.error) return { error: checked.error };
+  const waiting = openSuggestions().filter((x) => x.ask.own).length;
+  if (waiting + checked.answer.changes.length > OWN_OPEN_MAX) {
+    return { error: `${waiting} of your suggestions still wait for the person's Keep or Undo; at most ${OWN_OPEN_MAX} can wait at once${waiting < OWN_OPEN_MAX ? `, so send at most ${OWN_OPEN_MAX - waiting} now` : ". Ask them to keep or undo some first"}.` };
+  }
   state.asks.push(ask);
   emit("created", ask);
   receiveBroll(ask, checked.answer, agentBy());
