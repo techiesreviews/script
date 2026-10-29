@@ -1864,9 +1864,13 @@ async function saveAs() {
       state.fileModified = await writeHandle(handle, text);
       if (handle.name !== state.name) {
         store.del(draftKey());
-        if (broll.link) idbSet(brollKey(handle.name), broll.link);
-        const kept = store.get(listKey());
-        if (typeof kept === "string") { store.set(listKey(handle.name), kept); store.del(listKey()); }
+        // A script leaving the browser frees its name there, so its B-roll keys move and the old ones are cleared.
+        if (was) moveKeys(state.name, handle.name, { clear: true, link: broll.link });
+        else {
+          if (broll.link) idbSet(brollKey(handle.name), broll.link);
+          const kept = store.get(listKey());
+          if (typeof kept === "string") { store.set(listKey(handle.name), kept); store.del(listKey()); }
+        }
         state.name = handle.name;
       }
       state.handle = handle;
@@ -1876,11 +1880,7 @@ async function saveAs() {
       state.conflict = false;
       remember(handle);
       // The script moved to its file: the copy in the browser goes.
-      if (was) {
-        const gone = was.name;
-        if (broll.link && gone !== handle.name) idbSet(brollKey(gone), null); // the name is free again; its link moved with the script
-        forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {});
-      }
+      if (was) { const gone = was.name; forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {}); }
     } else {
       download(text, state.name, "text/markdown");
     }
@@ -2078,30 +2078,32 @@ async function createBrowserScript(name, text) {
   if (!keepAsked) { keepAsked = true; navigator.storage.persist?.().catch(() => {}); }
   return { handle, modified };
 }
-// A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser. `link`: that script's
-// B-roll link. `clear`: the old name goes away (a rename), so its link is cleared; a file on disk or the demo keeps
-// theirs. Drafts and B-roll keys go by name, as for files on disk.
-function moveKeys(from, to, link, { clear = false } = {}) {
+// A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser (drafts and B-roll keys
+// go by name, as for files on disk). `clear`: the old name goes away (a rename, a move to a file), so its B-roll keys
+// are cleared; else a file on disk or the demo keeps its own. The link is read as stored when the move lands
+// (linking and unlinking store it at once, also while a rename waits); `link` stands in when none is stored (the
+// demo links its list by itself). A link stored under the new name meanwhile wins.
+async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   const draft = store.get(draftKey(from));
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
-  if (link) idbSet(brollKey(to), link);
-  if (clear) idbSet(brollKey(from), null);
   const kept = store.get(listKey(from));
-  if (typeof kept === "string") { store.set(listKey(to), kept); store.del(listKey(from)); }
+  if (typeof kept === "string") { store.set(listKey(to), kept); if (clear) store.del(listKey(from)); }
+  const stored = await idbGet(brollKey(from));
+  const moving = stored ?? link;
+  if (moving && (await idbGet(brollKey(to))) == null) await idbSet(brollKey(to), moving);
+  if (clear && stored != null) await idbSet(brollKey(from), null);
 }
 // While a script is in the browser its file has the title's name: "My video" → my-video.md (-2 when taken).
 async function followTitle(handle) {
   if (!state.inBrowser || handle !== state.handle || typeof handle.move !== "function") return;
-  const from = state.name, doc = state.doc, link = broll.link;
+  const from = state.name, doc = state.doc;
   if (D.scriptFileName("", doc).toLowerCase() === from.toLowerCase()) return; // the title's own name: nothing to look up
   const name = D.titleFileName(from, doc, await nameTaken(from));
   if (!name || handle !== state.handle) return;
   await handle.move(name);
-  // Still open: its link as it is now (it may have been linked or unlinked meanwhile); else as it was when it left.
-  const now = handle === state.handle ? broll.link : link;
   if (handle === state.handle) { state.name = name; renderTop(); }
-  moveKeys(from, name, now, { clear: true });
+  await moveKeys(from, name, { clear: true });
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
 // Ctrl/Cmd+S on a script without a file (the demo, or a file opened where files can't be saved): into the browser.
@@ -2114,7 +2116,7 @@ async function saveInBrowser() {
   try {
     const { handle, modified } = await createBrowserScript(D.scriptFileName("", doc, await nameTaken(from)), text);
     if (state.doc === doc) {
-      moveKeys(from, handle.name, broll.link);
+      moveKeys(from, handle.name, { link: broll.link });
       Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false });
     }
     remember(handle, true);

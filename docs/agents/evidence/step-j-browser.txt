@@ -1,4 +1,4 @@
-# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:27:39Z, run on the code of the commit "Step J: the B-roll link is read when the rename lands…"
+# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:31:24Z, run on the code of the commit "Step J: B-roll keys move as stored when the move lands…"
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
@@ -39,6 +39,18 @@ ok the next untitled-script.md starts without a B-roll list
 ok race-script.md has a B-roll list
 ok the slow rename finished
 ok an unlink during the rename stays unlinked
+ok leave-script.md has a B-roll list
+ok switched away during the rename
+ok the rename landed after the switch
+ok the unlink stays: no link under either name
+ok reopened, it has no B-roll list
+ok an agent script named My-Video.md
+ok it keeps its name after a save
+ok a file opened without a handle
+ok it has a kept B-roll list
+ok Ctrl+S saves it in the browser
+ok with its B-roll list
+ok the file opened again keeps its own B-roll list
 ok Save as file opens the script from its file
 ok the copy in the browser is gone
 ok it is a file now
