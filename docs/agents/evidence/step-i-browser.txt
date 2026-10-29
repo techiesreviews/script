@@ -1,0 +1,30 @@
+# Step I browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch. 2026-10-29T12:55:52Z, commit base bfcf75d
+ok Connect your agent shows on the start screen
+ok a script is open
+ok sketch_shot with no list points at answer_broll
+ok answer_broll without askId
+ok an own answered plan ask with the sketch
+ok the own ask is not handed back to the agent
+ok list_asks marks it own, with sketch: true
+ok the suggested frame beside the line shows the sketch
+ok the storyboard shows the sketch too
+ok an add whose quote is not there is refused
+ok a sketch with nothing drawable is refused
+ok refused calls leave no ask behind
+ok Keep adds the shot as B1
+ok the kept shot's sketch is in the list under B1
+ok the kept shot shows its sketch
+ok the own ask settles as kept
+ok an unknown shot is refused
+ok sketch_shot without askId
+ok an own sketch ask for B1
+ok the new sketch shows, waiting for Keep
+ok Keep replaces B1's sketch in the list
+ok the own sketch ask settles as kept
+ok the person asks for sketches of the shot without one
+ok a no-ask sketch joins the person's open ask and names what is left
+ok still one open sketch ask
+ok 20 more own changes
+ok 40 waiting is still fine
+ok a 41st waiting change is refused
+RESULT: ok e2e

@@ -236,10 +236,14 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
   assert.equal(checkArgs("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(8192) }), "");
   // Step I: without askId, a sketch the person asked for in the agent's chat.
   assert.equal(checkArgs("sketch_shot", { shotId: "B4", svg }), "");
+  assert.equal(checkArgs("sketch_shot", { askId: null, shotId: "B4", svg }), "");
   const relay = fakeRelay({ results: { sketch_shot: "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo." } });
   const r = await call("sketch_shot", { askId: "a", shotId: "B4", svg }, { relay });
   assert.equal(text(r), "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.");
   assert.deepEqual(relay.ops.at(-1).args, { askId: "a", shotId: "B4", svg });
+  const own = await call("sketch_shot", { shotId: "B4", svg }, { relay });
+  assert.equal(own.body.result.isError, undefined);
+  assert.deepEqual(relay.ops.at(-1).args, { shotId: "B4", svg });
   const tooLong = await call("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(9000) }, { relay });
   assert.equal(tooLong.body.result.isError, true);
 });
@@ -276,6 +280,7 @@ test("answer_broll: schema, limits and refusals before the tab; the prompt and i
   ]) assert.match(checkArgs("answer_broll", args), re);
   assert.equal(checkArgs("answer_broll", { askId: "a", changes: [add, { op: "update", id: "B1", how: "Stock" }, { op: "remove", id: "B2", why: "Repeats B1" }], message: "Three ideas" }), "");
   // Step I: without askId (B-roll asked for in the agent's chat), and an add with its sketch.
+  assert.equal(checkArgs("answer_broll", { askId: null, changes: [add] }), "");
   assert.equal(checkArgs("answer_broll", { changes: [{ ...add, sketch: '<svg viewBox="0 0 260 140"><path class="s" d="M1 1L9 9"/></svg>' }] }), "");
   const relay = fakeRelay({ results: { answer_broll: "Shown to the person. They choose Keep or Undo per change." } });
   const r = await call("answer_broll", { askId: "a", changes: [add] }, { relay });
