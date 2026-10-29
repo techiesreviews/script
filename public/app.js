@@ -2820,8 +2820,9 @@ async function pictureInAtOnce(ask, id, pic) {
         settleSketches(ask);
         broll.marked[id] = { prev, pic, askId: ask.id };
         // The read may have taken the file before the write: read it again, so what shows and later writes have it.
-        await broll.reading?.catch?.(() => {});
-        if (broll.sketches[id] !== pic && broll.link) { const t = ++broll.token; await readBroll(t, false); }
+        // Under the same token: it is the same list, so writes still under way go on (a real change drops this read).
+        await broll.reading?.catch(() => {});
+        if (broll.sketches[id] !== pic && broll.link) await readBroll(broll.token, false);
       }
       renderBroll();
       changed();
@@ -2910,13 +2911,12 @@ async function keepSketch(id) {
     settleSketches(ask);
     changed();
   } catch (e) {
-    if (token === broll.token) broll.problem[id] = e?.message || "Could not save the sketch.";
-    else return "failed";
+    if (token !== broll.token) return "failed";
+    broll.problem[id] = e?.message || "Could not save the sketch.";
     delete broll.saving[id];
     renderBroll();
     return "failed";
   }
-  if (token !== broll.token) return "written";
   delete broll.saving[id];
   renderBroll();
   return "kept";

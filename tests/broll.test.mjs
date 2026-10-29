@@ -867,7 +867,7 @@ test("pictureRoom (step K2): a held or shrinking picture never sets the time it 
 });
 
 test("afterListMoved and sketchStatus (step K2): a list read again vs another list or script", () => {
-  // The person's ask in this script still holds the picture: in when the re-read list has it, else it waits for Keep.
+  // The person's ask in this script still holds the picture: in when its write went into the file, else it waits for Keep.
   assert.equal(afterListMoved({ live: true, pending: true, written: true }), "in");
   assert.equal(afterListMoved({ live: true, pending: true, written: false }), "waits");
   // Another list or script (the ask closed or gone), or the agent sent another picture for the shot meanwhile.
