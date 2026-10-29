@@ -3401,9 +3401,10 @@ async function openScript(args, by) {
     const allowed = () => line === lineSeq && !together?.active && !(state.doc && (state.pendingDraft || state.conflict || (!state.handle && isDirty())));
     const ok = allowed() && (await permitted(r.handle, true));
     if (choice !== "open") return;
-    const go = ok && allowed();
-    notNow();
-    if (go) openHandle(r.handle);
+    if (!(ok && allowed())) return notNow();
+    choice = "done";
+    // The line, and with it the wait for the agent, stays until the file is open (or why it isn't shows).
+    openHandle(r.handle);
   };
   if (state.doc) showBanner(text, [["Open", open], ["Not now", notNow]]);
   else emptyNote(text, [["Open", open], ["Not now", notNow]]);
