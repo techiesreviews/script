@@ -2930,11 +2930,11 @@ async function keepSketch(id) {
 // `token`: the list's token as the Keep was made. The write waits its turn in the queue, and making pictures lighter
 // takes a while: if the person opened another script or list meanwhile, it stops before it reads or writes anything
 // of theirs. Where the list lives (its link, the script's name) is read when its turn comes, so a "Save as…" or a
-// rename of the same list before it is followed; one that lands while it makes pictures lighter stops it ("Not saved",
-// Keep again).
+// rename of the same list before it is followed; a "Save as…" that lands while it makes pictures lighter stops it
+// ("Not saved", Keep again), a rename then is followed (its name is read at the write).
 async function writeSketch(id, svg, token = broll.token) {
-  const still = () => { if (token !== broll.token || broll.link !== link) throw new Error("The B-roll list changed."); };
   const link = broll.link;
+  const still = () => { if (token !== broll.token || broll.link !== link) throw new Error("The B-roll list changed."); };
   if (!link || token !== broll.token) throw new Error("The B-roll list changed.");
   if (link.handle) {
     if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
