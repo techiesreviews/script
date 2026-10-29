@@ -3606,7 +3606,8 @@ const UPLOAD_MS = 15 * 60_000, PICTURE_MS = 30 * 60_000, PICTURES_MAX = 12;
 const pictures = new Map(); // id → { at, data: "" (waiting for the file) | data address }
 function prunePictures() {
   const now = Date.now();
-  for (const [id, p] of pictures) if (now - p.at > (p.data ? PICTURE_MS : UPLOAD_MS)) pictures.delete(id);
+  // A picture still being shrunk stays: its imageId is about to be given out.
+  for (const [id, p] of pictures) if (!p.busy && now - p.at > (p.data ? PICTURE_MS : UPLOAD_MS)) pictures.delete(id);
   for (const [id, x] of incoming) if (now - x.at > 60_000) incoming.delete(id);
 }
 async function pictureAddress() {
