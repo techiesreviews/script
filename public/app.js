@@ -3118,7 +3118,7 @@ function connectionPrompt() {
   return `Connect to my script editor as an MCP server and answer my asks.
 Server: ${url} (Streamable HTTP)
 Header: Authorization: ${auth}
-1. Add this server as "script-editor" in your own MCP settings, the way your app does it. For example:
+1. Add this server as "script-editor" in your own MCP settings, the way your app does it. If a script-editor entry is already there, replace it: the token changes on every connection. For example:
    - Claude Code: claude mcp add --transport http script-editor ${url} --header "Authorization: ${auth}"
    - Codex (~/.codex/config.toml):
      [mcp_servers.script-editor]
@@ -3127,7 +3127,7 @@ Header: Authorization: ${auth}
    - Most other apps (JSON settings; use your app's key names):
      { "mcpServers": { "script-editor": { "url": "${url}", "headers": { "Authorization": "${auth}" } } } }
    If you can't change your settings yourself, tell me exactly what to paste where.
-2. Reload MCP servers, then use the watch_script prompt (or call wait_for_asks in a loop and answer each ask with the tool it calls for).
+2. Reload MCP servers, then use the watch_script prompt (or call wait_for_asks in a loop and answer each ask with answer_ask, answer_broll or sketch_shot, as the ask calls for).
 Keep the token private. It works until I press Disconnect MCP.`;
 }
 

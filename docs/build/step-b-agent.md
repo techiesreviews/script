@@ -42,7 +42,7 @@ Read first: `AGENTS.md`, `docs/data-shape.md`, `public/app.js` (asks, `receiveAn
   - After the agent's first call, the button shows the agent's name (for example "Claude Code") with a green dot. The menu shows the agent row ("Claude Code", what it is on, Stop) and the action "Disconnect MCP".
   - Disconnect forgets the token and closes the relay. A token older than 8 hours is replaced the same way.
   - The token is kept in `localStorage`, so a reload reconnects.
-- **Connection prompt (copied text):**
+- **Connection prompt (copied text):** (since 2026-10-29 it is written for any MCP client; `connectionPrompt()` in `public/app.js` is the reference)
   ```
   Connect to my script editor as an MCP server and answer my asks.
   1. Run: claude mcp add --transport http script-editor <origin>/mcp --header "Authorization: Bearer <token>"
