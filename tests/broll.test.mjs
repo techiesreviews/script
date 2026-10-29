@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -907,7 +907,7 @@ test("pictureFit (step K3): cut to the frame's 260 : 140, at most 640 × 345, ne
     const f = pictureFit(w, h);
     assert.ok(f.width >= 1 && f.height >= 1 && f.width <= 640 && f.height <= 345, `${w}×${h}`);
   }
-  assert.deepEqual(PICTURE_STEPS, [[1, 0.72], [1, 0.6], [1, 0.5], [0.75, 0.5], [0.5, 0.45]]);
+  assert.deepEqual(PICTURE_STEPS, [[1, 0.72], [1, 0.6], [1, 0.5], [0.75, 0.5], [0.5, 0.45], [0.35, 0.4], [0.25, 0.35]]);
 });
 
 test("pickPicture (step K3): the first step within the budget, else the smallest valid one", () => {
@@ -939,4 +939,20 @@ test("bigPictures (step K4): only pictures over the budget are made lighter on s
   assert.equal(parseBroll(lighter).sketches.B1, pic(100));
   assert.equal(parseBroll(lighter).sketches.B5, svg);
   assert.deepEqual(bigPictures(setSketch(lighter, "B3", pic(60, "webp"))).map((p) => p.id), []);
+});
+
+test("bigPictures (step K4): code fences are examples, not sketches; the edges; worthLighter", () => {
+  const pic = (n) => `data:image/png;base64,${"A".repeat(n)}`;
+  const withExample = `${DEMO}\n## Notes\n\n\`\`\`markdown\n![B2](${pic(200_000)})\n\`\`\`\n`;
+  assert.deepEqual(bigPictures(withExample), [], "a big picture line inside a code fence is left alone");
+  assert.equal(parseBroll(withExample).sketches.B2, parseBroll(DEMO).sketches.B2);
+  assert.deepEqual(bigPictures(setSketch(DEMO, "B1", pic(PICTURE_BUDGET - 22))).map((p) => p.data.length), [], "at the budget: left alone");
+  const atMax = `data:image/png;base64,${"A".repeat(PICTURE_SOURCE_MAX - 22)}`;
+  assert.equal(atMax.length, PICTURE_SOURCE_MAX);
+  assert.deepEqual(bigPictures(`${DEMO}\n![B1](${atMax})\n`).map((p) => p.id), ["B1"], "exactly 8 million: made lighter");
+  const a = (n) => "A".repeat(n);
+  assert.equal(worthLighter(a(150_000), a(60_000)), true, "a big picture made much smaller");
+  assert.equal(worthLighter(a(100_000), a(90_000)), true, "exactly 10% smaller");
+  assert.equal(worthLighter(a(90_000), a(85_000)), false, "the editor's own picture again: left alone");
+  assert.equal(worthLighter(a(90_000), a(95_000)), false);
 });

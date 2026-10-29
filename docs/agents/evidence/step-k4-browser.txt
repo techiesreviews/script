@@ -1,4 +1,4 @@
-# Step K4 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; a fresh browser profile. 2026-10-29T18:12:54Z, run on the working tree on top of 108eb86, committed as "Step K4: big pictures in a B-roll list made lighter when it is saved"
+# Step K4 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; a fresh browser profile. 2026-10-29T18:21:53Z, run on the working tree on top of 6f001a2, committed as "Step K4: a save checks the list is still open…"
 ok Connect your agent shows on the start screen
 ok pictures made elsewhere: 131 K, 1569 K (too big to show) and 5.3 K characters
 ok a script in the browser
@@ -6,10 +6,18 @@ ok the list made elsewhere is linked and read
 ok before a save: the big one shows, the one too big to show doesn't
 ok linking wrote nothing
 ok the big picture is lighter: 131 K → 65.1 K characters, WebP
-ok the one too big to show is lighter: 1569 K → 68.4 K
+ok the one too big to show is lighter: 1569 K → 68.6 K
 ok the small picture is unchanged
 ok the line drawing is unchanged
+ok a picture that can't be read stays as it is
 ok and the new shot is saved
 ok now all three pictures show
-ok Save as… writes a lighter file (1706 K → 139 K characters)
+ok Save as… writes a lighter file (1794 K → 227 K characters)
+ok a busy picture is made lighter once (2152 K → 63.2 K)
+ok the next save leaves it byte for byte
+ok a list file from disk is linked
+ok the file on disk is lighter after a sketch Keep (1794 K → 227 K)
+ok the other script has no list
+ok after the slow save: the other script's list is still untouched
+ok and its storyboard shows no list
 RESULT: ok e2e
