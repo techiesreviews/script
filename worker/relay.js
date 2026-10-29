@@ -139,25 +139,32 @@ export class Relay extends DurableObject {
     return { status: "ok" };
   }
 
-  // A picture from the agent (step K), from the Worker's upload address: sent on to the tab in parts (WebSocket
-  // messages stay small) and answered by it, like a call. Never stored.
-  async image({ code, type, data }) {
+  // A picture from the agent (step K), from the Worker's upload address, answered by the tab like a call. Never
+  // stored. A JSON head { type: "image", id, code, mime, parts, size }, then the bytes in binary parts of IMAGE_PART:
+  // each part starts with the head's id (36 bytes) and its number (4 bytes), so WebSocket messages stay small and
+  // nothing is re-encoded.
+  async image({ code, type, bytes }) {
     const meta = await this.meta();
     await this.keepTimed(meta);
     if (!this.valid(meta)) return { status: "unauthorized" };
     const ws = this.tab();
     if (!ws) return { status: "no-tab" };
+    const data = new Uint8Array(bytes);
     const id = crypto.randomUUID();
-    const size = IMAGE_PART;
-    const parts = Math.max(1, Math.ceil(data.length / size));
+    const parts = Math.max(1, Math.ceil(data.byteLength / IMAGE_PART));
     return await new Promise((resolve) => {
       const timer = setTimeout(() => { this.pending.delete(id); resolve({ status: "timeout" }); }, 30_000);
       this.pending.set(id, { done: (r) => { clearTimeout(timer); this.pending.delete(id); resolve(r); } });
+      const fail = () => this.pending.get(id)?.done({ status: "no-tab" });
+      if (!this.send(ws, { type: "image", id, code, mime: type, parts, size: data.byteLength })) return fail();
+      const head = new TextEncoder().encode(id);
       for (let part = 0; part < parts; part++) {
-        if (!this.send(ws, { type: "image", id, code, mime: type, part, parts, data: data.slice(part * size, (part + 1) * size) })) {
-          this.pending.get(id)?.done({ status: "no-tab" });
-          return;
-        }
+        const chunk = data.subarray(part * IMAGE_PART, (part + 1) * IMAGE_PART);
+        const frame = new Uint8Array(40 + chunk.byteLength);
+        frame.set(head, 0);
+        new DataView(frame.buffer).setUint32(36, part);
+        frame.set(chunk, 40);
+        try { ws.send(frame.buffer); } catch { return fail(); }
       }
     });
   }

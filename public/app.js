@@ -2132,8 +2132,9 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
     if (clear && stored != null) await idbSet(brollKey(from), null);
     // Its B-roll list kept in the browser goes along; the new name gets none when it has none.
     const kept = await readKept(from);
-    await idbSet(listKey(to), kept);
-    if (clear) { await idbSet(listKey(from), null); store.del(listKey(from)); }
+    // The old list goes only once the new name holds it (a full storage must not lose it).
+    const moved = await idbPut(listKey(to), kept).then(() => true, () => false);
+    if (clear && moved) { await idbSet(listKey(from), null); store.del(listKey(from)); }
   });
 }
 // While a script is in the browser its file has the title's name: "My video" → my-video.md (-2 when taken).
@@ -2841,7 +2842,7 @@ async function keepList(text, name = state.name) {
 }
 // One write to the list at a time (the same queue as the sketch Keep): read the newest text, change it, write it.
 function changeList(mutate) {
-  const token = broll.token, link = broll.link, listName = state.name;
+  const token = broll.token, link = broll.link;
   const run = brollWrites.then(async () => {
     if (!link || token !== broll.token) throw new Error("The B-roll list changed.");
     if (link.handle) {
@@ -2852,7 +2853,8 @@ function changeList(mutate) {
       return next;
     }
     const next = mutate(broll.text);
-    await keepList(next, listName);
+    // The open script's name now (a rename queued its move before this write), and the token says it is still open.
+    await keepList(next, state.name);
     return next;
   });
   brollWrites = run.catch(() => {});
@@ -3410,10 +3412,12 @@ function connectRelay() {
   try { agent.ws?.close(); } catch { /* closed */ }
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/relay`, ["script-editor", `t.${agent.token}`]);
   agent.ws = ws;
+  ws.binaryType = "arraybuffer"; // a picture's parts (step K)
   ws.addEventListener("open", () => { agent.retry = 0; });
   ws.addEventListener("message", (e) => {
     let m;
     if (agent.ws !== ws) return; // a detached socket (Disconnect) only carries the revoke
+    if (e.data instanceof ArrayBuffer) return receivePictureBytes(e.data);
     try { m = JSON.parse(e.data); } catch { return; }
     onRelayMessage(m);
   });
@@ -3437,7 +3441,7 @@ function onRelayMessage(m) {
     if (agent.state !== "on") { agent.state = "on"; renderAgent(); }
     handleCall(m);
   } else if (m.type === "image" && typeof m.id === "string") {
-    receivePicturePart(m);
+    receivePictureHead(m);
   }
 }
 function forgetAgent() {
@@ -3598,7 +3602,7 @@ function handleCall({ id, tool, args = {} }) {
 // upload_image gives a one-time address; the agent sends the file there, the Worker passes it through the relay in
 // parts, and the tab shrinks it and keeps it here, in memory only, until sketch_shot or answer_broll uses its id.
 const UPLOAD_MS = 15 * 60_000, PICTURE_MS = 30 * 60_000, PICTURES_MAX = 12;
-const pictures = new Map(); // id → { at, data: "" (waiting for the file) | data address, parts }
+const pictures = new Map(); // id → { at, data: "" (waiting for the file) | data address }
 function prunePictures() {
   const now = Date.now();
   for (const [id, p] of pictures) if (now - p.at > (p.data ? PICTURE_MS : UPLOAD_MS)) pictures.delete(id);
@@ -3607,34 +3611,48 @@ async function pictureAddress() {
   prunePictures();
   if (pictures.size >= PICTURES_MAX) return { error: `At most ${PICTURES_MAX} pictures can wait at once. Use the ones you sent first (an id is good for 30 minutes).` };
   const id = D.newId(22);
-  pictures.set(id, { at: Date.now(), data: "", parts: null });
+  pictures.set(id, { at: Date.now(), data: "" });
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(agent.token));
   const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const url = `${location.origin}/mcp/images/${hash}/${id}`;
   return { result: { url, how: `curl -sS -X PUT -H "Content-Type: image/png" --data-binary @picture.png "${url}"`, note: "The answer gives the imageId for sketch_shot or an answer_broll add." } };
 }
-function receivePicturePart(m) {
-  const reply = (payload) => { try { agent.ws?.send(JSON.stringify({ type: "result", id: m.id, ...payload })); } catch { /* closed */ } };
-  const parts = Number(m.parts), part = Number(m.part);
-  if (!(Number.isInteger(parts) && parts >= 1 && parts <= 40 && Number.isInteger(part) && part >= 0 && part < parts) || typeof m.data !== "string") return;
+// The relay sends a JSON head, then the picture's bytes in binary parts (each: the head's id, 36 bytes; its number,
+// 4 bytes; the bytes). The tab answers the head's id once: the imageId, or why not.
+const incoming = new Map(); // relay id → { code, mime, parts, list, got, at }
+function replyPicture(id, payload) {
+  try { agent.ws?.send(JSON.stringify({ type: "result", id, ...payload })); } catch { /* closed */ }
+}
+function receivePictureHead(m) {
+  const parts = Number(m.parts);
+  if (!(Number.isInteger(parts) && parts >= 1 && parts <= 64)) return replyPicture(m.id, { error: "The picture did not arrive whole." });
   prunePictures();
+  for (const [id, x] of incoming) if (Date.now() - x.at > 60_000) incoming.delete(id);
   const p = pictures.get(m.code);
-  if (!p || p.data || state.guest) { if (part === parts - 1) reply({ error: "This address is not valid (any more). Call upload_image again." }); return; }
-  if (!p.parts || p.parts.id !== m.id) p.parts = { id: m.id, list: [], got: 0 };
-  if (p.parts.list[part] == null) { p.parts.list[part] = m.data; p.parts.got++; }
-  if (p.parts.got < parts) return;
-  const data = p.parts.list.join("");
-  p.parts = null;
-  if (!B.IMAGE_TYPES.includes(m.mime)) return reply({ error: "Send a PNG, JPEG or WebP picture." });
-  shrinkPicture(data, m.mime).then((pic) => {
+  if (!p || p.data || state.guest) return replyPicture(m.id, { error: "This address is not valid (any more). Call upload_image again." });
+  if (!B.IMAGE_TYPES.includes(m.mime)) return replyPicture(m.id, { error: "Send a PNG, JPEG or WebP picture." });
+  incoming.set(m.id, { code: m.code, mime: m.mime, parts, list: [], got: 0, at: Date.now() });
+}
+function receivePictureBytes(buf) {
+  if (!(buf instanceof ArrayBuffer) || buf.byteLength < 40) return;
+  const id = new TextDecoder().decode(new Uint8Array(buf, 0, 36));
+  const part = new DataView(buf).getUint32(36);
+  const x = incoming.get(id);
+  if (!x || part >= x.parts) return;
+  if (!x.list[part]) { x.list[part] = new Uint8Array(buf, 40); x.got++; }
+  if (x.got < x.parts) return;
+  incoming.delete(id);
+  const p = pictures.get(x.code);
+  if (!p || p.data) return replyPicture(id, { error: "This address is not valid (any more). Call upload_image again." });
+  shrinkPicture(new Blob(x.list, { type: x.mime })).then((pic) => {
     Object.assign(p, { data: pic.data, at: Date.now() });
-    reply({ result: { imageId: m.code, width: pic.width, height: pic.height } });
-  }, (e) => { pictures.delete(m.code); reply({ error: e?.message || "The editor could not read the picture." }); });
+    replyPicture(id, { result: { imageId: x.code, width: pic.width, height: pic.height } });
+  }, (e) => { pictures.delete(x.code); replyPicture(id, { error: e?.message || "The editor could not read the picture." }); });
 }
 // At most 960 × 720, as JPEG, small enough to keep in the B-roll list (B.IMAGE_MAX).
-async function shrinkPicture(base64, mime) {
+async function shrinkPicture(blob) {
   let bitmap;
-  try { bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], { type: mime })); }
+  try { bitmap = await createImageBitmap(blob); }
   catch { throw new Error("The editor could not read the picture. Send a PNG, JPEG or WebP file."); }
   try {
     for (const [max, quality] of [[960, 0.82], [960, 0.65], [720, 0.65], [480, 0.6]]) {

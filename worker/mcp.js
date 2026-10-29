@@ -145,7 +145,7 @@ export const TOOLS = [
     title: "Send a picture",
     description: `Gives a one-time address (good for 15 minutes) for one picture you made, such as a B-roll sketch from an image tool. Send the file there with an HTTP PUT, for example: curl -sS -X PUT -H "Content-Type: image/png" --data-binary @picture.png "<url>". PNG, JPEG or WebP, at most ${IMAGE_UPLOAD_MAX / 1024 / 1024} MB. The editor shrinks it and answers with its imageId, which you then give to sketch_shot or to an answer_broll add. Pictures stay in the person's browser; nothing is stored on the way.`,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: false },
   },
   {
     name: "answer_broll",
@@ -317,6 +317,7 @@ export function checkArgs(name, args) {
       return "";
     }
     if (typeof a.svg !== "string" || !a.svg.trim()) return "svg is required (or imageId for a picture).";
+    if (a.svg.trim().startsWith("data:")) return "A picture goes through upload_image: give its imageId, not svg.";
     if (a.svg.length > SKETCH_MAX) return `svg is longer than ${SKETCH_MAX} characters.`;
   }
   return "";

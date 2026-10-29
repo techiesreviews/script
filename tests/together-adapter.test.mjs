@@ -235,3 +235,16 @@ test("adapter: the host's ask desk answers every ref, and a repeat gets the same
   desk({ type: "ask", from: "g1", ask: ok.ask });
   assert.equal(sent.length, 6, "a message without a ref gets no answer");
 });
+
+test("shareAsks: guests get waiting pictures without the image (step K); the host's asks stay as they are", () => {
+  const pic = "data:image/jpeg;base64,/9j/AA==";
+  const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/></svg>';
+  const sketch = { id: "s1", scope: "broll", action: "sketch", status: "answered", shots: [{ id: "B1" }, { id: "B2" }], answer: { kind: "sketches", sketches: { B1: pic, B2: svg }, done: {} } };
+  const add = { id: "p1", scope: "broll", action: "plan", status: "answered", answer: { kind: "broll", changes: [{ op: "add", kind: "broll", what: "x", over: "y", sketch: pic, state: "open" }] } };
+  const before = JSON.stringify([sketch, add]);
+  const shared = shareAsks([sketch, add], D.parse("# T\n\nHello.\n"));
+  assert.ok(!JSON.stringify(shared).includes("data:"));
+  assert.deepEqual(shared[0].answer.sketches, { B2: svg });
+  assert.deepEqual(shared[0].answer.done, {}, "the shot waits for its sketch again");
+  assert.equal(JSON.stringify([sketch, add]), before);
+});

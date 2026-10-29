@@ -343,15 +343,14 @@ export function checkSketch(ask, args) {
   return { svg };
 }
 
-/** A copy of an ask without its waiting pictures (step K), for drafts and guests: a sketch ask's picture counts as
- *  undone, an add keeps its suggestion without the picture. Asks without pictures come back as they are. */
+/** A copy of an ask without its waiting pictures (step K), for drafts and guests: a sketch ask's shot waits for its
+ *  sketch again, an add keeps its suggestion without the picture. Asks without pictures come back as they are. */
 export function withoutPictures(ask) {
   const a = ask?.answer;
   const pic = (v) => typeof v === "string" && v.startsWith("data:");
   if (a?.kind === "sketches" && Object.values(a.sketches || {}).some(pic)) {
-    const sketches = {}, done = { ...(a.done || {}) };
-    for (const [id, v] of Object.entries(a.sketches)) { if (pic(v)) done[id] = "undone"; else sketches[id] = v; }
-    return { ...ask, answer: { ...a, sketches, done } };
+    const sketches = Object.fromEntries(Object.entries(a.sketches).filter(([, v]) => !pic(v)));
+    return { ...ask, answer: { ...a, sketches } };
   }
   if (a?.kind === "broll" && (a.changes || []).some((c) => pic(c?.sketch))) {
     return { ...ask, answer: { ...a, changes: a.changes.map((c) => { if (!pic(c?.sketch)) return c; const { sketch, ...rest } = c; return rest; }) } };

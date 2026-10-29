@@ -1,6 +1,6 @@
-# Step K browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px. 2026-10-29T14:16:31Z, run on the code of the commit "Step K: pictures from the agent as B-roll sketches"
+# Step K browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T14:24:11Z, run on the code of the commit "Step K: pictures pass as bytes in binary parts…"
 ok Connect your agent shows on the start screen
-FAIL a script in the browser (Opened as pictures-2.md, saved in the person's browser. They can save it as a file on their computer (Export → Markdown file).)
+ok a script in the browser
 ok Keep made a B-roll list without asking for a file
 ok the list is kept in the browser's storage
 ok upload_image gives a one-time address
@@ -14,22 +14,16 @@ ok a square picture fits 720 × 720
 ok answer_broll add with a picture
 ok the suggested shot shows its picture
 ok the storyboard shows both pictures
-FAIL Keep writes the new shot with its picture (AAAAAAAAAAAAAAAAAAAAAAAAAAAB//Z)
-
-```svg B2
-<svg viewBox="0 0 260 140">
-<path class="s" d="M10 10L200 100"/>
-</svg>
-```
-)
+ok Keep writes the new shot with its picture
 ok Undo writes nothing
 ok a kept line drawing replaces the picture
+ok a 4.6 MB picture arrives in parts and is shrunk
 ok an unknown imageId is refused
 ok a GIF is refused
 ok bytes that are no picture are refused
 ok an address nobody gave out is refused
-FAIL reopened, the list is there (pictures-2.md)
+ok reopened, the list is there
 ok with the picture
 ok the demo reads its old local list
-FAIL and it moved to the browser's storage
-RESULT: fail 4
+ok and it moved to the browser's storage
+RESULT: ok e2e

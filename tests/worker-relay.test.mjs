@@ -280,3 +280,71 @@ test("worker /mcp: an expired token gets 401 without touching a relay; a good on
   assert.equal((await worker.fetch(mcp(token), good.env)).status, 200);
   assert.deepEqual(good.calls.op.map((o) => [o.op, o.born]), [["auth", born]]);
 });
+
+/* ---------- Pictures from the agent (step K) ---------- */
+const IMAGE_URL = `https://script.techies.tools/mcp/images/${"a".repeat(64)}/${"b".repeat(22)}`;
+function imageEnv(answer) {
+  const seen = [];
+  return { seen, env: { RELAY: { idFromName: (n) => `id:${n}`, get: (id) => ({ image: async (m) => { seen.push({ id, ...m }); return typeof answer === "function" ? answer(m) : answer; } }) } } };
+}
+const putImage = (env, { body = new Uint8Array([1, 2, 3]), type = "image/png", method = "PUT", url = IMAGE_URL, headers = {} } = {}) =>
+  worker.fetch(new Request(url, { method, headers: { "Content-Type": type, ...headers }, body: method === "GET" ? undefined : body }), env);
+
+test("worker: a picture's upload address passes the bytes to the relay and answers for it", async () => {
+  const ok = imageEnv({ status: "ok", result: { imageId: "b".repeat(22), width: 960, height: 600 } });
+  const res = await putImage(ok.env);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { imageId: "b".repeat(22), width: 960, height: 600 });
+  assert.equal(res.headers.get("X-Robots-Tag"), "noindex");
+  assert.equal(res.headers.get("Cache-Control"), "no-store");
+  assert.equal(ok.seen[0].id, `id:${"a".repeat(64)}`);
+  assert.equal(ok.seen[0].code, "b".repeat(22));
+  assert.equal(ok.seen[0].type, "image/png");
+  assert.deepEqual([...new Uint8Array(ok.seen[0].bytes)], [1, 2, 3]);
+  for (const [answer, status] of [[{ status: "ok", error: "bad" }, 400], [{ status: "no-tab" }, 409], [{ status: "timeout" }, 504], [{ status: "unauthorized" }, 401]]) {
+    const r = await putImage(imageEnv(answer).env);
+    assert.equal(r.status, status, JSON.stringify(answer));
+    assert.equal(r.headers.get("X-Robots-Tag"), "noindex");
+  }
+  const none = imageEnv({ status: "ok", result: {} });
+  assert.equal((await putImage(none.env, { method: "GET" })).status, 405);
+  assert.equal((await putImage(none.env, { type: "image/gif" })).status, 415);
+  assert.equal((await putImage(none.env, { headers: { "Content-Length": String(6 * 1024 * 1024 + 1) } })).status, 413);
+  assert.equal((await putImage(none.env, { body: new Uint8Array(6 * 1024 * 1024 + 1) })).status, 413);
+  assert.equal((await putImage(none.env, { body: new Uint8Array(0) })).status, 400);
+  assert.equal(none.seen.length, 0, "nothing refused reaches the relay");
+});
+
+test("relay: a picture goes to the tab as a head and binary parts, and the tab's answer comes back", async () => {
+  const now = { t: T0 };
+  const { relay, tab } = relayWith(now);
+  const ws = await tab(T0);
+  const frames = [];
+  ws.send = (data) => { if (ws.closed) throw new Error("closed"); frames.push(typeof data === "string" ? JSON.parse(data) : new Uint8Array(data)); };
+  const bytes = new Uint8Array(600 * 1024).map((_, i) => i % 251);
+  const done = relay.image({ code: "c".repeat(22), type: "image/jpeg", bytes: bytes.buffer });
+  await new Promise((r) => setTimeout(r, 0));
+  const head = frames[0];
+  assert.deepEqual({ ...head, id: "" }, { type: "image", id: "", code: "c".repeat(22), mime: "image/jpeg", parts: 3, size: bytes.byteLength });
+  const parts = frames.slice(1);
+  assert.equal(parts.length, 3);
+  const joined = new Uint8Array(bytes.byteLength);
+  let at = 0;
+  parts.forEach((f, n) => {
+    assert.equal(new TextDecoder().decode(f.subarray(0, 36)), head.id);
+    assert.equal(new DataView(f.buffer).getUint32(36), n);
+    joined.set(f.subarray(40), at);
+    at += f.byteLength - 40;
+  });
+  assert.equal(at, bytes.byteLength);
+  assert.ok(joined.every((b, i) => b === bytes[i]));
+  await relay.webSocketMessage(ws, JSON.stringify({ type: "result", id: head.id, result: { imageId: "c".repeat(22) } }));
+  assert.deepEqual(await done, { status: "ok", result: { imageId: "c".repeat(22) }, error: undefined });
+  assert.equal(relay.pending.size, 0);
+  // A socket that fails: no-tab, once.
+  ws.send = () => { throw new Error("closed"); };
+  assert.deepEqual(await relay.image({ code: "c".repeat(22), type: "image/png", bytes: new Uint8Array(3).buffer }), { status: "no-tab" });
+  // No tab, and a revoked note: nothing is sent.
+  const other = relayWith(now);
+  assert.deepEqual(await other.relay.image({ code: "c".repeat(22), type: "image/png", bytes: new Uint8Array(3).buffer }), { status: "unauthorized" });
+});

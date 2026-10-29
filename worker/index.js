@@ -10,10 +10,23 @@ const ROOM_RE = /^[A-Za-z0-9_-]{22}$/;
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 // A picture from the agent (step K): /mcp/images/<the token's hash>/<a one-time code the tab gave out>.
 const IMAGE_PATH_RE = /^\/mcp\/images\/([0-9a-f]{64})\/([A-Za-z0-9_-]{22})$/;
-function base64(bytes) {
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(out);
+// The body, read with a running count: past `max` bytes it stops (null). No decoding: the bytes go on as they are.
+async function readUpTo(body, max) {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) { reader.cancel().catch(() => {}); return null; }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { bytes.set(c, at); at += c.byteLength; }
+  return bytes;
 }
 
 async function sha256hex(text) {
@@ -89,10 +102,10 @@ export default {
       const type = (request.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
       if (!IMAGE_TYPES.includes(type)) return say(415, { error: "Send a PNG, JPEG or WebP picture with its Content-Type." });
       if (Number(request.headers.get("Content-Length") || 0) > IMAGE_UPLOAD_MAX) return say(413, { error: `The picture is bigger than ${IMAGE_UPLOAD_MAX / 1024 / 1024} MB.` });
-      const bytes = new Uint8Array(await request.arrayBuffer());
+      const bytes = await readUpTo(request.body, IMAGE_UPLOAD_MAX);
+      if (!bytes) return say(413, { error: `The picture is bigger than ${IMAGE_UPLOAD_MAX / 1024 / 1024} MB.` });
       if (!bytes.length) return say(400, { error: "The picture is empty." });
-      if (bytes.length > IMAGE_UPLOAD_MAX) return say(413, { error: `The picture is bigger than ${IMAGE_UPLOAD_MAX / 1024 / 1024} MB.` });
-      const r = await env.RELAY.get(env.RELAY.idFromName(image[1])).image({ code: image[2], type, data: base64(bytes) });
+      const r = await env.RELAY.get(env.RELAY.idFromName(image[1])).image({ code: image[2], type, bytes: bytes.buffer });
       if (r.status === "ok" && !r.error) return say(200, r.result);
       if (r.status === "ok") return say(400, { error: r.error });
       if (r.status === "no-tab") return say(409, { error: "The script editor is not open. Ask the person to open it and keep the tab open." });

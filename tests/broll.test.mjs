@@ -748,10 +748,31 @@ test("pictures as sketches (step K): read, written, replacing line drawings, exp
   assert.match(checkSketch({ scope: "broll", action: "sketch", status: "taken", shots: [{ id: "B1" }] }, { shotId: "B1", svg: "data:image/gif;base64,R0lGOD" }).error, /picture can't be used/);
   // Drafts and guests get asks without waiting pictures; large lists without picture lines.
   const sk = withoutPictures({ answer: { kind: "sketches", sketches: { B1: pic, B2: svg }, done: {} } });
-  assert.deepEqual([sk.answer.sketches, sk.answer.done], [{ B2: svg }, { B1: "undone" }]);
+  assert.deepEqual([sk.answer.sketches, sk.answer.done], [{ B2: svg }, {}]);
   const sug = withoutPictures({ answer: { kind: "broll", changes: [{ op: "add", sketch: pic }, { op: "add", sketch: svg }] } });
   assert.deepEqual(sug.answer.changes.map((c) => c.sketch ?? null), [null, svg]);
   const plain = { answer: { kind: "broll", changes: [{ op: "add" }] } };
   assert.equal(withoutPictures(plain), plain);
   assert.equal(withoutPictureLines(withPic), withPic.replace(`![B1](${pic})\n`, ""));
+  const crlf = withPic.replace(/\n/g, "\r\n");
+  assert.equal(withoutPictureLines(crlf), crlf.replace(`![B1](${pic})\r\n`, ""));
+  // Both kinds for one id: one sketch is left, in the first one's place.
+  const both = `${withSvg}\n![B1](${pic})\n`;
+  const one = setSketch(both, "B1", pic);
+  assert.equal((one.match(/B1\]\(|```svg B1/g) || []).length, 1);
+  assert.equal(parseBroll(one).sketches.B1, pic);
+  // A new shot with a picture: one image line under the new id; an svg fence of another shot stays.
+  const doc = parse(SCRIPT);
+  const { shots: listed } = parseBroll(DEMO);
+  matchShots(doc, listed);
+  const ctx = { doc, shots: listed };
+  const add = { op: "add", kind: "broll", what: "A spare key", quote: "A backup is a spare key." };
+  const big = `data:image/jpeg;base64,${"A".repeat(20_000)}`;
+  const taken = checkBrollAnswer(brollAsk(), { changes: [{ ...add, sketch: big }] }, ctx);
+  assert.equal(taken.answer.changes[0].sketch, big, "a picture may be longer than a line drawing");
+  assert.match(checkBrollAnswer(brollAsk(), { changes: [{ ...add, sketch: `data:image/jpeg;base64,${"A".repeat(IMAGE_MAX)}` }] }, ctx).error, /longer than 400000/);
+  const kept = applyBrollChange(DEMO, taken.answer.changes[0]);
+  assert.equal((kept.match(/^!\[B9\]\(/gm) || []).length, 1);
+  assert.equal(parseBroll(kept).sketches.B9, big);
+  assert.equal(parseBroll(kept).sketches.B1, parseBroll(DEMO).sketches.B1);
 });
