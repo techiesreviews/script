@@ -818,6 +818,7 @@ test("sketch_shot's answers (step K2): each outcome says what happened, with the
     assert.equal(sketchResult(o, []), sketchResult(o));
   }
   assert.match(SKETCH_LIST_CHANGED, /changed meanwhile.*imageId still works/);
+  assert.equal(SKETCH_ANSWER_MS, 7000);
 });
 
 test("sketchAnswer (step K2): the write's outcome, or after the time limit the 'writing' answer with the outcome to come", async () => {
@@ -833,24 +834,32 @@ test("sketchAnswer (step K2): the write's outcome, or after the time limit the '
   assert.equal(await answer.later, "changed");
 });
 
-test("freeAfter (step K2): when a picture's place is freed, held or given back", async () => {
+test("freeAfter (step K2): when a held picture's place is freed or given back", async () => {
   const log = [];
-  const ops = { free: () => log.push("free"), hold: () => log.push("hold"), release: () => log.push("release") };
+  const ops = { free: () => log.push("free"), release: () => log.push("release") };
   assert.deepEqual(freeAfter({ error: "no" }, ops), { error: "no" });
-  assert.deepEqual(log, [], "an error keeps the picture");
+  assert.deepEqual(log, ["release"], "an error gives the picture back");
+  log.length = 0;
   assert.deepEqual(freeAfter({ result: "ok" }, ops), { result: "ok" });
   assert.deepEqual(log, ["free"], "a plain result frees it at once");
   for (const [outcome, end] of [["in", "free"], ["waits", "free"], ["changed", "release"]]) {
     log.length = 0;
     const sent = freeAfter({ result: "writing", later: Promise.resolve(outcome) }, ops);
     assert.deepEqual(sent, { result: "writing" }, "later is not sent");
-    assert.deepEqual(log, ["hold"]);
+    assert.deepEqual(log, [], "still held while it is written");
     await new Promise((r) => setTimeout(r, 0));
-    assert.deepEqual(log, ["hold", end], outcome);
+    assert.deepEqual(log, [end], outcome);
   }
   log.length = 0;
   freeAfter({ result: "writing", later: Promise.reject(new Error("x")) }, ops);
   await new Promise((r) => setTimeout(r, 0));
-  assert.deepEqual(log, ["hold", "release"], "a failed write gives the picture back");
-  assert.equal(SKETCH_ANSWER_MS, 7000);
+  assert.deepEqual(log, ["release"], "a failed write gives the picture back");
+});
+
+test("pictureRoom (step K2): a held or shrinking picture never sets the time it runs out", () => {
+  const opts = { max: 24, uploadMs: 15 * 60_000, pictureMs: 30 * 60_000 };
+  const now = Date.UTC(2026, 9, 29, 16, 0);
+  const room = pictureRoom([{ at: now - 40 * 60_000, data: "x", held: true }, { at: now - 5 * 60_000, data: "x" }], now, opts);
+  assert.deepEqual(room, { free: 22, waiting: 2, oldest: now + 25 * 60_000 });
+  assert.equal(pictureRoom([{ at: 0, data: "x", held: true }], now, opts).oldest, 0);
 });

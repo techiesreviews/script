@@ -655,7 +655,8 @@ export function removeSketch(markdown, id) {
  *  them runs out (a file still to come after uploadMs, a received picture after pictureMs), or 0. */
 export function pictureRoom(entries, now, { max, uploadMs, pictureMs }) {
   const list = [...entries];
-  const ends = list.filter((p) => !p.busy).map((p) => p.at + (p.data ? pictureMs : uploadMs));
+  // A picture being shrunk or held by a call doesn't run out, so it doesn't set the time.
+  const ends = list.filter((p) => !p.busy && !p.held).map((p) => p.at + (p.data ? pictureMs : uploadMs));
   return { free: Math.max(0, max - list.length), waiting: list.length, oldest: ends.length ? Math.min(...ends) : 0 };
 }
 /** upload_image's refusal when no place is free: how many are free (none), and when the oldest unused one runs out. */
@@ -676,7 +677,7 @@ const SKETCH_RESULTS = {
 };
 export const sketchResult = (outcome, left = []) => SKETCH_RESULTS[outcome] + (left.length ? ` They also asked for sketches of ${left.join(", ")}.` : "");
 /** The refusal when the list changed while a picture was being put in: the picture was not used and stays usable. */
-export const SKETCH_LIST_CHANGED = "The B-roll list changed meanwhile, so the picture was not put into this list. Its imageId still works: call sketch_shot again if the shot is still there.";
+export const SKETCH_LIST_CHANGED = "The B-roll list changed meanwhile, so the picture was not put into this list. Its imageId still works: call sketch_shot again if the shot is still there (without askId if list_asks shows the person's ask closed).";
 // sketch_shot answers within this, inside the Worker's 10 s for a call.
 export const SKETCH_ANSWER_MS = 7000;
 /** sketchAnswer(atOnce, left, ms) → the answer once the write settles ("in", "waits", "changed"), or after `ms` the
@@ -691,13 +692,13 @@ export function sketchAnswer(atOnce, left = [], ms = SKETCH_ANSWER_MS) {
   });
 }
 
-/** freeAfter(payload, { free, hold, release }) → the payload to send (without `later`), and the pictures' places
- *  settled: an error keeps them; a plain result frees them at once; a "writing" result (`later`) holds them, then frees
- *  them once the write went in ("in", "waits") and releases them, usable again, if the list changed or it failed. */
-export function freeAfter({ later, ...payload }, { free, hold = () => {}, release = () => {} }) {
-  if (payload.error) return payload;
+/** freeAfter(payload, { free, release }) → the payload to send (without `later`), and the pictures' places settled.
+ *  The pictures are held from the moment a call accepts them (no second use meanwhile). An error releases them,
+ *  usable again; a plain result frees them at once; a "writing" result (`later`) keeps them held, then frees them
+ *  once the write went in ("in", "waits") and releases them if the list changed or the write failed. */
+export function freeAfter({ later, ...payload }, { free, release }) {
+  if (payload.error) { release(); return payload; }
   if (!later) { free(); return payload; }
-  hold();
   later.then((o) => (o === "changed" ? release() : free()), () => release());
   return payload;
 }

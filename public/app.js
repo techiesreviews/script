@@ -2805,12 +2805,10 @@ async function pictureInAtOnce(ask, id, pic) {
   const prev = broll.sketches[id] || "", token = broll.token;
   await keepSketch(id);
   if (token !== broll.token) {
-    // The list changed meanwhile: the shot counts as undone, so list_asks tells the agent its imageId works again.
-    if (ask.answer?.done && !ask.answer.done[id]) {
-      ask.answer.done[id] = "undone";
-      delete ask.answer.sketches?.[id];
-      if (!isOpen(ask)) ask.status = Object.values(ask.answer.done).includes("kept") ? "kept" : "undone";
-    }
+    // The same list read again (its ask still open): the picture waits for Keep. Another list (or none): the ask was
+    // closed with it; the shot counts as undone, so list_asks tells the agent its imageId works again.
+    if (isOpen(ask) && ask.answer?.sketches?.[id] === pic) return "waits";
+    if (ask.answer?.done && !ask.answer.done[id]) { ask.answer.done[id] = "undone"; delete ask.answer.sketches?.[id]; changed(); }
     return "changed";
   }
   if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return "waits";
@@ -3639,6 +3637,8 @@ function handleCall({ id, tool, args = {} }) {
       const used = withPictures(args);
       if (used.error) return send({ error: used.error });
       args = used.args;
+      // Held from now on, so no other call can use them meanwhile (B.freeAfter settles them with the answer).
+      for (const u of used.used) { const p = pictures.get(u); if (p) p.held = true; }
       // Gone through: the pictures now live in the shot or the suggestion, and their places are free (step K2).
       // An answer sent while the picture is still being written (`later`) holds its id (no second use) and frees it
       // only once it went in; if the list changed or the write failed, the id works again (B.freeAfter).
@@ -3646,7 +3646,6 @@ function handleCall({ id, tool, args = {} }) {
         const reply = send, each = (fn) => () => { for (const u of used.used) fn(u); };
         send = (payload) => reply(B.freeAfter(payload, {
           free: each((u) => pictures.delete(u)),
-          hold: each((u) => { const p = pictures.get(u); if (p) p.held = true; }),
           release: each((u) => { const p = pictures.get(u); if (p) delete p.held; }),
         }));
       }
@@ -3782,9 +3781,9 @@ async function shrinkPicture(blob) {
 // sketch_shot { imageId } and answer_broll adds { imageId }: the picture's data address takes the svg's or sketch's place.
 function withPictures(args) {
   prunePictures();
-  const held = args.imageId != null ? [args.imageId] : (Array.isArray(args.changes) ? args.changes : []).map((c) => c?.imageId).filter((x) => x != null);
-  const busy = held.find((id) => pictures.get(id)?.held);
-  if (busy) return { error: `The picture ${JSON.stringify(String(busy).slice(0, 40))} is still being written into the B-roll list. list_asks shows when it is in; if the list changed instead, its imageId works again.` };
+  const requested = args.imageId != null ? [args.imageId] : (Array.isArray(args.changes) ? args.changes : []).map((c) => c?.imageId).filter((x) => x != null);
+  const busy = requested.find((id) => pictures.get(id)?.held);
+  if (busy) return { error: `The picture ${JSON.stringify(String(busy).slice(0, 40))} is already being used by another call (it may still be being written into the B-roll list). list_asks shows when it is in; if that call is refused or the list changed, its imageId works again.` };
   const lookup = (id) => pictures.get(id)?.data || "";
   const unknown = (id) => ({ error: `Unknown imageId ${JSON.stringify(String(id).slice(0, 40))}: send the picture with upload_image first (an id is good for 30 minutes).` });
   // `used`: the ids to free once the call has gone through (a refused call keeps them, so the agent can try again).

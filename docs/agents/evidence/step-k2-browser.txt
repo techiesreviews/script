@@ -1,4 +1,4 @@
-# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:33:31Z, run on the working tree on top of 73adba1, committed as "Step K2: an id being written is held…"
+# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:37:17Z, run on the working tree on top of 6a11d43, committed as "Step K2: a picture is held from the moment a call accepts it…"
 ok Connect your agent shows on the start screen
 ok a script is open
 ok 30 uploads, each used in an answer_broll add: none refused (no 'At most 12')
@@ -32,11 +32,12 @@ ok the agent hears that it waits for Keep
 ok the frame shows Keep, Undo and Not saved
 ok the list is unchanged
 ok a line drawing still waits for Keep
-ok a slow write answers in time (7028 ms) and says it is being written
+ok a slow write answers in time (7042 ms) and says it is being written
 ok then it is in (list_asks: kept)
 ok with its Undo
+ok a second use in the first second, before any answer, is refused
 ok the 7 s answer says it is being written
-ok a second use while it is written is refused
+ok a second use after the answer, while it is written, is refused
 ok list_asks shows that shot undone
 ok the picture's id still works after the list changed
 ok a new list with the reused picture's shot
