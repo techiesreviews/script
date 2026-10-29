@@ -2906,9 +2906,8 @@ async function keepSketch(id) {
   renderBroll();
   try {
     // One file write at a time: two quick Keeps must not both read the old file.
-    // The list, its token and the script's name as the Keep is made: the write waits its turn and then checks them.
-    const at = { link: broll.link, token, name: state.name };
-    const run = brollWrites.then(() => writeSketch(id, svg, at));
+    // The list's token as the Keep is made: the write waits its turn and then checks it is still this list.
+    const run = brollWrites.then(() => writeSketch(id, svg, token));
     brollWrites = run.catch(() => {});
     await run;
     if (token !== broll.token) return "written";
@@ -2928,14 +2927,15 @@ async function keepSketch(id) {
   renderBroll();
   return "kept";
 }
-// `at`: the list, its token and the script's name as the Keep was made. The write waits its turn in the queue, and
-// making pictures lighter takes a while: if the person opened another script or list meanwhile, it stops before it
-// reads or writes anything of theirs.
-async function writeSketch(id, svg, at = { link: broll.link, token: broll.token, name: state.name }) {
-  const { link, token, name } = at;
-  if (!link) throw new Error("No B-roll list is linked.");
-  const still = () => { if (token !== broll.token) throw new Error("The B-roll list changed."); };
-  still();
+// `token`: the list's token as the Keep was made. The write waits its turn in the queue, and making pictures lighter
+// takes a while: if the person opened another script or list meanwhile, it stops before it reads or writes anything
+// of theirs. Where the list lives (its link, the script's name) is read when its turn comes, so a "Save as…" or a
+// rename of the same list before it is followed; one that lands while it makes pictures lighter stops it ("Not saved",
+// Keep again).
+async function writeSketch(id, svg, token = broll.token) {
+  const still = () => { if (token !== broll.token || broll.link !== link) throw new Error("The B-roll list changed."); };
+  const link = broll.link;
+  if (!link || token !== broll.token) throw new Error("The B-roll list changed.");
   if (link.handle) {
     if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
     const now = await (await link.handle.getFile()).text();
@@ -2949,7 +2949,7 @@ async function writeSketch(id, svg, at = { link: broll.link, token: broll.token,
     // The demo list and lists without a file handle are kept in this browser (see keepList).
     const next = await lighterList(B.setSketch(broll.text, id, svg));
     still();
-    await keepList(next, name);
+    await keepList(next, state.name); // the token says it is still open, so its name now is its own
     if (token !== broll.token) return;
     broll.text = next;
     broll.sketches = B.parseBroll(next).sketches;
@@ -2991,21 +2991,23 @@ async function keepList(text, name = state.name) {
 }
 // One write to the list at a time (the same queue as the sketch Keep): read the newest text, change it, write it.
 function changeList(mutate) {
-  const token = broll.token, link = broll.link;
+  const token = broll.token;
   const run = brollWrites.then(async () => {
+    // Where the list lives is read when its turn comes (a "Save as…" of the same list before it is followed).
+    const link = broll.link;
     if (!link || token !== broll.token) throw new Error("The B-roll list changed.");
     if (link.handle) {
       if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
       const now = await (await link.handle.getFile()).text();
       const next = await lighterList(mutate(now));
-      if (token !== broll.token) throw new Error("The B-roll list changed.");
+      if (token !== broll.token || broll.link !== link) throw new Error("The B-roll list changed.");
       if (next !== now) await writeHandle(link.handle, next);
       return next;
     }
     const next = await lighterList(mutate(broll.text));
-    // Checked again after making pictures lighter (it takes a while): the token says this list is still open, so
-    // the open script's name now is its own (a rename queued its move before this write).
-    if (token !== broll.token) throw new Error("The B-roll list changed.");
+    // Checked again after making pictures lighter (it takes a while): the token says this list is still open (and
+    // still kept in the browser), so the open script's name now is its own (a rename queued its move before this write).
+    if (token !== broll.token || broll.link !== link) throw new Error("The B-roll list changed.");
     await keepList(next, state.name);
     return next;
   });

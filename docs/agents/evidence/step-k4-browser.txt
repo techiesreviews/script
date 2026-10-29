@@ -1,19 +1,19 @@
-# Step K4 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; a fresh browser profile. 2026-10-29T18:24:58Z, run on the working tree on top of 16325f6, committed as "Step K4: a Keep and Save as… remember their list…"
+# Step K4 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; a fresh browser profile. 2026-10-29T18:31:42Z, run on the working tree on top of e226a2f, committed as "Step K4: queued saves read where the list lives…"
 ok Connect your agent shows on the start screen
-ok pictures made elsewhere: 132 K, 1569 K (too big to show) and 5.3 K characters
+ok pictures made elsewhere: 131 K, 1569 K (too big to show) and 5.3 K characters
 ok a script in the browser
 ok the list made elsewhere is linked and read
 ok before a save: the big one shows, the one too big to show doesn't
 ok linking wrote nothing
-ok the big picture is lighter: 132 K → 65.1 K characters, WebP
-ok the one too big to show is lighter: 1569 K → 68.4 K
+ok the big picture is lighter: 131 K → 65.1 K characters, WebP
+ok the one too big to show is lighter: 1569 K → 68.2 K
 ok the small picture is unchanged
 ok the line drawing is unchanged
 ok a picture that can't be read stays as it is
 ok and the new shot is saved
 ok now all three pictures show
 ok Save as… writes a lighter file (1794 K → 227 K characters)
-ok a busy picture is made lighter once (2151 K → 63.3 K)
+ok a busy picture is made lighter once (2152 K → 63.1 K)
 ok the next save leaves it byte for byte
 ok a list file from disk is linked
 ok the file on disk is lighter after a sketch Keep (1794 K → 227 K)
@@ -22,6 +22,11 @@ ok after the slow save: the other script's list is still untouched
 ok and its storyboard shows no list
 ok a Keep waiting behind a slow save never writes the other script's list
 ok the other list has no sketch from it
-ok the picked file never holds the other script's list (this list)
+ok the picked file never holds the other script's list (empty)
 ok and the other list is untouched
+ok a Keep behind Save as… lands in the new file (or says Not saved): file
+ok the browser copy stays gone
+ok the script was renamed
+ok the new name's list has the sketch and the new shot
+ok the old name's list is gone
 RESULT: ok e2e
