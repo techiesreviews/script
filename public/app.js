@@ -618,6 +618,8 @@ function renderDerived() {
 let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
 // While the agent's whole text is untouched: the line at the top with Undo puts `before` back.
 let replaced = null;
+// Counts the lines shown at the top (and on the start screen), so an old line's buttons never hide a newer line.
+let lineSeq = 0;
 function changed() {
   if (replaced && D.serialize(state.doc) !== replaced.text) hideBanner();
   followMarks();
@@ -1608,6 +1610,7 @@ function adoptAsks(asks) {
 }
 function showBanner(text, actions) {
   replaced = null;
+  lineSeq++;
   const banner = $("#banner");
   banner.replaceChildren();
   const s = h("span");
@@ -1687,6 +1690,7 @@ function openProblem(name) {
 }
 // One quiet line on the start screen, with its buttons.
 function emptyNote(text, actions) {
+  lineSeq++;
   const note = $("#emptyNote");
   note.replaceChildren();
   const s = h("span");
@@ -3374,9 +3378,11 @@ async function openScript(args, by) {
   const undoLine = replaced;
   // One answer per line: a second Open while the browser's prompt is up does nothing, and a Not now then wins.
   let choice = null; // "open" while the browser's prompt is up, then "done"
+  let line = 0;
   const notNow = () => {
     if (choice === "done") return;
     choice = "done";
+    if (line !== lineSeq) return; // a newer line took its place
     hideBanner();
     $("#emptyNote").hidden = true;
     if (undoLine && state.doc && D.serialize(state.doc) === undoLine.text) showReplaced(undoLine);
@@ -3386,13 +3392,15 @@ async function openScript(args, by) {
     choice = "open";
     // Things may have changed since the line showed up (sharing, a choice, unsaved text without a file), or the
     // browser's prompt may be refused: then nothing opens and the line goes, as with Not now.
-    const ok = !together?.active && !(state.doc && (busyChoice() || (!state.handle && isDirty()))) && (await permitted(r.handle, true));
+    const allowed = () => !together?.active && !(state.doc && (busyChoice() || (!state.handle && isDirty())));
+    const ok = allowed() && (await permitted(r.handle, true));
     if (choice !== "open") return;
     notNow();
-    if (ok) openHandle(r.handle);
+    if (ok && allowed()) openHandle(r.handle);
   };
   if (state.doc) showBanner(text, [["Open", open], ["Not now", notNow]]);
-  else emptyNote(text, [["Open", open], ["Not now", () => { $("#emptyNote").hidden = true; }]]);
+  else emptyNote(text, [["Open", open], ["Not now", notNow]]);
+  line = lineSeq;
   return { result: `The browser needs the person's OK to open ${r.name}: an Open button shows in the editor. Call get_script later to see which script is open.` };
 }
 // The agent's whole text goes in as one change: one Ctrl/Cmd+Z step when alone, the agent's in a shared script.
