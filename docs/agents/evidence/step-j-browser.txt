@@ -1,4 +1,4 @@
-# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:39:10Z, run on the code of the commit "Step J: a name with a B-roll link stored counts as taken…"
+# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:42:09Z, run on the code of the commit "Step J: the demo's name stays free…"
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
@@ -58,6 +58,8 @@ ok an Unlink after it stays unlinked
 ok saved as file onto an old link's name, it opens without that list
 ok the rename picks stale-name-2.md
 ok the other name's link is left alone
+ok a kept list blocks its name: stale-list-2.md
+ok and the kept list is unchanged
 ok Save as file opens the script from its file
 ok the copy in the browser is gone
 ok it is a file now

@@ -1517,7 +1517,8 @@ async function idbGet(k) {
     return await new Promise((res) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); });
   } catch { return null; }
 }
-// The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count).
+// The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count; the demo's
+// unlinked { none: true } does).
 async function idbLinkedNames() {
   try {
     const db = await idb();
@@ -1881,7 +1882,6 @@ async function saveAs() {
       state.fileModified = await writeHandle(handle, text);
       if (handle.name !== state.name) {
         store.del(draftKey());
-        // A script leaving the browser frees its name there, so its B-roll keys move and the old ones are cleared.
         // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees its
         // name there, so its old keys are cleared; a file on disk or the demo keeps its own.
         moveKeys(state.name, handle.name, { clear: !!was, link: broll.link });
@@ -2078,6 +2078,7 @@ async function isInBrowser(handle) {
 async function nameTaken(own = "") {
   const names = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
   for (const n of await keyed(idbLinkedNames)) names.add(n.toLowerCase());
+  names.add(SAMPLE.name.toLowerCase()); // the demo's name brings the demo's own B-roll list
   try {
     const lists = LS + "brollList:";
     for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k?.startsWith(lists)) names.add(k.slice(lists.length).toLowerCase()); }
