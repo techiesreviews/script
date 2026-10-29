@@ -1517,6 +1517,23 @@ async function idbGet(k) {
     return await new Promise((res) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); });
   } catch { return null; }
 }
+// The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count).
+async function idbLinkedNames() {
+  try {
+    const db = await idb();
+    return await new Promise((res) => {
+      const out = [];
+      const q = db.transaction("handles").objectStore("handles").openCursor();
+      q.onsuccess = () => {
+        const c = q.result;
+        if (!c) return res(out);
+        if (typeof c.key === "string" && c.key.startsWith("broll:") && c.value != null) out.push(c.key.slice(6));
+        c.continue();
+      };
+      q.onerror = () => res(out);
+    });
+  } catch { return []; }
+}
 async function idbSet(k, v) {
   try {
     const db = await idb();
@@ -1865,12 +1882,9 @@ async function saveAs() {
       if (handle.name !== state.name) {
         store.del(draftKey());
         // A script leaving the browser frees its name there, so its B-roll keys move and the old ones are cleared.
-        if (was) moveKeys(state.name, handle.name, { clear: true, link: broll.link });
-        else {
-          if (broll.link) setLinkKey(broll.link, handle.name);
-          const kept = store.get(listKey());
-          if (typeof kept === "string") { store.set(listKey(handle.name), kept); store.del(listKey()); }
-        }
+        // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees its
+        // name there, so its old keys are cleared; a file on disk or the demo keeps its own.
+        moveKeys(state.name, handle.name, { clear: !!was, link: broll.link });
         state.name = handle.name;
       }
       state.handle = handle;
@@ -2058,10 +2072,16 @@ async function isInBrowser(handle) {
   if (!browserSaving || !handle) return false;
   try { return !!(await (await scriptsDir()).resolve(handle)); } catch { return false; }
 }
-// Names a new or renamed script may not take: recent files, scripts in the browser, kept drafts and the open
-// script (all by name, in any capitals; drafts and B-roll keys go by name). `own`: the script being named.
+// Names a new or renamed script may not take: recent files, scripts in the browser, kept drafts, names with a B-roll
+// link or list kept (a file taken off the list keeps them) and the open script (all by name, in any capitals; drafts
+// and B-roll keys go by name). `own`: the script being named.
 async function nameTaken(own = "") {
   const names = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
+  for (const n of await keyed(idbLinkedNames)) names.add(n.toLowerCase());
+  try {
+    const lists = LS + "brollList:";
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k?.startsWith(lists)) names.add(k.slice(lists.length).toLowerCase()); }
+  } catch { /* storage off */ }
   const mine = own.toLowerCase();
   return (n) => {
     const l = n.toLowerCase();
@@ -2083,9 +2103,8 @@ async function createBrowserScript(name, text) {
 }
 // A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser (drafts and B-roll keys
 // go by name, as for files on disk). `clear`: the old name goes away (a rename, a move to a file), so its B-roll keys
-// are cleared; else a file on disk or the demo keeps its own. The link is read as stored when the move lands
-// (linking and unlinking store it at once, also while a rename waits); `link` stands in when none is stored (the
-// demo links its list by itself). 
+// are cleared; else a file on disk or the demo keeps its own. The new name's link and list are replaced: by the link
+// as stored when the move runs in the queue, or `link` when none is stored (the demo links its list by itself).
 async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   const draft = store.get(draftKey(from));

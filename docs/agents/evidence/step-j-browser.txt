@@ -1,4 +1,4 @@
-# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:34:50Z, run on the code of the commit "Step J: every B-roll link read and write goes through one queue…"
+# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:39:10Z, run on the code of the commit "Step J: a name with a B-roll link stored counts as taken…"
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
@@ -55,6 +55,9 @@ ok plain-file.md with its lamp shot
 ok saved as taken.md
 ok reopened, taken.md shows its own list, not the old one
 ok an Unlink after it stays unlinked
+ok saved as file onto an old link's name, it opens without that list
+ok the rename picks stale-name-2.md
+ok the other name's link is left alone
 ok Save as file opens the script from its file
 ok the copy in the browser is gone
 ok it is a file now
