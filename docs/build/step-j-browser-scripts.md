@@ -10,7 +10,7 @@ Lex (2026-10-29): "can we save the script in the browser?" Lex chose **always in
 - **Ctrl/Cmd+S on a script without a file** (the demo, or a file opened in a browser that can't save files) saves it in the browser. Auto-save never does that on its own.
 - **Save as file.** Export → "Markdown file (.md)" shows for a script in the browser too. Where the browser can save files, it asks where, writes the file, and the script moves there: it is removed from the browser and goes on saving to the file. Elsewhere it downloads a copy and the script stays in the browser.
 - **The switcher** lists every script in the browser (also ones that fell off the recent list), with a quiet "Browser" tag. Its × deletes a script in the browser after a second click on "Delete" (not the open one); for files on disk it still only takes them off the list. "Reopen …" on the start screen works for a script in the browser in every browser that has them.
-- **The save state** had a tooltip "In this browser"; it went with the "Saved" time (Lex, 2026-10-29), so the switcher's tag is the only mark.
+- **The save state** had a tooltip "In this browser". When Lex had the "Saved" time removed (2026-10-29) the empty save state could no longer show it, so it was dropped too (no explainer text, AGENTS.md); the switcher's tag is the only mark.
 - **The agent.** `list_scripts` marks scripts in the browser `inBrowser: true`; `open_script` opens them by name like recent files; with markdown it says the script is saved in the person's browser.
 
 ## Checks
