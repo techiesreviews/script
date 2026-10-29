@@ -2805,10 +2805,27 @@ async function pictureInAtOnce(ask, id, pic) {
   const prev = broll.sketches[id] || "", token = broll.token;
   await keepSketch(id);
   if (token !== broll.token) {
-    // The same list read again (its ask still open): the picture waits for Keep. Another list (or none): the ask was
-    // closed with it; the shot counts as undone, so list_asks tells the agent its imageId works again.
-    if (isOpen(ask) && ask.answer?.sketches?.[id] === pic) return "waits";
-    if (ask.answer?.done && !ask.answer.done[id]) { ask.answer.done[id] = "undone"; delete ask.answer.sketches?.[id]; changed(); }
+    const outcome = B.afterListMoved({ live: sketchAsk() === ask, pending: ask.answer?.sketches?.[id] === pic, kept: broll.sketches[id] === pic });
+    if (outcome !== "changed") {
+      // The same list read again: the write it skipped is either in the file already, or Keep works again.
+      delete broll.saving[id];
+      if (outcome === "in") {
+        delete ask.answer.sketches[id];
+        ask.answer.done[id] = "kept";
+        settleSketches(ask);
+        broll.marked[id] = { prev, pic, askId: ask.id };
+      }
+      renderBroll();
+      changed();
+      return outcome;
+    }
+    // Another list or script: a closed ask's shot counts as undone, so list_asks shows the imageId works again.
+    if (!isOpen(ask) && ask.answer?.done && !ask.answer.done[id] && ask.answer.sketches?.[id] === pic) {
+      delete ask.answer.sketches[id];
+      ask.answer.done[id] = "undone";
+      ask.status = B.sketchStatus(ask.answer.done);
+      changed();
+    }
     return "changed";
   }
   if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return "waits";
@@ -2837,7 +2854,7 @@ async function undoMarked(id) {
     const ask = state.asks.find((a) => a.id === m.askId);
     if (ask?.answer?.done) {
       ask.answer.done[id] = "undone";
-      if (!isOpen(ask)) ask.status = Object.values(ask.answer.done).includes("kept") ? "kept" : "undone";
+      if (!isOpen(ask)) ask.status = B.sketchStatus(ask.answer.done);
     }
     changed();
   } catch (e) {
@@ -3782,8 +3799,10 @@ async function shrinkPicture(blob) {
 function withPictures(args) {
   prunePictures();
   const requested = args.imageId != null ? [args.imageId] : (Array.isArray(args.changes) ? args.changes : []).map((c) => c?.imageId).filter((x) => x != null);
+  const twice = requested.find((id, i) => requested.indexOf(id) !== i);
+  if (twice != null) return { error: `The picture ${JSON.stringify(String(twice).slice(0, 40))} is named twice: an imageId is used once.` };
   const busy = requested.find((id) => pictures.get(id)?.held);
-  if (busy) return { error: `The picture ${JSON.stringify(String(busy).slice(0, 40))} is already being used by another call (it may still be being written into the B-roll list). list_asks shows when it is in; if that call is refused or the list changed, its imageId works again.` };
+  if (busy) return { error: B.sketchHeld(busy) };
   const lookup = (id) => pictures.get(id)?.data || "";
   const unknown = (id) => ({ error: `Unknown imageId ${JSON.stringify(String(id).slice(0, 40))}: send the picture with upload_image first (an id is good for 30 minutes).` });
   // `used`: the ids to free once the call has gone through (a refused call keeps them, so the agent can try again).

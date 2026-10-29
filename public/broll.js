@@ -680,6 +680,14 @@ export const sketchResult = (outcome, left = []) => SKETCH_RESULTS[outcome] + (l
 export const SKETCH_LIST_CHANGED = "The B-roll list changed meanwhile, so the picture was not put into this list. Its imageId still works: call sketch_shot again if the shot is still there (without askId if list_asks shows the person's ask closed).";
 // sketch_shot answers within this, inside the Worker's 10 s for a call.
 export const SKETCH_ANSWER_MS = 7000;
+/** A call names a picture another call is using (held until that one is answered and written). */
+export const sketchHeld = (id) => `The picture ${JSON.stringify(String(id).slice(0, 40))} is already being used by another call (it may still be being written into the B-roll list). list_asks shows when it is in; if that call is refused or the list changed, its imageId works again.`;
+/** After the list moved (token) while a picture was written: "in" when the person's sketch ask in this script still
+ *  holds the picture and the list read again already has it, "waits" (Keep works) when it still holds it but the
+ *  list doesn't, else "changed" (another list or script: the picture's id works again). */
+export const afterListMoved = ({ live, pending, kept }) => (live && pending ? (kept ? "in" : "waits") : "changed");
+/** A closed sketch ask's status from its shots: kept when any was kept, else undone. */
+export const sketchStatus = (done = {}) => (Object.values(done).includes("kept") ? "kept" : "undone");
 /** sketchAnswer(atOnce, left, ms) → the answer once the write settles ("in", "waits", "changed"), or after `ms` the
  *  "writing" answer with `later`, the write's own outcome, so the picture's place is freed only when it went in. */
 export function sketchAnswer(atOnce, left = [], ms = SKETCH_ANSWER_MS) {

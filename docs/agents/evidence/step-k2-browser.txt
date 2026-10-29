@@ -1,4 +1,4 @@
-# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:37:17Z, run on the working tree on top of 6a11d43, committed as "Step K2: a picture is held from the moment a call accepts it…"
+# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:49:01Z, run on the working tree on top of 8dbc35b, committed as "Step K2: one rule for a list moved during a write…"
 ok Connect your agent shows on the start screen
 ok a script is open
 ok 30 uploads, each used in an answer_broll add: none refused (no 'At most 12')
@@ -32,7 +32,7 @@ ok the agent hears that it waits for Keep
 ok the frame shows Keep, Undo and Not saved
 ok the list is unchanged
 ok a line drawing still waits for Keep
-ok a slow write answers in time (7042 ms) and says it is being written
+ok a slow write answers in time (7027 ms) and says it is being written
 ok then it is in (list_asks: kept)
 ok with its Undo
 ok a second use in the first second, before any answer, is refused
@@ -44,4 +44,9 @@ ok a new list with the reused picture's shot
 ok a list change during the write is refused
 ok and leaves no Not saved behind
 ok the picture's id still works (the refusal is about the list now)
+ok after a reload the script opens again
+ok a picture after the reload
+ok a refused sketch_shot (unknown shot)
+ok one call naming a picture twice is refused
+ok the picture works right after those refusals
 RESULT: ok e2e
