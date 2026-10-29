@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -885,4 +885,27 @@ test("rereadAfterIn (step K2): the extra read only on the same list, with a list
   assert.equal(rereadAfterIn({ ...base, now: 5 }), false, "the list changed while it waited");
   assert.equal(rereadAfterIn({ ...base, shown: "new" }), false, "it shows already");
   assert.equal(rereadAfterIn({ ...base, link: null }), false, "no list");
+});
+
+test("pictureFit (step K3): cut to the frame's 260 : 140, at most 640 × 345, never enlarged", () => {
+  assert.deepEqual(PICTURE_SIZE, { width: 640, height: 345 });
+  assert.equal(PICTURE_BUDGET, 80_000);
+  // A wide photo: the sides go, the rest shrinks to 640 wide.
+  assert.deepEqual(pictureFit(1600, 1000), { sx: 0, sy: 69, sw: 1600, sh: 863, width: 640, height: 345 });
+  // A tall one: top and bottom go.
+  const tall = pictureFit(1000, 1600);
+  assert.deepEqual([tall.sx, tall.sw, tall.width, tall.height], [0, 1000, 640, 345]);
+  assert.equal(tall.sy, Math.round((1600 - tall.sh) / 2));
+  // Wider than the frame: the sides go.
+  const wide = pictureFit(3000, 1000);
+  assert.deepEqual([wide.sy, wide.sh, wide.width, wide.height], [0, 1000, 640, 345]);
+  // Small: only cut, never enlarged.
+  assert.deepEqual(pictureFit(200, 200), { sx: 0, sy: 46, sw: 200, sh: 108, width: 200, height: 108 });
+  // A later step shrinks further.
+  assert.deepEqual([pictureFit(1600, 1000, 0.5).width, pictureFit(1600, 1000, 0.5).height], [320, 173]);
+  for (const [w, h] of [[1, 1], [5000, 3], [3, 5000]]) {
+    const f = pictureFit(w, h);
+    assert.ok(f.width >= 1 && f.height >= 1 && f.width <= 640 && f.height <= 345, `${w}×${h}`);
+  }
+  assert.deepEqual(PICTURE_STEPS.map(([scale]) => scale), [1, 1, 1, 0.75, 0.5]);
 });

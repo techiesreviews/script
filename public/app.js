@@ -3793,24 +3793,32 @@ function receivePictureBytes(buf) {
     replyPicture(id, { result: { imageId: x.code, width: pic.width, height: pic.height } });
   }, (e) => { pictures.delete(x.code); replyPicture(id, { error: e?.message || "The editor could not read the picture." }); });
 }
-// At most 960 × 720, as JPEG, small enough to keep in the B-roll list (B.IMAGE_MAX).
+// Cut to the storyboard frame and made small in this browser (step K3, B.pictureFit): at most 640 × 345, WebP (JPEG
+// where the browser can't make WebP), stepping down quality and size until it fits B.PICTURE_BUDGET.
 async function shrinkPicture(blob) {
   let bitmap;
   try { bitmap = await createImageBitmap(blob); }
   catch { throw new Error("The editor could not read the picture. Send a PNG, JPEG or WebP file."); }
   try {
-    for (const [max, quality] of [[960, 0.82], [960, 0.65], [720, 0.65], [480, 0.6]]) {
-      const scale = Math.min(1, max / bitmap.width, (max * 0.75) / bitmap.height);
-      const width = Math.max(1, Math.round(bitmap.width * scale)), height = Math.max(1, Math.round(bitmap.height * scale));
+    let smallest = null;
+    for (const [scale, quality] of B.PICTURE_STEPS) {
+      const fit = B.pictureFit(bitmap.width, bitmap.height, scale);
       const canvas = document.createElement("canvas");
-      Object.assign(canvas, { width, height });
+      Object.assign(canvas, { width: fit.width, height: fit.height });
       const g = canvas.getContext("2d");
       g.fillStyle = "#fff";
-      g.fillRect(0, 0, width, height);
-      g.drawImage(bitmap, 0, 0, width, height);
-      const data = canvas.toDataURL("image/jpeg", quality);
-      if (B.isImage(data)) return { data, width, height };
+      g.fillRect(0, 0, fit.width, fit.height);
+      g.imageSmoothingQuality = "high";
+      g.drawImage(bitmap, fit.sx, fit.sy, fit.sw, fit.sh, 0, 0, fit.width, fit.height);
+      let data = canvas.toDataURL("image/webp", quality);
+      if (!data.startsWith("data:image/webp")) data = canvas.toDataURL("image/jpeg", quality);
+      if (!B.isImage(data)) continue;
+      const pic = { data, width: fit.width, height: fit.height };
+      if (data.length <= B.PICTURE_BUDGET) return pic;
+      if (!smallest || data.length < smallest.data.length) smallest = pic;
     }
+    // A very busy picture: the smallest step, still far under the list's own limit.
+    if (smallest) return smallest;
   } finally { bitmap.close?.(); }
   throw new Error("The picture could not be made small enough.");
 }

@@ -7,6 +7,22 @@ import { spokenText } from "./links.js";
 export const SKETCH_MAX = 8 * 1024;
 // A picture as a sketch (step K): a PNG, JPEG or WebP data address, shrunk by the tab first.
 export const IMAGE_MAX = 400_000;
+// A picture is kept no bigger than the storyboard needs (step K3, strict to save space): cut to the frame's shape
+// (260 : 140, what every frame and the storyboard export show) and at most 640 × 345 px, a little over the widest
+// frame on a phone screen; WebP (JPEG where the browser can't make WebP), at most PICTURE_BUDGET characters.
+export const PICTURE_SIZE = { width: 640, height: 345 };
+export const PICTURE_BUDGET = 80_000; // as a data address, about 60 KB
+// Quality and size steps, best first, until the picture fits the budget.
+export const PICTURE_STEPS = [[1, 0.72], [1, 0.6], [1, 0.5], [0.75, 0.5], [0.5, 0.45]];
+/** pictureFit(w, h) → the frame-shaped part to keep, centred ({ sx, sy, sw, sh }), and its size ({ width, height }),
+ *  never larger than PICTURE_SIZE nor than the picture itself; `scale` shrinks it further (a later step). */
+export function pictureFit(w, h, scale = 1, size = PICTURE_SIZE) {
+  const ratio = size.width / size.height;
+  let sw = w, sh = h;
+  if (w / h > ratio) sw = Math.max(1, Math.round(h * ratio)); else sh = Math.max(1, Math.round(w / ratio));
+  const k = Math.min(1, size.width / sw) * scale;
+  return { sx: Math.round((w - sw) / 2), sy: Math.round((h - sh) / 2), sw, sh, width: Math.max(1, Math.round(sw * k)), height: Math.max(1, Math.round(sh * k)) };
+}
 // The file the agent sends may be bigger: the tab shrinks it.
 export const IMAGE_UPLOAD_MAX = 6 * 1024 * 1024;
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
