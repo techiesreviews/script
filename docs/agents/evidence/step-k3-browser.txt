@@ -1,12 +1,13 @@
-# Step K3 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T16:10:45Z, run on the working tree on top of 4de3610, committed as "Step K3: pictures cut to the storyboard frame…"
+# Step K3 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T16:12:50Z, run on the working tree on top of f90753c, committed as "Step K3: pickPicture…"
 ok Connect your agent shows on the start screen
 ok a script is open
 ok a 1600 × 1000 picture (206 KB PNG) comes back 640 × 345
 ok as WebP within the budget (9.5 K characters, about 7 KB)
 ok a 200 × 200 picture is only cut, not enlarged
 ok a tall picture is cut to the frame
-ok a busy noise picture (5.6 MB PNG) ends small (73.9 K characters, 640 × 345)
+ok a busy noise picture (5.6 MB PNG) ends small (74.6 K characters, 640 × 345)
 ok the kept line in the list is a WebP picture
 ok a line drawing is shown with Keep or Undo
 ok and kept as a line drawing
+ok without WebP it is a JPEG within the budget (15.6 K characters)
 RESULT: ok e2e

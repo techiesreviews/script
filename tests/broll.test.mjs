@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -890,7 +890,7 @@ test("rereadAfterIn (step K2): the extra read only on the same list, with a list
 test("pictureFit (step K3): cut to the frame's 260 : 140, at most 640 × 345, never enlarged", () => {
   assert.deepEqual(PICTURE_SIZE, { width: 640, height: 345 });
   assert.equal(PICTURE_BUDGET, 80_000);
-  // A wide photo: the sides go, the rest shrinks to 640 wide.
+  // 1600 × 1000 is narrower than the frame: top and bottom go, the rest shrinks to 640 wide.
   assert.deepEqual(pictureFit(1600, 1000), { sx: 0, sy: 69, sw: 1600, sh: 863, width: 640, height: 345 });
   // A tall one: top and bottom go.
   const tall = pictureFit(1000, 1600);
@@ -907,5 +907,15 @@ test("pictureFit (step K3): cut to the frame's 260 : 140, at most 640 × 345, ne
     const f = pictureFit(w, h);
     assert.ok(f.width >= 1 && f.height >= 1 && f.width <= 640 && f.height <= 345, `${w}×${h}`);
   }
-  assert.deepEqual(PICTURE_STEPS.map(([scale]) => scale), [1, 1, 1, 0.75, 0.5]);
+  assert.deepEqual(PICTURE_STEPS, [[1, 0.72], [1, 0.6], [1, 0.5], [0.75, 0.5], [0.5, 0.45]]);
+});
+
+test("pickPicture (step K3): the first step within the budget, else the smallest valid one", () => {
+  const pic = (n, kind = "webp") => ({ data: `data:image/${kind};base64,${"A".repeat(n)}`, width: 640, height: 345 });
+  assert.equal(pickPicture([pic(90_000), pic(70_000), pic(50_000)], 80_000).data.length, pic(70_000).data.length, "the first within budget");
+  const over = [pic(120_000), pic(95_000), pic(99_000)];
+  assert.equal(pickPicture(over, 80_000), over[1], "all over: the smallest");
+  assert.equal(pickPicture([{ data: "data:image/png;base64,ab cd" }, pic(10)], 80_000).data, pic(10).data, "an invalid result is skipped");
+  assert.equal(pickPicture([{ data: "" }, { data: "data:text/plain;base64,QQ==" }], 80_000), null);
+  assert.equal(pickPicture([pic(10, "jpeg")], 80_000).data, pic(10, "jpeg").data, "JPEG counts when WebP can't be made");
 });

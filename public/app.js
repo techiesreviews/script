@@ -3800,7 +3800,7 @@ async function shrinkPicture(blob) {
   try { bitmap = await createImageBitmap(blob); }
   catch { throw new Error("The editor could not read the picture. Send a PNG, JPEG or WebP file."); }
   try {
-    let smallest = null;
+    const results = [];
     for (const [scale, quality] of B.PICTURE_STEPS) {
       const fit = B.pictureFit(bitmap.width, bitmap.height, scale);
       const canvas = document.createElement("canvas");
@@ -3812,13 +3812,12 @@ async function shrinkPicture(blob) {
       g.drawImage(bitmap, fit.sx, fit.sy, fit.sw, fit.sh, 0, 0, fit.width, fit.height);
       let data = canvas.toDataURL("image/webp", quality);
       if (!data.startsWith("data:image/webp")) data = canvas.toDataURL("image/jpeg", quality);
-      if (!B.isImage(data)) continue;
-      const pic = { data, width: fit.width, height: fit.height };
-      if (data.length <= B.PICTURE_BUDGET) return pic;
-      if (!smallest || data.length < smallest.data.length) smallest = pic;
+      results.push({ data, width: fit.width, height: fit.height });
+      if (B.isImage(data) && data.length <= B.PICTURE_BUDGET) break;
     }
-    // A very busy picture: the smallest step, still far under the list's own limit.
-    if (smallest) return smallest;
+    // The first step within the budget; a very busy picture keeps the smallest, still far under the list's limit.
+    const pic = B.pickPicture(results);
+    if (pic) return pic;
   } finally { bitmap.close?.(); }
   throw new Error("The picture could not be made small enough.");
 }

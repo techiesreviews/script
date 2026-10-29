@@ -248,7 +248,7 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
   assert.match(up.description, /Up to 24 pictures that are sent but not used yet can wait.*a call that uses one frees its place at once/);
   assert.doesNotMatch(up.description, /12/);
   // Step K3: cut to the frame and small; line drawings always work.
-  assert.match(up.description, /cuts it to the storyboard frame \(260 : 140\), makes it at most 640 × 345 and small \(WebP\)/);
+  assert.match(up.description, /cuts it to the storyboard frame \(260 : 140\), makes it at most 640 × 345 and small \(WebP or JPEG\)/);
   assert.match(INSTRUCTIONS, /Without an image tool, draw line drawings \(svg\): they always work\./);
   assert.match(tool.description, /imageId \(a picture.*goes into the B-roll list at once, lightly marked, and the person can undo it\)/);
   assert.match(INSTRUCTIONS, /a picture given to sketch_shot goes into the B-roll list at once and the person can undo it/);
