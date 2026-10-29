@@ -764,6 +764,16 @@ export function scriptFileName(wanted, doc, taken = () => false) {
   }
 }
 /**
+ * titleFileName(from, doc, taken) → the name a script in the browser should have for its title (step J), or null
+ * when `from` is it already. Its own name counts as free, so `my-video-2.md` stays while `my-video.md` is taken,
+ * and `video-2024.md` becomes `video.md` when the title is "Video".
+ */
+export function titleFileName(from, doc, taken = () => false) {
+  const own = String(from ?? "").toLowerCase();
+  const name = scriptFileName("", doc, (n) => n.toLowerCase() !== own && taken(n));
+  return name.toLowerCase() === own ? null : name;
+}
+/**
  * The agent's whole text with the line endings of the script it goes into, or null when it is `current` already
  * (the script's text as it would be saved).
  */

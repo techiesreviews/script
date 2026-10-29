@@ -5,7 +5,7 @@ import {
   ACTIONS, parse, serialize, contentOf, setContent, splitBlock, mergeWithPrevious, removeBlock, insertBlock,
   outline, parseHeading, exportCamera, exportPrompter, sentences, stats, countWords, snapToWords, reanchor,
   makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, locate, checkAnswer,
-  prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS, scriptFileName, keepIds, wholeText,
+  prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS, scriptFileName, titleFileName, keepIds, wholeText,
   PARTS, matchParts, slashCommand, shiftHeadings, numberAt, insertPart,
   slashAllowed, cutCommand, withoutCommand, lineToReplace,
 } from "../public/doc.js";
@@ -773,4 +773,17 @@ test("keepIds: blocks left word for word keep their ids, once each", () => {
   const out = keepIds(prev, Object.assign(clash, { blocks: [{ ...clash.blocks[1] }, { ...clash.blocks[0], text: "# Title", type: "title" }] }));
   assert.notEqual(out.blocks[0].id, out.blocks[1].id);
   assert.equal(out.blocks[1].id, prev.blocks[0].id);
+});
+
+test("titleFileName: a script in the browser takes its title's name; its own name counts as free (step J)", () => {
+  const titled = (t) => parse(`# ${t}\n\nWords.\n`);
+  assert.equal(titleFileName("untitled-script.md", titled("My video")), "my-video.md");
+  assert.equal(titleFileName("my-video.md", titled("My video")), null);
+  const taken = (n) => ["my-video.md", "my-video-2.md"].includes(n.toLowerCase());
+  assert.equal(titleFileName("my-video-2.md", titled("My video"), taken), null);
+  assert.equal(titleFileName("My-Video-2.md", titled("My video"), taken), null);
+  assert.equal(titleFileName("untitled-script.md", titled("My video"), taken), "my-video-3.md");
+  assert.equal(titleFileName("video-2024.md", titled("Video")), "video.md");
+  assert.equal(titleFileName("video.md", titled("Video 2024")), "video-2024.md");
+  assert.equal(titleFileName("untitled-script.md", parse("Just words.\n")), null);
 });

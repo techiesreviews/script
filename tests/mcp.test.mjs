@@ -350,7 +350,7 @@ test("open_script, set_script and list_scripts go to the tab with their argument
   // Step J: scripts saved in the browser.
   assert.match(TOOLS.find((t) => t.name === "list_scripts").description, /inBrowser: saved in the browser/);
   assert.match(TOOLS.find((t) => t.name === "open_script").description, /saved in the person's browser at once.*file name follows its title/);
-  const relay = fakeRelay({ results: { open_script: "Opened as my-video.md, not saved yet: the person picks where to save it." } });
+  const relay = fakeRelay({ results: { open_script: "Opened as my-video.md, saved in the person's browser." } });
   const r = await rpc({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "open_script", arguments: { markdown: "# My video", fileName: "my-video.md" } } }, { relay });
   assert.match(r.body.result.content[0].text, /Opened as my-video\.md/);
   const call = relay.ops.find((o) => o.op === "call");

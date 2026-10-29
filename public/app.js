@@ -1876,7 +1876,11 @@ async function saveAs() {
       state.conflict = false;
       remember(handle);
       // The script moved to its file: the copy in the browser goes.
-      if (was) { const gone = was.name; forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {}); }
+      if (was) {
+        const gone = was.name;
+        if (gone !== handle.name) idbSet(brollKey(gone), null); // the name is free again; its link moved with the script
+        forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {});
+      }
     } else {
       download(text, state.name, "text/markdown");
     }
@@ -2074,28 +2078,27 @@ async function createBrowserScript(name, text) {
   if (!keepAsked) { keepAsked = true; navigator.storage.persist?.().catch(() => {}); }
   return { handle, modified };
 }
-// A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser.
-function moveKeys(from, to) {
+// A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser. `link`: that script's
+// B-roll link, taken before any wait (another script may be open by now). Drafts and B-roll keys go by name, as for
+// files on disk.
+function moveKeys(from, to, link) {
   if (from === to) return;
   const draft = store.get(draftKey(from));
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
-  if (broll.link) idbSet(brollKey(to), broll.link);
+  if (link) { idbSet(brollKey(to), link); idbSet(brollKey(from), null); }
   const kept = store.get(listKey(from));
   if (typeof kept === "string") { store.set(listKey(to), kept); store.del(listKey(from)); }
 }
 // While a script is in the browser its file has the title's name: "My video" → my-video.md (-2 when taken).
 async function followTitle(handle) {
   if (!state.inBrowser || handle !== state.handle || typeof handle.move !== "function") return;
-  const base = D.scriptFileName("", state.doc).slice(0, -3);
-  const from = state.name;
-  // base is a slug (a-z, 0-9 and -), so it needs no escaping.
-  if (new RegExp(`^${base}(?:-\\d+)?\\.md$`, "i").test(from)) return;
-  const taken = await nameTaken(from);
-  if (handle !== state.handle) return;
-  const name = D.scriptFileName(base, state.doc, taken);
+  const from = state.name, doc = state.doc, link = broll.link;
+  if (D.scriptFileName("", doc) === from) return; // the title's own name: nothing to look up
+  const name = D.titleFileName(from, doc, await nameTaken(from));
+  if (!name || handle !== state.handle) return;
   await handle.move(name);
   if (handle === state.handle) { state.name = name; renderTop(); }
-  moveKeys(from, name);
+  moveKeys(from, name, link);
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
 // Ctrl/Cmd+S on a script without a file (the demo, or a file opened where files can't be saved): into the browser.
@@ -2108,7 +2111,7 @@ async function saveInBrowser() {
   try {
     const { handle, modified } = await createBrowserScript(D.scriptFileName("", doc, await nameTaken(from)), text);
     if (state.doc === doc) {
-      moveKeys(from, handle.name);
+      moveKeys(from, handle.name, broll.link);
       Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false });
     }
     remember(handle, true);
@@ -2122,6 +2125,8 @@ async function saveInBrowser() {
   persistDraft();
   scheduleSave();
 }
+// Its draft and B-roll keys go too: they are by name, as for every script (a file opened later under the same name
+// starts without them).
 async function deleteBrowserScript(r) {
   await forget(r.handle);
   try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
@@ -3582,7 +3587,7 @@ async function openScript(args, by) {
   const busy = state.doc ? busyChoice() : "";
   if (busy) return { error: busy };
   // A script without a file can't be saved on the way out: leaving it would leave it only as a hidden draft.
-  if (state.doc && !state.handle && isDirty()) return { error: `The script open now (${state.name}) is not saved to a file yet. Ask the person to save it first (Ctrl/Cmd+S).` };
+  if (state.doc && !state.handle && isDirty()) return { error: `The script open now (${state.name}) is not saved yet. Ask the person to save it first (Ctrl/Cmd+S).` };
   if (args.markdown != null) {
     const problem = scriptProblem(args.markdown);
     if (problem) return { error: problem };

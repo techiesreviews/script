@@ -1,4 +1,4 @@
-# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:19:02Z, run on the code committed as step J
+# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:24:08Z, run on the code of the commit "Step J: a B-roll link moves with a renamed script…"
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
@@ -19,12 +19,19 @@ ok list_scripts marks inBrowser
 ok open_script opens a browser script by name
 ok × asks once more as Delete
 ok nothing deleted after one click
+ok at 390 px the Delete state has no sideways scroll
 ok the second click deletes it
 ok and it leaves the switcher
 ok the open script has no ×
 ok Reopen offers the browser script
 ok Reopen opens it
 ok Ctrl+S saves the demo in the browser
+ok an agent script named untitled-script.md
+ok Keep made a B-roll list linked to it
+ok retitled, it is renamed
+ok its B-roll link moved with it
+ok and its B-roll list kept in the browser
+ok the next untitled-script.md starts without a B-roll list
 ok Save as file opens the script from its file
 ok the copy in the browser is gone
 ok it is a file now
