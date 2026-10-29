@@ -1,4 +1,4 @@
-# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:15:45Z, run on the code of the commit "Step K2: …"
+# Step K2 browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T15:18:25Z, run on the code of the commit "Step K2: answers wait for the write…"
 ok Connect your agent shows on the start screen
 ok a script is open
 ok 30 uploads, each used in an answer_broll add: none refused (no 'At most 12')
@@ -17,11 +17,19 @@ ok that use freed a place at once
 ok the list holds the new picture without a Keep
 ok beside the line: Undo, no Keep
 ok in the storyboard at once, lightly marked, with Undo
+ok at 390 px the storyboard frame shows Undo only
+ok at 1280 px the frame beside the line shows Undo only
+ok at 390 px the script view keeps Undo only
 ok Undo puts the earlier picture back exactly
 ok and the Undo is gone
 ok a kept shot without a sketch
 ok its picture went in at once
 ok Undo removes it again
 ok list_asks tells the agent both were undone
+ok an update with an imageId is refused
+ok the picture is still usable after that refusal
+ok the agent hears that it waits for Keep
+ok the frame shows Keep, Undo and Not saved
+ok the list is unchanged
 ok a line drawing still waits for Keep
 RESULT: ok e2e

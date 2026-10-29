@@ -2793,7 +2793,8 @@ function receiveSketch(ask, shotId, svg, by) {
   renderBroll();
   renderAgent();
   changed();
-  if (putsInAtOnce(shotId, svg)) pictureInAtOnce(ask, shotId, svg);
+  // A picture for a shot in the list: the promise says whether it went in (else it waits for Keep).
+  return putsInAtOnce(shotId, svg) ? pictureInAtOnce(ask, shotId, svg) : null;
 }
 // A picture for a shot in the list (step K2) goes into the list at once, lightly marked, with Undo, like a replace
 // answer; a line drawing still waits for Keep. If the write fails it stays waiting, with Keep and "Not saved".
@@ -2802,20 +2803,25 @@ const putsInAtOnce = (shotId, sketch) => B.isImage(sketch) && broll.status === "
 async function pictureInAtOnce(ask, id, pic) {
   const prev = broll.sketches[id] || "";
   await keepSketch(id);
-  if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return;
+  if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return false;
   broll.marked[id] = { prev, pic, askId: ask.id };
   renderBroll();
+  return true;
 }
+const PICTURE_WAITS = "The B-roll list could not be written just now, so the picture waits beside the script line and in the storyboard for the person's Keep or Undo.";
 // Undo puts back what the shot had before (a sketch, or none), if the agent's picture is still there.
 async function undoMarked(id) {
   const m = broll.marked[id];
   if (!m || broll.saving[id]) return;
   if (broll.sketches[id] !== m.pic) { delete broll.marked[id]; return renderBroll(); }
+  // Like keepSketch: if the list changes meanwhile, this Undo is gone with it and touches nothing of the new one.
+  const token = broll.token;
   broll.saving[id] = true;
   delete broll.problem[id];
   renderBroll();
   try {
     await changeList((md) => (m.prev ? B.setSketch(md, id, m.prev) : B.removeSketch(md, id)));
+    if (token !== broll.token) return;
     delete broll.marked[id];
     const ask = state.asks.find((a) => a.id === m.askId);
     if (ask?.answer?.done) {
@@ -2824,6 +2830,7 @@ async function undoMarked(id) {
     }
     changed();
   } catch (e) {
+    if (token !== broll.token) return;
     broll.problem[id] = e?.message || "Could not save the B-roll list.";
   }
   delete broll.saving[id];
@@ -3659,13 +3666,14 @@ function handleCall({ id, tool, args = {} }) {
       return send({ result: "Shown to the person. They choose Keep or Undo per change." });
     }
     if (tool === "sketch_shot") {
-      if (args.askId == null) return send(ownSketch(args));
+      if (args.askId == null) { const out = ownSketch(args); return out instanceof Promise ? void out.then(send, failed) : send(out); }
       const ask = state.asks.find((a) => a.id === args.askId);
       const checked = B.checkSketch(ask, args);
       if (checked.error) return send({ error: checked.error });
-      const atOnce = putsInAtOnce(args.shotId, checked.svg);
-      receiveSketch(ask, args.shotId, checked.svg, agentBy());
-      return send({ result: atOnce ? PICTURE_IN : "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo." });
+      const atOnce = receiveSketch(ask, args.shotId, checked.svg, agentBy());
+      const shown = "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.";
+      if (!atOnce) return send({ result: shown });
+      return void atOnce.then((ok) => send({ result: ok ? PICTURE_IN : PICTURE_WAITS }), failed);
     }
     send({ error: `Unknown tool: ${tool}` });
   } catch (e) {
@@ -3819,10 +3827,12 @@ function ownSketch(args) {
     emit("created", ask);
   }
   if (!ask.shots.some((s) => s.id === shot.id)) ask.shots.push({ id: shot.id, what: shot.what, over: shot.over, kind: shot.kind });
-  const atOnce = putsInAtOnce(shot.id, svg.svg);
-  receiveSketch(ask, shot.id, svg.svg, agentBy());
+  const atOnce = receiveSketch(ask, shot.id, svg.svg, agentBy());
   const left = ask.own ? [] : ask.shots.filter((s) => !ask.answer.sketches[s.id] && !ask.answer.done[s.id]).map((s) => s.id);
-  return { result: `${atOnce ? PICTURE_IN : "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo."}${left.length ? ` They also asked for sketches of ${left.join(", ")}.` : ""}` };
+  const also = left.length ? ` They also asked for sketches of ${left.join(", ")}.` : "";
+  if (!atOnce) return { result: `Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.${also}` };
+  // The answer waits for the write, so it says what really happened.
+  return atOnce.then((ok) => ({ result: `${ok ? PICTURE_IN : PICTURE_WAITS}${also}` }));
 }
 function brollUnreadable() {
   return broll.status === "permission" ? "The editor needs the person's OK to read the B-roll list. Ask them to allow it in the storyboard first."

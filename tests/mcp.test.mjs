@@ -249,6 +249,8 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
   assert.doesNotMatch(up.description, /12/);
   assert.match(tool.description, /imageId \(a picture.*goes into the B-roll list at once, lightly marked, and the person can undo it\)/);
   assert.match(INSTRUCTIONS, /a picture given to sketch_shot goes into the B-roll list at once and the person can undo it/);
+  assert.match(tool.description, /For a line drawing, the person chooses Keep or Undo\.$/);
+  assert.match(INSTRUCTIONS, /like answers to asks \(a picture for a shot in the list goes in at once, with Undo\)/);
   assert.match(INSTRUCTIONS, /upload_image, then give its imageId/);
   // Step I: without askId, a sketch the person asked for in the agent's chat.
   assert.equal(checkArgs("sketch_shot", { shotId: "B4", svg }), "");
