@@ -26,7 +26,6 @@ const ICONS = {
   camera: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
   prompter: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 9h10M8 12h8M10 21h4M12 17v4"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
-  plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/>',
   // The Model Context Protocol mark, drawn on 195 units: "Connect your agent" while it can be connected.
   mcp: '<g transform="scale(.1231)" stroke-width="14"><path d="M25 97.85 92.88 29.97a24 24 0 0 1 33.94 0 24 24 0 0 1 0 33.94L75.56 115.18"/><path d="M76.27 114.47 126.82 63.91a24 24 0 0 1 33.94 0l.36.36a24 24 0 0 1 0 33.94L99.72 159.6a8 8 0 0 0 0 11.31l12.61 12.61"/><path d="M109.85 46.94 59.65 97.15a24 24 0 0 0 0 33.94 24 24 0 0 0 33.94 0l50.2-50.21"/></g>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
@@ -1956,10 +1955,17 @@ function exportFile(kind) {
   else if (kind === "markdown") saveAs();
   else if (kind === "all") exportAll();
   else if ((kind === "broll" || kind === "storyboard") && broll.status === "ok") {
-    const shots = B.scriptOrder(state.doc, broll.shots), title = D.titleOf(state.doc) || baseName();
-    if (kind === "broll") download(B.exportBroll(shots, broll.sketches, { title }), `${baseName()}-broll.md`, "text/markdown");
-    else download(B.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }), `${baseName()}-storyboard.html`, "text/html");
+    const f = brollExports()[kind === "broll" ? 0 : 1];
+    download(f.text, f.name, kind === "broll" ? "text/markdown" : "text/html");
   }
+}
+// The B-roll list and the storyboard, as the single exports and "Export all" give them.
+function brollExports() {
+  const shots = B.scriptOrder(state.doc, broll.shots), title = D.titleOf(state.doc) || baseName();
+  return [
+    { name: `${baseName()}-broll.md`, text: B.exportBroll(shots, broll.sketches, { title }) },
+    { name: `${baseName()}-storyboard.html`, text: B.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }) },
+  ];
 }
 
 // "Export all" (Lex, 2026-10-29): one zip with the script, the camera script, the prompter file and, with a B-roll
@@ -1971,11 +1977,7 @@ function exportAll() {
     { name: `${base}-camera.txt`, text: D.exportCamera(state.doc) },
     { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc) },
   ];
-  if (broll.status === "ok") {
-    const shots = B.scriptOrder(state.doc, broll.shots), title = D.titleOf(state.doc) || base;
-    files.push({ name: `${base}-broll.md`, text: B.exportBroll(shots, broll.sketches, { title }) });
-    files.push({ name: `${base}-storyboard.html`, text: B.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }) });
-  }
+  if (broll.status === "ok") files.push(...brollExports());
   download(makeZip(files), `${base}.zip`, "application/zip");
 }
 

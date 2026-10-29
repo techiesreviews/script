@@ -19,9 +19,12 @@ export function crc32(bytes) {
 /** makeZip([{ name, text }], date) → the zip file's bytes. Each file is UTF-8 text stored as it is. */
 export function makeZip(files, date = new Date()) {
   const enc = new TextEncoder();
+  // Zip dates run from 1980 to 2107; outside them, the nearest end.
+  if (date.getFullYear() < 1980) date = new Date(1980, 0, 1);
+  else if (date.getFullYear() > 2107) date = new Date(2107, 11, 31, 23, 59, 58);
   // DOS time and date, in local time as zip tools expect.
   const time = (date.getHours() << 11) | (date.getMinutes() << 5) | (date.getSeconds() >> 1);
-  const day = ((Math.max(1980, date.getFullYear()) - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  const day = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
   const locals = [], centrals = [];
   let offset = 0;
   for (const f of files) {

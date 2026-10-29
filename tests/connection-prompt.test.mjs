@@ -37,3 +37,15 @@ test("top bar: no \"Saved\" time is shown (Lex, 2026-10-29); unsaved, saving and
   for (const shown of ['"Saving…"', '"Not saved"', '"Unsaved changes"']) assert.ok(fn.includes(shown), shown);
   assert.doesNotMatch(fn, /In this browser/);
 });
+
+test("top bar (Lex, 2026-10-29): Export last and primary with Export all first; Share icon-only; the MCP mark until connected", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  const end = html.slice(html.indexOf('<div class="top__end">'), html.indexOf("</header>"));
+  const buttons = [...end.matchAll(/<(?:button|div) class="([^"]*)" id="(\w+)"/g)].map((m) => [m[2], m[1]]).filter(([id]) => /Btn$|^share$/.test(id));
+  assert.equal(buttons.at(-1)[0], "exportBtn");
+  assert.match(buttons.at(-1)[1], /\btb--primary\b/);
+  assert.match(html, /id="exportMenu" popover>\s*<button class="menu-action menu-action--primary" type="button" data-export="all">/);
+  assert.match(html, /id="shareBtn"[^>]*class|class="tb tb--icon share__btn" id="shareBtn"/);
+  assert.match(html, /id="agentBtn"[^>]*>.*data-icon="mcp"/);
+  assert.match(app, /const key = agent\.state === "on" \? brand\.icon : "mcp"/);
+});

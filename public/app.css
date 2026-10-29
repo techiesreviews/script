@@ -129,7 +129,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 /* A connected agent's name is cut off with an ellipsis (its full name is in the tooltip). The fixed labels are never cut off. */
 .agent-btn[data-state="on"] .lbl { max-inline-size: 7rem; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
 /* Labels go first, so the actions fit in their half of the bar and the switch stays centred.
-   Hidden labels stay readable for screen readers; the icon (the plug, or the connected agent's logo) shows next to the status dot. */
+   Hidden labels stay readable for screen readers; the icon (the MCP mark, or the connected agent's logo) shows next to the status dot (none while not connected). */
 @container app (width < 68rem) {
   .voice-btn, .agent-btn { position: relative; }
   .voice-btn .lbl, .agent-btn .lbl { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
@@ -767,7 +767,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .top:has(#stopShare:not([hidden])) :is(.voice-btn, .agent-btn) .lbl { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
   .top:has(#stopShare:not([hidden])) .agent-btn > svg { display: block; }
 }
-/* Phones: compact icon buttons, the agent's status as a small dot on its plug, so the switch can stay centred. */
+/* Phones: compact icon buttons, the agent's status as a small dot on its icon, so the switch can stay centred. */
 @container app (width < 36rem) {
   .top__end, .share { gap: 0.25rem; }
   .top__end .tb:has(.lbl), .top__end .tb--icon { min-inline-size: 2rem; padding-inline: 0.45rem; }

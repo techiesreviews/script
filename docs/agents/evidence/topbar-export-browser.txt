@@ -1,4 +1,4 @@
-# Top bar (Export last and primary, Export all, icon-only Share, MCP mark): headless Chrome, local Worker; 1280 px and 390 px, light and dark. 2026-10-29T15:06:55Z
+# Top bar (Export last and primary, Export all, icon-only Share, MCP mark): headless Chrome, local Worker; 1280 px and 390 px, light and dark. 2026-10-29T15:09:27Z
 ok Export is the last button
 ok Export is the orange primary button
 ok Share shows only its icon, with its name kept

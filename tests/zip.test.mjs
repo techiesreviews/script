@@ -24,3 +24,27 @@ test("zip: Export all's file opens in a zip tool with every file, UTF-8 names an
   assert.deepEqual(read.map(([n, txt]) => ({ name: n, text: txt })), files);
   assert.deepEqual(read[0][2], [2026, 10, 29, 15, 30, 10]);
 });
+
+test("zip: the layout is right without a zip tool (entries, offsets, names, sizes)", () => {
+  const files = [{ name: "a.md", text: "# A\n" }, { name: "ü-b.txt", text: "héllo" }, { name: "c.html", text: "" }];
+  const z = makeZip(files, new Date(1970, 0, 1));
+  const v = new DataView(z.buffer);
+  const end = z.length - 22;
+  assert.equal(v.getUint32(end, true), 0x06054b50);
+  assert.equal(v.getUint16(end + 10, true), files.length);
+  const size = v.getUint32(end + 12, true), start = v.getUint32(end + 16, true);
+  assert.equal(start + size, end);
+  const dec = new TextDecoder(), enc = new TextEncoder();
+  let at = start;
+  for (const f of files) {
+    assert.equal(v.getUint32(at, true), 0x02014b50);
+    const nameLen = v.getUint16(at + 28, true), local = v.getUint32(at + 42, true);
+    assert.equal(dec.decode(z.subarray(at + 46, at + 46 + nameLen)), f.name);
+    assert.equal(v.getUint32(at + 24, true), enc.encode(f.text).length);
+    assert.equal(v.getUint32(local, true), 0x04034b50);
+    assert.equal(dec.decode(z.subarray(local + 30, local + 30 + nameLen)), f.name);
+    assert.equal(dec.decode(z.subarray(local + 30 + nameLen, local + 30 + nameLen + enc.encode(f.text).length)), f.text);
+    assert.equal(v.getUint16(at + 14, true), (0 << 9) | (1 << 5) | 1, "a date before 1980 is 1980-01-01");
+    at += 46 + nameLen;
+  }
+});
