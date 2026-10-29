@@ -25,11 +25,7 @@ When you connect an agent, a small live relay (a Cloudflare Durable Object) pass
 ## Connect your agent (MCP)
 
 1. Open a script and click **Connect your agent** → **Wait for MCP**. This copies a connection prompt with a private token.
-2. Paste it into Claude Code (or any MCP client that can send an `Authorization` header). It runs:
-
-   ```sh
-   claude mcp add --transport http script-editor https://script.techies.tools/mcp --header "Authorization: Bearer <token>"
-   ```
+2. Paste it into your agent: Claude Code, Codex, Cursor or any other MCP client that can send an `Authorization` header. The prompt gives the server (`https://script.techies.tools/mcp`, Streamable HTTP) and the header (`Authorization: Bearer <token>`), with ready-made settings for Claude Code, Codex and JSON-configured apps, so the agent adds itself the way its own app does.
 
 3. Use the `watch_script` prompt. Your agent waits for asks and answers each one in place.
 
