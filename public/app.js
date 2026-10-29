@@ -84,6 +84,8 @@ const state = {
   savedText: "",
   savedAt: 0,
   fileModified: 0,
+  inBrowser: false, // saved in the browser, not in a file on the computer (step J)
+  blank: "", // a new script's first text: left untouched, it is removed from the browser (step J)
   saving: false,
   autoSaving: false,
   saveError: "",
@@ -594,11 +596,11 @@ function renderSaveState() {
   const allow = $("#allowSave");
   allow.hidden = !(state.needsPermission && state.handle);
   if (!allow.hidden) allow.textContent = `Allow saving to ${state.handle.name}`;
-  $("#saveAsAction").hidden = !!state.handle;
+  $("#saveAsAction").hidden = !!state.handle && !state.inBrowser;
   if (state.saving && !state.autoSaving) { s.dataset.state = "saving"; s.textContent = "Saving…"; s.removeAttribute("aria-label"); s.title = ""; }
   else if (state.saveError) { s.dataset.state = "error"; s.textContent = "Not saved"; s.title = state.saveError; s.removeAttribute("aria-label"); }
   else if (dirty) { s.dataset.state = "dirty"; s.textContent = ""; s.setAttribute("aria-label", "Unsaved changes"); s.title = "Unsaved changes"; s.setAttribute("role", "img"); }
-  else if (state.savedAt) { s.dataset.state = "saved"; s.textContent = `Saved ${clock(state.savedAt)}`; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = ""; }
+  else if (state.savedAt) { s.dataset.state = "saved"; s.textContent = `Saved ${clock(state.savedAt)}`; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = state.inBrowser ? "In this browser" : ""; }
   else { s.dataset.state = ""; s.textContent = ""; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = ""; }
 }
 function renderDerived() {
@@ -1499,6 +1501,8 @@ $("#vcUse").addEventListener("click", () => {
 
 /* ---------- Files ---------- */
 const canPick = "showOpenFilePicker" in window;
+// Scripts saved in the browser (step J): its own private file system, where the browser can write to it.
+const browserSaving = !!navigator.storage?.getDirectory && typeof FileSystemFileHandle === "function" && "createWritable" in FileSystemFileHandle.prototype;
 function idb() {
   return new Promise((res, rej) => {
     const r = indexedDB.open("script-editor", 1);
@@ -1541,9 +1545,13 @@ function persistDraft() {
   store.set(draftKey(), { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
 }
 
-function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
+function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false }) {
   // Leaving a script: write what is still waiting to its own file, and keep a draft as a safety net.
   if (state.doc) { persistDraft(); flushSave(); }
+  // A new script left as it came is not kept: empty ones would pile up in the browser.
+  if (state.doc && state.inBrowser && state.blank && handle !== state.handle && D.serialize(state.doc) === state.blank && !state.asks.length) {
+    deleteBrowserScript({ handle: state.handle, name: state.name });
+  }
   // Sharing ends when another script opens; the same file read again from disk stays shared.
   if (together?.active && !(handle && handle === state.handle)) together.stop();
   $("#emptyNote").hidden = true;
@@ -1553,6 +1561,8 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   state.doc = D.parse(text);
   state.name = name;
   state.handle = handle;
+  state.inBrowser = !!handle && browser;
+  state.blank = "";
   state.savedText = fresh ? "" : text;
   if (fresh) state.savedText = D.serialize(state.doc);
   state.savedAt = fresh ? 0 : modified;
@@ -1676,8 +1686,9 @@ async function openHandle(handle) {
     }
     const file = await handle.getFile();
     const text = await file.text();
-    loadText(text, { name: handle.name, handle, modified: file.lastModified });
-    remember(handle);
+    const browser = await isInBrowser(handle);
+    loadText(text, { name: handle.name, handle, modified: file.lastModified, browser });
+    remember(handle, browser);
     return true;
   } catch {
     openProblem(handle.name);
@@ -1779,7 +1790,7 @@ async function save({ force = false, auto = false } = {}) {
   }
   // Auto-save only writes to a file that is already open; it never asks where to save.
   if (!state.handle && auto) return;
-  if (!state.handle) return saveAs();
+  if (!state.handle) return browserSaving ? saveInBrowser() : saveAs();
   clearTimeout(saveTimer);
   const { handle, name, savedText, fileModified } = state;
   const text = saveText();
@@ -1808,6 +1819,8 @@ async function save({ force = false, auto = false } = {}) {
           state.savedText = text;
           state.savedAt = Date.now();
           if ($("#banner").textContent.startsWith("The file changed")) hideBanner();
+          // A rename that fails leaves the old name; the text is saved either way.
+          try { await followTitle(handle); } catch { /* keeps its name */ }
         }
       }
     }
@@ -1837,6 +1850,9 @@ function finishSave(current) {
 async function saveAs() {
   if (!state.doc || state.saving || state.guest) return;
   const text = saveText();
+  const was = state.inBrowser ? state.handle : null;
+  // Where files can't be saved, a script in the browser stays there and a copy downloads.
+  if (was && !("showSaveFilePicker" in window)) return download(text, state.name, "text/markdown");
   state.saveError = "";
   try {
     if ("showSaveFilePicker" in window) {
@@ -1854,9 +1870,13 @@ async function saveAs() {
         state.name = handle.name;
       }
       state.handle = handle;
+      state.inBrowser = false;
+      state.blank = "";
       state.needsPermission = false;
       state.conflict = false;
       remember(handle);
+      // The script moved to its file: the copy in the browser goes.
+      if (was) { const gone = was.name; forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {}); }
     } else {
       download(text, state.name, "text/markdown");
     }
@@ -1908,18 +1928,35 @@ async function openSample() {
     loadText(await res.text(), { name: SAMPLE.name });
   } catch { openProblem("the demo script"); }
 }
-function newScript() {
+async function newScript() {
+  // A new script still as it came is the new script: its title is selected again.
+  if (state.doc && state.inBrowser && state.blank && D.serialize(state.doc) === state.blank) return selectTitle();
   const doc = { blocks: [], tail: "\n", eol: "\n" };
-  loadText("", { name: "untitled-script.md", fresh: true });
-  state.doc = doc;
-  const t = D.insertBlock(state.doc, null, "title", "Untitled script");
+  const t = D.insertBlock(doc, null, "title", "Untitled script");
   t.sep = "";
-  state.hint = D.insertBlock(state.doc, t.id, "para", "").id;
-  state.savedText = D.serialize(state.doc);
+  const hint = D.insertBlock(doc, t.id, "para", "").id;
+  const text = D.serialize(doc);
+  // Saved in the browser at once (step J); where it can't be, it waits for the first save as before.
+  let made = null;
+  if (browserSaving) {
+    try { made = await createBrowserScript(D.scriptFileName("", doc, await nameTaken()), text); } catch { made = null; }
+  }
+  if (made) {
+    loadText(text, { name: made.handle.name, handle: made.handle, modified: made.modified, browser: true });
+    state.blank = text;
+    remember(made.handle, true);
+  } else loadText("", { name: "untitled-script.md", fresh: true });
+  state.doc = doc;
+  state.hint = hint;
+  state.savedText = text;
   renderTop();
   renderAll();
   renderDerived();
-  const el = blockNode(t.id);
+  selectTitle();
+}
+function selectTitle() {
+  const el = blockNode(state.doc.blocks.find((b) => b.type === "title")?.id);
+  if (!el) return;
   el.focus();
   const r = document.createRange();
   r.selectNodeContents(el);
@@ -1958,10 +1995,18 @@ async function sameFile(a, b) {
   try { return await a.isSameEntry(b); } catch { return false; }
 }
 async function recentScripts() {
-  const list = await idbGet("recent");
-  if (Array.isArray(list)) return list.filter((r) => r?.handle?.name);
-  const last = await idbGet("last"); // before the list, only the last file was kept
-  return last?.name ? [{ handle: last, name: last.name, at: 0 }] : [];
+  const stored = await idbGet("recent");
+  const last = Array.isArray(stored) ? null : await idbGet("last"); // before the list, only the last file was kept
+  const list = Array.isArray(stored) ? stored : last?.name ? [{ handle: last, name: last.name, at: 0 }] : [];
+  // Scripts in the browser are kept by name (their handles are found again), and every one of them is listed,
+  // also those that fell off the list: they have no other way back.
+  const inside = new Map((await browserScripts()).map((b) => [b.name, b]));
+  const out = [];
+  for (const r of list) {
+    if (r?.browser) { const b = inside.get(r.name); if (b) { out.push({ ...b, at: r.at || b.at }); inside.delete(r.name); } }
+    else if (r?.handle?.name) out.push(r);
+  }
+  return [...out, ...[...inside.values()].sort((a, b) => b.at - a.at)];
 }
 async function without(list, handle) {
   const out = [];
@@ -1972,13 +2017,118 @@ let recentQueue = Promise.resolve();
 function updateRecent(change) {
   recentQueue = recentQueue.then(async () => {
     const list = await change(await recentScripts());
-    await idbSet("recent", list);
+    await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r)));
     lastHandle = list[0]?.handle ?? null;
   }).catch(() => {});
   return recentQueue;
 }
-const remember = (handle) => updateRecent(async (list) => [{ handle, name: handle.name, at: Date.now() }, ...(await without(list, handle))].slice(0, RECENT_MAX));
+const remember = (handle, browser = false) => updateRecent(async (list) => [{ handle, name: handle.name, at: Date.now(), ...(browser ? { browser: true } : {}) }, ...(await without(list, handle))].slice(0, RECENT_MAX));
 const forget = (handle) => updateRecent((list) => without(list, handle));
+
+/* ---------- Scripts saved in the browser (step J, Lex 2026-10-29) ---------- */
+// Every new script is saved in the browser's private file system at once ("always in the browser first"); its
+// files are real handles, so saving, the changed-on-disk check, drafts and the switcher work as for files.
+// Export → "Markdown file (.md)" moves one to a file on the computer.
+let scriptsDirP = null;
+function scriptsDir() {
+  scriptsDirP ??= navigator.storage.getDirectory().then((root) => root.getDirectoryHandle("scripts", { create: true }));
+  return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
+}
+async function browserScripts() {
+  if (!browserSaving) return [];
+  const out = [];
+  try {
+    for await (const handle of (await scriptsDir()).values()) {
+      if (handle.kind !== "file") continue;
+      let at = 0;
+      try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
+      out.push({ handle, name: handle.name, at, browser: true });
+    }
+  } catch { /* storage off: none */ }
+  return out;
+}
+async function isInBrowser(handle) {
+  if (!browserSaving || !handle) return false;
+  try { return !!(await (await scriptsDir()).resolve(handle)); } catch { return false; }
+}
+// Names a new or renamed script may not take: recent files, scripts in the browser, kept drafts and the open
+// script (all by name, in any capitals; drafts and B-roll keys go by name). `own`: the script being named.
+async function nameTaken(own = "") {
+  const names = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
+  const mine = own.toLowerCase();
+  return (n) => {
+    const l = n.toLowerCase();
+    if (names.has(l)) return true;
+    if (l === mine) return false;
+    return store.get(draftKey(n)) != null || (!!state.doc && l === state.name.toLowerCase());
+  };
+}
+let keepAsked = false;
+async function createBrowserScript(name, text) {
+  const dir = await scriptsDir();
+  // Never over another script: getFileHandle with create would open it.
+  try { await dir.getFileHandle(name); throw new Error(`${name} is in the browser already.`); } catch (e) { if (e?.name !== "NotFoundError") throw e; }
+  const handle = await dir.getFileHandle(name, { create: true });
+  const modified = await writeHandle(handle, text);
+  // Ask once that the browser keeps the site's storage rather than clearing it to make room.
+  if (!keepAsked) { keepAsked = true; navigator.storage.persist?.().catch(() => {}); }
+  return { handle, modified };
+}
+// A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser.
+function moveKeys(from, to) {
+  if (from === to) return;
+  const draft = store.get(draftKey(from));
+  if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
+  if (broll.link) idbSet(brollKey(to), broll.link);
+  const kept = store.get(listKey(from));
+  if (typeof kept === "string") { store.set(listKey(to), kept); store.del(listKey(from)); }
+}
+// While a script is in the browser its file has the title's name: "My video" → my-video.md (-2 when taken).
+async function followTitle(handle) {
+  if (!state.inBrowser || handle !== state.handle || typeof handle.move !== "function") return;
+  const base = D.scriptFileName("", state.doc).slice(0, -3);
+  const from = state.name;
+  // base is a slug (a-z, 0-9 and -), so it needs no escaping.
+  if (new RegExp(`^${base}(?:-\\d+)?\\.md$`, "i").test(from)) return;
+  const taken = await nameTaken(from);
+  if (handle !== state.handle) return;
+  const name = D.scriptFileName(base, state.doc, taken);
+  await handle.move(name);
+  if (handle === state.handle) { state.name = name; renderTop(); }
+  moveKeys(from, name);
+  await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
+}
+// Ctrl/Cmd+S on a script without a file (the demo, or a file opened where files can't be saved): into the browser.
+async function saveInBrowser() {
+  if (!state.doc || state.saving || state.guest) return;
+  const doc = state.doc, text = saveText(), from = state.name;
+  state.saving = true;
+  state.saveError = "";
+  renderSaveState();
+  try {
+    const { handle, modified } = await createBrowserScript(D.scriptFileName("", doc, await nameTaken(from)), text);
+    if (state.doc === doc) {
+      moveKeys(from, handle.name);
+      Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false });
+    }
+    remember(handle, true);
+  } catch (e) {
+    if (state.doc === doc) state.saveError = e?.message || "Could not save.";
+  }
+  state.saving = false;
+  saveQueue = Q.emptyQueue();
+  renderTop();
+  renderDerived();
+  persistDraft();
+  scheduleSave();
+}
+async function deleteBrowserScript(r) {
+  await forget(r.handle);
+  try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
+  store.del(draftKey(r.name));
+  store.del(listKey(r.name));
+  idbSet(brollKey(r.name), null);
+}
 
 let listToken = 0;
 async function renderScriptList() {
@@ -2004,6 +2154,11 @@ async function renderScriptList() {
     const name = h("span", "scripts__name");
     name.textContent = r.name;
     open.append(name);
+    if (r.browser) {
+      const tag = h("span", "scripts__tag");
+      tag.textContent = "Browser";
+      open.append(tag);
+    }
     if (r.at && !r.current) {
       const when = h("span", "scripts__when");
       when.textContent = clock(r.at);
@@ -2017,7 +2172,19 @@ async function renderScriptList() {
       await openHandle(r.handle);
     });
     li.append(open);
-    if (r.handle) {
+    if (r.handle && r.browser && !r.current) {
+      // A script in the browser has no other copy: × asks once more, as "Delete", before it is gone.
+      const x = h("button", "icon-btn scripts__remove", { type: "button", "aria-label": `Delete ${r.name}` });
+      x.innerHTML = icon("x");
+      x.addEventListener("click", async () => {
+        if (!("confirm" in x.dataset)) { x.dataset.confirm = ""; x.className = "scripts__delete"; x.textContent = "Delete"; return; }
+        x.disabled = true;
+        await deleteBrowserScript(r);
+        renderScriptList();
+      });
+      x.addEventListener("blur", () => { if (x.isConnected && !x.disabled) { delete x.dataset.confirm; x.className = "icon-btn scripts__remove"; x.innerHTML = icon("x"); } });
+      li.append(x);
+    } else if (r.handle && !r.browser) {
       const x = h("button", "icon-btn scripts__remove", { type: "button", "aria-label": `Remove ${r.name} from the list` });
       x.innerHTML = icon("x");
       x.addEventListener("click", async () => { await forget(r.handle); renderScriptList(); });
@@ -2046,7 +2213,7 @@ $("#scriptSearch").addEventListener("keydown", (e) => {
 $("#menuOpen").addEventListener("click", () => { $("#scriptMenu").hidePopover(); openFile(); });
 $("#menuNew").addEventListener("click", () => { $("#scriptMenu").hidePopover(); newScript(); });
 (async () => {
-  if (!canPick || roomLink) return;
+  if (!(canPick || browserSaving) || roomLink) return;
   lastHandle = (await recentScripts())[0]?.handle ?? null;
   if (lastHandle?.name) {
     $("#reopenLabel").textContent = `Reopen ${lastHandle.name}`;
@@ -3405,7 +3572,7 @@ function scriptProblem(markdown) {
 async function scriptList() {
   const recent = [];
   for (const r of await recentScripts()) {
-    recent.push({ name: r.name, ...(r.at ? { openedAt: new Date(r.at).toISOString() } : {}), open: !!state.doc && (await sameFile(r.handle, state.handle)) });
+    recent.push({ name: r.name, ...(r.at ? { openedAt: new Date(r.at).toISOString() } : {}), open: !!state.doc && (await sameFile(r.handle, state.handle)), ...(r.browser ? { inBrowser: true } : {}) });
   }
   return { open: state.doc ? state.name : null, recent };
 }
@@ -3419,8 +3586,15 @@ async function openScript(args, by) {
   if (args.markdown != null) {
     const problem = scriptProblem(args.markdown);
     if (problem) return { error: problem };
-    const recent = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
-    const name = D.scriptFileName(args.fileName, D.parse(args.markdown), (n) => recent.has(n.toLowerCase()) || store.get(draftKey(n)) != null || (!!state.doc && n.toLowerCase() === state.name.toLowerCase()));
+    const name = D.scriptFileName(args.fileName, D.parse(args.markdown), await nameTaken());
+    // Saved in the browser at once (step J), where the browser can.
+    let made = null;
+    if (browserSaving) { try { made = await createBrowserScript(name, args.markdown); } catch { made = null; } }
+    if (made) {
+      loadText(args.markdown, { name, handle: made.handle, modified: made.modified, browser: true });
+      remember(made.handle, true);
+      return { result: `Opened as ${name}, saved in the person's browser. They can save it as a file on their computer (Export → Markdown file).` };
+    }
     loadText(args.markdown, { name });
     // None of it is in a file yet: it shows as unsaved, is kept as a draft, and the first save asks where.
     state.savedText = "";

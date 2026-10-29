@@ -4,7 +4,7 @@ import { LIMITS, SCRIPT_LIMITS } from "../public/doc.js";
 import { safeUrl } from "../public/links.js";
 import { SKETCH_MAX, BROLL_LIMITS } from "../public/broll.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 // An agent token: "se2-<birth time>-<random>", made by the Worker (POST /api/agent-token). The birth time is the
 // Worker's Date.now() in base36; the random part is 32 random bytes in base64url. The Worker's clock both writes and
@@ -176,14 +176,14 @@ export const TOOLS = [
   {
     name: "list_scripts",
     title: "List scripts",
-    description: "The person's recent scripts, newest first (the list under the file name in the editor): [{ name, openedAt, open }], and open: the file name of the script open now (null when none is). Use a name with open_script.",
+    description: "The person's recent scripts, newest first (the list under the file name in the editor): [{ name, openedAt, open, inBrowser }], and open: the file name of the script open now (null when none is). inBrowser: saved in the browser, not in a file on the computer. Use a name with open_script.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
   {
     name: "open_script",
     title: "Open a script",
-    description: "Opens a script in the editor in place of the one open now, which is saved first and stays in the recent list. Give name to open one of the person's recent scripts (from list_scripts). Or give markdown to open a new script you wrote, with an optional fileName: it opens unsaved, and the person picks where to save it the first time they save. Only when the person asked for it. Refused while they share the script with others or have a choice about unsaved changes open. When the browser needs the person's OK to read a recent file, an Open button shows in the editor and the result says so; call get_script later to see which script is open.",
+    description: "Opens a script in the editor in place of the one open now, which is saved first and stays in the recent list. Give name to open one of the person's recent scripts (from list_scripts). Or give markdown to open a new script you wrote, with an optional fileName: it is saved in the person's browser at once (where the browser can; else it opens unsaved and the person picks where to save it), and they can save it as a file later. While it is in the browser, its file name follows its title. Only when the person asked for it. Refused while they share the script with others or have a choice about unsaved changes open. When the browser needs the person's OK to read a recent file, an Open button shows in the editor and the result says so; call get_script later to see which script is open.",
     inputSchema: {
       type: "object",
       properties: {

@@ -6,6 +6,7 @@ A calm editor for video scripts. Open a Markdown script, edit it, and let **your
 
 - Edits a plain Markdown file: `## 1 · Hook (0:00–0:30)` sections, `[ON SCREEN: …]` and `[SILENT: …]` notes, and spoken paragraphs. The file stays byte for byte the same where you didn't edit it.
 - Saves itself to the file you opened (about 1.5 s after you stop typing). If the file changed on disk, it asks before overwriting.
+- A new script is saved in your browser at once, named after its title (a "Browser" tag in the switcher). **Export → Markdown file (.md)** moves it to a file on your computer. In the switcher, × and then **Delete** removes a script from the browser.
 - A section list with spoken times, a word count and the spoken length.
 - Type `/` while writing to add a part: Hook, Intro, Problem, Point, Demo, Recap, Call to action, Close or a named Section (numbered for where it lands; later sections move up), an `[ON SCREEN: ]` or `[SILENT: ]` note, B-roll for the current line, or a divider.
 - Export: the camera script (spoken text only), a prompter file, or **Open in prompter**, which opens the script on [prompter.techies.tools](https://prompter.techies.tools).
@@ -16,7 +17,7 @@ A calm editor for video scripts. Open a Markdown script, edit it, and let **your
 
 ## Your script stays with you
 
-The editor has no accounts and no built-in AI, so it costs nothing to use. Scripts are opened and saved in your browser with the File System Access API (Chrome and Edge; other browsers download a copy). A draft of unsaved changes stays in your browser's local storage.
+The editor has no accounts and no built-in AI, so it costs nothing to use. Scripts are opened and saved in your browser with the File System Access API (Chrome and Edge; other browsers download a copy). New scripts are kept in the browser's own private storage on this computer (Chrome, Edge, Firefox and Safari 26), never on a server; clearing the site's data in the browser deletes them, so save the ones you want to keep as files. A draft of unsaved changes stays in your browser's local storage.
 
 When you share a script, a small room (another Durable Object) passes changes and carets between your tab and your guests. It never stores script text: it keeps only hashes of the link's keys, when the room was made and whether it ended. The key is in the part of the link after `#`, which browsers never send to a server.
 

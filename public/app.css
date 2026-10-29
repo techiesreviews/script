@@ -473,9 +473,11 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .scripts__open { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-inline-size: 0; min-block-size: 2.25rem; padding: 0.3rem 0.5rem; border: 0; border-radius: var(--radius); background: transparent; text-align: start; cursor: pointer; }
 .scripts__open:active { background: var(--pressed); }
 .scripts__open svg { color: var(--accent-ink); }
-.scripts__name { flex: 1; font-weight: 600; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.scripts__name { flex: 1; min-inline-size: 0; font-weight: 600; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
 .scripts__when { flex: none; color: var(--faint); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
-.scripts__remove { flex: none; margin-inline-end: 0.15rem; }
+.scripts__remove { flex: none; margin-inline-end: 0.25rem; } /* room for the 36 px touch area (.icon-btn::after) inside the list */
+.scripts__tag { flex: none; padding: 0.05rem 0.4rem; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 0.7rem; font-weight: 600; }
+.scripts__delete { flex: none; margin-inline-end: 0.15rem; padding: 0.3rem 0.6rem; border: 0; border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font-size: 0.8rem; font-weight: 600; cursor: pointer; }
 .scripts__empty { padding: 0.4rem 0.5rem; color: var(--muted); font-size: 0.85rem; }
 @media (hover: hover) and (pointer: fine) {
   .scripts__open:hover { background: var(--hover); }

@@ -1,0 +1,17 @@
+# Step J: scripts saved in the browser
+
+Lex (2026-10-29): "can we save the script in the browser?" Lex chose **always in the browser first**: every new script (the person's or the agent's) is saved in the browser at once, with no question; "Save as file…" puts it on the computer when the person wants a file.
+
+## What changes
+
+- **Where.** The browser's own private file system (Origin Private File System, `navigator.storage.getDirectory()`, folder `scripts`). Its files are real file handles, so saving, auto-save, the changed-on-disk check, drafts and the recent list work as for files on disk. Used when the browser has it with `createWritable` (Chrome, Edge, Firefox, Safari 26); elsewhere everything stays as before (a new script waits for the first save, which downloads a copy). The first browser save asks the browser to keep the site's storage (`navigator.storage.persist()`), so it is not cleared to make room.
+- **New scripts.** "New script" makes the script in the browser at once, as `untitled-script.md` (`-2`, `-3`… when taken). A new script left untouched is removed when another script opens, so empty ones don't pile up. The agent's `open_script` with markdown saves its script in the browser at once too.
+- **The name follows the title** while the script is in the browser: on each save the file gets the title's name (`My video` → `my-video.md`, `-2` when taken). Its draft, its B-roll link and a B-roll list kept in the browser move with it.
+- **Ctrl/Cmd+S on a script without a file** (the demo, or a file opened in a browser that can't save files) saves it in the browser. Auto-save never does that on its own.
+- **Save as file.** Export → "Markdown file (.md)" shows for a script in the browser too. Where the browser can save files, it asks where, writes the file, and the script moves there: it is removed from the browser and goes on saving to the file. Elsewhere it downloads a copy and the script stays in the browser.
+- **The switcher** lists every script in the browser (also ones that fell off the recent list), with a quiet "Browser" tag; the save state's tooltip says "In this browser". Its × deletes a script in the browser after a second click on "Delete" (not the open one); for files on disk it still only takes them off the list. "Reopen …" on the start screen works for a script in the browser in every browser that has them.
+- **The agent.** `list_scripts` marks scripts in the browser `inBrowser: true`; `open_script` opens them by name like recent files; with markdown it says the script is saved in the person's browser.
+
+## Checks
+
+`tests/mcp.test.mjs` (the tool texts; the name rules are `scriptFileName`'s, tested in `tests/doc.test.mjs`). In a real browser (headless Chrome, local Worker, MCP over fetch; 1280 px and 390 px): New script in the browser, the name following the title, an untouched new script removed, Ctrl+S on the demo, the switcher's tag and two-click delete, Reopen, Save as file moving the script (picker stubbed), the agent's `open_script` and `list_scripts`, no sideways scroll in the switcher at 390 px. The run is in `docs/agents/evidence/step-j-browser.txt`. Not covered: Firefox and Safari (only Chrome runs headless here); a new script left untouched when the tab closes stays in the browser (it can be deleted in the switcher).
