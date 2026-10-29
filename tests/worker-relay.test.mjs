@@ -312,6 +312,15 @@ test("worker: a picture's upload address passes the bytes to the relay and answe
   assert.equal((await putImage(none.env, { headers: { "Content-Length": String(6 * 1024 * 1024 + 1) } })).status, 413);
   assert.equal((await putImage(none.env, { body: new Uint8Array(6 * 1024 * 1024 + 1) })).status, 413);
   assert.equal((await putImage(none.env, { body: new Uint8Array(0) })).status, 400);
+  // A body in several chunks without Content-Length is counted across them and stopped.
+  let cancelled = false, sent = 0;
+  const stream = new ReadableStream({
+    pull(c) { if (sent++ < 3) c.enqueue(new Uint8Array(2.5 * 1024 * 1024)); else c.close(); },
+    cancel() { cancelled = true; },
+  });
+  const chunked = await worker.fetch(new Request(IMAGE_URL, { method: "PUT", headers: { "Content-Type": "image/png" }, body: stream, duplex: "half" }), none.env);
+  assert.equal(chunked.status, 413);
+  assert.ok(cancelled, "the rest is not read");
   assert.equal(none.seen.length, 0, "nothing refused reaches the relay");
 });
 

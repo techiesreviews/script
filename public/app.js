@@ -1570,7 +1570,8 @@ function persistDraft() {
   if (!state.doc || state.pendingDraft || state.guest) return;
   // Open asks, and the agent's changes still marked, each with its exact place (so their mark and Undo come back
   // after a reload only there).
-  // Waiting pictures (step K) stay out: local storage is small. After a reload they show without their picture.
+  // Waiting pictures (step K) stay out: local storage is small. After a reload a sketch ask's shot waits for its
+  // sketch again; a suggested add shows without its picture.
   const open = C.withContext(state.asks.filter((a) => isOpen(a) || C.isMarked(a)), state.doc).map(B.withoutPictures);
   const dirty = isDirty();
   const flags = brollFlags();
@@ -3606,6 +3607,7 @@ const pictures = new Map(); // id → { at, data: "" (waiting for the file) | da
 function prunePictures() {
   const now = Date.now();
   for (const [id, p] of pictures) if (now - p.at > (p.data ? PICTURE_MS : UPLOAD_MS)) pictures.delete(id);
+  for (const [id, x] of incoming) if (now - x.at > 60_000) incoming.delete(id);
 }
 async function pictureAddress() {
   prunePictures();
@@ -3627,11 +3629,10 @@ function receivePictureHead(m) {
   const parts = Number(m.parts);
   if (!(Number.isInteger(parts) && parts >= 1 && parts <= 64)) return replyPicture(m.id, { error: "The picture did not arrive whole." });
   prunePictures();
-  for (const [id, x] of incoming) if (Date.now() - x.at > 60_000) incoming.delete(id);
   const p = pictures.get(m.code);
-  if (!p || p.data || state.guest) return replyPicture(m.id, { error: "This address is not valid (any more). Call upload_image again." });
+  if (!p || p.data || p.busy || state.guest) return replyPicture(m.id, { error: "This address is not valid (any more). Call upload_image again." });
   if (!B.IMAGE_TYPES.includes(m.mime)) return replyPicture(m.id, { error: "Send a PNG, JPEG or WebP picture." });
-  incoming.set(m.id, { code: m.code, mime: m.mime, parts, list: [], got: 0, at: Date.now() });
+  incoming.set(m.id, { code: m.code, mime: m.mime, parts, size: Number(m.size), list: [], got: 0, at: Date.now() });
 }
 function receivePictureBytes(buf) {
   if (!(buf instanceof ArrayBuffer) || buf.byteLength < 40) return;
@@ -3643,9 +3644,12 @@ function receivePictureBytes(buf) {
   if (x.got < x.parts) return;
   incoming.delete(id);
   const p = pictures.get(x.code);
-  if (!p || p.data) return replyPicture(id, { error: "This address is not valid (any more). Call upload_image again." });
+  // One-time: the first picture to arrive whole takes the address.
+  if (!p || p.data || p.busy) return replyPicture(id, { error: "This address is not valid (any more). Call upload_image again." });
+  if (x.list.reduce((n, b) => n + b.byteLength, 0) !== x.size) return replyPicture(id, { error: "The picture did not arrive whole. Send it again." });
+  p.busy = true;
   shrinkPicture(new Blob(x.list, { type: x.mime })).then((pic) => {
-    Object.assign(p, { data: pic.data, at: Date.now() });
+    Object.assign(p, { data: pic.data, at: Date.now(), busy: false });
     replyPicture(id, { result: { imageId: x.code, width: pic.width, height: pic.height } });
   }, (e) => { pictures.delete(x.code); replyPicture(id, { error: e?.message || "The editor could not read the picture." }); });
 }

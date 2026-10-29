@@ -239,6 +239,8 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
   assert.match(checkArgs("sketch_shot", { shotId: "B4", imageId: "abc", svg }), /svg or imageId, not both/);
   assert.match(checkArgs("sketch_shot", { shotId: "B4", imageId: "" }), /imageId must be an id from upload_image/);
   assert.match(checkArgs("sketch_shot", { shotId: "B4" }), /svg is required \(or imageId/);
+  for (const svgData of ["data:image/png;base64,AAAA", "  data:image/png;base64,AAAA"]) assert.match(checkArgs("sketch_shot", { shotId: "B4", svg: svgData }), /give its imageId, not svg/);
+  assert.equal(TOOLS.find((t) => t.name === "upload_image").annotations.readOnlyHint, false);
   const up = TOOLS.find((t) => t.name === "upload_image");
   assert.deepEqual(up.inputSchema, { type: "object", properties: {}, additionalProperties: false });
   assert.match(up.description, /PUT.*PNG, JPEG or WebP, at most 6 MB.*imageId/);

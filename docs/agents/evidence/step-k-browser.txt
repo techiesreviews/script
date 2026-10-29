@@ -1,4 +1,4 @@
-# Step K browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T14:24:11Z, run on the code of the commit "Step K: pictures pass as bytes in binary parts…"
+# Step K browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, pictures sent with HTTP PUT; 1280 px and 390 px; a fresh browser profile. 2026-10-29T14:26:38Z, run on the code of the commit "Step K: a picture must arrive whole…"
 ok Connect your agent shows on the start screen
 ok a script in the browser
 ok Keep made a B-roll list without asking for a file
