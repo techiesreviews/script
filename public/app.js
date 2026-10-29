@@ -2386,7 +2386,12 @@ async function loadBroll() {
   broll.link = link;
   await readBroll(token, true);
 }
-async function readBroll(token, ask) {
+// The read under way, so a write that crossed it can wait for it (step K2).
+function readBroll(token, ask) {
+  broll.reading = readBrollNow(token, ask);
+  return broll.reading;
+}
+async function readBrollNow(token, ask) {
   const link = broll.link;
   broll.status = "loading";
   renderBroll();
@@ -2799,21 +2804,24 @@ function receiveSketch(ask, shotId, svg, by) {
 // A picture for a shot in the list (step K2) goes into the list at once, lightly marked, with Undo, like a replace
 // answer; a line drawing still waits for Keep. If the write fails it stays waiting, with Keep and "Not saved".
 const putsInAtOnce = (shotId, sketch) => B.isImage(sketch) && broll.status === "ok" && !!shotById(shotId) && !state.guest;
-// → "in", "waits" (not written: Keep, Undo and "Not saved" show, or another write for the shot runs) or "changed" (the
-// list changed meanwhile, so nothing waits).
+// → "in"; "waits" (not written: Keep, Undo and "Not saved" show, or another write for the shot runs; or the same list
+// was read again and the write failed, so Keep works again); or "changed" (another list or script: nothing waits).
 async function pictureInAtOnce(ask, id, pic) {
   const prev = broll.sketches[id] || "", token = broll.token;
-  await keepSketch(id);
+  const wrote = await keepSketch(id);
   if (token !== broll.token) {
-    const outcome = B.afterListMoved({ live: sketchAsk() === ask, pending: ask.answer?.sketches?.[id] === pic, kept: broll.sketches[id] === pic });
+    const outcome = B.afterListMoved({ live: sketchAsk() === ask, pending: ask.answer?.sketches?.[id] === pic, written: wrote === "written" });
     if (outcome !== "changed") {
-      // The same list read again: the write it skipped is either in the file already, or Keep works again.
+      // The same list read again ("Allow"): the write went into its file, or Keep works again.
       delete broll.saving[id];
       if (outcome === "in") {
         delete ask.answer.sketches[id];
         ask.answer.done[id] = "kept";
         settleSketches(ask);
         broll.marked[id] = { prev, pic, askId: ask.id };
+        // The read may have taken the file before the write: read it again, so what shows and later writes have it.
+        await broll.reading?.catch?.(() => {});
+        if (broll.sketches[id] !== pic && broll.link) { const t = ++broll.token; await readBroll(t, false); }
       }
       renderBroll();
       changed();
@@ -2867,7 +2875,7 @@ async function undoMarked(id) {
 function settleSketches(ask) {
   const done = ask.answer?.done || {};
   if (!ask.shots.every((s) => done[s.id])) return;
-  closeAsk(ask, Object.values(done).includes("kept") ? "kept" : "undone");
+  closeAsk(ask, B.sketchStatus(done));
 }
 function undoSketch(id) {
   const ask = sketchAsk();
@@ -2881,6 +2889,7 @@ function undoSketch(id) {
 }
 // Keep writes the sketch into the B-roll file's "## Sketches" section, so it stays with the file.
 let brollWrites = Promise.resolve();
+// → "kept"; "written" (written into the list file, but the list moved meanwhile); "failed"; or undefined (nothing to do).
 async function keepSketch(id) {
   const ask = sketchAsk();
   const svg = B.cleanSketch(ask?.answer?.sketches?.[id] || "");
@@ -2894,7 +2903,7 @@ async function keepSketch(id) {
     const run = brollWrites.then(() => writeSketch(id, svg));
     brollWrites = run.catch(() => {});
     await run;
-    if (token !== broll.token) return;
+    if (token !== broll.token) return "written";
     broll.sketches[id] = svg;
     delete ask.answer.sketches[id];
     ask.answer.done[id] = "kept";
@@ -2902,10 +2911,15 @@ async function keepSketch(id) {
     changed();
   } catch (e) {
     if (token === broll.token) broll.problem[id] = e?.message || "Could not save the sketch.";
+    else return "failed";
+    delete broll.saving[id];
+    renderBroll();
+    return "failed";
   }
-  if (token !== broll.token) return;
+  if (token !== broll.token) return "written";
   delete broll.saving[id];
   renderBroll();
+  return "kept";
 }
 async function writeSketch(id, svg) {
   const link = broll.link;
@@ -3800,7 +3814,7 @@ function withPictures(args) {
   prunePictures();
   const requested = args.imageId != null ? [args.imageId] : (Array.isArray(args.changes) ? args.changes : []).map((c) => c?.imageId).filter((x) => x != null);
   const twice = requested.find((id, i) => requested.indexOf(id) !== i);
-  if (twice != null) return { error: `The picture ${JSON.stringify(String(twice).slice(0, 40))} is named twice: an imageId is used once.` };
+  if (twice != null) return { error: B.sketchTwice(twice) };
   const busy = requested.find((id) => pictures.get(id)?.held);
   if (busy) return { error: B.sketchHeld(busy) };
   const lookup = (id) => pictures.get(id)?.data || "";

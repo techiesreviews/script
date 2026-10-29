@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, afterListMoved, sketchStatus,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -819,6 +819,7 @@ test("sketch_shot's answers (step K2): each outcome says what happened, with the
   }
   assert.match(SKETCH_LIST_CHANGED, /changed meanwhile.*imageId still works.*without askId if list_asks shows the person's ask closed/);
   assert.match(sketchHeld("abc"), /^The picture "abc" is already being used by another call.*its imageId works again\.$/);
+  assert.equal(sketchTwice("abc"), 'The picture "abc" is named twice: an imageId is used once.');
   assert.equal(SKETCH_ANSWER_MS, 7000);
 });
 
@@ -867,12 +868,12 @@ test("pictureRoom (step K2): a held or shrinking picture never sets the time it 
 
 test("afterListMoved and sketchStatus (step K2): a list read again vs another list or script", () => {
   // The person's ask in this script still holds the picture: in when the re-read list has it, else it waits for Keep.
-  assert.equal(afterListMoved({ live: true, pending: true, kept: true }), "in");
-  assert.equal(afterListMoved({ live: true, pending: true, kept: false }), "waits");
+  assert.equal(afterListMoved({ live: true, pending: true, written: true }), "in");
+  assert.equal(afterListMoved({ live: true, pending: true, written: false }), "waits");
   // Another list or script (the ask closed or gone), or the agent sent another picture for the shot meanwhile.
-  assert.equal(afterListMoved({ live: false, pending: true, kept: false }), "changed");
-  assert.equal(afterListMoved({ live: false, pending: true, kept: true }), "changed");
-  assert.equal(afterListMoved({ live: true, pending: false, kept: false }), "changed");
+  assert.equal(afterListMoved({ live: false, pending: true, written: false }), "changed");
+  assert.equal(afterListMoved({ live: false, pending: true, written: true }), "changed");
+  assert.equal(afterListMoved({ live: true, pending: false, written: true }), "changed");
   assert.equal(sketchStatus({ B1: "kept", B2: "undone" }), "kept");
   assert.equal(sketchStatus({ B1: "undone" }), "undone");
   assert.equal(sketchStatus({}), "undone");
