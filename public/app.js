@@ -1517,6 +1517,16 @@ async function idbGet(k) {
     return await new Promise((res) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); });
   } catch { return null; }
 }
+// Like idbSet, but a failed write is an error (a B-roll list kept in the browser must not vanish silently).
+async function idbPut(k, v) {
+  const db = await idb();
+  await new Promise((res, rej) => {
+    const t = db.transaction("handles", "readwrite");
+    t.objectStore("handles").put(v, k);
+    t.oncomplete = res;
+    t.onerror = t.onabort = () => rej(t.error || new Error("IndexedDB write failed"));
+  });
+}
 // The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count; the demo's
 // unlinked { none: true } does).
 async function idbLinkedNames() {
@@ -1528,7 +1538,11 @@ async function idbLinkedNames() {
       q.onsuccess = () => {
         const c = q.result;
         if (!c) return res(out);
-        if (typeof c.key === "string" && c.key.startsWith("broll:") && c.value != null) out.push(c.key.slice(6));
+        // A B-roll link, or a B-roll list kept in the browser (step K).
+        if (typeof c.key === "string" && c.value != null) {
+          if (c.key.startsWith("broll:")) out.push(c.key.slice(6));
+          else if (c.key.startsWith("brollList:")) out.push(c.key.slice(10));
+        }
         c.continue();
       };
       q.onerror = () => res(out);
@@ -1556,7 +1570,8 @@ function persistDraft() {
   if (!state.doc || state.pendingDraft || state.guest) return;
   // Open asks, and the agent's changes still marked, each with its exact place (so their mark and Undo come back
   // after a reload only there).
-  const open = C.withContext(state.asks.filter((a) => isOpen(a) || C.isMarked(a)), state.doc);
+  // Waiting pictures (step K) stay out: local storage is small. After a reload they show without their picture.
+  const open = C.withContext(state.asks.filter((a) => isOpen(a) || C.isMarked(a)), state.doc).map(B.withoutPictures);
   const dirty = isDirty();
   const flags = brollFlags();
   if (!dirty && !open.length && !flags) { store.del(draftKey()); return; }
@@ -2110,14 +2125,15 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   const draft = store.get(draftKey(from));
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
-  const kept = store.get(listKey(from));
-  if (typeof kept === "string") { store.set(listKey(to), kept); if (clear) store.del(listKey(from)); }
-  else store.del(listKey(to));
   // The new name belongs to this script now: it takes this script's link, or none (never one left there before).
   await keyed(async () => {
     const stored = await idbGet(brollKey(from));
     await idbSet(brollKey(to), stored ?? link);
     if (clear && stored != null) await idbSet(brollKey(from), null);
+    // Its B-roll list kept in the browser goes along; the new name gets none when it has none.
+    const kept = await readKept(from);
+    await idbSet(listKey(to), kept);
+    if (clear) { await idbSet(listKey(from), null); store.del(listKey(from)); }
   });
 }
 // While a script is in the browser its file has the title's name: "My video" → my-video.md (-2 when taken).
@@ -2165,7 +2181,7 @@ async function deleteBrowserScript(r) {
   await forget(r.handle);
   try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
   store.del(draftKey(r.name));
-  store.del(listKey(r.name));
+  delKept(r.name);
   setLinkKey(null, r.name);
 }
 
@@ -2349,7 +2365,7 @@ async function readBroll(token, ask) {
   broll.status = "loading";
   renderBroll();
   let text = null;
-  const kept = link.handle ? null : store.get(listKey());
+  const kept = link.handle ? null : await getKept();
   try {
     if (typeof kept === "string") text = kept;
     else if (link.handle) {
@@ -2411,7 +2427,9 @@ function renderBroll() {
 }
 
 /* One sketch frame, as in the script and the storyboard. Pending agent sketches carry Keep / Undo. */
-const sketchSvg = (svg, label) => svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" ');
+// A line drawing, or a picture (step K; its data address was checked where it came in).
+const sketchSvg = (svg, label) => (svg.startsWith("data:image/") ? `<img src="${svg}" alt="${esc(label)}" decoding="async">`
+  : svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" '));
 function frameImg(s, label) {
   const pending = pendingSketch(s.id);
   const svg = pending || broll.sketches[s.id] || "";
@@ -2569,7 +2587,7 @@ async function setLink(link) {
   // Changing the list closes the sketch ask made for the old one.
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
-  store.del(listKey());
+  delKept();
   broll.link = link;
   broll.flags = {};
   broll.lit = null;
@@ -2583,7 +2601,7 @@ function unlinkBroll() {
   broll.token++;
   // The demo links its list by itself, so unlinking it is remembered.
   setLinkKey(state.name === SAMPLE.name ? { none: true } : null);
-  store.del(listKey());
+  delKept();
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
   Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {} });
@@ -2760,7 +2778,7 @@ function undoSketch(id) {
 let brollWrites = Promise.resolve();
 async function keepSketch(id) {
   const ask = sketchAsk();
-  const svg = B.sanitizeSvg(ask?.answer?.sketches?.[id] || "");
+  const svg = B.cleanSketch(ask?.answer?.sketches?.[id] || "");
   if (!svg || broll.saving[id]) return;
   const token = broll.token;
   broll.saving[id] = true;
@@ -2796,21 +2814,34 @@ async function writeSketch(id, svg) {
   } else {
     // The demo list and lists without a file handle are kept in this browser (see keepList).
     const next = B.setSketch(broll.text, id, svg);
-    keepList(next);
+    await keepList(next);
     broll.text = next;
   }
 }
 
 /* ---------- Add, change and remove a shot (step C3): the shot card ---------- */
-// Lists without a file (the demo, a list opened without a handle, a new list whose picker was cancelled) are kept
-// in this browser's local storage, per script, next to the draft. Discarding script changes leaves them alone.
+// Lists without a file (the demo, a list opened without a handle, a new list whose picker was cancelled, the list of
+// a script in the browser) are kept in this browser per script. Since step K they live in IndexedDB, which has room
+// for pictures; one left in local storage from before moves over when it is read. They go through the same queue as
+// the B-roll links (keyed), so a rename and a write never cross. Discarding script changes leaves them alone.
 const listKey = (name = state.name) => `brollList:${name}`;
-function keepList(text, key = listKey()) {
-  if (!store.set(key, text)) throw new Error("This browser could not keep the B-roll list.");
+async function readKept(name) {
+  const kept = await idbGet(listKey(name));
+  if (typeof kept === "string") return kept;
+  const old = store.get(listKey(name));
+  if (typeof old !== "string") return null;
+  if (await idbPut(listKey(name), old).then(() => true, () => false)) store.del(listKey(name));
+  return old;
+}
+const getKept = (name = state.name) => keyed(() => readKept(name));
+const delKept = (name = state.name) => keyed(async () => { await idbSet(listKey(name), null); store.del(listKey(name)); });
+async function keepList(text, name = state.name) {
+  try { await keyed(() => idbPut(listKey(name), text)); }
+  catch { throw new Error("This browser could not keep the B-roll list."); }
 }
 // One write to the list at a time (the same queue as the sketch Keep): read the newest text, change it, write it.
 function changeList(mutate) {
-  const token = broll.token, link = broll.link, key = listKey();
+  const token = broll.token, link = broll.link, listName = state.name;
   const run = brollWrites.then(async () => {
     if (!link || token !== broll.token) throw new Error("The B-roll list changed.");
     if (link.handle) {
@@ -2821,7 +2852,7 @@ function changeList(mutate) {
       return next;
     }
     const next = mutate(broll.text);
-    keepList(next, key);
+    await keepList(next, listName);
     return next;
   });
   brollWrites = run.catch(() => {});
@@ -2839,7 +2870,8 @@ async function startList() {
   const name = `${baseName()}-broll.md`;
   const token = ++broll.token;
   let link = null;
-  if ("showSaveFilePicker" in window) {
+  // A script in the browser (step J) keeps its list in the browser too; "Save as…" in the storyboard makes it a file.
+  if ("showSaveFilePicker" in window && !state.inBrowser) {
     // Only a cancelled picker keeps the list in the browser; any other problem shows "Not saved" in the card.
     const pick = (o) => window.showSaveFilePicker({ suggestedName: name, types: FILE_TYPES, ...o });
     let handle = null;
@@ -2855,8 +2887,8 @@ async function startList() {
     }
   }
   if (token !== broll.token) throw new Error("The script changed.");
-  if (!link) { link = { name, draft: true }; keepList(text); }
-  else store.del(listKey());
+  if (!link) { link = { name, draft: true }; await keepList(text); }
+  else delKept();
   // Keep "saving": a Keep that made this list is still writing, and a second click must not add the shot twice.
   Object.assign(broll, { link, flags: {}, lit: null, problem: {} });
   setLinkKey(link);
@@ -2879,7 +2911,7 @@ async function saveListAs() {
   broll.link = { handle, name: handle.name };
   broll.err = "";
   setLinkKey(broll.link);
-  store.del(listKey());
+  delKept();
   renderBroll();
 }
 
@@ -3404,6 +3436,8 @@ function onRelayMessage(m) {
   } else if (m.type === "call" && typeof m.id === "string") {
     if (agent.state !== "on") { agent.state = "on"; renderAgent(); }
     handleCall(m);
+  } else if (m.type === "image" && typeof m.id === "string") {
+    receivePicturePart(m);
   }
 }
 function forgetAgent() {
@@ -3507,6 +3541,12 @@ function handleCall({ id, tool, args = {} }) {
     }
     const failed = (e) => send({ error: `The editor could not do that: ${e?.message || e}` });
     if (tool === "list_scripts") return void scriptList().then((result) => send({ result }), failed);
+    if (tool === "upload_image") return void pictureAddress().then(send, failed);
+    if (tool === "sketch_shot" || tool === "answer_broll") {
+      const used = withPictures(args);
+      if (used.error) return send({ error: used.error });
+      args = used.args;
+    }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
     if (!state.doc) return send({ error: NO_SCRIPT });
     if (tool === "get_script") return send({ result: scriptInfo() });
@@ -3552,6 +3592,87 @@ function handleCall({ id, tool, args = {} }) {
   } catch (e) {
     send({ error: `The editor could not do that: ${e?.message || e}` });
   }
+}
+
+/* ---------- Pictures from the agent as sketches (step K, Lex 2026-10-29) ---------- */
+// upload_image gives a one-time address; the agent sends the file there, the Worker passes it through the relay in
+// parts, and the tab shrinks it and keeps it here, in memory only, until sketch_shot or answer_broll uses its id.
+const UPLOAD_MS = 15 * 60_000, PICTURE_MS = 30 * 60_000, PICTURES_MAX = 12;
+const pictures = new Map(); // id → { at, data: "" (waiting for the file) | data address, parts }
+function prunePictures() {
+  const now = Date.now();
+  for (const [id, p] of pictures) if (now - p.at > (p.data ? PICTURE_MS : UPLOAD_MS)) pictures.delete(id);
+}
+async function pictureAddress() {
+  prunePictures();
+  if (pictures.size >= PICTURES_MAX) return { error: `At most ${PICTURES_MAX} pictures can wait at once. Use the ones you sent first (an id is good for 30 minutes).` };
+  const id = D.newId(22);
+  pictures.set(id, { at: Date.now(), data: "", parts: null });
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(agent.token));
+  const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const url = `${location.origin}/mcp/images/${hash}/${id}`;
+  return { result: { url, how: `curl -sS -X PUT -H "Content-Type: image/png" --data-binary @picture.png "${url}"`, note: "The answer gives the imageId for sketch_shot or an answer_broll add." } };
+}
+function receivePicturePart(m) {
+  const reply = (payload) => { try { agent.ws?.send(JSON.stringify({ type: "result", id: m.id, ...payload })); } catch { /* closed */ } };
+  const parts = Number(m.parts), part = Number(m.part);
+  if (!(Number.isInteger(parts) && parts >= 1 && parts <= 40 && Number.isInteger(part) && part >= 0 && part < parts) || typeof m.data !== "string") return;
+  prunePictures();
+  const p = pictures.get(m.code);
+  if (!p || p.data || state.guest) { if (part === parts - 1) reply({ error: "This address is not valid (any more). Call upload_image again." }); return; }
+  if (!p.parts || p.parts.id !== m.id) p.parts = { id: m.id, list: [], got: 0 };
+  if (p.parts.list[part] == null) { p.parts.list[part] = m.data; p.parts.got++; }
+  if (p.parts.got < parts) return;
+  const data = p.parts.list.join("");
+  p.parts = null;
+  if (!B.IMAGE_TYPES.includes(m.mime)) return reply({ error: "Send a PNG, JPEG or WebP picture." });
+  shrinkPicture(data, m.mime).then((pic) => {
+    Object.assign(p, { data: pic.data, at: Date.now() });
+    reply({ result: { imageId: m.code, width: pic.width, height: pic.height } });
+  }, (e) => { pictures.delete(m.code); reply({ error: e?.message || "The editor could not read the picture." }); });
+}
+// At most 960 × 720, as JPEG, small enough to keep in the B-roll list (B.IMAGE_MAX).
+async function shrinkPicture(base64, mime) {
+  let bitmap;
+  try { bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], { type: mime })); }
+  catch { throw new Error("The editor could not read the picture. Send a PNG, JPEG or WebP file."); }
+  try {
+    for (const [max, quality] of [[960, 0.82], [960, 0.65], [720, 0.65], [480, 0.6]]) {
+      const scale = Math.min(1, max / bitmap.width, (max * 0.75) / bitmap.height);
+      const width = Math.max(1, Math.round(bitmap.width * scale)), height = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement("canvas");
+      Object.assign(canvas, { width, height });
+      const g = canvas.getContext("2d");
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, width, height);
+      g.drawImage(bitmap, 0, 0, width, height);
+      const data = canvas.toDataURL("image/jpeg", quality);
+      if (B.isImage(data)) return { data, width, height };
+    }
+  } finally { bitmap.close?.(); }
+  throw new Error("The picture could not be made small enough.");
+}
+// sketch_shot { imageId } and answer_broll adds { imageId }: the picture's data address takes the svg's or sketch's place.
+function withPictures(args) {
+  prunePictures();
+  const lookup = (id) => pictures.get(id)?.data || "";
+  const unknown = (id) => ({ error: `Unknown imageId ${JSON.stringify(String(id).slice(0, 40))}: send the picture with upload_image first (an id is good for 30 minutes).` });
+  if (args.imageId != null) {
+    const data = lookup(args.imageId);
+    if (!data) return unknown(args.imageId);
+    const { imageId, ...rest } = args;
+    return { args: { ...rest, svg: data } };
+  }
+  if (!Array.isArray(args.changes) || !args.changes.some((c) => c?.imageId != null)) return { args };
+  const changes = [];
+  for (const c of args.changes) {
+    if (c?.imageId == null) { changes.push(c); continue; }
+    const data = lookup(c.imageId);
+    if (!data) return unknown(c.imageId);
+    const { imageId, ...rest } = c;
+    changes.push({ ...rest, sketch: data });
+  }
+  return { args: { ...args, changes } };
 }
 
 /* ---------- B-roll and sketches the person asked for in the agent's own chat (step I, Lex 2026-10-29) ---------- */
@@ -3947,7 +4068,9 @@ function setRoomAsks(asks) {
 }
 // Host: the B-roll list as guests get it (in the snapshot and after each change).
 function brollShare() {
-  return broll.status === "ok" ? { status: "ok", name: broll.link?.name || "B-roll list", text: broll.text, flags: brollFlags() || {} } : { status: "none" };
+  // A large list goes to guests without its pictures (step K): room messages stay small.
+  const text = broll.text.length > 700_000 ? B.withoutPictureLines(broll.text) : broll.text;
+  return broll.status === "ok" ? { status: "ok", name: broll.link?.name || "B-roll list", text, flags: brollFlags() || {} } : { status: "none" };
 }
 // Guest: the host's B-roll list, shown as the host shows it (no file, no changes from here).
 function setRoomBroll(b) {

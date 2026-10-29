@@ -20,7 +20,7 @@ export const OPEN_STATUSES = ["waiting", "taken", "answered"];
 export const WORDS_PER_MINUTE = 160;
 export const MESSAGE_MAX = 200;
 // Limits for answers from an agent (shared with the Worker's tool schemas).
-export const LIMITS = { askId: 40, shotId: 20, text: 4000, message: MESSAGE_MAX, marks: 20, quote: 500, why: 160, rewrite: 1000, instruction: 500, voiceGuide: 20 * 1024, links: LINK_LIMITS.links, url: LINK_LIMITS.url };
+export const LIMITS = { askId: 40, shotId: 20, imageId: 40, text: 4000, message: MESSAGE_MAX, marks: 20, quote: 500, why: 160, rewrite: 1000, instruction: 500, voiceGuide: 20 * 1024, links: LINK_LIMITS.links, url: LINK_LIMITS.url };
 export const ANSWER_KINDS = ["replace", "add", "note", "marks", "links"];
 
 /* ---------- Ids ---------- */

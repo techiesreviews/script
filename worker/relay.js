@@ -5,6 +5,7 @@ import { DurableObject } from "cloudflare:workers";
 import { MAX_AGE_MS, LEGACY_UNTIL } from "./mcp.js";
 
 export const ALARM_SLACK_MS = 60_000;
+export const IMAGE_PART = 256 * 1024;
 // When a note may go: its expiry, or for a note from before expiresAt (legacy tokens) the day legacy tokens stop.
 const dueOf = (meta) => (meta?.expiresAt ?? LEGACY_UNTIL) + ALARM_SLACK_MS;
 
@@ -136,5 +137,28 @@ export class Relay extends DurableObject {
       });
     }
     return { status: "ok" };
+  }
+
+  // A picture from the agent (step K), from the Worker's upload address: sent on to the tab in parts (WebSocket
+  // messages stay small) and answered by it, like a call. Never stored.
+  async image({ code, type, data }) {
+    const meta = await this.meta();
+    await this.keepTimed(meta);
+    if (!this.valid(meta)) return { status: "unauthorized" };
+    const ws = this.tab();
+    if (!ws) return { status: "no-tab" };
+    const id = crypto.randomUUID();
+    const size = IMAGE_PART;
+    const parts = Math.max(1, Math.ceil(data.length / size));
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => { this.pending.delete(id); resolve({ status: "timeout" }); }, 30_000);
+      this.pending.set(id, { done: (r) => { clearTimeout(timer); this.pending.delete(id); resolve(r); } });
+      for (let part = 0; part < parts; part++) {
+        if (!this.send(ws, { type: "image", id, code, mime: type, part, parts, data: data.slice(part * size, (part + 1) * size) })) {
+          this.pending.get(id)?.done({ status: "no-tab" });
+          return;
+        }
+      }
+    });
   }
 }

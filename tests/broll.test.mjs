@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -713,4 +713,45 @@ test("what the agent sees: a plan ask gets the spoken text and the B-roll; a ske
   assert.deepEqual([sel.quote, sel.context, sel.section, sel.spokenText, sel.broll, sel.voiceGuide], ["q", "c", "1", undefined, undefined, undefined]);
   assert.equal(askForAgent({ id: "v", scope: "script", action: "voice" }, ctx).voiceGuide, "Short and warm.");
   assert.equal(askForAgent({ id: "l", scope: "selection", action: "like" }, { ...ctx, voiceGuide: "" }).voiceGuide, undefined);
+});
+
+test("pictures as sketches (step K): read, written, replacing line drawings, exported; bad data refused", () => {
+  const pic = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
+  const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/></svg>';
+  assert.equal(isImage(pic), true);
+  for (const bad of ["data:image/gif;base64,R0lGOD", "data:image/png;base64,ab cd", "data:text/html;base64,PGI+", `data:image/png;base64,${"A".repeat(IMAGE_MAX)}`, "javascript:x"]) {
+    assert.equal(isImage(bad), false, bad.slice(0, 30));
+  }
+  assert.equal(cleanSketch(pic), pic);
+  assert.equal(cleanSketch("data:image/svg+xml;base64,PHN2Zz4="), "");
+  assert.equal(cleanSketch(svg), svg);
+  // Written as one Markdown image line under ## Sketches, read back; it replaces a line drawing and the other way round.
+  const withSvg = setSketch(DEMO, "B1", svg);
+  const withPic = setSketch(withSvg, "B1", pic);
+  assert.equal(parseBroll(withPic).sketches.B1, pic);
+  assert.ok(withPic.includes(`![B1](${pic})`));
+  assert.ok(!/```svg B1/.test(withPic));
+  const back = setSketch(withPic, "B1", svg);
+  assert.equal(back, withSvg);
+  // A picture line with a bad address is not a sketch; removing the shot takes its picture along.
+  assert.equal(parseBroll(`${DEMO}\n## Sketches\n\n![Z9](data:text/html;base64,PGI+)\n`).sketches.Z9, undefined);
+  assert.ok(!removeShot(withPic, "B1").includes("![B1]"));
+  // HTML: an img with its label; exports keep it.
+  assert.equal(sketchHtml(pic, "Sketch B1"), `<img src="${pic}" alt="Sketch B1" decoding="async">`);
+  assert.equal(sketchHtml("data:image/gif;base64,R0lGOD", "x"), "");
+  const { shots } = parseBroll(withPic);
+  assert.ok(exportBroll(shots, { B1: pic }).includes(`![B1](${pic})`));
+  assert.equal(parseBroll(exportBroll(shots, { B1: pic })).sketches.B1, pic);
+  assert.ok(exportStoryboard(shots, { B1: pic }).includes(`<img src="${pic}" alt="Sketch B1"`));
+  // Answers: a sketch ask and an add may carry a picture.
+  assert.equal(checkSketch({ scope: "broll", action: "sketch", status: "taken", shots: [{ id: "B1" }] }, { shotId: "B1", svg: pic }).svg, pic);
+  assert.match(checkSketch({ scope: "broll", action: "sketch", status: "taken", shots: [{ id: "B1" }] }, { shotId: "B1", svg: "data:image/gif;base64,R0lGOD" }).error, /picture can't be used/);
+  // Drafts and guests get asks without waiting pictures; large lists without picture lines.
+  const sk = withoutPictures({ answer: { kind: "sketches", sketches: { B1: pic, B2: svg }, done: {} } });
+  assert.deepEqual([sk.answer.sketches, sk.answer.done], [{ B2: svg }, { B1: "undone" }]);
+  const sug = withoutPictures({ answer: { kind: "broll", changes: [{ op: "add", sketch: pic }, { op: "add", sketch: svg }] } });
+  assert.deepEqual(sug.answer.changes.map((c) => c.sketch ?? null), [null, svg]);
+  const plain = { answer: { kind: "broll", changes: [{ op: "add" }] } };
+  assert.equal(withoutPictures(plain), plain);
+  assert.equal(withoutPictureLines(withPic), withPic.replace(`![B1](${pic})\n`, ""));
 });

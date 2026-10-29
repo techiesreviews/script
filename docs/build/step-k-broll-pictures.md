@@ -1,0 +1,18 @@
+# Step K: pictures from the agent as B-roll sketches
+
+Lex (2026-10-29): "For the b roll, we now have line drawings, can we also let AI add images, for instance sketches made by GPT." Lex chose to keep the pictures **inside the B-roll list file**, and asked that the browser's storage be used where a list lives in the browser.
+
+The editor still makes no AI calls: the person's own agent makes the picture (for example with GPT's image tool on the person's own plan) and sends it.
+
+## What changes
+
+- **Upload.** A picture is too big to type into a tool call, so the agent uploads the file. `upload_image` gives it a one-time address (good for 15 minutes); the agent sends the image there (`curl -X PUT --data-binary @picture.png -H "Content-Type: image/png" <url>`, PNG, JPEG or WebP, at most 6 MB) and gets an `imageId`. The Worker passes the bytes through the live relay to the tab in parts and stores nothing. The tab shrinks the picture (at most 960 × 720, JPEG) and keeps it in memory for 30 minutes, at most 12 at a time.
+- **Use.** `sketch_shot { shotId, imageId }` (instead of `svg`) shows the picture as the shot's sketch, and an `answer_broll` add can bring `imageId` (instead of `sketch`). Keep and Undo work as for line drawings. A shot has one sketch: a kept picture replaces its line drawing, and the other way round.
+- **In the file.** Under `## Sketches` a picture is one Markdown image line, `![B4](data:image/jpeg;base64,…)`, so other Markdown apps show it too. `parseBroll` reads it back; only PNG, JPEG and WebP data addresses of at most 400,000 characters count.
+- **Shown.** Frames beside the lines, the storyboard and the storyboard export show pictures as images; the B-roll list export writes them as image lines.
+- **Memory and sharing.** A picture waiting for Keep or Undo is not kept with the draft (local storage is small): after a reload it shows without its picture. Guests get waiting pictures without the image, and the shared list without pictures when it is large (over 700,000 characters).
+- **B-roll lists in the browser** (the demo, lists in browsers that can't save files, a list whose save picker was cancelled) move from local storage to IndexedDB, which has room for pictures; old ones move over when read. A script saved in the browser (step J) keeps its new B-roll list in the browser too, without asking for a file; "Save as…" in the storyboard still moves it to a file.
+
+## Checks
+
+`tests/broll.test.mjs` (image lines read and written, replaced by and replacing line drawings, bad data refused, exports) and `tests/mcp.test.mjs` (the tools and their arguments). In a real browser (headless Chrome, local Worker, MCP over fetch, the upload over HTTP): upload, `sketch_shot` and an `answer_broll` add with a picture, Keep writing the image line, Undo, the storyboard and its export, a bad upload and an unknown imageId refused, a list kept in the browser with pictures (back after a reload), an old list in local storage moving over, desktop and 390 px. The run is in `docs/agents/evidence/step-k-browser.txt`; `scripts/smoke-relay.mjs` lists the ten tools. Not covered: guests seeing pictures, the 700,000-character cut for guests, Firefox and Safari.

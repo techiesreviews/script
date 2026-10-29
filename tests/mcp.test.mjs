@@ -101,9 +101,9 @@ test("/mcp: a token past its time, or from the future, is refused without asking
   assert.ok(legacy.ops.every((o) => o.born === null), "a legacy token's ops carry born: null");
 });
 
-test("tools/list has the nine tools with input schemas and limits", async () => {
+test("tools/list has the ten tools with input schemas and limits", async () => {
   const r = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "answer_broll", "get_script", "list_asks", "list_scripts", "open_script", "set_script", "sketch_shot", "wait_for_asks"]);
+  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "answer_broll", "get_script", "list_asks", "list_scripts", "open_script", "set_script", "sketch_shot", "upload_image", "wait_for_asks"]);
   const answer = TOOLS.find((t) => t.name === "answer_ask").inputSchema;
   assert.equal(answer.properties.text.maxLength, 4000);
   assert.equal(answer.properties.message.maxLength, 200);
@@ -218,7 +218,7 @@ test("tool errors: no tab, the tab's own refusal, and a quiet wait", async () =>
 
 test("sketch_shot: schema, limits, and get_script describes the B-roll", async () => {
   const tool = TOOLS.find((t) => t.name === "sketch_shot");
-  assert.deepEqual(tool.inputSchema.required, ["shotId", "svg"]);
+  assert.deepEqual(tool.inputSchema.required, ["shotId"]);
   assert.equal(tool.inputSchema.properties.svg.maxLength, 8192);
   assert.equal(tool.inputSchema.properties.shotId.maxLength, 20);
   assert.match(TOOLS.find((t) => t.name === "get_script").description, /broll: .*blockIds.*check/);
@@ -234,6 +234,15 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
     [{ askId: "a", shotId: "B4", svg, style: "x" }, /Unknown argument/],
   ]) assert.match(checkArgs("sketch_shot", args), re);
   assert.equal(checkArgs("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(8192) }), "");
+  // Step K: a picture by imageId instead of svg.
+  assert.equal(checkArgs("sketch_shot", { shotId: "B4", imageId: "abc" }), "");
+  assert.match(checkArgs("sketch_shot", { shotId: "B4", imageId: "abc", svg }), /svg or imageId, not both/);
+  assert.match(checkArgs("sketch_shot", { shotId: "B4", imageId: "" }), /imageId must be an id from upload_image/);
+  assert.match(checkArgs("sketch_shot", { shotId: "B4" }), /svg is required \(or imageId/);
+  const up = TOOLS.find((t) => t.name === "upload_image");
+  assert.deepEqual(up.inputSchema, { type: "object", properties: {}, additionalProperties: false });
+  assert.match(up.description, /PUT.*PNG, JPEG or WebP, at most 6 MB.*imageId/);
+  assert.match(INSTRUCTIONS, /upload_image, then give its imageId/);
   // Step I: without askId, a sketch the person asked for in the agent's chat.
   assert.equal(checkArgs("sketch_shot", { shotId: "B4", svg }), "");
   assert.equal(checkArgs("sketch_shot", { askId: null, shotId: "B4", svg }), "");
@@ -262,6 +271,9 @@ test("answer_broll: schema, limits and refusals before the tab; the prompt and i
     [{ askId: "a", changes: [{ ...add, sketch: "x".repeat(8193) }] }, /sketch is longer than 8192/],
     [{ askId: "a", changes: [{ ...add, sketch: 5 }] }, /sketch must be text/],
     [{ askId: "a", changes: [{ op: "update", id: "B1", what: "x", sketch: "<svg/>" }] }, /sketch goes with an add/],
+    [{ askId: "a", changes: [{ op: "update", id: "B1", what: "x", imageId: "p" }] }, /sketch goes with an add/],
+    [{ askId: "a", changes: [{ ...add, imageId: "p", sketch: "<svg/>" }] }, /sketch or imageId, not both/],
+    [{ askId: "a", changes: [{ ...add, imageId: 5 }] }, /imageId must be an id from upload_image/],
     [{ askId: "a" }, /changes must be a list/],
     [{ askId: "a", changes: [] }, /changes must be a list/],
     [{ askId: "a", changes: Array(21).fill(add) }, /At most 20 changes/],

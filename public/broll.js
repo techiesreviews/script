@@ -5,6 +5,23 @@ import { outline, contentOf, blockById } from "./doc.js";
 import { spokenText } from "./links.js";
 
 export const SKETCH_MAX = 8 * 1024;
+// A picture as a sketch (step K): a PNG, JPEG or WebP data address, shrunk by the tab first.
+export const IMAGE_MAX = 400_000;
+// The file the agent sends may be bigger: the tab shrinks it.
+export const IMAGE_UPLOAD_MAX = 6 * 1024 * 1024;
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const IMAGE_RE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+const IMAGE_LINE_RE = /^[ \t]{0,3}!\[([^\]\s]+)\]\((data:image\/[^)\s]+)\)[ \t]*$/;
+export const isImage = (v) => typeof v === "string" && v.length <= IMAGE_MAX && IMAGE_RE.test(v);
+/** A sketch as it may be kept and shown: a picture's data address as it is, a line drawing cleaned; else "". */
+export const cleanSketch = (v) => (typeof v === "string" && v.startsWith("data:") ? (isImage(v) ? v : "") : sanitizeSvg(v));
+/** A kept sketch as HTML: the picture or the line drawing, labelled (or hidden from screen readers without a label). */
+export function sketchHtml(value, label = "") {
+  const v = cleanSketch(value);
+  if (!v) return "";
+  if (isImage(v)) return `<img src="${v}" alt="${escHtml(label)}" decoding="async">`;
+  return v.replace("<svg ", label ? `<svg role="img" aria-label="${escHtml(label)}" ` : '<svg aria-hidden="true" ');
+}
 export const SKETCH_VIEWBOX = "0 0 260 140";
 export const SKETCH_CLASSES = ["s", "l", "o", "mv"];
 export const KINDS = ["broll", "motion", "screen"];
@@ -58,6 +75,13 @@ function scan(markdown) {
         if (svg) sketches[f[3]] = svg;
       }
       i = j;
+      continue;
+    }
+    const img = line.match(IMAGE_LINE_RE);
+    if (img) {
+      // A picture sketch (step K): one line, kept like a fence so a removed shot takes it along.
+      fences.push({ start: i, end: i, id: img[1] });
+      if (isImage(img[2])) sketches[img[1]] = img[2];
       continue;
     }
     const h = line.match(/^[ \t]{0,3}(#{1,6})[ \t]+(.*)$/);
@@ -262,19 +286,28 @@ const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // One element per line, so the file stays readable.
 export const sketchLines = (svg) => svg.replace(/></g, ">\n<");
 
-/** setSketch(markdown, id, svg) → the B-roll Markdown with the sketch stored as ```svg ID … ``` under "## Sketches". */
-export function setSketch(markdown, id, svg) {
+/** setSketch(markdown, id, sketch) → the B-roll Markdown with the sketch stored under "## Sketches": a line drawing as
+ *  ```svg ID … ```, a picture as ![ID](data:image/…). It takes the place of the shot's earlier sketch of either kind. */
+export function setSketch(markdown, id, sketch) {
   const src = String(markdown ?? "");
   const eol = /\r\n/.test(src) ? "\r\n" : "\n";
   const text = src.replace(/\r\n?/g, "\n");
-  const fence = `\`\`\`svg ${id}\n${sketchLines(svg)}\n\`\`\``;
-  const existing = new RegExp(`^\`\`\`svg[ \\t]+${escRe(id)}[ \\t]*\\n(?:[\\s\\S]*?\\n)?\`\`\`[ \\t]*$`, "m");
+  const block = isImage(sketch) ? [`![${id}](${sketch})`] : `\`\`\`svg ${id}\n${sketchLines(sketch)}\n\`\`\``.split("\n");
+  const { fences } = scan(text);
+  const lines = text.split("\n");
+  const old = fences.filter((f) => f.id === id);
   let out;
-  if (existing.test(text)) out = text.replace(existing, () => fence);
-  else {
-    const lines = text.split("\n");
+  if (old.length) {
+    // In the first one's place; any other for the same id goes, with the blank line before it.
+    for (const f of old.slice(1).reverse()) {
+      const a = f.start > 0 && !lines[f.start - 1].trim() ? f.start - 1 : f.start;
+      lines.splice(a, f.end - a + 1);
+    }
+    lines.splice(old[0].start, old[0].end - old[0].start + 1, ...block);
+    out = lines.join("\n");
+  } else {
     const h = lines.findIndex((l) => /^##[ \t]+Sketches[ \t]*$/i.test(l));
-    if (h < 0) out = `${text.replace(/\s+$/, "")}${text.trim() ? "\n\n" : ""}## Sketches\n\n${fence}\n`;
+    if (h < 0) out = `${text.replace(/\s+$/, "")}${text.trim() ? "\n\n" : ""}## Sketches\n\n${block.join("\n")}\n`;
     else {
       let end = lines.length, inFence = false;
       for (let i = h + 1; i < lines.length; i++) {
@@ -284,8 +317,7 @@ export function setSketch(markdown, id, svg) {
       const last = end === lines.length;
       let k = end;
       while (k > h + 1 && !lines[k - 1].trim()) k--;
-      const add = ["", ...fence.split("\n"), ""];
-      lines.splice(k, end - k, ...add);
+      lines.splice(k, end - k, "", ...block, "");
       out = lines.join("\n");
       if (last) out = out.replace(/\n*$/, "\n");
     }
@@ -303,23 +335,43 @@ export function checkSketch(ask, args) {
   if (typeof a.shotId !== "string" || !(ask.shots || []).some((s) => s.id === a.shotId)) return { error: `shotId must be one of: ${(ask.shots || []).map((s) => s.id).join(", ")}.` };
   if (ask.answer?.done?.[a.shotId]) return { error: `This shot is finished (${ask.answer.done[a.shotId]}).` };
   if (typeof a.svg !== "string" || !a.svg.trim()) return { error: "svg is required." };
+  // A picture (step K) comes as its data address: the tab looked up the imageId.
+  if (a.svg.startsWith("data:")) return isImage(a.svg) ? { svg: a.svg } : { error: "The picture can't be used." };
   if (a.svg.length > SKETCH_MAX) return { error: `svg is longer than ${SKETCH_MAX} characters.` };
   const svg = sanitizeSvg(a.svg);
   if (!svg) return { error: "Nothing drawable is left after cleaning. Use path, rect, circle, ellipse, line, polyline, polygon or text with class s, l, o or mv." };
   return { svg };
 }
 
+/** A copy of an ask without its waiting pictures (step K), for drafts and guests: a sketch ask's picture counts as
+ *  undone, an add keeps its suggestion without the picture. Asks without pictures come back as they are. */
+export function withoutPictures(ask) {
+  const a = ask?.answer;
+  const pic = (v) => typeof v === "string" && v.startsWith("data:");
+  if (a?.kind === "sketches" && Object.values(a.sketches || {}).some(pic)) {
+    const sketches = {}, done = { ...(a.done || {}) };
+    for (const [id, v] of Object.entries(a.sketches)) { if (pic(v)) done[id] = "undone"; else sketches[id] = v; }
+    return { ...ask, answer: { ...a, sketches, done } };
+  }
+  if (a?.kind === "broll" && (a.changes || []).some((c) => pic(c?.sketch))) {
+    return { ...ask, answer: { ...a, changes: a.changes.map((c) => { if (!pic(c?.sketch)) return c; const { sketch, ...rest } = c; return rest; }) } };
+  }
+  return ask;
+}
+/** The list without its picture lines (step K), for guests when it is large. */
+export const withoutPictureLines = (markdown) => String(markdown ?? "").split(/(?<=\n)/).filter((l) => !IMAGE_LINE_RE.test(l.replace(/\r?\n$/, ""))).join("");
+
 /** Clean an ask's agent sketches where they come in from a draft or the room (step I): a sketch ask's waiting
  *  sketches and the adds' sketches. One that cleans to nothing is dropped. Returns the ask. */
 export function cleanSketches(ask) {
   const answer = ask?.answer;
   if (answer?.kind === "sketches" && answer.sketches && typeof answer.sketches === "object") {
-    for (const [id, svg] of Object.entries(answer.sketches)) { const clean = sanitizeSvg(svg); if (clean) answer.sketches[id] = clean; else delete answer.sketches[id]; }
+    for (const [id, svg] of Object.entries(answer.sketches)) { const clean = cleanSketch(svg); if (clean) answer.sketches[id] = clean; else delete answer.sketches[id]; }
   }
   if (answer?.kind === "broll" && Array.isArray(answer.changes)) {
     for (const c of answer.changes) {
       if (c?.sketch == null) continue;
-      const clean = sanitizeSvg(c.sketch);
+      const clean = cleanSketch(c.sketch);
       if (clean) c.sketch = clean; else delete c.sketch;
     }
   }
@@ -360,10 +412,14 @@ export function exportBroll(shots, sketches = {}, { title = "" } = {}) {
   const rows = shots.map((s) => `| ${[s.id, KIND_NAME[s.kind] || KIND_NAME.broll, s.what, s.over, s.how, s.check ? "Check" : ""].map(cell).join(" | ")} |`);
   const out = [`# ${cell(title) ? `${cell(title)} · ` : ""}B-roll list`, "",
     "| # | Kind | What to show | Over (A-roll line) | How to make it | Check |", "| --- | --- | --- | --- | --- | --- |", ...rows];
-  const ids = sketchOrder(shots, sketches).filter((id) => /^\S+$/.test(id) && sanitizeSvg(sketches[id]));
+  const ids = sketchOrder(shots, sketches).filter((id) => /^[^\s\]]+$/.test(id) && cleanSketch(sketches[id]));
   if (ids.length) {
     out.push("", "## Sketches");
-    for (const id of ids) out.push("", `\`\`\`svg ${id}`, sketchLines(sanitizeSvg(sketches[id])), "```");
+    for (const id of ids) {
+      const v = cleanSketch(sketches[id]);
+      if (isImage(v)) out.push("", `![${id}](${v})`);
+      else out.push("", `\`\`\`svg ${id}`, sketchLines(v), "```");
+    }
   }
   return out.join("\n") + "\n";
 }
@@ -379,6 +435,7 @@ li { break-inside: avoid; }
 .img { display: block; aspect-ratio: 260 / 140; overflow: clip; margin-block-end: 0.45rem; border: 1px solid var(--line); border-radius: 6px; }
 .img.empty { border-style: dashed; }
 svg { display: block; inline-size: 100%; block-size: auto; }
+.img img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
 svg :where(path, rect, circle, ellipse, line, polyline, polygon) { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 svg .l { stroke: oklch(70% 0 none); }
 svg .o { stroke: var(--accent); stroke-width: 2.2; }
@@ -398,9 +455,8 @@ b { margin-inline-end: 0.4rem; font-variant-numeric: tabular-nums; }
  */
 export function exportStoryboard(shots, sketches = {}, { title = "", missing = (s) => !s.blockIds?.length } = {}) {
   const frame = (s) => {
-    const svg = sanitizeSvg(sketches[s.id] || "");
-    const img = svg ? svg.replace("<svg ", `<svg role="img" aria-label="Sketch ${escHtml(s.id)}" `) : "";
-    return `<li${missing(s) ? ' class="missing"' : ""}><span class="img${svg ? "" : " empty"}">${img}</span>`
+    const img = sketchHtml(sketches[s.id] || "", `Sketch ${s.id}`);
+    return `<li${missing(s) ? ' class="missing"' : ""}><span class="img${img ? "" : " empty"}">${img}</span>`
       + `<b>${escHtml(s.id)}</b><span class="kind ${escHtml(s.kind)}">${escHtml(KIND_NAME[s.kind] || KIND_NAME.broll)}</span>${escHtml(s.what)}`
       + `<span class="over">Over: ${escHtml(s.over || "–")}</span></li>`;
   };
@@ -680,8 +736,9 @@ export function checkBrollAnswer(ask, args, { doc, shots = [] } = {}) {
     if (c.sketch != null) {
       if (c.op !== "add") return { error: `${at}: a sketch goes with an add. For a shot in the list, use sketch_shot.` };
       if (typeof c.sketch !== "string") return { error: `${at}: sketch must be text.` };
-      if (c.sketch.length > SKETCH_MAX) return { error: `${at}: sketch is longer than ${SKETCH_MAX} characters.` };
-      sketch = c.sketch.trim() ? sanitizeSvg(c.sketch) : "";
+      const max = c.sketch.startsWith("data:") ? IMAGE_MAX : SKETCH_MAX;
+      if (c.sketch.length > max) return { error: `${at}: sketch is longer than ${max} characters.` };
+      sketch = c.sketch.trim() ? cleanSketch(c.sketch) : "";
       if (c.sketch.trim() && !sketch) return { error: `${at}: nothing drawable is left of the sketch after cleaning. Use path, rect, circle, ellipse, line, polyline, polygon or text with class s, l, o or mv.` };
     }
     const why = oneLine(c.why);
@@ -716,7 +773,7 @@ export function applyBrollChange(markdown, c) {
     const now = parseBroll(markdown);
     const id = nextShotId(now.shots, c.kind, now.sketches);
     const md = addShot(markdown, { id, kind: c.kind, what: c.what, over: c.over, how: c.how });
-    const svg = c.sketch ? sanitizeSvg(c.sketch) : "";
+    const svg = c.sketch ? cleanSketch(c.sketch) : "";
     return svg ? setSketch(md, id, svg) : md;
   }
   if (c.op === "update") return updateShot(markdown, c.id, { what: c.what, how: c.kind === "screen" ? undefined : c.how, kind: c.kind });

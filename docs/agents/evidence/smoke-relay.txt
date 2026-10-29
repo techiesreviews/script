@@ -14,7 +14,7 @@ ok serverInfo is script-editor
 ok notification gets 202
 ok tab learns the agent's name
 ok foreign Origin is refused
-ok tools/list has the nine tools
+ok tools/list has the ten tools
 ok get_script returns the tab's script
 ok wait_for_asks returns the new ask
 ok answer_ask reaches the tab

@@ -116,7 +116,8 @@ export function guestMayAct(ask, act, askerId) {
 export const mayAct = (ask, { host = false, id = "" } = {}) => host || (!!id && ask?.by?.id === id);
 /** What the host shares: the open asks and the marked changes, copied; each marked change with its exact place in
  *  the host's `doc` (C.withContext), so a guest finds that place or shows no mark. */
-export const shareAsks = (asks, doc) => C.withContext(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)), doc);
+// Guests get waiting pictures (step K) without the image: room messages stay small.
+export const shareAsks = (asks, doc) => C.withContext(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)), doc).map(B.withoutPictures);
 /** A guest places the host's asks in its own copy of the script: each quote is found again near its place; a
  *  marked change only at its exact place (C.place), or where this guest's own copy of it (`prev`, the asks shown
  *  now) has followed it since, while its text is there. An ask whose text is not here (yet) is left out; B-roll
