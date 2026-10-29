@@ -3118,7 +3118,7 @@ function connectionPrompt() {
   return `Connect to my script editor as an MCP server and answer my asks.
 Server: ${url} (Streamable HTTP)
 Header: Authorization: ${auth}
-1. Add this server as "script-editor" in your own MCP settings, the way your app does it. If a script-editor entry is already there, replace it: the token changes on every connection. For example:
+1. Add this server as "script-editor" in your own MCP settings, the way your app does it. If a script-editor entry is already there, replace it: the token changes after Disconnect MCP or 8 hours. For example:
    - Claude Code: claude mcp add --transport http script-editor ${url} --header "Authorization: ${auth}"
    - Codex (~/.codex/config.toml):
      [mcp_servers.script-editor]

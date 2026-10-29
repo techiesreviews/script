@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 // Lex, 2026-10-29: the copied prompt connects any MCP agent, not only Claude Code.
 const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+// The test reads the function's source text from app.js and runs it with a stand-in location and token.
 const src = app.match(/^function connectionPrompt\(\) \{\n[\s\S]*?\n\}\n/m)?.[0];
 const origin = "https://script.techies.tools";
 const token = `se2-abcdefgh-${"A".repeat(43)}`;
@@ -11,9 +12,10 @@ const prompt = src && new Function("location", "agent", `${src}\nreturn connecti
 
 test("connection prompt: the server and header come first, for any MCP client", () => {
   assert.ok(src, "connectionPrompt is found in app.js");
-  assert.match(prompt, new RegExp(`^Server: ${origin}/mcp \\(Streamable HTTP\\)$`, "m"));
-  assert.match(prompt, new RegExp(`^Header: Authorization: Bearer ${token}$`, "m"));
-  assert.match(prompt, /replace it: the token changes on every connection/, "a reconnect replaces the old entry");
+  const lines = prompt.split("\n");
+  assert.equal(lines[1], `Server: ${origin}/mcp (Streamable HTTP)`);
+  assert.equal(lines[2], `Header: Authorization: Bearer ${token}`);
+  assert.match(prompt, /already there, replace it/, "a reconnect replaces the old entry");
 });
 
 test("connection prompt: the Claude Code, Codex and JSON settings are well formed", () => {
