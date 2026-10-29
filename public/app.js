@@ -620,6 +620,8 @@ let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
 let replaced = null;
 // Counts the lines shown at the top (and on the start screen), so an old line's buttons never hide a newer line.
 let lineSeq = 0;
+// The file a "wants to open" line asks about, until the person answers or another line takes its place.
+let askingToOpen = null;
 function changed() {
   if (replaced && D.serialize(state.doc) !== replaced.text) hideBanner();
   followMarks();
@@ -1610,6 +1612,7 @@ function adoptAsks(asks) {
 }
 function showBanner(text, actions) {
   replaced = null;
+  askingToOpen = null;
   lineSeq++;
   const banner = $("#banner");
   banner.replaceChildren();
@@ -1624,7 +1627,7 @@ function showBanner(text, actions) {
   }
   banner.hidden = false;
 }
-function hideBanner() { replaced = null; $("#banner").hidden = true; $("#banner").replaceChildren(); }
+function hideBanner() { replaced = null; askingToOpen = null; $("#banner").hidden = true; $("#banner").replaceChildren(); }
 function restoreDraft() {
   const draft = state.pendingDraft;
   if (!draft) return hideBanner();
@@ -1690,6 +1693,7 @@ function openProblem(name) {
 }
 // One quiet line on the start screen, with its buttons.
 function emptyNote(text, actions) {
+  askingToOpen = null;
   lineSeq++;
   const note = $("#emptyNote");
   note.replaceChildren();
@@ -3330,6 +3334,7 @@ function handleCall({ id, tool, args = {} }) {
 /* ---------- The agent opens a script or puts in its whole text (step H, Lex 2026-10-29) ---------- */
 const NO_SCRIPT = "No script is open in the editor. Open one with open_script (list_scripts gives the person's recent scripts), or ask the person to open one.";
 function busyChoice() {
+  if (askingToOpen) return `The editor is waiting for the person to answer whether to open ${askingToOpen}. Try again after they answer.`;
   if (state.pendingDraft) return "The editor is waiting for the person to choose Restore or Discard for unsaved changes. Ask them to choose first.";
   if (state.conflict) return "The script's file changed on disk and the editor is waiting for the person to choose a version. Ask them to choose first.";
   return "";
@@ -3347,6 +3352,7 @@ async function scriptList() {
   return { open: state.doc ? state.name : null, recent };
 }
 async function openScript(args, by) {
+  if (askingToOpen) return { error: busyChoice() };
   if (together?.active) return { error: "The person is sharing this script with others; opening another one would end that. Ask them to stop sharing first." };
   const busy = state.doc ? busyChoice() : "";
   if (busy) return { error: busy };
@@ -3392,15 +3398,17 @@ async function openScript(args, by) {
     choice = "open";
     // Things may have changed since the line showed up (sharing, a choice, unsaved text without a file), or the
     // browser's prompt may be refused: then nothing opens and the line goes, as with Not now.
-    const allowed = () => !together?.active && !(state.doc && (busyChoice() || (!state.handle && isDirty())));
+    const allowed = () => line === lineSeq && !together?.active && !(state.doc && (state.pendingDraft || state.conflict || (!state.handle && isDirty())));
     const ok = allowed() && (await permitted(r.handle, true));
     if (choice !== "open") return;
+    const go = ok && allowed();
     notNow();
-    if (ok && allowed()) openHandle(r.handle);
+    if (go) openHandle(r.handle);
   };
   if (state.doc) showBanner(text, [["Open", open], ["Not now", notNow]]);
   else emptyNote(text, [["Open", open], ["Not now", notNow]]);
   line = lineSeq;
+  askingToOpen = r.name;
   return { result: `The browser needs the person's OK to open ${r.name}: an Open button shows in the editor. Call get_script later to see which script is open.` };
 }
 // The agent's whole text goes in as one change: one Ctrl/Cmd+Z step when alone, the agent's in a shared script.
