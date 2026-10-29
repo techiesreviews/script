@@ -28,3 +28,11 @@ test("connection prompt: the Claude Code, Codex and JSON settings are well forme
 test("connection prompt: it names the prompt and the tools that answer asks", () => {
   for (const name of ["watch_script", "wait_for_asks", "answer_ask", "answer_broll", "sketch_shot"]) assert.ok(prompt.includes(name), name);
 });
+
+test("top bar: no \"Saved\" time is shown (Lex, 2026-10-29); unsaved, saving and not saved still are", () => {
+  const fn = app.match(/^function renderSaveState\(\) \{\n[\s\S]*?\n\}\n/m)?.[0];
+  assert.ok(fn, "renderSaveState is found in app.js");
+  assert.doesNotMatch(fn, /Saved /);
+  assert.doesNotMatch(fn, /"saved"/);
+  for (const shown of ['"Saving…"', '"Not saved"', '"Unsaved changes"', '"In this browser"']) assert.ok(fn.includes(shown), shown);
+});

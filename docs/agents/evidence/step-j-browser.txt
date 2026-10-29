@@ -2,7 +2,7 @@
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
-ok the save state says In this browser
+ok the save state says In this browser (its tooltip; the "Saved" time itself was removed later, 2026-10-29)
 ok Markdown file (.md) is offered to save it as a file
 ok the name follows the title
 ok the file was renamed, not copied
