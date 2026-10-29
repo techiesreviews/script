@@ -309,6 +309,23 @@ export function checkSketch(ask, args) {
   return { svg };
 }
 
+/** Clean an ask's agent sketches where they come in from a draft or the room (step I): a sketch ask's waiting
+ *  sketches and the adds' sketches. One that cleans to nothing is dropped. Returns the ask. */
+export function cleanSketches(ask) {
+  const answer = ask?.answer;
+  if (answer?.kind === "sketches" && answer.sketches && typeof answer.sketches === "object") {
+    for (const [id, svg] of Object.entries(answer.sketches)) { const clean = sanitizeSvg(svg); if (clean) answer.sketches[id] = clean; else delete answer.sketches[id]; }
+  }
+  if (answer?.kind === "broll" && Array.isArray(answer.changes)) {
+    for (const c of answer.changes) {
+      if (c?.sketch == null) continue;
+      const clean = sanitizeSvg(c.sketch);
+      if (clean) c.sketch = clean; else delete c.sketch;
+    }
+  }
+  return ask;
+}
+
 /* ---------- The storyboard header: what it offers for the linked list's state ---------- */
 /**
  * boardHeadState(link, status) → { link, file, note, allow, ask, saveAs }
@@ -699,7 +716,8 @@ export function applyBrollChange(markdown, c) {
     const now = parseBroll(markdown);
     const id = nextShotId(now.shots, c.kind, now.sketches);
     const md = addShot(markdown, { id, kind: c.kind, what: c.what, over: c.over, how: c.how });
-    return c.sketch ? setSketch(md, id, c.sketch) : md;
+    const svg = c.sketch ? sanitizeSvg(c.sketch) : "";
+    return svg ? setSketch(md, id, svg) : md;
   }
   if (c.op === "update") return updateShot(markdown, c.id, { what: c.what, how: c.kind === "screen" ? undefined : c.how, kind: c.kind });
   if (c.op === "remove") return removeShot(markdown, c.id);

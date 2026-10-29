@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -629,6 +629,16 @@ test("Keep gives the same file as the C3 functions; Keep all is one write in ord
   const drawn = applyBrollChange(DEMO, { ...add, sketch: svg });
   assert.equal(drawn, setSketch(applyBrollChange(DEMO, add), "B9", svg));
   assert.equal(parseBroll(drawn).sketches.B9, svg);
+  // A sketch from a changed draft is cleaned before it is written; one that cleans to nothing adds no fence.
+  const dirty = '<svg viewBox="0 0 260 140"><script>x</script><path class="s" d="M0 0L9 9" onload="x()"/></svg>\n```';
+  assert.equal(applyBrollChange(DEMO, { ...add, sketch: dirty }), drawn);
+  assert.equal(applyBrollChange(DEMO, { ...add, sketch: "<p>```</p>" }), applyBrollChange(DEMO, add));
+  // cleanSketches: where asks come in from a draft or the room.
+  const ask = cleanSketches({ answer: { kind: "sketches", sketches: { B1: dirty, B2: "<p>x</p>" }, done: {} } });
+  assert.deepEqual(ask.answer.sketches, { B1: svg });
+  const sug = cleanSketches({ answer: { kind: "broll", changes: [{ op: "add", sketch: dirty }, { op: "add", sketch: "<b>x</b>" }, { op: "remove", id: "B1" }] } });
+  assert.deepEqual(sug.answer.changes.map((c) => c.sketch ?? null), [svg, null, null]);
+  assert.equal(cleanSketches(null), null);
   // Keep all: one write with every change in order; the adds get B9 and S3 at that moment.
   const all = applyBrollChanges(DEMO, changesToKeep(answer, [0, 1, 2, 3]));
   const step = [add, up, rm, screen].reduce((md, c) => applyBrollChange(md, c), DEMO);

@@ -1591,6 +1591,7 @@ function adoptAsks(asks) {
     // Its new text, only at its exact place in this script's block of the same place (ids are new); else no mark.
     if (C.isMarked(a)) { if (C.place(a, state.doc, { byIndex: true })) state.asks.push(a); continue; }
     if (!a?.id || !isOpen(a)) continue;
+    B.cleanSketches(a); // a draft holds what storage gave it
     if (a.scope === "selection" && !byId(a.blockId)) {
       // Ids are new after a reload: find the quote again. B-roll suggestions stay even when it is gone.
       const hit = D.findQuote(state.doc, a.quote, null);
@@ -2196,8 +2197,7 @@ function renderBroll() {
 /* One sketch frame, as in the script and the storyboard. Pending agent sketches carry Keep / Undo. */
 const sketchSvg = (svg, label) => svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" ');
 function frameImg(s, label) {
-  // Cleaned again here: a restored draft or a guest's copy holds what storage or the room gave it.
-  const pending = B.sanitizeSvg(pendingSketch(s.id));
+  const pending = pendingSketch(s.id);
   const svg = pending || broll.sketches[s.id] || "";
   const ask = sketchAsk();
   const waiting = !svg && ask && ask.shots.some((x) => x.id === s.id) && !ask.answer?.done?.[s.id];
@@ -2544,7 +2544,7 @@ function undoSketch(id) {
 let brollWrites = Promise.resolve();
 async function keepSketch(id) {
   const ask = sketchAsk();
-  const svg = ask?.answer?.sketches?.[id];
+  const svg = B.sanitizeSvg(ask?.answer?.sketches?.[id] || "");
   if (!svg || broll.saving[id]) return;
   const token = broll.token;
   broll.saving[id] = true;
@@ -2885,9 +2885,9 @@ function suggestBlock(x, s) {
   return `<div class="suggest" data-op="${c.op}">${body}${suggestBar(x)}</div>`;
 }
 const addText = (x) => `<p class="suggest__what">${esc(x.what)}</p>${x.how ? `<p class="suggest__how">${esc(x.how)}</p>` : ""}${x.why ? `<p class="suggest__why">${esc(x.why)}</p>` : ""}`;
-// A suggested add's own sketch (step I), or an empty frame. Cleaned again here: a guest's copy and a restored draft
-// come from storage or the room, not from checkBrollAnswer.
-const suggestedImg = (x) => { const svg = x.sketch ? B.sanitizeSvg(x.sketch) : ""; return svg ? `<span class="frame__img" data-pending>${sketchSvg(svg, "")}</span>` : '<span class="frame__img" data-empty></span>'; };
+// A suggested add's own sketch (step I), or an empty frame. Sketches are cleaned where they come in: checkBrollAnswer,
+// a restored draft (adoptAsks) and a guest's copy (setRoomAsks).
+const suggestedImg = (x) => (x.sketch ? `<span class="frame__img" data-pending>${sketchSvg(x.sketch, "")}</span>` : '<span class="frame__img" data-empty></span>');
 // A suggested add beside its line: the frame dashed in orange, the tag "Suggested", What, How, Keep and Undo.
 const suggestedFrame = (x) => `<div class="shot-frame" data-suggested data-kind="${x.kind}"><div class="shot-frame__pic">${suggestedImg(x)}`
   + `<span class="broll-tag">${icon(KIND_ICON[x.kind])}Suggested</span></div><div class="suggest" data-op="add">${addText(x)}${suggestBar(x)}</div></div>`;
@@ -3347,7 +3347,8 @@ function ownAsk(action, instruction) {
   return ask;
 }
 // At most this many of the agent's own changes wait at once: each may carry an 8 KB sketch, and open answers go
-// into the draft and to guests. Own sketches need no limit: one per shot in the list, in one sketch ask at a time.
+// into the draft and to guests. Own sketches need no limit: one per shot in the list (a new one replaces the waiting
+// one in answer.sketches), in one sketch ask at a time.
 const OWN_OPEN_MAX = 2 * B.BROLL_LIMITS.changes;
 function ownBroll(args) {
   if (broll.status !== "ok" && broll.status !== "none") return { error: brollUnreadable() };
@@ -3697,6 +3698,7 @@ function clearAskNote(id) {
 }
 // Guest: the host's open asks, already placed in this copy (fitAsks). Only blocks whose asks changed are drawn again.
 function setRoomAsks(asks) {
+  for (const a of asks) B.cleanSketches(a); // what the room gave this guest
   const perBlock = (list) => {
     const m = new Map();
     for (const a of list) {
