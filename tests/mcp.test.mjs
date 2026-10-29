@@ -326,7 +326,7 @@ test("open_script and set_script: arguments", () => {
   for (const name of ["list_scripts", "open_script", "set_script"]) assert.match(INSTRUCTIONS, new RegExp(name));
 });
 
-test("open_script goes to the tab like any call, with its arguments", async () => {
+test("open_script, set_script and list_scripts go to the tab with their arguments", async () => {
   const relay = fakeRelay({ results: { open_script: "Opened as my-video.md, not saved yet: the person picks where to save it." } });
   const r = await rpc({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "open_script", arguments: { markdown: "# My video", fileName: "my-video.md" } } }, { relay });
   assert.match(r.body.result.content[0].text, /Opened as my-video\.md/);

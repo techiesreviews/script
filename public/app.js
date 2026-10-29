@@ -3372,14 +3372,18 @@ async function openScript(args, by) {
   // The browser asks the person before reading a file again; that takes their click.
   const text = `${by.name} wants to open ${r.name}`;
   const undoLine = replaced;
-  const open = async () => {
+  const notNow = () => {
     hideBanner();
     $("#emptyNote").hidden = true;
-    // Things may have changed since the line showed up.
-    if (together?.active || (state.doc && (busyChoice() || (!state.handle && isDirty())))) return;
-    if (await permitted(r.handle, true)) openHandle(r.handle);
+    if (undoLine && state.doc && D.serialize(state.doc) === undoLine.text) showReplaced(undoLine);
   };
-  const notNow = () => { hideBanner(); if (undoLine && D.serialize(state.doc) === undoLine.text) showReplaced(undoLine); };
+  const open = async () => {
+    // Things may have changed since the line showed up (sharing, a choice, unsaved text without a file), or the
+    // browser's prompt may be refused: then nothing opens and the line goes, as with Not now.
+    const ok = !together?.active && !(state.doc && (busyChoice() || (!state.handle && isDirty()))) && (await permitted(r.handle, true));
+    notNow();
+    if (ok) openHandle(r.handle);
+  };
   if (state.doc) showBanner(text, [["Open", open], ["Not now", notNow]]);
   else emptyNote(text, [["Open", open], ["Not now", () => { $("#emptyNote").hidden = true; }]]);
   return { result: `The browser needs the person's OK to open ${r.name}: an Open button shows in the editor. Call get_script later to see which script is open.` };
@@ -3398,9 +3402,9 @@ function putScript(next, { by = null, before = D.cloneDoc(state.doc) } = {}) {
   renderAll(null);
 }
 function setScript(markdown, by) {
-  // The file keeps its own line endings; a "/" command being typed is not part of the text.
-  const text = D.wholeText(state.doc, markdown);
-  if (text == null || text === saveText()) return false;
+  // The file keeps its own line endings; compared with the text as saved (a "/" command being typed is left out).
+  const text = D.wholeText(state.doc, markdown, saveText());
+  if (text == null) return false;
   const before = D.cloneDoc(state.doc);
   putScript(D.parse(text), { by, before });
   showReplaced({ text: D.serialize(state.doc), before, step: together?.active ? null : state.undo.at(-1), by });

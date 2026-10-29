@@ -735,8 +735,10 @@ test("scriptFileName: the agent's name or the title, a .md file name that is not
   const taken = new Set(["intro.md", "intro-2.md"]);
   assert.equal(scriptFileName("intro.md", doc, (n) => taken.has(n)), "intro-3.md");
   assert.ok(scriptFileName("x".repeat(300), doc).length <= 103);
-  assert.equal(scriptFileName("NUL.md", doc), "NUL-script.md");
-  assert.equal(scriptFileName("com1", doc), "com1-script.md");
+  assert.equal(scriptFileName("NUL.md", doc), "script-NUL.md");
+  assert.equal(scriptFileName("com1", doc), "script-com1.md");
+  assert.equal(scriptFileName("con.notes.md", doc), "script-con.notes.md");
+  assert.equal(scriptFileName("console.md", doc), "console.md");
 });
 
 test("wholeText: the script's own line endings, null for the same text; the old copy stays exactly as it was", () => {
@@ -745,7 +747,9 @@ test("wholeText: the script's own line endings, null for the same text; the old 
   assert.equal(wholeText(crlf, "# A\n\nOne.\n"), null);
   const lf = parse("# A\n\nOne.\n");
   assert.equal(wholeText(lf, "# A\n\nOne.\n"), null);
-  assert.equal(wholeText(lf, "# A\r\n\r\nTwo."), "# A\r\n\r\nTwo.");
+  assert.equal(wholeText(lf, "# A\r\n\r\nTwo.\r\n"), "# A\n\nTwo.\n", "an LF file stays LF");
+  assert.equal(wholeText(crlf, "# A\r\rTwo.\n"), "# A\r\n\r\nTwo.\r\n", "a lone \\r is a line break too");
+  assert.equal(wholeText(lf, "# A\n\nOne.\n", "# A\n\nOne.\n/b"), "# A\n\nOne.\n", "compared with the text as saved");
   const before = cloneDoc(crlf);
   const next = keepIds(crlf, parse(wholeText(crlf, "# A\n\nTwo.\n")));
   assert.equal(serialize(next), "# A\r\n\r\nTwo.\r\n");
