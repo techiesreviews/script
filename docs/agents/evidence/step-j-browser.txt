@@ -1,4 +1,4 @@
-# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:24:08Z, run on the code of the commit "Step J: a B-roll link moves with a renamed script…"
+# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:27:39Z, run on the code of the commit "Step J: the B-roll link is read when the rename lands…"
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
@@ -26,12 +26,19 @@ ok the open script has no ×
 ok Reopen offers the browser script
 ok Reopen opens it
 ok Ctrl+S saves the demo in the browser
+ok the demo opens again with its own B-roll list
 ok an agent script named untitled-script.md
 ok Keep made a B-roll list linked to it
 ok retitled, it is renamed
 ok its B-roll link moved with it
 ok and its B-roll list kept in the browser
+ok Save as file moves the linked script to its file
+ok its B-roll link moved to the file's name
+ok the file still shows its B-roll list
 ok the next untitled-script.md starts without a B-roll list
+ok race-script.md has a B-roll list
+ok the slow rename finished
+ok an unlink during the rename stays unlinked
 ok Save as file opens the script from its file
 ok the copy in the browser is gone
 ok it is a file now
