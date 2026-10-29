@@ -600,7 +600,6 @@ function renderSaveState() {
   if (state.saving && !state.autoSaving) { s.dataset.state = "saving"; s.textContent = "Saving…"; s.removeAttribute("aria-label"); s.title = ""; }
   else if (state.saveError) { s.dataset.state = "error"; s.textContent = "Not saved"; s.title = state.saveError; s.removeAttribute("aria-label"); }
   else if (dirty) { s.dataset.state = "dirty"; s.textContent = ""; s.setAttribute("aria-label", "Unsaved changes"); s.title = "Unsaved changes"; s.setAttribute("role", "img"); }
-  else if (state.savedAt) { s.dataset.state = "saved"; s.textContent = `Saved ${clock(state.savedAt)}`; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = state.inBrowser ? "In this browser" : ""; }
   else { s.dataset.state = ""; s.textContent = ""; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = ""; }
 }
 function renderDerived() {
