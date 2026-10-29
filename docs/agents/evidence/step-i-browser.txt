@@ -1,4 +1,4 @@
-# Step I browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; frames checked at 1280 px and 390 px. 2026-10-29T13:01:43Z, run on the tree committed as d94bba6
+# Step I browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; frames checked at 1280 px and 390 px. 2026-10-29T13:01:43Z, run on the code of the commit "Step I: sketches are cleaned where they come in (draft, room)…"
 ok Connect your agent shows on the start screen
 ok a script is open
 ok sketch_shot with no list points at answer_broll
