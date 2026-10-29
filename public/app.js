@@ -1867,7 +1867,7 @@ async function saveAs() {
         // A script leaving the browser frees its name there, so its B-roll keys move and the old ones are cleared.
         if (was) moveKeys(state.name, handle.name, { clear: true, link: broll.link });
         else {
-          if (broll.link) idbSet(brollKey(handle.name), broll.link);
+          if (broll.link) setLinkKey(broll.link, handle.name);
           const kept = store.get(listKey());
           if (typeof kept === "string") { store.set(listKey(handle.name), kept); store.del(listKey()); }
         }
@@ -1880,7 +1880,10 @@ async function saveAs() {
       state.conflict = false;
       remember(handle);
       // The script moved to its file: the copy in the browser goes.
-      if (was) { const gone = was.name; forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {}); }
+      if (was) {
+        const gone = was.name;
+        forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {});
+      }
     } else {
       download(text, state.name, "text/markdown");
     }
@@ -2082,17 +2085,20 @@ async function createBrowserScript(name, text) {
 // go by name, as for files on disk). `clear`: the old name goes away (a rename, a move to a file), so its B-roll keys
 // are cleared; else a file on disk or the demo keeps its own. The link is read as stored when the move lands
 // (linking and unlinking store it at once, also while a rename waits); `link` stands in when none is stored (the
-// demo links its list by itself). A link stored under the new name meanwhile wins.
+// demo links its list by itself). 
 async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   const draft = store.get(draftKey(from));
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
   const kept = store.get(listKey(from));
   if (typeof kept === "string") { store.set(listKey(to), kept); if (clear) store.del(listKey(from)); }
-  const stored = await idbGet(brollKey(from));
-  const moving = stored ?? link;
-  if (moving && (await idbGet(brollKey(to))) == null) await idbSet(brollKey(to), moving);
-  if (clear && stored != null) await idbSet(brollKey(from), null);
+  else store.del(listKey(to));
+  // The new name belongs to this script now: it takes this script's link, or none (never one left there before).
+  await keyed(async () => {
+    const stored = await idbGet(brollKey(from));
+    await idbSet(brollKey(to), stored ?? link);
+    if (clear && stored != null) await idbSet(brollKey(from), null);
+  });
 }
 // While a script is in the browser its file has the title's name: "My video" → my-video.md (-2 when taken).
 async function followTitle(handle) {
@@ -2102,8 +2108,11 @@ async function followTitle(handle) {
   const name = D.titleFileName(from, doc, await nameTaken(from));
   if (!name || handle !== state.handle) return;
   await handle.move(name);
+  // The move is queued before the name changes: a link or unlink made before it went to the old name and moves with
+  // it; one made after goes to the new name, after it.
+  const moved = moveKeys(from, name, { clear: true });
   if (handle === state.handle) { state.name = name; renderTop(); }
-  await moveKeys(from, name, { clear: true });
+  await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
 // Ctrl/Cmd+S on a script without a file (the demo, or a file opened where files can't be saved): into the browser.
@@ -2137,7 +2146,7 @@ async function deleteBrowserScript(r) {
   try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
   store.del(draftKey(r.name));
   store.del(listKey(r.name));
-  idbSet(brollKey(r.name), null);
+  setLinkKey(null, r.name);
 }
 
 let listToken = 0;
@@ -2266,6 +2275,16 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 const KIND_ICON = { broll: "film", motion: "motion", screen: "screen" };
 const KIND_NAME = B.KIND_NAME;
 const brollKey = (name = state.name) => `broll:${name}`;
+// Every read and write of a script's B-roll link goes through one queue, in the order they were made, so a move to
+// a new name (step J) and a link or unlink made meanwhile never cross. The name is taken when the call is made.
+let brollKeys = Promise.resolve();
+function keyed(fn) {
+  const run = brollKeys.then(fn);
+  brollKeys = run.catch(() => {});
+  return run;
+}
+const getLinkKey = (name = state.name) => keyed(() => idbGet(brollKey(name)));
+const setLinkKey = (value, name = state.name) => keyed(() => idbSet(brollKey(name), value));
 const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
 const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
 const covered = (s) => (s.blockIds || []).filter((id) => byId(id));
@@ -2297,7 +2316,7 @@ async function loadBroll() {
   if (!state.doc || state.guest) return; // guests get the host's list (setRoomBroll)
   // "none" must mean "no list linked", so the list counts as loading while its link is looked up.
   broll.status = "loading";
-  let link = await idbGet(brollKey());
+  let link = await getLinkKey();
   if (token !== broll.token) return;
   // The demo script links its own made-up list.
   if (!link && state.name === SAMPLE.name) link = { demo: true, name: SAMPLE_BROLL.name };
@@ -2536,14 +2555,14 @@ async function setLink(link) {
   broll.lit = null;
   broll.saving = {};
   broll.problem = {};
-  idbSet(brollKey(), link);
+  setLinkKey(link);
   await readBroll(token, true);
   if (token === broll.token) { syncFlags(); renderBroll(); }
 }
 function unlinkBroll() {
   broll.token++;
   // The demo links its list by itself, so unlinking it is remembered.
-  idbSet(brollKey(), state.name === SAMPLE.name ? { none: true } : null);
+  setLinkKey(state.name === SAMPLE.name ? { none: true } : null);
   store.del(listKey());
   const ask = sketchAsk();
   if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
@@ -2820,7 +2839,7 @@ async function startList() {
   else store.del(listKey());
   // Keep "saving": a Keep that made this list is still writing, and a second click must not add the shot twice.
   Object.assign(broll, { link, flags: {}, lit: null, problem: {} });
-  idbSet(brollKey(), link);
+  setLinkKey(link);
   adoptBroll(text);
 }
 // "Not saved to a file · Save as…": the kept list becomes a file and the linked list.
@@ -2839,7 +2858,7 @@ async function saveListAs() {
   if (token !== broll.token) return;
   broll.link = { handle, name: handle.name };
   broll.err = "";
-  idbSet(brollKey(), broll.link);
+  setLinkKey(broll.link);
   store.del(listKey());
   renderBroll();
 }

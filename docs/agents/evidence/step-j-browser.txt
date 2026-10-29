@@ -1,4 +1,4 @@
-# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:31:24Z, run on the code of the commit "Step J: B-roll keys move as stored when the move lands…"
+# Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:34:50Z, run on the code of the commit "Step J: every B-roll link read and write goes through one queue…"
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
@@ -51,6 +51,10 @@ ok it has a kept B-roll list
 ok Ctrl+S saves it in the browser
 ok with its B-roll list
 ok the file opened again keeps its own B-roll list
+ok plain-file.md with its lamp shot
+ok saved as taken.md
+ok reopened, taken.md shows its own list, not the old one
+ok an Unlink after it stays unlinked
 ok Save as file opens the script from its file
 ok the copy in the browser is gone
 ok it is a file now
