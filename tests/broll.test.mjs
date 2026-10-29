@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -831,4 +831,26 @@ test("sketchAnswer (step K2): the write's outcome, or after the time limit the '
   assert.equal(answer.later, slow, "the outcome to come travels with the answer");
   done("changed");
   assert.equal(await answer.later, "changed");
+});
+
+test("freeAfter (step K2): when a picture's place is freed, held or given back", async () => {
+  const log = [];
+  const ops = { free: () => log.push("free"), hold: () => log.push("hold"), release: () => log.push("release") };
+  assert.deepEqual(freeAfter({ error: "no" }, ops), { error: "no" });
+  assert.deepEqual(log, [], "an error keeps the picture");
+  assert.deepEqual(freeAfter({ result: "ok" }, ops), { result: "ok" });
+  assert.deepEqual(log, ["free"], "a plain result frees it at once");
+  for (const [outcome, end] of [["in", "free"], ["waits", "free"], ["changed", "release"]]) {
+    log.length = 0;
+    const sent = freeAfter({ result: "writing", later: Promise.resolve(outcome) }, ops);
+    assert.deepEqual(sent, { result: "writing" }, "later is not sent");
+    assert.deepEqual(log, ["hold"]);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(log, ["hold", end], outcome);
+  }
+  log.length = 0;
+  freeAfter({ result: "writing", later: Promise.reject(new Error("x")) }, ops);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(log, ["hold", "release"], "a failed write gives the picture back");
+  assert.equal(SKETCH_ANSWER_MS, 7000);
 });

@@ -677,9 +677,11 @@ const SKETCH_RESULTS = {
 export const sketchResult = (outcome, left = []) => SKETCH_RESULTS[outcome] + (left.length ? ` They also asked for sketches of ${left.join(", ")}.` : "");
 /** The refusal when the list changed while a picture was being put in: the picture was not used and stays usable. */
 export const SKETCH_LIST_CHANGED = "The B-roll list changed meanwhile, so the picture was not put into this list. Its imageId still works: call sketch_shot again if the shot is still there.";
+// sketch_shot answers within this, inside the Worker's 10 s for a call.
+export const SKETCH_ANSWER_MS = 7000;
 /** sketchAnswer(atOnce, left, ms) → the answer once the write settles ("in", "waits", "changed"), or after `ms` the
  *  "writing" answer with `later`, the write's own outcome, so the picture's place is freed only when it went in. */
-export function sketchAnswer(atOnce, left = [], ms = 7000) {
+export function sketchAnswer(atOnce, left = [], ms = SKETCH_ANSWER_MS) {
   let timer;
   const late = new Promise((res) => { timer = setTimeout(() => res("writing"), ms); });
   return Promise.race([atOnce, late]).then((outcome) => {
@@ -687,6 +689,17 @@ export function sketchAnswer(atOnce, left = [], ms = 7000) {
     if (outcome === "changed") return { error: SKETCH_LIST_CHANGED };
     return outcome === "writing" ? { result: sketchResult("writing", left), later: atOnce } : { result: sketchResult(outcome, left) };
   });
+}
+
+/** freeAfter(payload, { free, hold, release }) → the payload to send (without `later`), and the pictures' places
+ *  settled: an error keeps them; a plain result frees them at once; a "writing" result (`later`) holds them, then frees
+ *  them once the write went in ("in", "waits") and releases them, usable again, if the list changed or it failed. */
+export function freeAfter({ later, ...payload }, { free, hold = () => {}, release = () => {} }) {
+  if (payload.error) return payload;
+  if (!later) { free(); return payload; }
+  hold();
+  later.then((o) => (o === "changed" ? release() : free()), () => release());
+  return payload;
 }
 
 /** The next free id: B<n> for B-roll and Motion plate, S<n> for Screen recording, after the highest one in use. */

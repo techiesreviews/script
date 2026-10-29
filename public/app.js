@@ -2804,7 +2804,15 @@ const putsInAtOnce = (shotId, sketch) => B.isImage(sketch) && broll.status === "
 async function pictureInAtOnce(ask, id, pic) {
   const prev = broll.sketches[id] || "", token = broll.token;
   await keepSketch(id);
-  if (token !== broll.token) return "changed";
+  if (token !== broll.token) {
+    // The list changed meanwhile: the shot counts as undone, so list_asks tells the agent its imageId works again.
+    if (ask.answer?.done && !ask.answer.done[id]) {
+      ask.answer.done[id] = "undone";
+      delete ask.answer.sketches?.[id];
+      if (!isOpen(ask)) ask.status = Object.values(ask.answer.done).includes("kept") ? "kept" : "undone";
+    }
+    return "changed";
+  }
   if (ask.answer?.done?.[id] !== "kept" || broll.sketches[id] !== pic) return "waits";
   broll.marked[id] = { prev, pic, askId: ask.id };
   renderBroll();
@@ -2812,8 +2820,7 @@ async function pictureInAtOnce(ask, id, pic) {
 }
 // sketch_shot answers once the picture is written, but within the Worker's 10 s for a call: after 7 s it says the
 // picture is still being written (B.sketchAnswer), and its place is freed only once it went in.
-const WRITE_ANSWER_MS = 7000;
-const sketchAnswer = (atOnce, left = []) => B.sketchAnswer(atOnce, left, WRITE_ANSWER_MS);
+const sketchAnswer = (atOnce, left = []) => B.sketchAnswer(atOnce, left, B.SKETCH_ANSWER_MS);
 // Undo puts back what the shot had before (a sketch, or none), if the agent's picture is still there.
 async function undoMarked(id) {
   const m = broll.marked[id];
@@ -3633,13 +3640,15 @@ function handleCall({ id, tool, args = {} }) {
       if (used.error) return send({ error: used.error });
       args = used.args;
       // Gone through: the pictures now live in the shot or the suggestion, and their places are free (step K2).
-      // An answer sent while the picture is still being written (`later`) frees it only once it went in.
+      // An answer sent while the picture is still being written (`later`) holds its id (no second use) and frees it
+      // only once it went in; if the list changed or the write failed, the id works again (B.freeAfter).
       if (used.used.length) {
-        const reply = send, free = () => { for (const u of used.used) pictures.delete(u); };
-        send = ({ later, ...payload }) => {
-          if (!payload.error) { if (later) later.then((o) => { if (o !== "changed") free(); }, () => {}); else free(); }
-          reply(payload);
-        };
+        const reply = send, each = (fn) => () => { for (const u of used.used) fn(u); };
+        send = (payload) => reply(B.freeAfter(payload, {
+          free: each((u) => pictures.delete(u)),
+          hold: each((u) => { const p = pictures.get(u); if (p) p.held = true; }),
+          release: each((u) => { const p = pictures.get(u); if (p) delete p.held; }),
+        }));
       }
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
@@ -3701,7 +3710,7 @@ const pictures = new Map(); // id → { at, data: "" (waiting for the file) | da
 function prunePictures() {
   const now = Date.now();
   // A picture still being shrunk stays: its imageId is about to be given out.
-  for (const [id, p] of pictures) if (!p.busy && now - p.at > (p.data ? PICTURE_MS : UPLOAD_MS)) pictures.delete(id);
+  for (const [id, p] of pictures) if (!p.busy && !p.held && now - p.at > (p.data ? PICTURE_MS : UPLOAD_MS)) pictures.delete(id);
   for (const [id, x] of incoming) if (now - x.at > 60_000) incoming.delete(id);
 }
 async function pictureAddress() {
@@ -3773,6 +3782,9 @@ async function shrinkPicture(blob) {
 // sketch_shot { imageId } and answer_broll adds { imageId }: the picture's data address takes the svg's or sketch's place.
 function withPictures(args) {
   prunePictures();
+  const held = args.imageId != null ? [args.imageId] : (Array.isArray(args.changes) ? args.changes : []).map((c) => c?.imageId).filter((x) => x != null);
+  const busy = held.find((id) => pictures.get(id)?.held);
+  if (busy) return { error: `The picture ${JSON.stringify(String(busy).slice(0, 40))} is still being written into the B-roll list. list_asks shows when it is in; if the list changed instead, its imageId works again.` };
   const lookup = (id) => pictures.get(id)?.data || "";
   const unknown = (id) => ({ error: `Unknown imageId ${JSON.stringify(String(id).slice(0, 40))}: send the picture with upload_image first (an id is good for 30 minutes).` });
   // `used`: the ids to free once the call has gone through (a refused call keeps them, so the agent can try again).
