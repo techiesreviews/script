@@ -572,15 +572,17 @@ function renderTop() {
   const open = !!state.doc;
   $("#docInfo").hidden = !open;
   // A guest has no export, agent, voice check or sharing; each person picks their own Script/Storyboard view.
-  for (const id of ["exportBtn", "voiceBtn", "agentBtn"]) $("#" + id).hidden = !open || state.guest;
+  for (const id of ["exportBtn", "voiceBtn"]) $("#" + id).hidden = !open || state.guest;
+  // The agent is there on the start screen too, so it can open or write a script (step H); never in a guest's tab.
+  $("#agentBtn").hidden = state.guest || !!roomLink;
   $("#viewSwitch").hidden = !open;
   together?.renderShare(open, state.guest);
   $("#docSwitch").disabled = state.guest;
   $("#empty").hidden = open;
   $("#layout").hidden = !open;
   renderView();
-  if (!open) return;
   renderAgent();
+  if (!open) return;
   $("#fileName").textContent = state.name;
   document.title = `${D.titleOf(state.doc) || state.name} · script.techies.tools`;
   renderSaveState();
@@ -614,7 +616,10 @@ function renderDerived() {
 }
 
 let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
+// While the agent's whole text is untouched: the line at the top with Undo puts `before` back.
+let replaced = null;
 function changed() {
+  if (replaced && D.serialize(state.doc) !== replaced.text) hideBanner();
   followMarks();
   together?.local();
   together?.redraw();
@@ -1562,8 +1567,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false }) {
   state.hint = null;
   const draft = store.get(draftKey(name));
   broll.flags = draft?.broll && typeof draft.broll === "object" ? { ...draft.broll } : {};
-  const banner = $("#banner");
-  banner.hidden = true;
+  hideBanner();
   if (draft?.text != null && draft.text !== text && (draft.at || 0) > modified) {
     state.pendingDraft = draft;
     showBanner(`Unsaved changes from ${clock(draft.at)}`, [["Restore", restoreDraft], ["Discard", discardDraft]]);
@@ -1603,6 +1607,7 @@ function adoptAsks(asks) {
   markBase();
 }
 function showBanner(text, actions) {
+  replaced = null;
   const banner = $("#banner");
   banner.replaceChildren();
   const s = h("span");
@@ -1616,7 +1621,7 @@ function showBanner(text, actions) {
   }
   banner.hidden = false;
 }
-function hideBanner() { $("#banner").hidden = true; $("#banner").replaceChildren(); }
+function hideBanner() { replaced = null; $("#banner").hidden = true; $("#banner").replaceChildren(); }
 function restoreDraft() {
   const draft = state.pendingDraft;
   if (!draft) return hideBanner();
@@ -1678,14 +1683,21 @@ function openProblem(name) {
   // While the Restore/Discard choice is open, keep it: the script stays locked until the person chooses.
   if (state.doc && state.pendingDraft) return showBanner(`${text} · Unsaved changes are still waiting`, [["Restore", restoreDraft], ["Discard", discardDraft], ["Open a script", openFile]]);
   if (state.doc) return showBanner(text, [["Open a script", () => { hideBanner(); openFile(); }]]);
+  emptyNote(text, [["Open a script", openFile]]);
+}
+// One quiet line on the start screen, with its buttons.
+function emptyNote(text, actions) {
   const note = $("#emptyNote");
   note.replaceChildren();
   const s = h("span");
   s.textContent = text;
-  const b = h("button", "", { type: "button" });
-  b.textContent = "Open a script";
-  b.addEventListener("click", openFile);
-  note.append(s, b);
+  note.append(s);
+  for (const [label, fn] of actions) {
+    const b = h("button", "", { type: "button" });
+    b.textContent = label;
+    b.addEventListener("click", fn);
+    note.append(b);
+  }
   note.hidden = false;
 }
 $("#fileInput").addEventListener("change", async (e) => {
@@ -3264,8 +3276,17 @@ function handleCall({ id, tool, args = {} }) {
       agent.waiters.push(w);
       return;
     }
-    if (!state.doc) return send({ error: "No script is open in the editor. Ask the person to open one." });
+    const failed = (e) => send({ error: `The editor could not do that: ${e?.message || e}` });
+    if (tool === "list_scripts") return void scriptList().then((result) => send({ result }), failed);
+    if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
+    if (!state.doc) return send({ error: NO_SCRIPT });
     if (tool === "get_script") return send({ result: scriptInfo() });
+    if (tool === "set_script") {
+      const problem = scriptProblem(args.markdown) || busyChoice();
+      if (problem) return send({ error: problem });
+      if (!setScript(args.markdown, agentBy())) return send({ result: "That is the script's text already: nothing changed." });
+      return send({ result: "Done: the whole text is in the editor now. The person can undo it." });
+    }
     if (tool === "list_asks") return send({ result: { asks: state.asks.map(askForList) } });
     if (tool === "answer_ask") {
       const ask = state.asks.find((a) => a.id === args.askId);
@@ -3300,6 +3321,96 @@ function handleCall({ id, tool, args = {} }) {
   } catch (e) {
     send({ error: `The editor could not do that: ${e?.message || e}` });
   }
+}
+
+/* ---------- The agent opens a script or puts in its whole text (step H, Lex 2026-10-29) ---------- */
+const NO_SCRIPT = "No script is open in the editor. Open one with open_script (list_scripts gives the person's recent scripts), or ask the person to open one.";
+function busyChoice() {
+  if (state.pendingDraft) return "The editor is waiting for the person to choose Restore or Discard for unsaved changes. Ask them to choose first.";
+  if (state.conflict) return "The script's file changed on disk and the editor is waiting for the person to choose a version. Ask them to choose first.";
+  return "";
+}
+function scriptProblem(markdown) {
+  if (typeof markdown !== "string" || !markdown.trim()) return "markdown is required: the script's whole text.";
+  if (markdown.length > D.SCRIPT_LIMITS.markdown) return `markdown is longer than ${D.SCRIPT_LIMITS.markdown} characters.`;
+  return "";
+}
+async function scriptList() {
+  const recent = [];
+  for (const r of await recentScripts()) {
+    recent.push({ name: r.name, ...(r.at ? { openedAt: new Date(r.at).toISOString() } : {}), open: !!state.doc && (await sameFile(r.handle, state.handle)) });
+  }
+  return { open: state.doc ? state.name : null, recent };
+}
+async function openScript(args, by) {
+  if (together?.active) return { error: "The person is sharing this script with others; opening another one would end that. Ask them to stop sharing first." };
+  const busy = state.doc ? busyChoice() : "";
+  if (busy) return { error: busy };
+  if (args.markdown != null) {
+    const problem = scriptProblem(args.markdown);
+    if (problem) return { error: problem };
+    const recent = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
+    const name = D.scriptFileName(args.fileName, D.parse(args.markdown), (n) => recent.has(n.toLowerCase()) || store.get(draftKey(n)) != null || (!!state.doc && n === state.name));
+    loadText(args.markdown, { name });
+    // None of it is in a file yet: it shows as unsaved, is kept as a draft, and the first save asks where.
+    state.savedText = "";
+    renderSaveState();
+    persistDraft();
+    return { result: `Opened as ${name}, not saved yet: the person picks where to save it.` };
+  }
+  const name = String(args.name ?? "").trim();
+  const list = await recentScripts();
+  const r = list.find((x) => x.name === name) || list.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  if (!r) return { error: `No recent script is called ${name}. list_scripts gives their names.` };
+  if (state.doc && (await sameFile(r.handle, state.handle))) return { result: `${r.name} is already open.` };
+  if (await permitted(r.handle, false)) {
+    if (await openHandle(r.handle)) return { result: `Opened ${r.name}. get_script reads it.` };
+    return { error: `The editor couldn't open ${r.name}: it may have been moved or deleted.` };
+  }
+  // The browser asks the person before reading a file again; that takes their click.
+  const text = `${by.name} wants to open ${r.name}`;
+  const open = async () => {
+    hideBanner();
+    $("#emptyNote").hidden = true;
+    if (await permitted(r.handle, true)) openHandle(r.handle);
+  };
+  if (state.doc) showBanner(text, [["Open", open], ["Not now", hideBanner]]);
+  else emptyNote(text, [["Open", open], ["Not now", () => { $("#emptyNote").hidden = true; }]]);
+  return { result: `The browser needs the person's OK to open ${r.name}: an Open button shows in the editor. Call get_script later to see which script is open.` };
+}
+// The agent's whole text goes in as one change: one Ctrl/Cmd+Z step when alone, the agent's in a shared script.
+// Paragraphs it left word for word keep their ids, so their asks and marks stay; asks on text that is gone end.
+function putScript(next, { by = null, before = D.cloneDoc(state.doc) } = {}) {
+  together?.local(); // the host's own typing goes out first, under the host's name
+  hideBar();
+  closeCard();
+  state.doc = D.keepIds(state.doc, next);
+  state.preCaret = null;
+  checkpoint("agent", null, before);
+  reanchorAll();
+  if (by) together?.localAs("agent");
+  renderAll(null);
+}
+function setScript(markdown, by) {
+  const before = D.cloneDoc(state.doc);
+  // The file keeps its own line endings.
+  const text = before.eol === "\r\n" ? markdown.replace(/\r?\n/g, "\r\n") : markdown;
+  if (text === D.serialize(state.doc)) return false;
+  putScript(D.parse(text), { by, before });
+  const step = together?.active ? null : state.undo.at(-1);
+  showBanner(`${by.name} replaced the text`, [["Undo", undoScript]]);
+  replaced = { text: D.serialize(state.doc), before, step };
+  changed();
+  return true;
+}
+// Undo on the line: exactly the text from before, while the agent's text is untouched.
+function undoScript() {
+  const r = replaced;
+  hideBanner();
+  if (!r || D.serialize(state.doc) !== r.text) return;
+  if (r.step && state.undo.at(-1) === r.step) return undo();
+  putScript(D.cloneDoc(r.before));
+  changed();
 }
 
 function renderAgent() {

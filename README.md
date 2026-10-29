@@ -29,7 +29,7 @@ When you connect an agent, a small live relay (a Cloudflare Durable Object) pass
 
 3. Use the `watch_script` prompt. Your agent waits for asks and answers each one in place.
 
-Tools: `get_script` (also returns the linked B-roll list), `wait_for_asks`, `answer_ask`, `answer_broll` (suggests B-roll adds, changes and removals), `sketch_shot` (draws a storyboard sketch for a shot), `list_asks`. A connection lasts at most eight hours; **Disconnect MCP** ends it at once. Keep the token private.
+Tools: `get_script` (also returns the linked B-roll list), `wait_for_asks`, `answer_ask`, `answer_broll` (suggests B-roll adds, changes and removals), `sketch_shot` (draws a storyboard sketch for a shot), `list_asks`, and, when you ask your agent for a whole script, `list_scripts` (your recent scripts), `open_script` (opens one of them, or a new script it wrote) and `set_script` (puts in the open script's whole text, with Undo). You can connect your agent from the start screen too, so it can write your first script. A connection lasts at most eight hours; **Disconnect MCP** ends it at once. Keep the token private.
 
 ## Run it on your computer
 

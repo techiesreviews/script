@@ -5,7 +5,7 @@ import {
   ACTIONS, parse, serialize, contentOf, setContent, splitBlock, mergeWithPrevious, removeBlock, insertBlock,
   outline, parseHeading, exportCamera, exportPrompter, sentences, stats, countWords, snapToWords, reanchor,
   makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, locate, checkAnswer,
-  prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS,
+  prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS, scriptFileName, keepIds,
   PARTS, matchParts, slashCommand, shiftHeadings, numberAt, insertPart,
   slashAllowed, cutCommand, withoutCommand, lineToReplace,
 } from "../public/doc.js";
@@ -721,4 +721,36 @@ test("a line that held only the command is replaced by the part, unless it has a
   setContent(doc, first.id, "");
   insertPart(doc, first.id, "intro", { replaceId: lineToReplace(doc, first.id, []) });
   assert.equal(serialize(doc), "## 1 · Intro\n\n\n\n## 2 · Hook\n\nA.\n");
+});
+
+// Step H (Lex, 2026-10-29): a new script from the agent gets a file name of its own.
+test("scriptFileName: the agent's name or the title, a .md file name that is not taken", () => {
+  const doc = parse("# Héllo, World: part 2!\n\nText.");
+  assert.equal(scriptFileName("my video.md", doc), "my video.md");
+  assert.equal(scriptFileName("../../etc/notes.markdown", doc), "notes.md");
+  assert.equal(scriptFileName('a<b>:c"d|e?f*.txt', doc), "abcdef.md");
+  assert.equal(scriptFileName("", doc), "hello-world-part-2.md");
+  assert.equal(scriptFileName("  ...  ", doc), "hello-world-part-2.md");
+  assert.equal(scriptFileName(null, parse("Just words.")), "untitled-script.md");
+  const taken = new Set(["intro.md", "intro-2.md"]);
+  assert.equal(scriptFileName("intro.md", doc, (n) => taken.has(n)), "intro-3.md");
+  assert.ok(scriptFileName("x".repeat(300), doc).length <= 103);
+});
+
+test("keepIds: blocks left word for word keep their ids, once each", () => {
+  const prev = parse("# Title\n\n## 1. Start\n\nSame words.\n\nOld words.\n\nSame words.");
+  const next = keepIds(prev, parse("# Title\n\n## 1. Start\n\nNew words.\n\nSame words.\n\nSame words.\n\nSame words."));
+  const ids = prev.blocks.map((b) => b.id);
+  assert.deepEqual(next.blocks.slice(0, 2).map((b) => b.id), ids.slice(0, 2));
+  assert.ok(!ids.includes(next.blocks[2].id), "a new paragraph gets a new id");
+  assert.deepEqual([next.blocks[3].id, next.blocks[4].id], [ids[2], ids[4]], "each old id is used once, in order");
+  assert.ok(!ids.includes(next.blocks[5].id));
+  assert.equal(new Set(next.blocks.map((b) => b.id)).size, next.blocks.length);
+  assert.equal(serialize(next), "# Title\n\n## 1. Start\n\nNew words.\n\nSame words.\n\nSame words.\n\nSame words.");
+  // A new block that drew an id that is kept gets another.
+  const clash = parse("Kept.\n\nOther.");
+  clash.blocks[1].id = prev.blocks[0].id;
+  const out = keepIds(prev, Object.assign(clash, { blocks: [{ ...clash.blocks[1] }, { ...clash.blocks[0], text: "# Title", type: "title" }] }));
+  assert.notEqual(out.blocks[0].id, out.blocks[1].id);
+  assert.equal(out.blocks[1].id, prev.blocks[0].id);
 });

@@ -101,9 +101,9 @@ test("/mcp: a token past its time, or from the future, is refused without asking
   assert.ok(legacy.ops.every((o) => o.born === null), "a legacy token's ops carry born: null");
 });
 
-test("tools/list has the six tools with input schemas and limits", async () => {
+test("tools/list has the nine tools with input schemas and limits", async () => {
   const r = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "answer_broll", "get_script", "list_asks", "sketch_shot", "wait_for_asks"]);
+  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "answer_broll", "get_script", "list_asks", "list_scripts", "open_script", "set_script", "sketch_shot", "wait_for_asks"]);
   const answer = TOOLS.find((t) => t.name === "answer_ask").inputSchema;
   assert.equal(answer.properties.text.maxLength, 4000);
   assert.equal(answer.properties.message.maxLength, 200);
@@ -293,4 +293,43 @@ test("mcp: the agent hears that replace and add go into the text at once and can
   assert.match(INSTRUCTIONS, /Notes stay beside the text until the person dismisses them/);
   assert.doesNotMatch(INSTRUCTIONS, /notes[^.;]*keep or undo/i);
   assert.match(WATCH_PROMPT, /inside the paragraph I asked about/);
+});
+
+// Step H (Lex, 2026-10-29): the agent opens a recent script or a new one it wrote, or puts in the whole text.
+test("open_script and set_script: arguments", () => {
+  const big = "x".repeat(200_001);
+  for (const [args, re] of [
+    [{}, /Give name .* or markdown/],
+    [{ name: "  " }, /Give name/],
+    [{ name: "a.md", markdown: "# A" }, /not both/],
+    [{ fileName: "a.md" }, /Give name/],
+    [{ name: "a.md", fileName: "b.md" }, /fileName goes with markdown/],
+    [{ markdown: big }, /markdown is longer than 200000/],
+    [{ markdown: "# A", fileName: "f".repeat(121) }, /fileName is longer than 120/],
+    [{ name: 3 }, /name must be text/],
+    [{ markdown: "# A", extra: 1 }, /Unknown argument: extra/],
+  ]) assert.match(checkArgs("open_script", args), re, JSON.stringify(args).slice(0, 60));
+  assert.equal(checkArgs("open_script", { name: "intro.md" }), "");
+  assert.equal(checkArgs("open_script", { markdown: "# A\n\nHello.", fileName: "a.md" }), "");
+  for (const [args, re] of [
+    [{}, /markdown is required/],
+    [{ markdown: " \n" }, /markdown is required/],
+    [{ markdown: big }, /longer than 200000/],
+    [{ markdown: "# A", name: "a.md" }, /Unknown argument: name/],
+  ]) assert.match(checkArgs("set_script", args), re);
+  assert.equal(checkArgs("set_script", { markdown: "# A\n\nHello." }), "");
+  const set = TOOLS.find((t) => t.name === "set_script");
+  assert.deepEqual(set.inputSchema.required, ["markdown"]);
+  assert.equal(set.annotations.destructiveHint, true);
+  assert.equal(TOOLS.find((t) => t.name === "list_scripts").annotations.readOnlyHint, true);
+  assert.match(INSTRUCTIONS, /Only when the person asks you for a whole script/);
+  for (const name of ["list_scripts", "open_script", "set_script"]) assert.match(INSTRUCTIONS, new RegExp(name));
+});
+
+test("open_script goes to the tab like any call, with its arguments", async () => {
+  const relay = fakeRelay({ results: { open_script: "Opened as my-video.md, not saved yet: the person picks where to save it." } });
+  const r = await rpc({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "open_script", arguments: { markdown: "# My video", fileName: "my-video.md" } } }, { relay });
+  assert.match(r.body.result.content[0].text, /Opened as my-video\.md/);
+  const call = relay.ops.find((o) => o.op === "call");
+  assert.deepEqual([call.tool, call.args], ["open_script", { markdown: "# My video", fileName: "my-video.md" }]);
 });

@@ -743,3 +743,42 @@ export function insertPart(doc, afterId, partId, { replaceId = null } = {}) {
   if (part.kind === "divider") return { caret: { id: insertBlock(doc, block.id, "para", "").id, offset: 0 } };
   return { caret: { id: block.id, offset: part.text.length - 1 } };
 }
+
+/* ---------- Whole scripts from the agent (step H) ---------- */
+// The agent can open a new script it wrote (open_script) or put in the open script's whole text (set_script).
+export const SCRIPT_LIMITS = { markdown: 200_000, fileName: 120 };
+const slug = (s) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "");
+/**
+ * The file name for a new script: the agent's own (without folders or characters a file name can't have) or one
+ * made from its title, ending in .md. `taken(name)` says a name is in use (a recent file, a kept draft): then -2, -3…
+ * is added, so the new script never picks up another script's draft.
+ */
+export function scriptFileName(wanted, doc, taken = () => false) {
+  let base = String(wanted ?? "").split(/[\\/]/).pop().replace(/[\u0000-\u001f<>:"|?*]/g, "").replace(/\s+/g, " ").trim();
+  base = base.replace(/\.(?:md|markdown|txt)$/i, "").replace(/^\.+|\.+$/g, "").trim().slice(0, 100).trim();
+  if (!base) base = slug(titleOf(doc)) || "untitled-script";
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? `${base}.md` : `${base}-${n}.md`;
+    if (!taken(name)) return name;
+  }
+}
+/**
+ * `next` with the ids of `prev`'s blocks that it has word for word (same type and text), each id used once, so asks,
+ * notes and marked changes on paragraphs the new text left alone stay where they are. Changes `next` and returns it.
+ */
+export function keepIds(prev, next) {
+  const free = new Map();
+  for (const b of prev.blocks) {
+    const k = `${b.type}\n${b.text}`;
+    if (!free.has(k)) free.set(k, []);
+    free.get(k).push(b.id);
+  }
+  const kept = new Set(), keptIds = new Set();
+  for (const b of next.blocks) {
+    const id = free.get(`${b.type}\n${b.text}`)?.shift();
+    if (id) { b.id = id; kept.add(b); keptIds.add(id); }
+  }
+  // A new block whose own id happens to be one that was kept gets another.
+  for (const b of next.blocks) if (!kept.has(b) && keptIds.has(b.id)) b.id = freshId(next);
+  return next;
+}
