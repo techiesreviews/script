@@ -591,6 +591,20 @@ test("checkBrollAnswer: which asks, ids, quotes, screen with how, limits; adds g
   assert.match(checkAnswer(brollAsk({ quote: "x" }), { kind: "replace", text: "y" }, doc).error, /answer_broll/);
   assert.match(checkAnswer({ scope: "broll", action: "plan", status: "taken" }, { kind: "note", text: "y" }, doc).error, /answer_broll/);
   assert.match(checkSketch({ scope: "broll", action: "plan", status: "taken", shots: [{ id: "B4" }] }, { shotId: "B4", svg: '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/></svg>' }).error, /answer_broll/);
+  // Step I: an add may bring its sketch, cleaned; updates and removals may not.
+  const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/><script>x</script></svg>';
+  const drawn = checkBrollAnswer(brollAsk(), { changes: [{ ...add, sketch: svg }] }, ctx).answer.changes[0];
+  assert.equal(drawn.sketch, sanitizeSvg(svg));
+  assert.doesNotMatch(drawn.sketch, /script/);
+  assert.equal("sketch" in checkBrollAnswer(brollAsk(), { changes: [{ ...add, sketch: "  " }] }, ctx).answer.changes[0], false);
+  for (const [args, re] of [
+    [{ changes: [{ op: "update", id: "B2", what: "x", sketch: svg }] }, /sketch goes with an add.*sketch_shot/],
+    [{ changes: [{ ...add, sketch: 7 }] }, /sketch must be text/],
+    [{ changes: [{ ...add, sketch: "x".repeat(8193) }] }, /longer than 8192/],
+    [{ changes: [{ ...add, sketch: "<p>hello</p>" }] }, /nothing drawable/],
+  ]) assert.match(checkBrollAnswer(brollAsk(), args, ctx).error, re);
+  // The agent's own suggestion (asked for in its chat) is a taken plan ask of its own.
+  assert.ok(checkBrollAnswer(brollAsk({ scope: "broll", action: "plan", status: "taken", own: true }), { changes: [add] }, ctx).answer);
   assert.match(ACTIONS.broll.instruction, /1–3/);
   assert.match(ACTIONS.plan.instruction, /at most 20/);
 });
@@ -610,6 +624,11 @@ test("Keep gives the same file as the C3 functions; Keep all is one write in ord
   assert.equal(applyBrollChange(DEMO, add), addShot(DEMO, { id: "B9", kind: "motion", what: "Map", how: "After Effects", over: add.over }));
   assert.equal(applyBrollChange(DEMO, up), updateShot(DEMO, "B2", { what: "A long post scrolls by", kind: "motion" }));
   assert.equal(applyBrollChange(DEMO, rm), removeShot(DEMO, "B7"));
+  // Step I: a kept add keeps its sketch under its new id.
+  const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/></svg>';
+  const drawn = applyBrollChange(DEMO, { ...add, sketch: svg });
+  assert.equal(drawn, setSketch(applyBrollChange(DEMO, add), "B9", svg));
+  assert.equal(parseBroll(drawn).sketches.B9, svg);
   // Keep all: one write with every change in order; the adds get B9 and S3 at that moment.
   const all = applyBrollChanges(DEMO, changesToKeep(answer, [0, 1, 2, 3]));
   const step = [add, up, rm, screen].reduce((md, c) => applyBrollChange(md, c), DEMO);

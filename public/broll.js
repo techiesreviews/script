@@ -658,6 +658,15 @@ export function checkBrollAnswer(ask, args, { doc, shots = [] } = {}) {
       if (typeof c[k] === "string" && L[k] && c[k].length > L[k]) return { error: `${at}: ${k} is longer than ${L[k]} characters.` };
     }
     if (c.kind != null && !KINDS.includes(c.kind)) return { error: `${at}: kind must be broll, motion or screen.` };
+    // A new shot may bring its sketch (step I): it is kept with the shot. A shot in the list gets one with sketch_shot.
+    let sketch = "";
+    if (c.sketch != null) {
+      if (c.op !== "add") return { error: `${at}: a sketch goes with an add. For a shot in the list, use sketch_shot.` };
+      if (typeof c.sketch !== "string") return { error: `${at}: sketch must be text.` };
+      if (c.sketch.length > SKETCH_MAX) return { error: `${at}: sketch is longer than ${SKETCH_MAX} characters.` };
+      sketch = c.sketch.trim() ? sanitizeSvg(c.sketch) : "";
+      if (c.sketch.trim() && !sketch) return { error: `${at}: nothing drawable is left of the sketch after cleaning. Use path, rect, circle, ellipse, line, polyline, polygon or text with class s, l, o or mv.` };
+    }
     const why = oneLine(c.why);
     if (c.op === "add") {
       if (!c.kind) return { error: `${at}: an add needs kind (broll, motion or screen).` };
@@ -666,7 +675,7 @@ export function checkBrollAnswer(ask, args, { doc, shots = [] } = {}) {
       if (c.kind === "screen" && oneLine(c.how)) return { error: `${at}: a screen recording has no how.` };
       const sel = quoteSelection(doc, c.quote);
       if (!sel.length) return { error: `${at}: the quote is not in the spoken text word for word: ${JSON.stringify(oneLine(c.quote).slice(0, 80))}.` };
-      changes.push({ op: "add", kind: c.kind, what: oneLine(c.what), how: c.kind === "screen" ? "" : oneLine(c.how), quote: oneLine(c.quote), over: overFor(doc, sel), why, state: "open" });
+      changes.push({ op: "add", kind: c.kind, what: oneLine(c.what), how: c.kind === "screen" ? "" : oneLine(c.how), quote: oneLine(c.quote), over: overFor(doc, sel), why, ...(sketch ? { sketch } : {}), state: "open" });
       continue;
     }
     const shot = known.get(c.id);
@@ -683,11 +692,14 @@ export function checkBrollAnswer(ask, args, { doc, shots = [] } = {}) {
   return { answer: { kind: "broll", changes, ...(message ? { message } : {}) } };
 }
 
-/** Keep one change: the same file the C3 functions give. An add gets the next free id at that moment. */
+/** Keep one change: the same file the C3 functions give. An add gets the next free id at that moment, and its
+ *  sketch, when it brought one, goes under "## Sketches" with that id. */
 export function applyBrollChange(markdown, c) {
   if (c.op === "add") {
     const now = parseBroll(markdown);
-    return addShot(markdown, { id: nextShotId(now.shots, c.kind, now.sketches), kind: c.kind, what: c.what, over: c.over, how: c.how });
+    const id = nextShotId(now.shots, c.kind, now.sketches);
+    const md = addShot(markdown, { id, kind: c.kind, what: c.what, over: c.over, how: c.how });
+    return c.sketch ? setSketch(md, id, c.sketch) : md;
   }
   if (c.op === "update") return updateShot(markdown, c.id, { what: c.what, how: c.kind === "screen" ? undefined : c.how, kind: c.kind });
   if (c.op === "remove") return removeShot(markdown, c.id);

@@ -218,13 +218,14 @@ test("tool errors: no tab, the tab's own refusal, and a quiet wait", async () =>
 
 test("sketch_shot: schema, limits, and get_script describes the B-roll", async () => {
   const tool = TOOLS.find((t) => t.name === "sketch_shot");
-  assert.deepEqual(tool.inputSchema.required, ["askId", "shotId", "svg"]);
+  assert.deepEqual(tool.inputSchema.required, ["shotId", "svg"]);
   assert.equal(tool.inputSchema.properties.svg.maxLength, 8192);
   assert.equal(tool.inputSchema.properties.shotId.maxLength, 20);
   assert.match(TOOLS.find((t) => t.name === "get_script").description, /broll: .*blockIds.*check/);
   const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M1 1L9 9"/></svg>';
   for (const [args, re] of [
-    [{ shotId: "B4", svg }, /askId is required/],
+    [{ askId: "", shotId: "B4", svg }, /askId must be an ask's id, or left out/],
+    [{ askId: 7, shotId: "B4", svg }, /askId must be an ask's id/],
     [{ askId: "a", svg }, /shotId is required/],
     [{ askId: "a", shotId: "B".repeat(21), svg }, /shotId is required/],
     [{ askId: "a", shotId: "B4" }, /svg is required/],
@@ -233,6 +234,8 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
     [{ askId: "a", shotId: "B4", svg, style: "x" }, /Unknown argument/],
   ]) assert.match(checkArgs("sketch_shot", args), re);
   assert.equal(checkArgs("sketch_shot", { askId: "a", shotId: "B4", svg: "x".repeat(8192) }), "");
+  // Step I: without askId, a sketch the person asked for in the agent's chat.
+  assert.equal(checkArgs("sketch_shot", { shotId: "B4", svg }), "");
   const relay = fakeRelay({ results: { sketch_shot: "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo." } });
   const r = await call("sketch_shot", { askId: "a", shotId: "B4", svg }, { relay });
   assert.equal(text(r), "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.");
@@ -243,14 +246,18 @@ test("sketch_shot: schema, limits, and get_script describes the B-roll", async (
 
 test("answer_broll: schema, limits and refusals before the tab; the prompt and instructions name it", async () => {
   const tool = TOOLS.find((t) => t.name === "answer_broll");
-  assert.deepEqual(tool.inputSchema.required, ["askId", "changes"]);
+  assert.deepEqual(tool.inputSchema.required, ["changes"]);
   assert.equal(tool.inputSchema.properties.changes.maxItems, 20);
   const item = tool.inputSchema.properties.changes.items.properties;
   assert.deepEqual([item.what.maxLength, item.how.maxLength, item.quote.maxLength, item.why.maxLength], [200, 120, 500, 160]);
   assert.equal(tool.inputSchema.properties.message.maxLength, 200);
+  assert.equal(item.sketch.maxLength, 8192);
   const add = { op: "add", kind: "broll", what: "A clock", quote: "Hello there." };
   for (const [args, re] of [
-    [{ changes: [add] }, /askId is required/],
+    [{ askId: "", changes: [add] }, /askId must be an ask's id, or left out/],
+    [{ askId: "a", changes: [{ ...add, sketch: "x".repeat(8193) }] }, /sketch is longer than 8192/],
+    [{ askId: "a", changes: [{ ...add, sketch: 5 }] }, /sketch must be text/],
+    [{ askId: "a", changes: [{ op: "update", id: "B1", what: "x", sketch: "<svg/>" }] }, /sketch goes with an add/],
     [{ askId: "a" }, /changes must be a list/],
     [{ askId: "a", changes: [] }, /changes must be a list/],
     [{ askId: "a", changes: Array(21).fill(add) }, /At most 20 changes/],
@@ -268,6 +275,8 @@ test("answer_broll: schema, limits and refusals before the tab; the prompt and i
     [{ askId: "a", changes: [add], extra: 1 }, /Unknown argument/],
   ]) assert.match(checkArgs("answer_broll", args), re);
   assert.equal(checkArgs("answer_broll", { askId: "a", changes: [add, { op: "update", id: "B1", how: "Stock" }, { op: "remove", id: "B2", why: "Repeats B1" }], message: "Three ideas" }), "");
+  // Step I: without askId (B-roll asked for in the agent's chat), and an add with its sketch.
+  assert.equal(checkArgs("answer_broll", { changes: [{ ...add, sketch: '<svg viewBox="0 0 260 140"><path class="s" d="M1 1L9 9"/></svg>' }] }), "");
   const relay = fakeRelay({ results: { answer_broll: "Shown to the person. They choose Keep or Undo per change." } });
   const r = await call("answer_broll", { askId: "a", changes: [add] }, { relay });
   assert.equal(text(r), "Shown to the person. They choose Keep or Undo per change.");
@@ -278,6 +287,12 @@ test("answer_broll: schema, limits and refusals before the tab; the prompt and i
   const prompt = await rpc({ jsonrpc: "2.0", id: 4, method: "prompts/get", params: { name: "watch_script" } });
   assert.match(prompt.body.result.messages[0].content.text, /answer_broll for B-roll asks/);
   assert.match(INSTRUCTIONS, /answer_broll/);
+  assert.match(INSTRUCTIONS, /in your chat \(not in an ask\) for B-roll or sketches.*answer_broll without askId.*sketch_shot without askId/);
+  assert.match(prompt.body.result.messages[0].content.text, /add \{ kind, what, how, quote, sketch \}/);
+  // Without askId the call still reaches the tab, which shows it as the agent's own suggestion.
+  const own = await call("answer_broll", { changes: [add] }, { relay });
+  assert.equal(own.body.result.isError, undefined);
+  assert.deepEqual(relay.ops.at(-1).args, { changes: [add] });
 });
 
 test("mcp: the agent hears that replace and add go into the text at once and can be undone (step F)", () => {

@@ -2854,7 +2854,7 @@ const suggestionsFor = (id) => openSuggestions().filter((x) => x.c.op !== "add" 
 function suggestedAdds() {
   const list = state.doc ? B.spokenBlocks(state.doc) : [];
   return openSuggestions().filter((x) => x.c.op === "add")
-    .map((x) => ({ ...x, suggested: true, kind: x.c.kind, what: x.c.what, how: x.c.how, over: x.c.over, why: x.c.why, blockIds: B.matchOver(list, x.c.over) }));
+    .map((x) => ({ ...x, suggested: true, kind: x.c.kind, what: x.c.what, how: x.c.how, over: x.c.over, why: x.c.why, sketch: x.c.sketch || "", blockIds: B.matchOver(list, x.c.over) }));
 }
 let addsSig = "";
 function refreshSuggestions() {
@@ -2885,9 +2885,11 @@ function suggestBlock(x, s) {
 }
 const addText = (x) => `<p class="suggest__what">${esc(x.what)}</p>${x.how ? `<p class="suggest__how">${esc(x.how)}</p>` : ""}${x.why ? `<p class="suggest__why">${esc(x.why)}</p>` : ""}`;
 // A suggested add beside its line: the frame dashed in orange, the tag "Suggested", What, How, Keep and Undo.
-const suggestedFrame = (x) => `<div class="shot-frame" data-suggested data-kind="${x.kind}"><div class="shot-frame__pic"><span class="frame__img" data-empty></span>`
+// A suggested add's own sketch (step I), or an empty frame.
+const suggestedImg = (x) => (x.sketch ? `<span class="frame__img" data-pending>${sketchSvg(x.sketch, "")}</span>` : '<span class="frame__img" data-empty></span>');
+const suggestedFrame = (x) => `<div class="shot-frame" data-suggested data-kind="${x.kind}"><div class="shot-frame__pic">${suggestedImg(x)}`
   + `<span class="broll-tag">${icon(KIND_ICON[x.kind])}Suggested</span></div><div class="suggest" data-op="add">${addText(x)}${suggestBar(x)}</div></div>`;
-const suggestedBoardFrame = (x, missing) => `<li class="frame" data-suggested${missing ? " data-missing" : ""}><div class="frame__body"><span class="frame__img" data-empty></span>`
+const suggestedBoardFrame = (x, missing) => `<li class="frame" data-suggested${missing ? " data-missing" : ""}><div class="frame__body">${suggestedImg(x)}`
   + `<span class="frame__cap"><span class="kind-tag" data-kind="suggested">Suggested</span><span class="kind-tag" data-kind="${x.kind}">${KIND_NAME[x.kind]}</span> ${esc(x.what)}`
   + `${x.how ? `<span class="frame__over">${esc(x.how)}</span>` : ""}<span class="frame__over">Over: ${esc(x.over || "–")}</span>${x.why ? `<span class="frame__over suggest__why">${esc(x.why)}</span>` : ""}</span></div>${suggestBar(x)}</li>`;
 
@@ -3242,9 +3244,10 @@ function askForList(a) {
   const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, status: a.status, createdAt: a.createdAt };
   if (a.scope === "selection") Object.assign(out, { quote: a.quote, section: a.section });
   if (a.from) out.from = a.from; // one paragraph's links from a whole-script "Find links"
+  if (a.own) out.own = true; // B-roll or sketches asked for in the agent's chat (step I)
   if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots.map((s) => ({ id: s.id, state: a.answer?.done?.[s.id] || (a.answer?.sketches?.[s.id] ? "shown" : "waiting") }));
   else if (a.answer?.kind === "broll") {
-    out.answer = { kind: "broll", changes: a.answer.changes.map(({ op, id, kind, what, how, quote, state }) => ({ op, ...(id ? { id } : {}), ...(kind ? { kind } : {}), ...(what != null ? { what } : {}), ...(how != null ? { how } : {}), ...(quote ? { quote } : {}), state: state === "open" ? "waiting" : state })), ...(a.answer.message ? { message: a.answer.message } : {}) };
+    out.answer = { kind: "broll", changes: a.answer.changes.map(({ op, id, kind, what, how, quote, sketch, state }) => ({ op, ...(id ? { id } : {}), ...(kind ? { kind } : {}), ...(what != null ? { what } : {}), ...(how != null ? { how } : {}), ...(quote ? { quote } : {}), ...(sketch ? { sketch: true } : {}), state: state === "open" ? "waiting" : state })), ...(a.answer.message ? { message: a.answer.message } : {}) };
   } else if (a.answer) out.answer = a.answer.kind === "marks" ? { kind: "marks", marks: a.answer.marks.map((m) => ({ quote: m.quote, state: m.state })) } : a.answer;
   return out;
 }
@@ -3312,6 +3315,7 @@ function handleCall({ id, tool, args = {} }) {
       return send({ result: C.answerResult(checked.answer.kind) });
     }
     if (tool === "answer_broll") {
+      if (args.askId == null) return send(ownBroll(args));
       const ask = state.asks.find((a) => a.id === args.askId);
       const checked = B.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
       if (checked.error) return send({ error: checked.error });
@@ -3319,6 +3323,7 @@ function handleCall({ id, tool, args = {} }) {
       return send({ result: "Shown to the person. They choose Keep or Undo per change." });
     }
     if (tool === "sketch_shot") {
+      if (args.askId == null) return send(ownSketch(args));
       const ask = state.asks.find((a) => a.id === args.askId);
       const checked = B.checkSketch(ask, args);
       if (checked.error) return send({ error: checked.error });
@@ -3329,6 +3334,49 @@ function handleCall({ id, tool, args = {} }) {
   } catch (e) {
     send({ error: `The editor could not do that: ${e?.message || e}` });
   }
+}
+
+/* ---------- B-roll and sketches the person asked for in the agent's own chat (step I, Lex 2026-10-29) ---------- */
+// They come in as an ask of the agent's own (own: true), already answered, so they show and are kept or undone
+// exactly like the answer to "Plan B-roll" or "Ask for sketches".
+function ownAsk(action, instruction) {
+  const ask = D.makeAsk(state.doc, { scope: "broll", action, instruction, by: me });
+  Object.assign(ask, { own: true, status: "taken", takenAt: ask.createdAt, takenBy: agentBy() });
+  return ask;
+}
+function ownBroll(args) {
+  if (broll.status !== "ok" && broll.status !== "none") return { error: brollUnreadable() };
+  const ask = ownAsk("plan", "Your own B-roll suggestions, asked for in your chat.");
+  const checked = B.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
+  if (checked.error) return { error: checked.error };
+  state.asks.push(ask);
+  emit("created", ask);
+  receiveBroll(ask, checked.answer, agentBy());
+  return { result: "Shown to the person beside the script lines and in the storyboard. They choose Keep or Undo per change; a kept add keeps its sketch." };
+}
+function ownSketch(args) {
+  if (broll.status !== "ok") return { error: broll.status === "none" ? "There is no B-roll list yet. Suggest shots with answer_broll (each add can bring its sketch)." : brollUnreadable() };
+  const shot = shotById(args.shotId);
+  if (!shot) return { error: `shotId must be one of the shots in the list: ${broll.shots.map((s) => s.id).join(", ") || "none yet"}.` };
+  const svg = B.checkSketch({ scope: "broll", action: "sketch", status: "taken", shots: [shot] }, args);
+  if (svg.error) return { error: svg.error };
+  // One sketch ask at a time: an open one (also the person's) takes the shot in, else a new one of the agent's own.
+  let ask = sketchAsk();
+  if (!ask) {
+    ask = ownAsk("sketch", "Your own sketches, asked for in your chat.");
+    ask.shots = [];
+    state.asks.push(ask);
+    emit("created", ask);
+  }
+  if (!ask.shots.some((s) => s.id === shot.id)) ask.shots.push({ id: shot.id, what: shot.what, over: shot.over, kind: shot.kind });
+  receiveSketch(ask, shot.id, svg.svg, agentBy());
+  const left = ask.own ? [] : ask.shots.filter((s) => !ask.answer.sketches[s.id] && !ask.answer.done[s.id]).map((s) => s.id);
+  return { result: `Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.${left.length ? ` They also asked for sketches of ${left.join(", ")}.` : ""}` };
+}
+function brollUnreadable() {
+  return broll.status === "permission" ? "The editor needs the person's OK to read the B-roll list. Ask them to allow it in the storyboard first."
+    : broll.status === "loading" ? "The B-roll list is still loading. Try again in a moment."
+    : "The B-roll list can't be read. Ask the person to link it again in the storyboard.";
 }
 
 /* ---------- The agent opens a script or puts in its whole text (step H, Lex 2026-10-29) ---------- */
