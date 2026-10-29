@@ -5,7 +5,7 @@ import {
   ACTIONS, parse, serialize, contentOf, setContent, splitBlock, mergeWithPrevious, removeBlock, insertBlock,
   outline, parseHeading, exportCamera, exportPrompter, sentences, stats, countWords, snapToWords, reanchor,
   makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, locate, checkAnswer,
-  prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS, scriptFileName, keepIds,
+  prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS, scriptFileName, keepIds, wholeText,
   PARTS, matchParts, slashCommand, shiftHeadings, numberAt, insertPart,
   slashAllowed, cutCommand, withoutCommand, lineToReplace,
 } from "../public/doc.js";
@@ -735,6 +735,22 @@ test("scriptFileName: the agent's name or the title, a .md file name that is not
   const taken = new Set(["intro.md", "intro-2.md"]);
   assert.equal(scriptFileName("intro.md", doc, (n) => taken.has(n)), "intro-3.md");
   assert.ok(scriptFileName("x".repeat(300), doc).length <= 103);
+  assert.equal(scriptFileName("NUL.md", doc), "NUL-script.md");
+  assert.equal(scriptFileName("com1", doc), "com1-script.md");
+});
+
+test("wholeText: the script's own line endings, null for the same text; the old copy stays exactly as it was", () => {
+  const crlf = parse("# A\r\n\r\nOne.\r\n");
+  assert.equal(wholeText(crlf, "# A\n\nTwo.\n"), "# A\r\n\r\nTwo.\r\n");
+  assert.equal(wholeText(crlf, "# A\n\nOne.\n"), null);
+  const lf = parse("# A\n\nOne.\n");
+  assert.equal(wholeText(lf, "# A\n\nOne.\n"), null);
+  assert.equal(wholeText(lf, "# A\r\n\r\nTwo."), "# A\r\n\r\nTwo.");
+  const before = cloneDoc(crlf);
+  const next = keepIds(crlf, parse(wholeText(crlf, "# A\n\nTwo.\n")));
+  assert.equal(serialize(next), "# A\r\n\r\nTwo.\r\n");
+  assert.equal(serialize(before), "# A\r\n\r\nOne.\r\n", "Undo puts back exactly this");
+  assert.equal(serialize(keepIds(next, cloneDoc(before))), "# A\r\n\r\nOne.\r\n");
 });
 
 test("keepIds: blocks left word for word keep their ids, once each", () => {

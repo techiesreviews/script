@@ -155,7 +155,7 @@ try {
 
   const list = await mcp("tools/list");
   const names = list.body.result?.tools?.map((t) => t.name).sort().join(",");
-  check(names === "answer_ask,answer_broll,get_script,list_asks,sketch_shot,wait_for_asks", "tools/list has the six tools", names);
+  check(names === "answer_ask,answer_broll,get_script,list_asks,list_scripts,open_script,set_script,sketch_shot,wait_for_asks", "tools/list has the nine tools", names);
 
   const script = await mcp("tools/call", { name: "get_script", arguments: {} });
   check(JSON.parse(toolText(script) || "{}").title === "Smoke", "get_script returns the tab's script", toolText(script));

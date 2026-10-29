@@ -757,10 +757,16 @@ export function scriptFileName(wanted, doc, taken = () => false) {
   let base = String(wanted ?? "").split(/[\\/]/).pop().replace(/[\u0000-\u001f<>:"|?*]/g, "").replace(/\s+/g, " ").trim();
   base = base.replace(/\.(?:md|markdown|txt)$/i, "").replace(/^\.+|\.+$/g, "").trim().slice(0, 100).trim();
   if (!base) base = slug(titleOf(doc)) || "untitled-script";
+  if (/^(?:con|prn|aux|nul|com\d|lpt\d)$/i.test(base)) base += "-script"; // names Windows keeps for itself
   for (let n = 1; ; n++) {
     const name = n === 1 ? `${base}.md` : `${base}-${n}.md`;
     if (!taken(name)) return name;
   }
+}
+/** The agent's whole text with the line endings of the script it goes into, or null when it is that text already. */
+export function wholeText(doc, markdown) {
+  const text = doc.eol === "\r\n" ? markdown.replace(/\r?\n/g, "\r\n") : markdown;
+  return text === serialize(doc) ? null : text;
 }
 /**
  * `next` with the ids of `prev`'s blocks that it has word for word (same type and text), each id used once, so asks,

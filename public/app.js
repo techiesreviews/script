@@ -3346,11 +3346,13 @@ async function openScript(args, by) {
   if (together?.active) return { error: "The person is sharing this script with others; opening another one would end that. Ask them to stop sharing first." };
   const busy = state.doc ? busyChoice() : "";
   if (busy) return { error: busy };
+  // A script without a file can't be saved on the way out: leaving it would leave it only as a hidden draft.
+  if (state.doc && !state.handle && isDirty()) return { error: `The script open now (${state.name}) is not saved to a file yet. Ask the person to save it first (Ctrl/Cmd+S).` };
   if (args.markdown != null) {
     const problem = scriptProblem(args.markdown);
     if (problem) return { error: problem };
     const recent = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
-    const name = D.scriptFileName(args.fileName, D.parse(args.markdown), (n) => recent.has(n.toLowerCase()) || store.get(draftKey(n)) != null || (!!state.doc && n === state.name));
+    const name = D.scriptFileName(args.fileName, D.parse(args.markdown), (n) => recent.has(n.toLowerCase()) || store.get(draftKey(n)) != null || (!!state.doc && n.toLowerCase() === state.name.toLowerCase()));
     loadText(args.markdown, { name });
     // None of it is in a file yet: it shows as unsaved, is kept as a draft, and the first save asks where.
     state.savedText = "";
@@ -3369,12 +3371,16 @@ async function openScript(args, by) {
   }
   // The browser asks the person before reading a file again; that takes their click.
   const text = `${by.name} wants to open ${r.name}`;
+  const undoLine = replaced;
   const open = async () => {
     hideBanner();
     $("#emptyNote").hidden = true;
+    // Things may have changed since the line showed up.
+    if (together?.active || (state.doc && (busyChoice() || (!state.handle && isDirty())))) return;
     if (await permitted(r.handle, true)) openHandle(r.handle);
   };
-  if (state.doc) showBanner(text, [["Open", open], ["Not now", hideBanner]]);
+  const notNow = () => { hideBanner(); if (undoLine && D.serialize(state.doc) === undoLine.text) showReplaced(undoLine); };
+  if (state.doc) showBanner(text, [["Open", open], ["Not now", notNow]]);
   else emptyNote(text, [["Open", open], ["Not now", () => { $("#emptyNote").hidden = true; }]]);
   return { result: `The browser needs the person's OK to open ${r.name}: an Open button shows in the editor. Call get_script later to see which script is open.` };
 }
@@ -3392,16 +3398,18 @@ function putScript(next, { by = null, before = D.cloneDoc(state.doc) } = {}) {
   renderAll(null);
 }
 function setScript(markdown, by) {
+  // The file keeps its own line endings; a "/" command being typed is not part of the text.
+  const text = D.wholeText(state.doc, markdown);
+  if (text == null || text === saveText()) return false;
   const before = D.cloneDoc(state.doc);
-  // The file keeps its own line endings.
-  const text = before.eol === "\r\n" ? markdown.replace(/\r?\n/g, "\r\n") : markdown;
-  if (text === D.serialize(state.doc)) return false;
   putScript(D.parse(text), { by, before });
-  const step = together?.active ? null : state.undo.at(-1);
-  showBanner(`${by.name} replaced the text`, [["Undo", undoScript]]);
-  replaced = { text: D.serialize(state.doc), before, step };
+  showReplaced({ text: D.serialize(state.doc), before, step: together?.active ? null : state.undo.at(-1), by });
   changed();
   return true;
+}
+function showReplaced(r) {
+  showBanner(`${r.by.name} replaced the text`, [["Undo", undoScript]]);
+  replaced = r;
 }
 // Undo on the line: exactly the text from before, while the agent's text is untouched.
 function undoScript() {

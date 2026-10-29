@@ -332,4 +332,13 @@ test("open_script goes to the tab like any call, with its arguments", async () =
   assert.match(r.body.result.content[0].text, /Opened as my-video\.md/);
   const call = relay.ops.find((o) => o.op === "call");
   assert.deepEqual([call.tool, call.args], ["open_script", { markdown: "# My video", fileName: "my-video.md" }]);
+  const md = "# A\r\n\r\nWhole text, as sent.";
+  const set = fakeRelay({ results: { set_script: "Done: the whole text is in the editor now. The person can undo it." } });
+  const s = await rpc({ jsonrpc: "2.0", id: 10, method: "tools/call", params: { name: "set_script", arguments: { markdown: md } } }, { relay: set });
+  assert.match(s.body.result.content[0].text, /whole text is in the editor/);
+  assert.deepEqual(set.ops.find((o) => o.op === "call").args, { markdown: md });
+  const list = fakeRelay({ results: { list_scripts: { open: null, recent: [] } } });
+  const l = await rpc({ jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "list_scripts", arguments: {} } }, { relay: list });
+  assert.deepEqual(JSON.parse(l.body.result.content[0].text), { open: null, recent: [] });
+  assert.deepEqual(list.ops.find((o) => o.op === "call").args, {});
 });
