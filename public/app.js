@@ -3372,15 +3372,22 @@ async function openScript(args, by) {
   // The browser asks the person before reading a file again; that takes their click.
   const text = `${by.name} wants to open ${r.name}`;
   const undoLine = replaced;
+  // One answer per line: a second Open while the browser's prompt is up does nothing, and a Not now then wins.
+  let choice = null; // "open" while the browser's prompt is up, then "done"
   const notNow = () => {
+    if (choice === "done") return;
+    choice = "done";
     hideBanner();
     $("#emptyNote").hidden = true;
     if (undoLine && state.doc && D.serialize(state.doc) === undoLine.text) showReplaced(undoLine);
   };
   const open = async () => {
+    if (choice) return;
+    choice = "open";
     // Things may have changed since the line showed up (sharing, a choice, unsaved text without a file), or the
     // browser's prompt may be refused: then nothing opens and the line goes, as with Not now.
     const ok = !together?.active && !(state.doc && (busyChoice() || (!state.handle && isDirty()))) && (await permitted(r.handle, true));
+    if (choice !== "open") return;
     notNow();
     if (ok) openHandle(r.handle);
   };
