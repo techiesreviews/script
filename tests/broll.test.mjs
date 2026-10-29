@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -918,4 +918,25 @@ test("pickPicture (step K3): the first step within the budget, else the smallest
   assert.equal(pickPicture([{ data: "data:image/png;base64,ab cd" }, pic(10)], 80_000).data, pic(10).data, "an invalid result is skipped");
   assert.equal(pickPicture([{ data: "" }, { data: "data:text/plain;base64,QQ==" }], 80_000), null);
   assert.equal(pickPicture([pic(10, "jpeg")], 80_000).data, pic(10, "jpeg").data, "JPEG counts when WebP can't be made");
+});
+
+test("bigPictures (step K4): only pictures over the budget are made lighter on save", () => {
+  const svg = '<svg viewBox="0 0 260 140"><path class="s" d="M0 0L9 9"/></svg>';
+  const pic = (n, kind = "jpeg") => `data:image/${kind};base64,${"A".repeat(n)}`;
+  let md = setSketch(DEMO, "B1", pic(100));               // small: stays
+  md = setSketch(md, "B2", pic(150_000));                  // big (an old 960 × 720 JPEG): made lighter
+  md = `${md}\n![B3](${pic(500_000, "png")})\n`;          // too big to show today: made lighter, so it shows again
+  md = `${md}\n![B4](data:image/gif;base64,${"A".repeat(90_000)})\n`; // not a PNG, JPEG or WebP: left alone
+  md = setSketch(md, "B5", svg);                           // a line drawing: left alone
+  assert.deepEqual(bigPictures(md).map((p) => p.id), ["B2", "B3"]);
+  assert.equal(bigPictures(md)[0].data, pic(150_000));
+  assert.deepEqual(bigPictures(md.replace(/\n/g, "\r\n")).map((p) => p.id), ["B2", "B3"], "CRLF lists too");
+  assert.deepEqual(bigPictures(`${DEMO}\n![B9](${pic(PICTURE_SOURCE_MAX + 1)})\n`), [], "beyond 8 MB: left as it is");
+  assert.deepEqual(bigPictures(DEMO), []);
+  // Replacing one in place keeps everything else.
+  const lighter = setSketch(md, "B2", pic(50, "webp"));
+  assert.equal(parseBroll(lighter).sketches.B2, pic(50, "webp"));
+  assert.equal(parseBroll(lighter).sketches.B1, pic(100));
+  assert.equal(parseBroll(lighter).sketches.B5, svg);
+  assert.deepEqual(bigPictures(setSketch(lighter, "B3", pic(60, "webp"))).map((p) => p.id), []);
 });

@@ -3,6 +3,6 @@
 1. `step-a-editor.md`: the editor in the browser: open, edit, save, export, edit bar asks and answer display (no agent transport yet).
 2. `step-b-agent.md`: the Worker, live relay and MCP, so a connected agent answers asks.
 
-Later steps have their own files here, up to `step-k3-small-pictures.md` (pictures cut to the storyboard frame and kept small).
+Later steps have their own files here, up to `step-k4-lighter-lists.md` (big pictures in a B-roll list made lighter when it is saved).
 
 Each step is built, checked with `kit specs`, committed and reviewed with `kit review --commit SHA --ticket docs/build/<step>.md`.

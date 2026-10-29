@@ -2932,15 +2932,30 @@ async function writeSketch(id, svg) {
   if (link.handle) {
     if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
     const now = await (await link.handle.getFile()).text();
-    const next = B.setSketch(now, id, svg);
+    const next = await lighterList(B.setSketch(now, id, svg));
     await writeHandle(link.handle, next);
     broll.text = next;
+    broll.sketches = B.parseBroll(next).sketches; // other pictures may have been made lighter
   } else {
     // The demo list and lists without a file handle are kept in this browser (see keepList).
-    const next = B.setSketch(broll.text, id, svg);
+    const next = await lighterList(B.setSketch(broll.text, id, svg));
     await keepList(next);
     broll.text = next;
+    broll.sketches = B.parseBroll(next).sketches;
   }
+}
+// Every save of a B-roll list shrinks its big pictures (step K4, Lex 2026-10-29): a list made elsewhere, or pictures
+// kept before step K3, get the same treatment as pictures from an agent (cut to the frame, at most 640 × 345, WebP,
+// about 60 KB). Small pictures and line drawings stay as they are; a picture that can't be read stays too.
+async function lighterList(markdown) {
+  let md = markdown;
+  for (const { id, data } of B.bigPictures(md)) {
+    try {
+      const pic = await shrinkPicture(await (await fetch(data)).blob());
+      md = B.setSketch(md, id, pic.data);
+    } catch { /* kept as it is */ }
+  }
+  return md;
 }
 
 /* ---------- Add, change and remove a shot (step C3): the shot card ---------- */
@@ -2971,11 +2986,11 @@ function changeList(mutate) {
     if (link.handle) {
       if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
       const now = await (await link.handle.getFile()).text();
-      const next = mutate(now);
+      const next = await lighterList(mutate(now));
       if (next !== now) await writeHandle(link.handle, next);
       return next;
     }
-    const next = mutate(broll.text);
+    const next = await lighterList(mutate(broll.text));
     // The open script's name now (a rename queued its move before this write), and the token says it is still open.
     await keepList(next, state.name);
     return next;
@@ -3029,10 +3044,12 @@ async function saveListAs() {
     try { handle = await pick(state.handle ? { startIn: state.handle } : {}); }
     catch (e) { if (e?.name === "TypeError") handle = await pick({}); else throw e; }
   } catch { return; }
-  const run = brollWrites.then(() => writeHandle(handle, broll.text));
+  const run = brollWrites.then(async () => { const text = await lighterList(broll.text); await writeHandle(handle, text); return text; });
   brollWrites = run.catch(() => {});
-  try { await run; } catch (e) { if (token === broll.token) { broll.err = e?.message || "Could not save the list."; renderBoard(); } return; }
+  let saved;
+  try { saved = await run; } catch (e) { if (token === broll.token) { broll.err = e?.message || "Could not save the list."; renderBoard(); } return; }
   if (token !== broll.token) return;
+  if (saved !== broll.text) adoptBroll(saved); // its big pictures were made lighter
   broll.link = { handle, name: handle.name };
   broll.err = "";
   setLinkKey(broll.link);

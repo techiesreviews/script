@@ -14,6 +14,20 @@ export const PICTURE_SIZE = { width: 640, height: 345 }; // 345: 640 × 140 / 26
 export const PICTURE_BUDGET = 80_000; // as a data address, about 60 KB
 // Quality and size steps, best first, until the picture fits the budget.
 export const PICTURE_STEPS = [[1, 0.72], [1, 0.6], [1, 0.5], [0.75, 0.5], [0.5, 0.45]];
+/** Pictures in a list that are bigger than PICTURE_BUDGET (step K4: a list made elsewhere, or pictures kept before
+ *  step K3), as [{ id, data }], also ones too big for IMAGE_MAX that are shown today; at most `max` characters each
+ *  (bigger ones are left as they are). Small pictures and line drawings are left alone. */
+export const PICTURE_SOURCE_MAX = 8_000_000;
+export function bigPictures(markdown, budget = PICTURE_BUDGET, max = PICTURE_SOURCE_MAX) {
+  const out = [];
+  for (const line of String(markdown ?? "").split(/\r?\n/)) {
+    const m = line.match(IMAGE_LINE_RE);
+    if (!m || m[2].length <= budget || m[2].length > max) continue;
+    if (!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(m[2])) continue;
+    out.push({ id: m[1], data: m[2] });
+  }
+  return out;
+}
 /** pickPicture(results, budget) → the first result within the budget, else the shortest valid one, else null.
  *  results: [{ data, width, height }] in PICTURE_STEPS order; one whose data isn't a picture address is skipped. */
 export function pickPicture(results, budget = PICTURE_BUDGET) {
