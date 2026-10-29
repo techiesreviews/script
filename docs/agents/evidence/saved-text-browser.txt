@@ -1,0 +1,8 @@
+# Top bar without the "Saved" time: headless Chrome, local Worker (wrangler dev); 1280 px and 390 px. 2026-10-29T15:00:32Z, run on the code of the commit "Top bar: no Saved time and no tooltip…"
+ok the new script saved (renamed after its title)
+ok at 1280 px the save state shows nothing after a save
+ok at 1280 px the file name row fits
+ok at 390 px the save state shows nothing after a save
+ok at 390 px the file name row fits
+ok unsaved changes still show the dot
+RESULT: ok saved-text

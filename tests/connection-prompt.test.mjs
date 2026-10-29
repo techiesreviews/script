@@ -34,5 +34,6 @@ test("top bar: no \"Saved\" time is shown (Lex, 2026-10-29); unsaved, saving and
   assert.ok(fn, "renderSaveState is found in app.js");
   assert.doesNotMatch(fn, /Saved /);
   assert.doesNotMatch(fn, /"saved"/);
-  for (const shown of ['"Saving…"', '"Not saved"', '"Unsaved changes"', '"In this browser"']) assert.ok(fn.includes(shown), shown);
+  for (const shown of ['"Saving…"', '"Not saved"', '"Unsaved changes"']) assert.ok(fn.includes(shown), shown);
+  assert.doesNotMatch(fn, /In this browser/);
 });

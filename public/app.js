@@ -600,8 +600,8 @@ function renderSaveState() {
   if (state.saving && !state.autoSaving) { s.dataset.state = "saving"; s.textContent = "Saving…"; s.removeAttribute("aria-label"); s.title = ""; }
   else if (state.saveError) { s.dataset.state = "error"; s.textContent = "Not saved"; s.title = state.saveError; s.removeAttribute("aria-label"); }
   else if (dirty) { s.dataset.state = "dirty"; s.textContent = ""; s.setAttribute("aria-label", "Unsaved changes"); s.title = "Unsaved changes"; s.setAttribute("role", "img"); }
-  // No "Saved" time (Lex, 2026-10-29); a script in the browser keeps only its tooltip.
-  else { s.dataset.state = ""; s.textContent = ""; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = state.inBrowser ? "In this browser" : ""; }
+  // No "Saved" time (Lex, 2026-10-29): a saved script shows nothing here. The switcher's "Browser" tag says where it lives.
+  else { s.dataset.state = ""; s.textContent = ""; s.removeAttribute("aria-label"); s.removeAttribute("role"); s.title = ""; }
 }
 function renderDerived() {
   if (!state.doc) return;

@@ -1,8 +1,9 @@
 # Step J browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch; 1280 px and 390 px. 2026-10-29T13:42:09Z, run on the code of the commit "Step J: the demo's name stays free…"
+# Superseded in part: the save state's "Saved" time and its "In this browser" tooltip were removed later on 2026-10-29 (Lex); the line about the tooltip records the run as it was.
 ok Connect your agent shows on the start screen
 ok New script is untitled-script.md
 ok it is in the browser at once
-ok the save state says In this browser (its tooltip; the "Saved" time itself was removed later, 2026-10-29)
+ok the save state says In this browser
 ok Markdown file (.md) is offered to save it as a file
 ok the name follows the title
 ok the file was renamed, not copied
