@@ -2811,12 +2811,9 @@ async function pictureInAtOnce(ask, id, pic) {
   return "in";
 }
 // sketch_shot answers once the picture is written, but within the Worker's 10 s for a call: after 7 s it says the
-// picture is still being written.
+// picture is still being written (B.sketchAnswer), and its place is freed only once it went in.
 const WRITE_ANSWER_MS = 7000;
-function sketchAnswer(atOnce, left = []) {
-  const late = new Promise((res) => setTimeout(() => res("writing"), WRITE_ANSWER_MS));
-  return Promise.race([atOnce, late]).then((outcome) => (outcome === "changed" ? { error: B.SKETCH_LIST_CHANGED } : { result: B.sketchResult(outcome, left) }));
-}
+const sketchAnswer = (atOnce, left = []) => B.sketchAnswer(atOnce, left, WRITE_ANSWER_MS);
 // Undo puts back what the shot had before (a sketch, or none), if the agent's picture is still there.
 async function undoMarked(id) {
   const m = broll.marked[id];
@@ -3636,9 +3633,13 @@ function handleCall({ id, tool, args = {} }) {
       if (used.error) return send({ error: used.error });
       args = used.args;
       // Gone through: the pictures now live in the shot or the suggestion, and their places are free (step K2).
+      // An answer sent while the picture is still being written (`later`) frees it only once it went in.
       if (used.used.length) {
-        const reply = send;
-        send = (payload) => { if (!payload.error) for (const u of used.used) pictures.delete(u); reply(payload); };
+        const reply = send, free = () => { for (const u of used.used) pictures.delete(u); };
+        send = ({ later, ...payload }) => {
+          if (!payload.error) { if (later) later.then((o) => { if (o !== "changed") free(); }, () => {}); else free(); }
+          reply(payload);
+        };
       }
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);

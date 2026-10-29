@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -818,4 +818,17 @@ test("sketch_shot's answers (step K2): each outcome says what happened, with the
     assert.equal(sketchResult(o, []), sketchResult(o));
   }
   assert.match(SKETCH_LIST_CHANGED, /changed meanwhile.*imageId still works/);
+});
+
+test("sketchAnswer (step K2): the write's outcome, or after the time limit the 'writing' answer with the outcome to come", async () => {
+  assert.deepEqual(await sketchAnswer(Promise.resolve("in"), ["B2"], 50), { result: sketchResult("in", ["B2"]) });
+  assert.deepEqual(await sketchAnswer(Promise.resolve("waits"), [], 50), { result: sketchResult("waits") });
+  assert.deepEqual(await sketchAnswer(Promise.resolve("changed"), [], 50), { error: SKETCH_LIST_CHANGED });
+  let done;
+  const slow = new Promise((res) => { done = res; });
+  const answer = await sketchAnswer(slow, ["B3"], 20);
+  assert.equal(answer.result, sketchResult("writing", ["B3"]));
+  assert.equal(answer.later, slow, "the outcome to come travels with the answer");
+  done("changed");
+  assert.equal(await answer.later, "changed");
 });

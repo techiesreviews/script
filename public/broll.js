@@ -672,11 +672,22 @@ const SKETCH_RESULTS = {
   shown: "Shown to the person beside the script line and in the storyboard. They choose Keep or Undo.",
   in: "Put into the B-roll list at once: it shows beside the script line and in the storyboard, lightly marked, and the person can undo it.",
   waits: "The B-roll list could not be written just now, so the picture waits beside the script line and in the storyboard for the person's Keep or Undo.",
-  writing: "It is being written into the B-roll list (a large list takes a moment); list_asks shows when it is in. The person can undo it.",
+  writing: "It is being written into the B-roll list (a large list takes a moment); list_asks shows when it is in, and the person can undo it. If list_asks shows the shot undone because the list changed, its imageId can be used again.",
 };
 export const sketchResult = (outcome, left = []) => SKETCH_RESULTS[outcome] + (left.length ? ` They also asked for sketches of ${left.join(", ")}.` : "");
 /** The refusal when the list changed while a picture was being put in: the picture was not used and stays usable. */
-export const SKETCH_LIST_CHANGED = "The B-roll list changed meanwhile, so the picture was not put in. Its imageId still works: call sketch_shot again if the shot is still there.";
+export const SKETCH_LIST_CHANGED = "The B-roll list changed meanwhile, so the picture was not put into this list. Its imageId still works: call sketch_shot again if the shot is still there.";
+/** sketchAnswer(atOnce, left, ms) → the answer once the write settles ("in", "waits", "changed"), or after `ms` the
+ *  "writing" answer with `later`, the write's own outcome, so the picture's place is freed only when it went in. */
+export function sketchAnswer(atOnce, left = [], ms = 7000) {
+  let timer;
+  const late = new Promise((res) => { timer = setTimeout(() => res("writing"), ms); });
+  return Promise.race([atOnce, late]).then((outcome) => {
+    clearTimeout(timer);
+    if (outcome === "changed") return { error: SKETCH_LIST_CHANGED };
+    return outcome === "writing" ? { result: sketchResult("writing", left), later: atOnce } : { result: sketchResult(outcome, left) };
+  });
+}
 
 /** The next free id: B<n> for B-roll and Motion plate, S<n> for Screen recording, after the highest one in use. */
 export function nextShotId(shots, kind, sketches = {}) {
