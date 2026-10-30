@@ -403,14 +403,16 @@ addEventListener("touchmove", personInput, { passive: true, capture: true });
 addEventListener("keydown", (e) => {
   if (["PageUp", "PageDown", "ArrowUp", "ArrowDown"].includes(e.key) || ([" ", "Home", "End"].includes(e.key) && !typing(e.target))) personInput();
 }, { capture: true });
-addEventListener("pointerdown", (e) => { if (e.target === document.documentElement) personInput(); }, { capture: true }); // the scrollbar
+let scrollbarHeld = false; // the scrollbar: its scroll is the person's while the pointer stays down, also after a pause
+addEventListener("pointerdown", (e) => { if (e.target === document.documentElement) { scrollbarHeld = true; personInput(); } }, { capture: true });
+for (const t of ["pointerup", "pointercancel"]) addEventListener(t, () => { scrollbarHeld = false; }, { capture: true });
 addEventListener("scroll", () => {
-  if (!personScroll && performance.now() - personAt > 1000) return;
+  if (!personScroll && !scrollbarHeld && performance.now() - personAt > 1000) return;
   personScroll = true;
   clearTimeout(passTimer);
   passTimer = setTimeout(() => { personScroll = false; checkPassed(); }, 150);
 }, { passive: true });
-function editorJump() { personAt = -Infinity; personScroll = false; clearTimeout(passTimer); }
+function editorJump() { personAt = -Infinity; personScroll = false; scrollbarHeld = false; clearTimeout(passTimer); }
 // After the person's scroll: the marks seen here whose last line is now above the middle end.
 function checkPassed() {
   if (!state.doc) return;
@@ -594,6 +596,7 @@ function renderBlock(id, caret = null) {
 
 let sectionObserver = null;
 function renderAll(caret = null) {
+  for (const old of scriptEl.querySelectorAll(".agent-change")) seenObserver?.unobserve(old);
   const { front, sections } = D.outline(state.doc);
   const frag = document.createDocumentFragment();
   const head = h("header", "front");
@@ -4457,6 +4460,7 @@ if (roomLink) {
 }
 together = createTogether({
   doc: () => state.doc,
+  jump: () => editorJump(),
   name: () => state.name,
   me,
   held: slashHeld,

@@ -408,7 +408,7 @@ export function createTogether(app) {
   }
   $("#people").addEventListener("click", (e) => {
     const a = e.target.closest("button[data-who]");
-    if (a) carets.focus(a.dataset.who, !matchMedia("(prefers-reduced-motion: reduce)").matches);
+    if (a) { app.jump?.(); carets.focus(a.dataset.who, !matchMedia("(prefers-reduced-motion: reduce)").matches); }
   });
   $("#people").addEventListener("animationend", (e) => delete e.target.dataset.new);
 

@@ -326,14 +326,14 @@ export function markRange(ask) {
    asks with a change and keep their mark. */
 export const MARK_MS = 60 * 60 * 1000;
 /** Is this mark's time over? A change without `at` (a draft from before its time stamp) counts from `readAt`. */
-export const markExpired = (ask, now, readAt = now) => isMarked(ask) && now - (Number.isFinite(ask.change.at) ? ask.change.at : readAt) >= MARK_MS;
-/** End the marks whose time is over; a mark without `at` gets `now` as the time this tab read it, so its 60 minutes
- *  count from then. Returns the asks whose mark ended. */
+export const markExpired = (ask, now, readAt = ask?.change?.readAt ?? now) => isMarked(ask) && now - (Number.isFinite(ask.change.at) ? ask.change.at : readAt) >= MARK_MS;
+/** End the marks whose time is over; a mark without `at` gets `readAt`, the time this tab read it, so its 60 minutes
+ *  count from then (`at` stays unset: it would make that old change the newest). Returns the asks whose mark ended. */
 export function endExpired(asks, now) {
   const ended = [];
   for (const a of asks) {
     if (!isMarked(a)) continue;
-    if (!Number.isFinite(a.change.at)) a.change.at = now;
+    if (!Number.isFinite(a.change.at) && !Number.isFinite(a.change.readAt)) a.change.readAt = now;
     if (markExpired(a, now)) { delete a.change; ended.push(a); }
   }
   return ended;

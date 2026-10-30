@@ -405,7 +405,8 @@ test("step M: a mark without its time (an old draft) counts its 60 minutes from 
   delete ask.change.at;
   const read = Date.UTC(2026, 9, 30, 12);
   assert.deepEqual(C.endExpired([ask], read), [], "not ended when read");
-  assert.equal(ask.change.at, read, "its time is when the tab read it");
+  assert.equal(ask.change.readAt, read, "its time is when the tab read it");
+  assert.equal(ask.change.at, undefined, "at stays unset, so it never becomes the newest");
   assert.deepEqual(C.endExpired([ask], read + 59 * MIN), []);
   assert.deepEqual(C.endExpired([ask], read + 61 * MIN), [ask]);
   // markExpired alone takes the time it was read.
