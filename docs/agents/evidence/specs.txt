@@ -244,6 +244,7 @@
 ✔ site: pages may be indexed, with a description and the canonical address
 ✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
 ✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
+✔ kit specs: --affected (what kit pr runs) takes an optional --base REF and runs every test; other words are refused
 ✔ adapter: a snapshot rebuilds the script exactly, LF and CRLF
 ✔ adapter: edits made with doc.js travel as operations and give the same file
 ✔ adapter: attrs from someone else can't put text outside the blocks
@@ -287,9 +288,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 289
+ℹ tests 290
 ℹ suites 0
-ℹ pass 289
+ℹ pass 290
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
