@@ -2,7 +2,7 @@
 // spoken blocks it covers, flag shots whose lines changed, and keep storyboard sketches in its
 // "## Sketches" section. Pure module: no DOM, no network. Imported by the app and by the tests.
 import { outline, contentOf, blockById } from "./doc.js";
-import { spokenText } from "./links.js";
+import { spokenText, textLinks } from "./links.js";
 
 export const SKETCH_MAX = 8 * 1024;
 // A picture as a sketch (step K): a PNG, JPEG or WebP data address, shrunk by the tab first.
@@ -777,10 +777,14 @@ export function overFor(doc, selection) {
   const a = list.findIndex((b) => b.id === sel[0].id), z = list.findIndex((b) => b.id === sel.at(-1).id);
   const want = list.slice(a, z + 1).map((b) => b.id).join();
   const first = contentOf(blockById(doc, sel[0].id));
-  // Quotes are of the spoken words: a link counts as its words (step G), as the matcher reads it.
-  const fromWords = spokenText(first.slice(sel[0].start)).match(/\S+/g) || [];
+  // Quotes are of the spoken words: a link counts as its words (step G), as the matcher reads it. A selection that
+  // starts or ends inside a link takes the whole link, so its Markdown is never cut in half.
+  const links = textLinks(first);
+  const start = links.find((l) => sel[0].start > l.start && sel[0].start < l.end)?.start ?? sel[0].start;
+  const end = links.find((l) => sel[0].end > l.start && sel[0].end < l.end)?.end ?? sel[0].end;
+  const fromWords = spokenText(first.slice(start)).match(/\S+/g) || [];
   // One block: "…" when fewer words than selected are quoted (or, past the selection, fewer than the line has).
-  const selected = z > a ? fromWords.length : (spokenText(first.slice(sel[0].start, sel[0].end)).match(/\S+/g) || []).length;
+  const selected = z > a ? fromWords.length : (spokenText(first.slice(start, end)).match(/\S+/g) || []).length;
   const quote = (ws, n, whole) => `"${ws.slice(0, n).join(" ")}${n < whole ? "…" : ""}"`;
   const fromQuote = (n) => quote(fromWords, n, n <= selected ? selected : fromWords.length);
   const tries = (start, len) => { const out = []; for (let n = Math.max(1, start); n <= len; n++) out.push(n); return out.length ? out : [len]; };

@@ -73,3 +73,14 @@ ok only B3's Over changed
 ok tags are not dragged on touch (fine pointer only)
 RESULT: ok e2e-phone
 # Screenshots looked at: the card with Move (desktop light and dark, 390 px dark), the wait with the target rule (desktop light and dark), a drag over another paragraph (desktop light), after a tap (390 px light).
+
+# Review fix (2026-10-30): a press outside a spoken paragraph ends the wait only when let go as a click
+# 390 px, touch, demo script (headless Chrome, local Worker)
+ok demo open with shots
+ok the card shows Move
+ok a heading on screen
+ok the swipes scrolled            (one swipe starting on a heading, one on the margin)
+ok a paragraph to tap
+ok the tap after the swipes moved the shot there
+ok a tap on a heading ended the wait: the next tap moved nothing
+RESULT: ok swipe

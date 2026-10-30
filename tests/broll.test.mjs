@@ -1026,3 +1026,17 @@ test("bigPictures (step K4): code fences are examples, not sketches; the edges; 
   assert.equal(worthLighter(a(90_000), a(85_000)), false, "the editor's own picture again: left alone");
   assert.equal(worthLighter(a(90_000), a(95_000)), false);
 });
+
+test("step L: an Over from a selection that starts after or inside a link finds its paragraph again", () => {
+  const doc = parse("# T\n\nFirst we open the [settings page](https://example.com/a) and then pick the theme you like most.\n\nSecond line talks about other things entirely here.\n");
+  const list = spokenBlocks(doc);
+  const p = list[0], c = contentOf(blockById(doc, p.id));
+  for (const start of [c.indexOf("and then"), c.indexOf("settings") + 3, c.indexOf("(https") + 4]) {
+    const over = overFor(doc, [{ id: p.id, start, end: c.length }]);
+    assert.ok(!/\]|\(|https/.test(over), `no link Markdown in ${over}`);
+    assert.deepEqual(matchOver(list, over), [p.id], over);
+  }
+  // A selection that ends inside the link's words takes the whole link.
+  const over = overFor(doc, [{ id: p.id, start: 0, end: c.indexOf("page") }]);
+  assert.deepEqual(matchOver(list, over), [p.id], over);
+});

@@ -3404,9 +3404,9 @@ $("#scMove").addEventListener("click", () => { if (!sc.busy && sc.mode === "edit
 document.addEventListener("pointerdown", (e) => {
   mv.dropped = false;
   if (!mv.id || mv.drag?.on) return;
-  const para = paraAt(e.target);
-  if (!para) return endMove(); // a heading, the title, a frame or outside the script
-  mv.down = { para, type: e.pointerType };
+  // A press elsewhere (a heading, the title, a frame, outside the script) ends the wait only when it is let go as a
+  // click: on touch it may start a scroll to the paragraph wanted (then the browser cancels it).
+  mv.down = { para: paraAt(e.target), type: e.pointerType };
   showTarget([]);
 }, true);
 document.addEventListener("pointerup", (e) => {
@@ -3419,6 +3419,7 @@ document.addEventListener("pointerup", (e) => {
     if (!mv.id) return;
     const sel = moveSelection();
     if (sel) return sel.length ? placeMove(sel) : endMove();
+    if (!down.para) return endMove();
     placeMove(B.wholeParas(state.doc, targetFor(mv.id, down.para)));
   });
 });
@@ -3439,7 +3440,7 @@ scriptEl.addEventListener("beforeinput", () => endMove()); // typing ends the wa
 // Dragging a tag (fine pointer only): it starts after a few pixels, so a plain click still opens the card.
 scriptEl.addEventListener("pointerdown", (e) => {
   const t = e.target.closest(".shot-frame[data-drag] .shot-frame__jump");
-  if (!t || e.button !== 0 || e.pointerType !== "mouse" || !fine.matches || state.guest || state.locked) return;
+  if (!t || e.button !== 0 || e.pointerType === "touch" || !fine.matches || state.guest || state.locked) return;
   mv.drag = { id: t.dataset.b, el: t, x: e.clientX, y: e.clientY, pid: e.pointerId, on: false, to: [] };
 });
 scriptEl.addEventListener("dragstart", (e) => { if (e.target.closest?.(".broll-tags")) e.preventDefault(); });
