@@ -2455,8 +2455,8 @@ function keyed(fn) {
 const getLinkKey = (name = state.name) => keyed(() => idbGet(brollKey(name)));
 const setLinkKey = (value, name = state.name) => keyed(() => idbSet(brollKey(name), value));
 const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
-// A shot being moved (step L): Move waits for a paragraph (id), or its tag is dragged (drag).
-const mv = { id: null, token: 0, down: null, touchSel: false, selTimer: 0, drag: null, dropped: false };
+// A shot being dragged to other paragraphs (steps L, L2), and whether the next click ends a drag.
+const mv = { drag: null, dropped: false };
 const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
 const covered = (s) => (s.blockIds || []).filter((id) => byId(id));
 const sketchAsk = () => state.asks.find((a) => a.scope === "broll" && a.action === "sketch" && isOpen(a)) || null;
@@ -2477,7 +2477,7 @@ function syncFlags() {
 // Leaving a script: the old list goes with it.
 function closeBroll() {
   broll.token++;
-  endMove();
+  endDrag();
   closeShotCard();
   ui.scriptY = 0;
   Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
@@ -2569,7 +2569,7 @@ function renderBroll() {
 
 /* One sketch frame, as in the script and the storyboard. Pending agent sketches carry Keep / Undo. */
 // A line drawing, or a picture (step K; its data address was checked where it came in).
-const sketchSvg = (svg, label) => (svg.startsWith("data:image/") ? `<img src="${svg}" alt="${esc(label)}" decoding="async">`
+const sketchSvg = (svg, label) => (svg.startsWith("data:image/") ? `<img src="${svg}" alt="${esc(label)}" decoding="async" draggable="false">`
   : svg.replace("<svg ", label ? `<svg role="img" aria-label="${esc(label)}" ` : '<svg aria-hidden="true" '));
 const markedSketch = (id) => { const m = broll.marked[id]; return !!m && !state.guest && broll.sketches[id] === m.pic; };
 function frameImg(s, label) {
@@ -2609,7 +2609,11 @@ function renderBrollMarks() {
   const goesOn = new Set();
   const boxFor = (first) => {
     let box = first.querySelector(":scope > .broll-tags");
-    if (!box) { box = h("div", "broll-tags", { "data-skip": "", contenteditable: "false" }); first.prepend(box); }
+    if (!box) {
+      box = h("div", "broll-tags", { "data-skip": "", contenteditable: "false" });
+      box.addEventListener("touchmove", holdPage, { passive: false }); // only here, so other touch scrolling never waits
+      first.prepend(box);
+    }
     return box;
   };
   for (const s of broll.status === "ok" ? broll.shots : []) {
@@ -2627,7 +2631,7 @@ function renderBrollMarks() {
     const lit = broll.lit === s.id;
     const label = `${KIND_NAME[s.kind]} ${s.id}: ${s.what}${s.check ? " · Check" : ""}`;
     const sug = suggestionsFor(s.id);
-    // Its tag can be dragged to other lines (step L), unless a change to it waits for Keep or Undo.
+    // It can be dragged to other lines (steps L, L2), unless a change to it waits for Keep or Undo.
     const drag = !state.guest && !sug.length && !pendingSketch(s.id) && !markedSketch(s.id);
     box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${drag ? " data-drag" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
       + `<button class="shot-frame__jump" type="button" data-b="${esc(s.id)}" aria-pressed="${lit}" aria-label="${esc(label)}" title="${esc(s.what)}">${frameImg(s, false)}`
@@ -2641,6 +2645,7 @@ function renderBrollMarks() {
   }
   for (const l of $$(".line[data-covered]", scriptEl)) if (!goesOn.has(l)) l.dataset.last = "";
   refocus(scriptEl, key);
+  redrag();
   placeFrames();
 }
 // Wide screens: frames sit in the right margin; one that would overlap the frame above moves down.
@@ -2650,15 +2655,10 @@ function placeFrames() {
   framesFrame = requestAnimationFrame(() => {
     const boxes = $$(".broll-tags", scriptEl);
     for (const b of boxes) b.style.removeProperty("--push");
-    let bottom = -Infinity;
-    const pushes = boxes.map((b) => {
-      if (getComputedStyle(b).position !== "absolute") return 0;
-      const r = b.getBoundingClientRect();
-      const push = Math.max(0, Math.ceil(bottom + 12 - r.top));
-      bottom = r.bottom + push;
-      return push;
-    });
-    boxes.forEach((b, i) => { if (pushes[i]) b.style.setProperty("--push", `${pushes[i]}px`); });
+    const wide = boxes.filter((b) => getComputedStyle(b).position === "absolute");
+    const pushes = B.stackPushes(wide.map((b) => { const r = b.getBoundingClientRect(); return { top: r.top, height: r.height }; }));
+    wide.forEach((b, i) => { if (pushes[i]) b.style.setProperty("--push", `${pushes[i]}px`); });
+    if (mv.drag?.on) dragTo(mv.drag); // a dragged frame keeps to its landing place
   });
 }
 new ResizeObserver(() => placeFrames()).observe(scriptEl);
@@ -2688,7 +2688,7 @@ scriptEl.addEventListener("click", (e) => {
   }
   const t = e.target.closest(".shot-frame__jump");
   if (!t) return;
-  if (mv.dropped) { mv.dropped = false; return; } // the click that ends a drag (step L)
+  if (mv.dropped) { mv.dropped = false; return; } // the click that ends a drag (steps L, L2)
   // A click lights the shot and opens its card to change or remove it; a click while its card is open puts both away.
   // After Cancel or Escape the shot stays lit, and one click opens the card again.
   const id = t.dataset.b;
@@ -2772,7 +2772,7 @@ function setView(v) {
   hideBar();
   closeCard();
   closeShotCard();
-  endMove();
+  endDrag();
   renderView();
   editorJump();
   scrollTo({ top: board ? 0 : ui.scriptY });
@@ -3220,7 +3220,6 @@ function renderShotCard() {
   $("#scHowField").hidden = sc.kind === "screen";
   $("#scSave").disabled = sc.busy || !$("#scWhat").value.trim();
   $("#scRemove").disabled = sc.busy;
-  $("#scMove").disabled = sc.busy;
 }
 function positionShotCard() {
   if (shotCard.hidden || !sc.anchor || matchMedia("(max-width: 40rem)").matches) return;
@@ -3245,7 +3244,6 @@ function openShotCard(o) {
   $("#scWhat").value = s?.what || "";
   $("#scHow").value = s?.how || "";
   $("#scRemove").hidden = !s;
-  $("#scMove").hidden = !s;
   $("#scSave").textContent = s ? "Save" : "Add";
   $("#scProblem").hidden = true;
   renderShotCard();
@@ -3346,9 +3344,11 @@ document.addEventListener("pointerdown", (e) => {
 }, true);
 const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
 
-/* ---------- Move a shot to other paragraphs (step L): Move in its card, or drag its tag ---------- */
-// After Move the shot waits, lit, to be placed: a click or tap on a spoken paragraph puts it there (as many paragraphs
-// as before), a selection puts it over exactly those. A click elsewhere, Escape or typing leaves it where it was.
+/* ---------- Move a shot to other paragraphs (steps L, L2): drag it ---------- */
+// The whole shot in the margin, its picture or line drawing and its tag, can be dragged at once: a mouse or a pen after
+// a few pixels, a finger after a hold (a quick swipe still scrolls, a tap still opens the card). While dragging, its
+// frame jumps to where it will sit beside the spoken paragraph under the pointer (or the nearest one); the drop puts
+// it there. The title, the front matter, outside the script or Escape leave it where it was.
 const spokenList = () => (state.doc ? B.spokenBlocks(state.doc) : []);
 // The spoken paragraph a point is in, or null (a heading, the title, a frame, anything outside the script).
 function paraAt(target) {
@@ -3362,20 +3362,6 @@ function showTarget(ids) {
   ids.forEach((id, i) => { const w = wrapOf(id); if (w) w.dataset.target = i < ids.length - 1 ? "on" : "last"; });
 }
 const targetFor = (id, para) => { const s = shotById(id); return s && para ? B.moveTo(spokenList(), covered(s), para) : []; };
-function startMove(id) {
-  if (!shotById(id) || state.guest) return;
-  closeShotCard();
-  if (broll.lit !== id) lightShot(id, false);
-  Object.assign(mv, { id, token: broll.token, down: null, touchSel: false });
-  scriptEl.dataset.moving = "";
-}
-function endMove() {
-  clearTimeout(mv.selTimer);
-  if (!mv.id) return;
-  Object.assign(mv, { id: null, down: null, touchSel: false });
-  delete scriptEl.dataset.moving;
-  showTarget([]);
-}
 // Only the shot's Over is written again; it shows in its new place once the list is written. Moving it is checking it.
 async function moveShot(id, sel) {
   const s = shotById(id);
@@ -3393,100 +3379,169 @@ async function moveShot(id, sel) {
   const now = token === broll.token && shotById(id);
   if (now?.check) { now.check = false; syncFlags(); renderBroll(); }
 }
-function placeMove(sel) {
-  const { id, token } = mv;
-  endMove();
-  if (token === broll.token && sel.length) moveShot(id, sel);
+// The paragraph a drag at (x, y) snaps to: the one under it, or the nearest spoken one above or below (a heading, a gap,
+// a note, the frames in the margin, the space below the script's end). None over the title, the front matter or beside
+// the script (the list of sections).
+function dropPara(x, y) {
+  const s = scriptEl.getBoundingClientRect();
+  const right = Math.max(s.right, ...$$(".broll-tags", scriptEl).map((b) => b.getBoundingClientRect().right));
+  const top = $(".front", scriptEl)?.getBoundingClientRect().bottom ?? s.top;
+  if (x < s.left - 48 || x > right + 48 || y < top) return null;
+  const hit = paraAt(document.elementFromPoint(x, y));
+  if (hit) return hit;
+  const paras = [];
+  for (const b of spokenList()) {
+    const w = wrapOf(b.id);
+    const r = w && !w.closest("details:not([open])") ? w.getBoundingClientRect() : null;
+    if (r?.height) paras.push({ id: b.id, top: r.top, bottom: r.bottom });
+  }
+  return B.snapPara(paras, y);
 }
-// The selection that places it, if there is one in the script's spoken lines.
-function moveSelection() {
-  const g = getSelection();
-  if (!g.rangeCount || g.isCollapsed || !scriptEl.contains(g.anchorNode)) return null;
-  return spokenSelection(g.getRangeAt(0));
+// Where the dragged frame will sit beside a paragraph after the drop, as a shift from its own place. Nothing else in
+// the margin moves meanwhile. Wide screens: the margin column, stacked as placeFrames will stack it. Narrow ones: in
+// the paragraph's row of frames, or just above its text.
+const listIndex = (frame) => { const i = broll.shots.findIndex((s) => s.id === frame.querySelector(":scope > .shot-frame__jump")?.dataset.b); return i < 0 ? Infinity : i; };
+function landing(f, toId) {
+  const own = f.parentElement, line = wrapOf(toId);
+  const box = line?.querySelector(":scope > .broll-tags");
+  if (!line || box === own) return { x: 0, y: 0 };
+  const r = f.getBoundingClientRect(), t = getComputedStyle(f).translate;
+  const [tx = 0, ty = 0] = t === "none" ? [] : t.split(" ").map(parseFloat);
+  const at = { left: r.left - tx, top: r.top - ty }; // its own place, without the drag's shift
+  const css = getComputedStyle(own), gap = parseFloat(css.rowGap) || 0;
+  const kids = box ? [...box.children].filter((k) => k !== f) : [];
+  const before = kids.filter((k) => listIndex(k) < listIndex(f)); // frames come in list order
+  if (css.position === "absolute") {
+    const natural = (b) => b.getBoundingClientRect().top - (parseFloat(b.style.getPropertyValue("--push")) || 0);
+    const edge = natural(own) - own.parentElement.getBoundingClientRect().top; // a box's place below its line's top
+    const boxes = [];
+    for (const b of $$(".broll-tags", scriptEl)) {
+      let height = b.getBoundingClientRect().height;
+      if (b === own) { if (b.children.length === 1) continue; height -= r.height + gap; }
+      if (b === box) height += gap + r.height;
+      boxes.push({ b, top: natural(b), height });
+    }
+    if (!box) boxes.push({ b: null, top: line.getBoundingClientRect().top + edge, height: r.height });
+    boxes.sort((p, q) => p.top - q.top);
+    const pushes = B.stackPushes(boxes);
+    const i = boxes.findIndex((x) => x.b === (box || null));
+    const offset = before.reduce((sum, k) => sum + k.getBoundingClientRect().height + gap, 0);
+    return { x: 0, y: Math.round(boxes[i].top + pushes[i] + offset - at.top) };
+  }
+  if (kids.length) {
+    const next = kids[before.length];
+    if (next) { const n = next.getBoundingClientRect(); return { x: Math.round(n.left - at.left), y: Math.round(n.top - at.top) }; }
+    const last = kids.at(-1).getBoundingClientRect(), col = parseFloat(css.columnGap) || 0;
+    const fits = last.right + col + r.width <= box.getBoundingClientRect().right + 1;
+    return fits ? { x: Math.round(last.right + col - at.left), y: Math.round(last.top - at.top) }
+      : { x: Math.round(box.getBoundingClientRect().left - at.left), y: Math.round(last.bottom + gap - at.top) };
+  }
+  const text = (line.querySelector(":scope > .block") || line).getBoundingClientRect();
+  return { x: Math.round(text.left - at.left), y: Math.round(text.top - (parseFloat(css.marginBlockEnd) || 0) - r.height - at.top) };
 }
-$("#scMove").addEventListener("click", () => { if (!sc.busy && sc.mode === "edit") startMove(sc.id); });
-document.addEventListener("pointerdown", (e) => {
-  mv.dropped = false;
-  if (!mv.id || mv.drag?.on) return;
-  // A press elsewhere (a heading, the title, a frame, outside the script) ends the wait only when it is let go as a
-  // click: on touch it may start a scroll to the paragraph wanted (then the browser cancels it).
-  mv.down = { para: paraAt(e.target), inScript: scriptEl.contains(e.target), type: e.pointerType };
+// Follow the pointer: the target rule and the frame's place; near the top or bottom edge the page scrolls (per frame,
+// only while a drag is on and the page can still move).
+function dragTo(d) {
+  d.to = targetFor(d.id, dropPara(d.px, d.py));
+  showTarget(d.to);
+  const at = d.to.length ? landing(d.el, d.to[0]) : null;
+  d.el.toggleAttribute("data-nowhere", !at);
+  d.el.style.translate = at && (at.x || at.y) ? `${at.x}px ${at.y}px` : "";
+}
+function dragFrame(d) {
+  d.frame = 0;
+  if (mv.drag !== d || !d.on) return;
+  const toc = $(".toc");
+  const top = Math.max(scriptView().top, toc && getComputedStyle(toc).position === "sticky" ? toc.getBoundingClientRect().bottom : 0);
+  const v = B.edgeSpeed(d.py, top, scriptView().bottom), y = scrollY;
+  if (v) { personInput(); scrollBy(0, v); }
+  dragTo(d);
+  if (scrollY !== y) d.frame = requestAnimationFrame(() => dragFrame(d));
+}
+function liftShot(d) {
+  d.on = true;
+  clearTimeout(d.hold);
+  closeShotCard();
+  hideBar();
+  getSelection().removeAllRanges();
+  document.documentElement.dataset.dragging = "";
+  d.el.dataset.dragged = "";
+  try { d.jump.setPointerCapture(d.pid); } catch { /* the drag still follows the document's events */ }
+  dragFrame(d);
+}
+// The frame goes back to its own place, unless it waits there for its move to be written (the list re-renders it).
+function endDrag(keep) {
+  const d = mv.drag;
+  if (!d) return;
+  mv.drag = null;
+  clearTimeout(d.hold);
+  cancelAnimationFrame(d.frame);
+  delete document.documentElement.dataset.dragging;
+  delete d.el.dataset.dragged;
+  delete d.el.dataset.nowhere;
+  if (!keep) d.el.style.translate = "";
   showTarget([]);
-}, true);
-document.addEventListener("pointerup", (e) => {
-  const down = mv.down;
-  if (!mv.id || !down) return;
-  mv.down = null;
-  // After the browser has settled the selection: a selection goes over exactly its paragraphs, a click over as many
-  // as before from the one clicked.
-  setTimeout(() => {
-    if (!mv.id) return;
-    if (!down.inScript) return endMove(); // a click outside the script, even with a selection still in it
-    const sel = moveSelection();
-    if (sel) return sel.length ? placeMove(sel) : endMove();
-    if (!down.para) return endMove();
-    placeMove(B.wholeParas(state.doc, targetFor(mv.id, down.para)));
-  });
-});
-// A long press on touch selects text: the selection places it once its handles rest.
-document.addEventListener("pointercancel", () => { if (mv.id && mv.down) { mv.down = null; mv.touchSel = true; } });
-document.addEventListener("selectionchange", () => {
-  if (!mv.id || mv.down || !mv.touchSel) return;
-  clearTimeout(mv.selTimer);
-  mv.selTimer = setTimeout(() => { const sel = moveSelection(); if (mv.id && sel?.length) placeMove(sel); }, 800);
-});
-scriptEl.addEventListener("pointermove", (e) => {
-  if (!mv.id || mv.down || mv.drag || e.pointerType === "touch") return;
-  showTarget(targetFor(mv.id, paraAt(e.target)));
-});
-scriptEl.addEventListener("pointerleave", () => { if (mv.id && !mv.drag) showTarget([]); });
-scriptEl.addEventListener("beforeinput", () => endMove()); // typing ends the wait
-
-// Dragging a tag (fine pointer only): it starts after a few pixels, so a plain click still opens the card.
+}
+// A re-render during a drag (the list or the script changed) gives the shot a new frame: the drag goes on with it.
+function redrag() {
+  const d = mv.drag;
+  if (!d) return;
+  const jump = scriptEl.querySelector(`.shot-frame[data-drag] .shot-frame__jump[data-b="${CSS.escape(d.id)}"]`);
+  if (!jump) return endDrag();
+  Object.assign(d, { jump, el: jump.closest(".shot-frame") });
+  if (!d.on) return;
+  d.el.dataset.dragged = "";
+  dragTo(d);
+}
+const HOLD_MS = 400;
+document.addEventListener("pointerdown", () => { mv.dropped = false; }, true);
 scriptEl.addEventListener("pointerdown", (e) => {
   const t = e.target.closest(".shot-frame[data-drag] .shot-frame__jump");
-  if (!t || e.button !== 0 || e.pointerType === "touch" || !fine.matches || state.guest || state.locked) return;
-  mv.drag = { id: t.dataset.b, el: t, x: e.clientX, y: e.clientY, pid: e.pointerId, on: false, to: [] };
+  if (!t || e.button !== 0 || !e.isPrimary || mv.drag || state.guest || state.locked) return;
+  const d = mv.drag = { id: t.dataset.b, jump: t, el: t.closest(".shot-frame"), x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, pid: e.pointerId, touch: e.pointerType === "touch", on: false, to: [], hold: 0, frame: 0 };
+  if (d.touch) d.hold = setTimeout(() => { if (mv.drag === d) liftShot(d); }, HOLD_MS);
 });
+// Pictures are never dragged out by the browser; a held finger brings no menu.
 scriptEl.addEventListener("dragstart", (e) => { if (e.target.closest?.(".broll-tags")) e.preventDefault(); });
-function stopDrag() {
-  mv.drag = null;
-  delete document.documentElement.dataset.dragging;
-  showTarget([]);
-}
+scriptEl.addEventListener("contextmenu", (e) => { if (mv.drag && e.target.closest?.(".shot-frame")) e.preventDefault(); });
 document.addEventListener("pointermove", (e) => {
   const d = mv.drag;
   if (!d || e.pointerId !== d.pid) return;
+  d.px = e.clientX;
+  d.py = e.clientY;
   if (!d.on) {
-    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5) return;
-    d.on = true;
-    endMove();
-    closeShotCard();
-    hideBar();
-    getSelection().removeAllRanges();
-    document.documentElement.dataset.dragging = "";
-    try { d.el.setPointerCapture(d.pid); } catch { /* the drag still follows the document's events */ }
+    const far = Math.hypot(d.px - d.x, d.py - d.y);
+    if (d.touch) { if (far > 10) endDrag(); return; } // a swipe before the hold: the page scrolls
+    if (far < 5) return;
+    liftShot(d);
   }
   e.preventDefault();
-  d.to = targetFor(d.id, paraAt(document.elementFromPoint(e.clientX, e.clientY)));
-  showTarget(d.to);
+  d.frame ||= requestAnimationFrame(() => dragFrame(d));
 });
+// While a finger drags a shot the page scrolls only by the edges (each box of frames listens).
+function holdPage(e) { if (mv.drag?.on) e.preventDefault(); }
 document.addEventListener("pointerup", (e) => {
   const d = mv.drag;
   if (!d || e.pointerId !== d.pid) return;
-  if (!d.on) { mv.drag = null; return; } // a plain click: the click lights the shot and opens its card
-  stopDrag();
+  if (!d.on) return endDrag(); // a click or a tap: it lights the shot and opens its card
+  d.px = e.clientX;
+  d.py = e.clientY;
+  dragTo(d);
+  const sel = d.to.length && state.doc ? B.wholeParas(state.doc, d.to) : null;
+  endDrag(!!sel);
   mv.dropped = true;
-  if (d.to.length && state.doc) moveShot(d.id, B.wholeParas(state.doc, d.to));
+  if (sel) moveShot(d.id, sel).finally(() => { if (d.el.isConnected) d.el.style.translate = ""; });
 });
-document.addEventListener("pointercancel", (e) => { if (mv.drag && e.pointerId === mv.drag.pid) stopDrag(); });
-// Escape ends the wait or the drag alone: the shot stays where it was, still lit.
+document.addEventListener("pointercancel", (e) => { if (mv.drag && e.pointerId === mv.drag.pid) endDrag(); });
+// A wheel turned while dragging moves the script under a still pointer.
+addEventListener("scroll", () => { const d = mv.drag; if (d?.on) d.frame ||= requestAnimationFrame(() => dragFrame(d)); }, { passive: true });
+// Escape puts a dragged shot back where it was.
 addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || (!mv.id && !mv.drag?.on)) return;
+  if (e.key !== "Escape" || !mv.drag?.on) return;
   e.preventDefault();
   e.stopPropagation();
-  if (mv.drag) { stopDrag(); mv.dropped = true; }
-  endMove();
+  endDrag();
+  mv.dropped = true;
 }, true);
 
 /* ---------- B-roll suggestions from the agent (step C4): Keep or Undo per change ---------- */

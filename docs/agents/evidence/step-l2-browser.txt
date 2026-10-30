@@ -1,0 +1,128 @@
+# Step L2 browser check: headless Chrome (CDP) with real input (Input.dispatchMouseEvent, Input.dispatchTouchEvent), local Worker (wrangler dev on 127.0.0.1:8823), the demo script and its list kept in the browser, B2 given a WebP picture (640 × 345) in that list, B3–B8 line drawings. 2026-10-30T16:18:27Z, run on the working tree on top of a867047.
+# Desktop: 1280 × 900, Chrome started with --blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2 (a mouse with hover; plain headless Chrome reports pointer: none, so (hover: hover) and (pointer: fine) is false there). Phone: 390 × 844, mobile, touch emulation (pointer: coarse).
+# Light with motion allowed, dark with prefers-reduced-motion: reduce (desktop); dark and light (phone).
+
+## Before (a867047, step L as it was), the same Chrome and real mouse input
+  fine pointer: true · #scMove in the card: true
+  B2 dragged straight down the margin (where the frames are) to "Your viewer doesn't care about": drag on true, target shown false, frame follows false, moved on drop false
+  B4 dragged straight down the margin (where the frames are) to "And when something is hard to ": drag on true, target shown false, frame follows false, moved on drop false
+  B2 dragged onto the words of to "Your viewer doesn't care about": drag on true, target shown true, frame follows false, moved on drop true
+  Why Lex could not drag: the drag only snapped when the pointer was over a spoken paragraph's own words. Dragging the
+  picture or tag down the margin, where the frames are (the natural way), or over a heading, a gap or a note, showed
+  nothing, and a drop there did nothing. The frame itself never followed (only the cursor changed), so it did not look
+  like dragging at all. On touch (phones, tablets) and wherever the browser does not report a fine pointer with hover
+  there was no drag at all: only the Move button.
+
+## After (step L2)
+## 1280 px light
+ok 1280 px light: a mouse (hover, fine pointer)
+ok 1280 px light: motion allowed: the frame glides in 120 ms (0.12s, 0.12s)
+ok 1280 px light: B2 shows its picture, not draggable by the browser
+ok 1280 px light: a plain click on a tag opens the card, with Remove shot
+ok 1280 px light: the card has no Move button
+ok 1280 px light: and the shot is lit
+  (screenshot l2-desktop-light-done.png)
+ok 1280 px light: dragging B2 by its picture starts at once (no Move first)
+ok 1280 px light: the pointer in the margin snaps to the paragraph beside it: ["Your viewer doesn't care about"]
+ok 1280 px light: no text is selected while dragging
+ok 1280 px light: the frame showed exactly where it sits after the drop (717 → 717)
+ok 1280 px light: B2 landed there
+ok 1280 px light: the drop opens no card
+ok 1280 px light: only B2's Over cell changed in the list
+  (screenshot l2-desktop-light-middrag.png)
+ok 1280 px light: dragging B3 by its tag over the heading "3 · Write for the ear (0:45–1:" snaps to the nearest paragraph
+ok 1280 px light: and the drop puts it there
+ok 1280 px light: holding near the bottom edge scrolls the page (789 → 2326)
+ok 1280 px light: and reaches a paragraph that was off screen (Thanks for watching, and see y)
+ok 1280 px light: dropped there, B4 is there
+ok 1280 px light: (there were paragraphs below the screen)
+ok 1280 px light: B6 is dragging
+ok 1280 px light: Escape ends the drag; the frame goes back
+ok 1280 px light: B6 stays where it was, no card
+ok 1280 px light: outside the script there is no snap; the frame shows faded in its own place (0.5)
+ok 1280 px light: (in its own place)
+ok 1280 px light: dropped outside, B6 stays
+ok 1280 px light: over the title there is no snap
+ok 1280 px light: dropped on the title, B1 stays
+ok 1280 px light: suggested frames are not draggable
+ok 1280 px light: a reload keeps every new place
+ok 1280 px light: and the same Overs
+ok 1280 px light: only the moved shots' Over cells differ from the start (B2, B3, B4)
+ok 1280 px light: the Overs of the others are unchanged
+## 1280 px dark, reduced motion
+ok 1280 px dark, reduced motion: a mouse (hover, fine pointer)
+ok 1280 px dark, reduced motion: reduced motion: the frame just jumps (0s)
+ok 1280 px dark, reduced motion: B2 shows its picture, not draggable by the browser
+ok 1280 px dark, reduced motion: a plain click on a tag opens the card, with Remove shot
+ok 1280 px dark, reduced motion: the card has no Move button
+ok 1280 px dark, reduced motion: and the shot is lit
+ok 1280 px dark, reduced motion: dragging B2 by its picture starts at once (no Move first)
+ok 1280 px dark, reduced motion: the pointer in the margin snaps to the paragraph beside it: ["Your viewer doesn't care about"]
+ok 1280 px dark, reduced motion: no text is selected while dragging
+ok 1280 px dark, reduced motion: the frame showed exactly where it sits after the drop (717 → 717)
+ok 1280 px dark, reduced motion: B2 landed there
+ok 1280 px dark, reduced motion: the drop opens no card
+ok 1280 px dark, reduced motion: only B2's Over cell changed in the list
+  (screenshot l2-desktop-dark-middrag.png)
+ok 1280 px dark, reduced motion: dragging B3 by its tag over the heading "3 · Write for the ear (0:45–1:" snaps to the nearest paragraph
+ok 1280 px dark, reduced motion: and the drop puts it there
+ok 1280 px dark, reduced motion: holding near the bottom edge scrolls the page (789 → 2326)
+ok 1280 px dark, reduced motion: and reaches a paragraph that was off screen (Thanks for watching, and see y)
+ok 1280 px dark, reduced motion: dropped there, B4 is there
+ok 1280 px dark, reduced motion: (there were paragraphs below the screen)
+ok 1280 px dark, reduced motion: B6 is dragging
+ok 1280 px dark, reduced motion: Escape ends the drag; the frame goes back
+ok 1280 px dark, reduced motion: B6 stays where it was, no card
+ok 1280 px dark, reduced motion: outside the script there is no snap; the frame shows faded in its own place (0.5)
+ok 1280 px dark, reduced motion: (in its own place)
+ok 1280 px dark, reduced motion: dropped outside, B6 stays
+ok 1280 px dark, reduced motion: over the title there is no snap
+ok 1280 px dark, reduced motion: dropped on the title, B1 stays
+ok 1280 px dark, reduced motion: suggested frames are not draggable
+ok 1280 px dark, reduced motion: a reload keeps every new place
+ok 1280 px dark, reduced motion: and the same Overs
+ok 1280 px dark, reduced motion: only the moved shots' Over cells differ from the start (B2, B3, B4)
+ok 1280 px dark, reduced motion: the Overs of the others are unchanged
+## 390 px dark
+ok 390 px dark: a touch screen
+ok 390 px dark: a tap on a shot opens its card
+ok 390 px dark: the card has no Move button
+ok 390 px dark: a quick swipe on B2's picture scrolls the page (152 → 387)
+ok 390 px dark: and moves nothing, opens nothing
+  (screenshot l2-phone-dark-middrag.png)
+ok 390 px dark: a hold, then the finger drags B2
+ok 390 px dark: it snaps to the paragraph under the finger: ["Hi, I'm Sam, and on this demo "]
+ok 390 px dark: the frame shows just above that paragraph's text
+ok 390 px dark: the finger does not scroll the page while dragging
+ok 390 px dark: the drop puts B2 there
+ok 390 px dark: no card opens after the drop
+ok 390 px dark: only B2's Over cell changed
+ok 390 px dark: near the bottom edge the page scrolls (1478 → 2776) and a paragraph is reached
+ok 390 px dark: B5 dropped there
+ok 390 px dark: a reload keeps the new places
+ok 390 px dark: only B2's and B5's Over cells changed
+## 390 px light
+ok 390 px light: a touch screen
+ok 390 px light: a tap on a shot opens its card
+ok 390 px light: the card has no Move button
+ok 390 px light: a quick swipe on B2's picture scrolls the page (152 → 387)
+ok 390 px light: and moves nothing, opens nothing
+  (screenshot l2-phone-light-middrag.png)
+ok 390 px light: a hold, then the finger drags B2
+ok 390 px light: it snaps to the paragraph under the finger: ["Hi, I'm Sam, and on this demo "]
+ok 390 px light: the frame shows just above that paragraph's text
+ok 390 px light: the finger does not scroll the page while dragging
+ok 390 px light: the drop puts B2 there
+ok 390 px light: no card opens after the drop
+ok 390 px light: only B2's Over cell changed
+ok 390 px light: near the bottom edge the page scrolls (1478 → 2767) and a paragraph is reached
+ok 390 px light: B5 dropped there
+ok 390 px light: a reload keeps the new places
+ok 390 px light: only B2's and B5's Over cells changed
+RESULT: ok e2e-l2
+
+## Screenshots looked at (not kept in the repository)
+- 1280 light, mid-drag: B3 dragged by its tag over the heading "3 · Write for the ear": the frame sits lifted (shadow) in the margin beside "A script is not read…", the nearest spoken paragraph, with the accent rule there; its own place is empty, the rest of the margin unchanged (it lies over B4's frame, which shares that paragraph and comes after it in the list).
+- 1280 dark (reduced motion), mid-drag: the same, in the night blue; the frame jumps without a glide.
+- 1280 light after the first drop: B2's picture sits beside "Your viewer doesn't care…", where it showed while dragging (same page position, checked to 2 px).
+- 390 dark and light, mid-drag (finger held 0.55 s, then moved): B2's picture shows just above "Hi, I'm Sam…" (the paragraph it lands on), over the end of the paragraph above; the accent rule beside "Hi, I'm Sam…"; the page did not scroll with the finger.

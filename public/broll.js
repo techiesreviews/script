@@ -824,6 +824,36 @@ export function moveOver(doc, blockIds, selection) {
   return want.join() === (blockIds || []).join() ? "" : overFor(doc, selection);
 }
 
+/* ---------- Drag a shot (step L2): it snaps to a spoken paragraph ---------- */
+/** snapPara(paras, y) → the id of the spoken para at the height y, or of the nearest one above or below it (y over a
+ *  heading, a gap or a note; the one above on a tie); null without paras. paras: [{ id, top, bottom }] in script order. */
+export function snapPara(paras, y) {
+  let best = null, dist = Infinity;
+  for (const p of paras) {
+    const d = y < p.top ? p.top - y : y > p.bottom ? y - p.bottom : 0;
+    if (d < dist) { best = p.id; dist = d; }
+    if (!d) break;
+  }
+  return best;
+}
+/** edgeSpeed(y, top, bottom) → pixels to scroll per frame while a drag is at y in the visible script from top to
+ *  bottom: 0 away from the edges, faster nearer (and past) the top (negative) or the bottom edge. */
+export const EDGE = { band: 72, max: 24 };
+export function edgeSpeed(y, top, bottom, { band, max } = EDGE) {
+  const near = y < top + band ? y - top - band : y > bottom - band ? y - bottom + band : 0;
+  return Math.sign(near) * Math.ceil(max * Math.min(1, Math.abs(near) / band));
+}
+/** stackPushes(boxes, gap) → how far each frame box in the wide margin moves down so it doesn't overlap the one
+ *  above: boxes [{ top, height }] in script order, at their own places. */
+export function stackPushes(boxes, gap = 12) {
+  let bottom = -Infinity;
+  return boxes.map((b) => {
+    const push = Math.max(0, Math.ceil(bottom + gap - b.top));
+    bottom = b.top + push + b.height;
+    return push;
+  });
+}
+
 /* ---------- The agent suggests B-roll (step C4): answer_broll ---------- */
 export const BROLL_LIMITS = { changes: 20, what: 200, how: 120, quote: 500, why: 160, message: 200, id: 20 };
 const OPS = ["add", "update", "remove"];

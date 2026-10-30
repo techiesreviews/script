@@ -1,5 +1,7 @@
 # Step L: move a B-roll shot to another paragraph
 
+**Replaced in part by step L2** (`step-l2-drag-shots.md`, Lex 2026-10-30): the Move button and the wait to place a shot are gone; a shot is dragged straight away (also on touch, after a hold) and snaps to the paragraph while dragging. What a move writes is unchanged.
+
 Lex (2026-10-30): "I would like to be able to change the b roll position to another paragraph." Asked how, he chose **both**: drag the tag on a computer, and a Move button for phones. Until now a shot was moved by removing it and adding it again (step C3).
 
 ## Moving with the Move button (every screen)

@@ -5,7 +5,7 @@ import { parse, contentOf, blockById, setContent, cloneDoc, checkAnswer, ACTIONS
 import {
   parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
-  addShot, updateShot, removeShot, nextShotId, overFor, newList, moveTo, wholeParas, moveOver,
+  addShot, updateShot, removeShot, nextShotId, overFor, newList, moveTo, wholeParas, moveOver, snapPara, edgeSpeed, EDGE, stackPushes,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
   applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter,
 } from "../public/broll.js";
@@ -537,6 +537,41 @@ test("moveTo keeps a shot's number of paragraphs from the one it goes to, fewer 
   assert.deepEqual(moveTo(list, [], "p4"), ["p4"]); // "Not found in the script": one paragraph
   assert.deepEqual(moveTo(list, ["gone", "p1"], "p2"), ["p2"]); // only paras still in the script count
   assert.deepEqual(moveTo(list, ["p1"], "h1"), []); // a heading or the title: not a spoken para
+});
+
+/* ---------- Step L2: drag a shot; it snaps to a spoken paragraph ---------- */
+test("snapPara: the spoken paragraph under the pointer, else the nearest one above or below", () => {
+  // Two paras, a heading gap between them (100–140), the second ends at 200.
+  const paras = [{ id: "p1", top: 40, bottom: 100 }, { id: "p2", top: 140, bottom: 200 }];
+  assert.equal(snapPara(paras, 60), "p1");
+  assert.equal(snapPara(paras, 140), "p2"); // its top edge counts
+  assert.equal(snapPara(paras, 110), "p1"); // a gap or a heading: the nearer one
+  assert.equal(snapPara(paras, 131), "p2");
+  assert.equal(snapPara(paras, 120), "p1"); // a tie: the one above
+  assert.equal(snapPara(paras, 0), "p1"); // above the first
+  assert.equal(snapPara(paras, 900), "p2"); // below the last
+  assert.equal(snapPara([], 50), null);
+});
+
+test("edgeSpeed: no scroll away from the edges, faster nearer the edge, up at the top and down at the bottom", () => {
+  const { band, max } = EDGE;
+  assert.equal(edgeSpeed(400, 50, 900), 0);
+  assert.equal(edgeSpeed(50 + band, 50, 900), 0);
+  assert.equal(edgeSpeed(900 - band, 50, 900), 0);
+  const nearBottom = edgeSpeed(900 - band / 2, 50, 900), atBottom = edgeSpeed(899, 50, 900);
+  assert.ok(nearBottom > 0 && atBottom > nearBottom && atBottom <= max);
+  assert.equal(edgeSpeed(950, 50, 900), max); // past the edge: the fastest
+  const nearTop = edgeSpeed(50 + band / 2, 50, 900);
+  assert.ok(nearTop < 0 && edgeSpeed(51, 50, 900) < nearTop);
+  assert.equal(edgeSpeed(10, 50, 900), -max);
+  assert.equal(edgeSpeed(899, 50, 900, { band: 100, max: 10 }), 10);
+});
+
+test("stackPushes: a frame box that would overlap the one above moves down below it", () => {
+  assert.deepEqual(stackPushes([{ top: 0, height: 100 }, { top: 50, height: 40 }, { top: 300, height: 10 }]), [0, 62, 0]);
+  assert.deepEqual(stackPushes([{ top: 0, height: 100 }, { top: 50, height: 100 }, { top: 120, height: 10 }]), [0, 62, 104]);
+  assert.deepEqual(stackPushes([{ top: 0, height: 10 }, { top: 22, height: 10 }], 12), [0, 0]);
+  assert.deepEqual(stackPushes([]), []);
 });
 
 test("A move's Over matches back to exactly the new paragraphs, also when the same first words come earlier", () => {
