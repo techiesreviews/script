@@ -21,7 +21,7 @@ Lex (2026-10-28): "I also want to be able to add B-roll and define a description
 
 - Clicking a shot's tag or frame lights it up as now and also opens the same card filled in: kind, What, How, plus "Remove shot". Save changes the row in place. After Cancel or Escape the shot stays lit, and one click opens its card again.
 - Remove takes the row out, and its sketch too.
-- To move a shot to other text, the person removes it and adds it again (no extra UI).
+- To move a shot to other text, the person removes it and adds it again (no extra UI). Replaced by step L: Move in the card, or dragging the tag on a computer (`step-l-move-broll.md`).
 - Changing the kind to or from Screen recording in a list without a Kind column moves the row between the two tables and keeps its id (a `B<n>` can then sit among the screen recordings). When the Screen recordings table has no How column (as in the demo and in a new list), a How is lost on that move.
 
 ## Where it is saved

@@ -777,9 +777,10 @@ export function overFor(doc, selection) {
   const a = list.findIndex((b) => b.id === sel[0].id), z = list.findIndex((b) => b.id === sel.at(-1).id);
   const want = list.slice(a, z + 1).map((b) => b.id).join();
   const first = contentOf(blockById(doc, sel[0].id));
-  const fromWords = first.slice(sel[0].start).match(/\S+/g) || [];
+  // Quotes are of the spoken words: a link counts as its words (step G), as the matcher reads it.
+  const fromWords = spokenText(first.slice(sel[0].start)).match(/\S+/g) || [];
   // One block: "…" when fewer words than selected are quoted (or, past the selection, fewer than the line has).
-  const selected = z > a ? fromWords.length : (first.slice(sel[0].start, sel[0].end).match(/\S+/g) || []).length;
+  const selected = z > a ? fromWords.length : (spokenText(first.slice(sel[0].start, sel[0].end)).match(/\S+/g) || []).length;
   const quote = (ws, n, whole) => `"${ws.slice(0, n).join(" ")}${n < whole ? "…" : ""}"`;
   const fromQuote = (n) => quote(fromWords, n, n <= selected ? selected : fromWords.length);
   const tries = (start, len) => { const out = []; for (let n = Math.max(1, start); n <= len; n++) out.push(n); return out.length ? out : [len]; };
@@ -789,13 +790,34 @@ export function overFor(doc, selection) {
     if (matchOver(list, from)[0] === list[a].id) break;
   }
   if (z === a) return from;
-  const lastWords = contentOf(blockById(doc, sel.at(-1).id)).match(/\S+/g) || [];
+  const lastWords = spokenText(contentOf(blockById(doc, sel.at(-1).id))).match(/\S+/g) || [];
   let over = "";
   for (const m of tries(Math.min(OVER_WORDS, lastWords.length), lastWords.length)) {
     over = `${from} through ${quote(lastWords, m, lastWords.length)}`;
     if (matchOver(list, over).join() === want) break;
   }
   return over;
+}
+
+/* ---------- Move a shot to other paragraphs (step L) ---------- */
+/** moveTo(list, blockIds, toId) → the spoken paras a shot covers when it is moved to start at toId: as many as it
+ *  covers now (at least one), fewer at the end of the script; [] when toId is not a spoken para. */
+export function moveTo(list, blockIds, toId) {
+  const at = list.findIndex((b) => b.id === toId);
+  if (at < 0) return [];
+  const n = Math.max(1, (blockIds || []).filter((id) => list.some((b) => b.id === id)).length);
+  return list.slice(at, at + n).map((b) => b.id);
+}
+/** wholeParas(doc, ids) → those paras as a selection of their whole text, for overFor. */
+export const wholeParas = (doc, ids) => ids.map((id) => ({ id, start: 0, end: contentOf(blockById(doc, id)).length }));
+/** moveOver(doc, blockIds, selection) → the Over for a shot moved onto the spoken paras a selection touches (from its
+ *  first to its last), or "" when they are the paras it covers now (nothing to write) or none is spoken. */
+export function moveOver(doc, blockIds, selection) {
+  const list = spokenBlocks(doc);
+  const ids = (selection || []).map((s) => list.findIndex((b) => b.id === s.id)).filter((i) => i >= 0);
+  if (!ids.length) return "";
+  const want = list.slice(ids[0], ids.at(-1) + 1).map((b) => b.id);
+  return want.join() === (blockIds || []).join() ? "" : overFor(doc, selection);
 }
 
 /* ---------- The agent suggests B-roll (step C4): answer_broll ---------- */

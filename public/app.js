@@ -2348,6 +2348,8 @@ function keyed(fn) {
 const getLinkKey = (name = state.name) => keyed(() => idbGet(brollKey(name)));
 const setLinkKey = (value, name = state.name) => keyed(() => idbSet(brollKey(name), value));
 const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
+// A shot being moved (step L): Move waits for a paragraph (id), or its tag is dragged (drag).
+const mv = { id: null, token: 0, down: null, touchSel: false, selTimer: 0, drag: null, dropped: false };
 const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
 const covered = (s) => (s.blockIds || []).filter((id) => byId(id));
 const sketchAsk = () => state.asks.find((a) => a.scope === "broll" && a.action === "sketch" && isOpen(a)) || null;
@@ -2368,6 +2370,7 @@ function syncFlags() {
 // Leaving a script: the old list goes with it.
 function closeBroll() {
   broll.token++;
+  endMove();
   closeShotCard();
   ui.scriptY = 0;
   Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
@@ -2517,7 +2520,9 @@ function renderBrollMarks() {
     const lit = broll.lit === s.id;
     const label = `${KIND_NAME[s.kind]} ${s.id}: ${s.what}${s.check ? " · Check" : ""}`;
     const sug = suggestionsFor(s.id);
-    box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
+    // Its tag can be dragged to other lines (step L), unless a change to it waits for Keep or Undo.
+    const drag = !state.guest && !sug.length && !pendingSketch(s.id) && !markedSketch(s.id);
+    box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${drag ? " data-drag" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
       + `<button class="shot-frame__jump" type="button" data-b="${esc(s.id)}" aria-pressed="${lit}" aria-label="${esc(label)}" title="${esc(s.what)}">${frameImg(s, false)}`
       + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${keepBar(s)}${sug.map((x) => suggestBlock(x, s)).join("")}</div>`);
   }
@@ -2576,6 +2581,7 @@ scriptEl.addEventListener("click", (e) => {
   }
   const t = e.target.closest(".shot-frame__jump");
   if (!t) return;
+  if (mv.dropped) { mv.dropped = false; return; } // the click that ends a drag (step L)
   // A click lights the shot and opens its card to change or remove it; a click while its card is open puts both away.
   // After Cancel or Escape the shot stays lit, and one click opens the card again.
   const id = t.dataset.b;
@@ -2659,6 +2665,7 @@ function setView(v) {
   hideBar();
   closeCard();
   closeShotCard();
+  endMove();
   renderView();
   scrollTo({ top: board ? 0 : ui.scriptY });
 }
@@ -3105,6 +3112,7 @@ function renderShotCard() {
   $("#scHowField").hidden = sc.kind === "screen";
   $("#scSave").disabled = sc.busy || !$("#scWhat").value.trim();
   $("#scRemove").disabled = sc.busy;
+  $("#scMove").disabled = sc.busy;
 }
 function positionShotCard() {
   if (shotCard.hidden || !sc.anchor || matchMedia("(max-width: 40rem)").matches) return;
@@ -3129,6 +3137,7 @@ function openShotCard(o) {
   $("#scWhat").value = s?.what || "";
   $("#scHow").value = s?.how || "";
   $("#scRemove").hidden = !s;
+  $("#scMove").hidden = !s;
   $("#scSave").textContent = s ? "Save" : "Add";
   $("#scProblem").hidden = true;
   renderShotCard();
@@ -3228,6 +3237,147 @@ document.addEventListener("pointerdown", (e) => {
   closeShotCard();
 }, true);
 const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
+
+/* ---------- Move a shot to other paragraphs (step L): Move in its card, or drag its tag ---------- */
+// After Move the shot waits, lit, to be placed: a click or tap on a spoken paragraph puts it there (as many paragraphs
+// as before), a selection puts it over exactly those. A click elsewhere, Escape or typing leaves it where it was.
+const spokenList = () => (state.doc ? B.spokenBlocks(state.doc) : []);
+// The spoken paragraph a point is in, or null (a heading, the title, a frame, anything outside the script).
+function paraAt(target) {
+  const el = target?.closest?.(".block");
+  if (!el || !scriptEl.contains(el) || el.closest("details:not([open])")) return null;
+  return spokenList().some((b) => b.id === el.dataset.id) ? el.dataset.id : null;
+}
+// Where it would land: the covered-line rule in the accent beside those lines.
+function showTarget(ids) {
+  for (const l of $$(".line[data-target]", scriptEl)) delete l.dataset.target;
+  ids.forEach((id, i) => { const w = wrapOf(id); if (w) w.dataset.target = i < ids.length - 1 ? "on" : "last"; });
+}
+const targetFor = (id, para) => { const s = shotById(id); return s && para ? B.moveTo(spokenList(), covered(s), para) : []; };
+function startMove(id) {
+  if (!shotById(id) || state.guest) return;
+  closeShotCard();
+  if (broll.lit !== id) lightShot(id, false);
+  Object.assign(mv, { id, token: broll.token, down: null, touchSel: false });
+  scriptEl.dataset.moving = "";
+}
+function endMove() {
+  clearTimeout(mv.selTimer);
+  if (!mv.id) return;
+  Object.assign(mv, { id: null, down: null, touchSel: false });
+  delete scriptEl.dataset.moving;
+  showTarget([]);
+}
+// Only the shot's Over is written again; it shows in its new place once the list is written. Moving it is checking it.
+async function moveShot(id, sel) {
+  const s = shotById(id);
+  if (!s || !state.doc || state.guest) return;
+  const over = B.moveOver(state.doc, covered(s), sel);
+  if (!over) return; // onto the lines it covers already
+  const token = broll.token;
+  try { await changeList((md) => B.updateShot(md, id, { over })); }
+  catch (err) {
+    // "Not saved" in the card, where its other changes show it; the shot stays where it was.
+    if (token !== broll.token || !shotById(id)) return;
+    openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
+    return failShotCard(err);
+  }
+  const now = token === broll.token && shotById(id);
+  if (now?.check) { now.check = false; syncFlags(); renderBroll(); }
+}
+function placeMove(sel) {
+  const { id, token } = mv;
+  endMove();
+  if (token === broll.token && sel.length) moveShot(id, sel);
+}
+// The selection that places it, if there is one in the script's spoken lines.
+function moveSelection() {
+  const g = getSelection();
+  if (!g.rangeCount || g.isCollapsed || !scriptEl.contains(g.anchorNode)) return null;
+  return spokenSelection(g.getRangeAt(0));
+}
+$("#scMove").addEventListener("click", () => { if (!sc.busy && sc.mode === "edit") startMove(sc.id); });
+document.addEventListener("pointerdown", (e) => {
+  mv.dropped = false;
+  if (!mv.id || mv.drag?.on) return;
+  const para = paraAt(e.target);
+  if (!para) return endMove(); // a heading, the title, a frame or outside the script
+  mv.down = { para, type: e.pointerType };
+  showTarget([]);
+}, true);
+document.addEventListener("pointerup", (e) => {
+  const down = mv.down;
+  if (!mv.id || !down) return;
+  mv.down = null;
+  // After the browser has settled the selection: a selection goes over exactly its paragraphs, a click over as many
+  // as before from the one clicked.
+  setTimeout(() => {
+    if (!mv.id) return;
+    const sel = moveSelection();
+    if (sel) return sel.length ? placeMove(sel) : endMove();
+    placeMove(B.wholeParas(state.doc, targetFor(mv.id, down.para)));
+  });
+});
+// A long press on touch selects text: the selection places it once its handles rest.
+document.addEventListener("pointercancel", () => { if (mv.id && mv.down) { mv.down = null; mv.touchSel = true; } });
+document.addEventListener("selectionchange", () => {
+  if (!mv.id || mv.down || !mv.touchSel) return;
+  clearTimeout(mv.selTimer);
+  mv.selTimer = setTimeout(() => { const sel = moveSelection(); if (mv.id && sel?.length) placeMove(sel); }, 800);
+});
+scriptEl.addEventListener("pointermove", (e) => {
+  if (!mv.id || mv.down || mv.drag || e.pointerType === "touch") return;
+  showTarget(targetFor(mv.id, paraAt(e.target)));
+});
+scriptEl.addEventListener("pointerleave", () => { if (mv.id && !mv.drag) showTarget([]); });
+scriptEl.addEventListener("beforeinput", () => endMove()); // typing ends the wait
+
+// Dragging a tag (fine pointer only): it starts after a few pixels, so a plain click still opens the card.
+scriptEl.addEventListener("pointerdown", (e) => {
+  const t = e.target.closest(".shot-frame[data-drag] .shot-frame__jump");
+  if (!t || e.button !== 0 || e.pointerType !== "mouse" || !fine.matches || state.guest || state.locked) return;
+  mv.drag = { id: t.dataset.b, el: t, x: e.clientX, y: e.clientY, pid: e.pointerId, on: false, to: [] };
+});
+scriptEl.addEventListener("dragstart", (e) => { if (e.target.closest?.(".broll-tags")) e.preventDefault(); });
+function stopDrag() {
+  mv.drag = null;
+  delete document.documentElement.dataset.dragging;
+  showTarget([]);
+}
+document.addEventListener("pointermove", (e) => {
+  const d = mv.drag;
+  if (!d || e.pointerId !== d.pid) return;
+  if (!d.on) {
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 5) return;
+    d.on = true;
+    endMove();
+    closeShotCard();
+    hideBar();
+    getSelection().removeAllRanges();
+    document.documentElement.dataset.dragging = "";
+    try { d.el.setPointerCapture(d.pid); } catch { /* the drag still follows the document's events */ }
+  }
+  e.preventDefault();
+  d.to = targetFor(d.id, paraAt(document.elementFromPoint(e.clientX, e.clientY)));
+  showTarget(d.to);
+});
+document.addEventListener("pointerup", (e) => {
+  const d = mv.drag;
+  if (!d || e.pointerId !== d.pid) return;
+  if (!d.on) { mv.drag = null; return; } // a plain click: the click lights the shot and opens its card
+  stopDrag();
+  mv.dropped = true;
+  if (d.to.length && state.doc) moveShot(d.id, B.wholeParas(state.doc, d.to));
+});
+document.addEventListener("pointercancel", (e) => { if (mv.drag && e.pointerId === mv.drag.pid) stopDrag(); });
+// Escape ends the wait or the drag alone: the shot stays where it was, still lit.
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || (!mv.id && !mv.drag?.on)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (mv.drag) { stopDrag(); mv.dropped = true; }
+  endMove();
+}, true);
 
 /* ---------- B-roll suggestions from the agent (step C4): Keep or Undo per change ---------- */
 function receiveBroll(ask, answer, by) {

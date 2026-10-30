@@ -1,0 +1,75 @@
+# Step L browser check: headless Chrome (CDP), local Worker (wrangler dev on 127.0.0.1:8797), the demo script and its list kept in the browser; a fresh browser profile. 2026-10-30T15:47:17Z, run on the working tree on top of 42dbb55.
+# Desktop: 1400 × 1000, a fine pointer with hover, light (dark at the end). Phone: 390 × 844, touch, dark then light.
+# Note: CDP mouse drags don't extend a text selection in the script's paragraphs (the same before step L, checked on HEAD), so for "Move, then select two paragraphs" the selection is set between the real press and release.
+## Desktop, light and dark
+ok desktop: a fine pointer with hover
+ok the demo script opens with its shots beside the lines
+ok B2's card opens from its tag, with Move beside Remove shot
+ok Move sits right after Remove shot
+ok Move closes the card and the shot waits to be placed
+ok the shot stays lit while it waits
+ok hovering a spoken paragraph shows where it would land: ["Your viewer doesn't care about"]
+ok a click puts it there: Over "Your viewer doesn't care about your topic yet.…"
+ok its frame shows beside that paragraph at once
+ok the wait is over, nothing is marked as a target
+ok the rest of the list is unchanged byte for byte 
+ok a selection of two paragraphs: Over "Where do you stumble? That sentence is too…" through "If it sounds like you, you're ready. If…"
+ok it covers exactly those two, still lit: ["Where do you stumble? That sen","If it sounds like you, you're "]
+ok only B5's Over changed 
+ok the selection stays as usual afterwards
+ok Escape ends the wait
+ok and the shot stays where it was (a later click moves nothing)
+ok a click on a heading ends the wait and moves nothing
+ok typing ends the wait
+ok a draggable tag shows the grab cursor
+ok the tag and the paragraph it goes to are both in view (167, 905)
+ok while dragging, the paragraph under the pointer shows where it lands: ["That's five extra minutes per "]
+ok the shot's own frame stays put until the drop
+ok no text is selected while dragging
+ok the drop moves it: Over "That's five extra minutes per video. Compare that…"
+ok the drop does not open the card
+ok only B7's Over changed 
+ok a plain click on a tag still lights it and opens its card
+ok B5's tag and the last paragraph are both in view (162, 889)
+ok a two-paragraph shot dragged onto the last paragraph shows one: ["Thanks for watching, and see y"]
+ok fewer at the end of the script: Over "Thanks for watching, and see you in the…"
+ok only B5's Over changed 
+ok outside the script nothing shows as a target
+ok dropped outside the script: it stays where it was
+ok and no card opens
+ok dragging B8 over another paragraph shows the target
+ok Escape while dragging: it stays where it was, no card
+ok B9 shows under Not found in the script
+ok its card opens with Move
+ok moved into the script: Over "So that's the first rule. The problem first,…"
+ok its frame shows beside that paragraph
+ok only B9's Over changed 
+ok after a reload every moved shot is in its new place: {"B2":"Your viewer doesn't care about","B5":"Thanks for watching, and see y","B7":"That's five extra minutes per ","B9":"So that's the first rule. The ","B1":"A blank page. A deadline. And ","B3":"Not \"In this video I will talk","B4":"A script is not read. It's hea","B6":"Keep one checklist next to eve","B8":"So, three things. Start with t"}
+ok and the others where they were
+ok the list kept in the browser differs from the demo only in the moved shots' Over cells (sketches included)
+ok the Storyboard follows script order: B1 B2 B3 B9 B4 S1 S2 B6 B7 B8 B5
+ok dark mode: the target shows too
+RESULT: ok e2e-desktop
+## 390 px, dark
+ok 390 px dark: a touch screen
+ok a tap on a tag opens the card with Move
+ok the card fits 390 px, its four buttons on one row
+ok Move closes the card; the shot waits
+ok on touch nothing shows until tapped
+ok a tap puts it there: Over "So use short sentences, one idea each. Words…"
+ok its frame shows above that paragraph
+ok only B3's Over changed
+ok tags are not dragged on touch (fine pointer only)
+RESULT: ok e2e-phone
+## 390 px, light
+ok 390 px light: a touch screen
+ok a tap on a tag opens the card with Move
+ok the card fits 390 px, its four buttons on one row
+ok Move closes the card; the shot waits
+ok on touch nothing shows until tapped
+ok a tap puts it there: Over "A script is not read. It's heard. And…"
+ok its frame shows above that paragraph
+ok only B3's Over changed
+ok tags are not dragged on touch (fine pointer only)
+RESULT: ok e2e-phone
+# Screenshots looked at: the card with Move (desktop light and dark, 390 px dark), the wait with the target rule (desktop light and dark), a drag over another paragraph (desktop light), after a tap (390 px light).
