@@ -21,12 +21,12 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
   it at once should expect to merge.
 - **Docs the shared rulebook names:** no runner guide, issue tracker guide or UX rulebook. A change
   Lex asks for is a step file `docs/build/step-<letter>-<slug>.md` opening "Lex (YYYY-MM-DD): …"
-  (`docs/build/README.md` lists them); the UX rules
+  (`docs/build/README.md` lists them); what the editor does is in `docs/features.md`; the UX rules
   are in `AGENTS.md` (Rules). Dated to-dos are written as a line `Due YYYY-MM-DD: <what>`.
 
 ## Visible changes
 
-- **Feature list:** the first paragraph of `AGENTS.md`. No `kit ux` checks are scripted for this project yet.
+- **Feature list:** `docs/features.md`. No `kit ux` checks are scripted for this project yet.
 - **Screenshots and real input:** start the site with
   `scripts/agents/kit bg dev -- npx --yes wrangler@4 dev --port <free port>` and headless Chrome
   with `kit bg` too, drive it over CDP (desktop and 390 px phone width), stop both with

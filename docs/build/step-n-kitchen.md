@@ -27,7 +27,7 @@ Fix: `holdAway(client)` keeps a dropped client away and `comeBack(client)` recon
 
 ## 4. A short AGENTS.md
 
-The first paragraph of `AGENTS.md`, a growing list of what the editor does, is loaded into every agent's context. It moves to `docs/features.md`; `AGENTS.md` keeps a two-line description, the owner line, the Rules and pointers, and loses no rule.
+The first paragraph of `AGENTS.md`, a growing list of what the editor does, is loaded into every agent's context. It moves to `docs/features.md`; `AGENTS.md` keeps a two-line description, the owner line, the Rules and pointers, and loses no rule. The paragraph is split into short items by topic, word for word; its dated decisions of Lex's (no "Saved" time, the Export and Share buttons, 2026-10-29) stay with the features they decide, and `AGENTS.md` says they stand until he changes them. The rulebook extras name `docs/features.md` as the feature list.
 
 ## 5. The old 43-character agent tokens
 
