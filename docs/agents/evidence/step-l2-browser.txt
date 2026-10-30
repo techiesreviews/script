@@ -126,3 +126,10 @@ RESULT: ok e2e-l2
 - 1280 dark (reduced motion), mid-drag: the same, in the night blue; the frame jumps without a glide.
 - 1280 light after the first drop: B2's picture sits beside "Your viewer doesn't care…", where it showed while dragging (same page position, checked to 2 px).
 - 390 dark and light, mid-drag (finger held 0.55 s, then moved): B2's picture shows just above "Hi, I'm Sam…" (the paragraph it lands on), over the end of the paragraph above; the accent rule beside "Hi, I'm Sam…"; the page did not scroll with the finger.
+
+## Review fix (2026-10-30): a drag whose release is lost goes back (1280 px, real mouse input)
+ok dragging with the button held
+ok the shot moved
+ok a move with no button held ends the drag
+ok a later click moved nothing
+RESULT: ok drag

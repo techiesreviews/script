@@ -4,7 +4,7 @@
 
 Lex (2026-10-30): "I would like to be able to change the b roll position to another paragraph." Asked how, he chose **both**: drag the tag on a computer, and a Move button for phones. Until now a shot was moved by removing it and adding it again (step C3).
 
-## Moving with the Move button (every screen)
+## Moving with the Move button (every screen; gone, step L2)
 
 - The shot card (opened from a shot's tag, its frame, or a shot in the left column or the Storyboard, also one under "Not found in the script") gets **Move** beside "Remove shot". Not for guests, like the rest of the card.
 - Move closes the card and the shot waits to be placed: it stays lit, and the script shows that a paragraph can be picked (the spoken paragraph under the pointer gets the light covered-line rule in the accent while hovered; on touch nothing until tapped). No explainer text.

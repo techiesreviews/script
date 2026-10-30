@@ -3507,6 +3507,7 @@ scriptEl.addEventListener("contextmenu", (e) => { if (mv.drag && e.target.closes
 document.addEventListener("pointermove", (e) => {
   const d = mv.drag;
   if (!d || e.pointerId !== d.pid) return;
+  if (!d.touch && !e.buttons) return endDrag(); // its release was lost (outside the window): it goes back
   d.px = e.clientX;
   d.py = e.clientY;
   if (!d.on) {
@@ -3533,6 +3534,8 @@ document.addEventListener("pointerup", (e) => {
   if (sel) moveShot(d.id, sel).finally(() => { if (d.el.isConnected) d.el.style.translate = ""; });
 });
 document.addEventListener("pointercancel", (e) => { if (mv.drag && e.pointerId === mv.drag.pid) endDrag(); });
+addEventListener("blur", () => { if (mv.drag) endDrag(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && mv.drag) endDrag(); });
 // A wheel turned while dragging moves the script under a still pointer.
 addEventListener("scroll", () => { const d = mv.drag; if (d?.on) d.frame ||= requestAnimationFrame(() => dragFrame(d)); }, { passive: true });
 // Escape puts a dragged shot back where it was.
