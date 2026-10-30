@@ -1,280 +1,280 @@
-✔ agentBrand: MCP clientInfo names and old pretty names become the model's name and logo (3.777488ms)
-✔ prettyName: readable, short, and never empty (0.33216ms)
-✔ every brand icon is drawn, filled in one colour, with the credits beside them (2.678057ms)
-✔ carets: an agent's circle shows its own icon key, else the old agent mark; people show a letter (0.469627ms)
-✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches (7.643661ms)
-✔ every demo shot is found on the demo script's lines, the range covers three lines (13.602428ms)
-✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found (1.300186ms)
-✔ Over parsing and matching ignore quotes, …, case and punctuation, and match whole words (0.941767ms)
-✔ a change in a covered line flags its shot; other lines do not (3.499418ms)
-✔ the sanitiser keeps line drawings and drops scripts, handlers, links and styles (1.206562ms)
-✔ the Sketches section: replace a sketch, add one, create the section, keep the line endings (7.020307ms)
-✔ sketch asks: checkSketch limits, and answer_ask refuses them (1.114799ms)
-✔ a finished shot does not reopen, and shot ids fit sketch fences (0.381502ms)
-✔ B-roll export round trip: script order, a Kind column, the Sketches section, parsed back the same (9.495686ms)
-✔ B-roll export keeps pipes, kinds the How text would not give, unmatched shots last, and no empty Sketches (2.502339ms)
-✔ storyboard export: one self-contained page, every shot in order, sketches sanitised, no scripts (1.851605ms)
-✔ B-roll export: extra sketches go last and survive a re-parse; an id with a space is left out (4.830182ms)
-✔ an empty or unknown Kind cell falls back to the heading and the How text (0.76103ms)
-✔ the storyboard header offers Unlink whenever a list is linked, also when it can't be read (0.674899ms)
-✔ addShot: one new row in the main table or Screen recordings; the rest of the file is unchanged byte for byte (13.026904ms)
-✔ addShot: creates Screen recordings before Sketches, or a main table, when missing (5.018523ms)
-✔ updateShot changes the row in place; removeShot takes the row and its sketch; other lines stay the same (16.522896ms)
-✔ next free id: B<n> for B-roll and motion, S<n> for screen, after the highest in use (1.182617ms)
-✔ Over from a selection matches back to the same blocks: one block, several blocks, a quote found earlier first (2.694687ms)
-✔ the chosen kind survives a How: Motion plate: <how>, and a Kind column for a B-roll whose How says motion (15.80677ms)
-✔ an edit keeps untouched cells byte for byte, also in a CRLF file (1.214686ms)
-✔ a row is never written without an id: a table without an id column gets a standard table next to it (1.009404ms)
-✔ moving a shot to Screen recordings and back; a screen recording's How cell is kept on save (9.296785ms)
-✔ a motion plate keeps its kind in a table without a How column (0.43436ms)
-✔ a motion plate switched to a screen recording moves table and leaves the main table as it was (4.297507ms)
-✔ a # title ends a ## Screen recordings section for the tables after it (0.27344ms)
-✔ a new Kind column is filled in for every row (0.218678ms)
-✔ moveTo keeps a shot's number of paragraphs from the one it goes to, fewer at the end of the script (0.280533ms)
-✔ snapPara: the spoken paragraph under the pointer, else the nearest one above or below (0.279622ms)
-✔ edgeSpeed: no scroll away from the edges, faster nearer the edge, up at the top and down at the bottom (0.209761ms)
-✔ stackPushes: a frame box that would overlap the one above moves down below it (0.206074ms)
-✔ A move's Over matches back to exactly the new paragraphs, also when the same first words come earlier (2.140093ms)
-✔ A move in the demo list rewrites only the shot's Over cell (10.990124ms)
-✔ quoteSelection finds a quote across lines, word for word, and overFor turns it into a matching Over (7.04855ms)
-✔ checkBrollAnswer: which asks, ids, quotes, screen with how, limits; adds get an Over (8.823012ms)
-✔ Keep gives the same file as the C3 functions; Keep all is one write in order; Undo writes nothing (37.608104ms)
-✔ changes for a shot that is gone: one change per shot, not kept when it can't apply, and dropped as undone (7.931017ms)
-✔ a quote must start and end on whole words; regex characters in the text are plain text (5.876143ms)
-✔ what the agent sees: a plan ask gets the spoken text and the B-roll; a sketch ask only its shots (0.940695ms)
-✔ pictures as sketches (step K): read, written, replacing line drawings, exported; bad data refused (12.834877ms)
-✔ waiting pictures (step K2): only unused ones hold a place; the refusal says how many are free and when one runs out (0.7023ms)
-✔ removeSketch (step K2): a shot's sketch of either kind goes, its row and other sketches stay (6.049486ms)
-✔ sketch_shot's answers (step K2): each outcome says what happened, with the shots still asked for (0.593037ms)
-✔ sketchAnswer (step K2): the write's outcome, or after the time limit the 'writing' answer with the outcome to come (20.022486ms)
-✔ freeAfter (step K2): when a held picture's place is freed or given back (4.326101ms)
-✔ pictureRoom (step K2): a held or shrinking picture never sets the time it runs out (0.210593ms)
-✔ afterListMoved and sketchStatus (step K2): a list read again vs another list or script (0.113191ms)
-✔ rereadAfterIn (step K2): the extra read only on the same list, with a list, while the picture doesn't show (0.091621ms)
-✔ pictureFit (step K3): cut to the frame's 260 : 140, at most 640 × 345, never enlarged (0.27339ms)
-✔ pickPicture (step K3): the first step within the budget, else the smallest valid one (0.748777ms)
-✔ bigPictures (step K4): only pictures over the budget are made lighter on save (60.748648ms)
-✔ bigPictures (step K4): code fences are examples, not sketches; the edges; worthLighter (36.679222ms)
-✔ step L: an Over from a selection that starts after or inside a link finds its paragraph again (0.56298ms)
-✔ straight in: replace puts the new text in place, as one change, and marks exactly it (9.199073ms)
-✔ straight in: add goes after the quote with its spaces, and Undo takes exactly that out again (1.508624ms)
-✔ straight in: replace undone gives back the exact text; refused when the quote changed (0.511554ms)
-✔ straight in: notes, the script-wide marks and B-roll don't go into the text (0.382063ms)
-✔ one paragraph: blank lines in an answer become one space; it stays in its block, marked and undoable (0.956925ms)
-✔ one paragraph: an answer that would change the block's type goes in on one line, without the marks at its start (4.551472ms)
-✔ marks: follow edits before them, stay outside typing at their edges, vanish on an edit inside (1.020273ms)
-✔ marks: follow Enter before them into the new line, and a join back (0.792709ms)
-✔ the agent's caret: at the newest marked change with Undo; Undo moves it to the one before, then it leaves (1.065758ms)
-✔ shared: a guest's asked change is shared marked, undone by that guest or the host, not by another guest (1.568246ms)
-✔ shared: a guest's copy with the same text elsewhere shows no mark rather than a wrong one (0.862709ms)
-✔ after a reload: a marked change kept with the draft comes back only at its exact place (0.82565ms)
-✔ after a reload: with the same short text earlier, Undo changes back only the agent's copy (0.630837ms)
-✔ after Discard: a file that lacks the agent's text shows no mark; an old draft without its place neither (0.912332ms)
-✔ no empty undo step: a land or Undo that can't happen changes nothing (0.501726ms)
-✔ a change of only spaces gets no mark (0.13935ms)
-✔ Ctrl/Cmd+Z of a landing: undone; redo: kept, unmarked; Ctrl/Cmd+Z of a tag Undo: kept, unmarked (0.698353ms)
-✔ the tab's answer_ask result says what happened, per kind (0.191437ms)
-✔ step M: a mark ends 60 minutes after it went in; the ask stays kept and the text untouched (0.505032ms)
-✔ step M: a mark without its time (an old draft) counts its 60 minutes from when the tab read it (0.453917ms)
-✔ step M: read past only once it was on screen and its last line is above the middle (0.231071ms)
-✔ step M: after an end the agent's caret moves to the next newest mark, then leaves (1.110081ms)
-✔ step M: in a shared script a guest's scroll past ends the mark for that guest only (1.048726ms)
-✔ step M: an old draft's mark without its time never becomes the newest (2.284232ms)
-✔ connection prompt: the server and header come first, for any MCP client (1.17419ms)
-✔ connection prompt: the Claude Code, Codex and JSON settings are well formed (1.158752ms)
-✔ connection prompt: it names the prompt and the tools that answer asks (0.346246ms)
-✔ top bar: no "Saved" time is shown (Lex, 2026-10-29); unsaved, saving and not saved still are (0.422328ms)
-✔ top bar (Lex, 2026-10-29): Export last and primary with Export all first; Share icon-only; the MCP mark until connected (0.780295ms)
-✔ round-trips both fixtures exactly (10.147892ms)
-✔ round-trips edge cases exactly (1.241216ms)
-✔ 3 blank lines are kept in the separator (0.253142ms)
-✔ no trailing newline: tail is empty; trailing whitespace goes to tail (0.291894ms)
-✔ CRLF: separators keep \r\n and content shows \n (0.532604ms)
-✔ a heading directly followed by text splits into heading + rest with sep \n (1.550593ms)
-✔ a code fence with blank lines inside stays one raw block (0.549585ms)
-✔ block types (0.527695ms)
-✔ demo script: title, front matter, 7 numbered spoken sections and 2 others (2.650716ms)
-✔ prompter fixture: the prompter's parse reads sections, times, links, QL and notes (1.571241ms)
-✔ when no heading is numbered, all sections are spoken (0.809951ms)
-✔ parseHeading reads number, name and times (0.178743ms)
-✔ block ids are short, unique and stable across edits (2.123432ms)
-✔ split and merge keep every character (0.553643ms)
-✔ split a note turns the halves into paras; merging brings the note back (0.234688ms)
-✔ merge only into a para or note (0.320207ms)
-✔ Enter at the end of a heading adds an empty para after it (0.314146ms)
-✔ typing '## ' at the start of a para makes it a heading (0.481318ms)
-✔ brackets make a para a note and back (0.200535ms)
-✔ removing the first block keeps the file's leading separator (0.188552ms)
-✔ insertBlock uses a blank-line separator in the file's line ending (0.148097ms)
-✔ cloneDoc copies blocks (0.63784ms)
-✔ camera script: spoken paras only, joined by one blank line, ending with a newline (0.976101ms)
-✔ camera script collapses soft line breaks (0.211795ms)
-✔ sentences: one per line, nothing lost (0.56274ms)
-✔ prompter export reads back in the prompter: 7 sections, titles, times, no line lost (4.872962ms)
-✔ prompter leaves out the time when the heading has none (0.46085ms)
-✔ prompter link: deflate-raw + base64url in #s=, default preset, round-trips the export (68.522672ms)
-✔ prompter link: refuses a script longer than the prompter accepts (8.004865ms)
-✔ word count and spoken length at 160 words a minute (2.20241ms)
-✔ snapToWords: half words snap to whole words, outer spaces drop (0.690458ms)
-✔ reanchor follows edits to the nearest copy of the quote, or drops the ask (0.211925ms)
-✔ makeAsk fills the data shape (2.791207ms)
-✔ cleanAnswer accepts the four kinds and caps the message (0.438568ms)
-✔ applyAnswer: replace swaps the quote; add goes after it with one space (0.257791ms)
-✔ findQuote looks in spoken paras first (1.187686ms)
-✔ after setContent, block types match a save and reopen, and exports do not change (2.875394ms)
-✔ '# x' typed in a para becomes the title only when there is no title before it (0.293899ms)
-✔ a blank line typed or pasted inside a para splits it into blocks; locate follows the caret (0.740381ms)
-✔ trailing spaces stay in the block while typing (0.181319ms)
-✔ no numbered headings and no headings: the prompter gets one SCRIPT section it can read (0.27847ms)
-✔ CRLF: '## ' typed on a multi-line para splits with \r\n (0.255277ms)
-✔ insertBlock at the start keeps the file's leading separator (0.169917ms)
-✔ applyAnswer add: quote at the very end, and text that already starts with a space (0.220942ms)
-✔ moveAsks: anchors after a Keep keep their quote (replace that changes length, and add) (0.280935ms)
-✔ moveAsks: a paste before an anchor shifts it; a split moves it to the new block (0.192769ms)
-✔ checkAnswer refuses unknown or finished asks and kinds that do not fit (1.440187ms)
-✔ checkAnswer: marks must quote the script word for word, within the limits (1.773839ms)
-✔ a CRLF file keeps CRLF when one block is split in two (0.387834ms)
-✔ renumbering: a part at the start, in the middle and at the end; names, separators and times stay (6.373701ms)
-✔ part templates: the exact Markdown each one inserts, and where the caret goes (1.083641ms)
-✔ the / filter and where / opens a menu (2.078648ms)
-✔ a part never makes spoken text stop being spoken; unnumbered scripts get unnumbered headings (15.608761ms)
-✔ the whole command word counts with the caret inside it; no menu in raw blocks or the title (0.313224ms)
-✔ withoutCommand: what a save writes while the menu is open; the document itself is not changed (0.468574ms)
-✔ a line that held only the command is replaced by the part, unless it has an open ask; at the start too (0.431886ms)
-✔ scriptFileName: the agent's name or the title, a .md file name that is not taken (0.720525ms)
-✔ wholeText: the script's own line endings, null for the same text; the old copy stays exactly as it was (0.293267ms)
-✔ keepIds: blocks left word for word keep their ids, once each (1.084103ms)
-✔ titleFileName: a script in the browser takes its title's name; its own name counts as free (step J) (0.548483ms)
-✔ the view switch is its own column of the top bar (1.604213ms)
-✔ the voice and agent labels stay readable for screen readers (6.975975ms)
-✔ the edit bar: Shorter, Simpler, Sound like me, More ▾ (Explain, Check facts, Find links), B-roll ▾ (or a guest's Suggest B-roll) and Ask (3.054749ms)
-✔ links: found with their words and address; link lines; spoken text without them (5.68175ms)
-✔ safe addresses: full https:// or http:// only, no javascript:, data:, spaces or control characters (3.706655ms)
-✔ a para that starts with a link stays spoken; a reminder is still a note (14.85759ms)
-✔ prompter export: every link whole, in its section; sentences never split inside a link (11.253135ms)
-✔ camera script and word counts: only the words, never the address (8.989432ms)
-✔ planLinks: each quote's first unlinked occurrence in the asked text, on whole words (5.235548ms)
-✔ checkAnswer and cleanAnswer: links answers, their limits and which asks they fit (5.147744ms)
-✔ links on a selection: one change, marked from the first new link to the last, and Undo takes it all back (9.677365ms)
-✔ links on the whole script: spoken paragraphs only, one marked change per paragraph, one landing (13.176173ms)
-✔ a link at a para's start keeps it a para; the agent hears what went in and what was skipped (0.942939ms)
-✔ MCP: answer_ask takes links, at most 30, full https:// addresses only; the agent is told how (1.008942ms)
-✔ B-roll: a shot's Over still finds a line that got a link, and the link alone asks for no check (6.65199ms)
-✔ links on the whole script stay out of other open work: a waiting ask and a marked change both survive (7.890491ms)
-✔ links on a selection stay out of other open work in its block (5.207445ms)
-✔ a quote copied from the spoken text lands across a soft line break or a double space (5.121686ms)
-✔ closed links: a caret on a link's edge goes just outside it; hidden offsets show at the words (0.555116ms)
-✔ closed links: a deletion that took a link's hidden Markdown gets it back; a link whose words all went goes whole (1.174361ms)
-✔ B-roll: a link placed across a soft line break asks for no check (3.584378ms)
-✔ a B-roll suggestion is not open work for links, waiting or answered (0.75595ms)
-✔ B-roll: spaces and line breaks alone ask for no check; punctuation does (0.675199ms)
-✔ initialize echoes a supported protocol version, else the newest (36.689932ms)
-✔ initialize passes the client's name and version to the relay, cut short (1.082339ms)
-✔ checkToken: a token lives 8 hours from its birth on the Worker's clock (2.014789ms)
-✔ /mcp: a token past its time, or from the future, is refused without asking the relay (5.239244ms)
-✔ tools/list has the ten tools with input schemas and limits (1.080646ms)
-✔ prompts: watch_script sets up the loop (1.555121ms)
-✔ ping, unknown methods and unknown tools (5.160788ms)
-✔ 401 without a valid Bearer token, or when the relay does not know it (2.703434ms)
-✔ notifications get 202 with no body; GET and DELETE get 405 (1.48482ms)
-✔ a browser Origin from another site is refused; the same origin is fine (1.992428ms)
-✔ bad JSON, batches and invalid requests (2.109275ms)
-✔ argument limits are checked before the tab sees the call (7.248323ms)
-✔ tool calls go to the tab with timeouts; results come back as text JSON (1.609172ms)
-✔ tool errors: no tab, the tab's own refusal, and a quiet wait (1.657713ms)
-✔ sketch_shot: schema, limits, and get_script describes the B-roll (4.928495ms)
-✔ answer_broll: schema, limits and refusals before the tab; the prompt and instructions name it (2.416718ms)
-✔ mcp: the agent hears that replace and add go into the text at once and can be undone (step F) (0.347498ms)
-✔ open_script and set_script: arguments (1.936162ms)
-✔ open_script, set_script and list_scripts go to the tab with their arguments (1.303392ms)
-✔ room: the host creates the room; a wrong key or no room is refused (3.59675ms)
-✔ room: guests say who they are first, can't pose as someone else, and reach only the host (1.835244ms)
-✔ room: the host sends to one guest or to all; the end closes everyone and refuses new joins (0.883258ms)
-✔ room: the 21st guest is told the room is full (1.05056ms)
-✔ room: with the host away, a guest's change is answered, never dropped quietly (1.267545ms)
-✔ room: an oversized op is refused by its seq; other oversized messages get no reply (6.901406ms)
-✔ room: 30 s without the host ends the room; a host back in time keeps it (1.588604ms)
-✔ room: an ended room is erased 7 days later; the old link then still says ended (0.566808ms)
-✔ room: a host gone without a close event is found at the daily check, and the room ends (0.370171ms)
-✔ room: an ended note from before endedAt gets its erase when someone knocks (0.414914ms)
-✔ together: a change made for the agent goes out under its name; the host's held "/" text stays back (27.404027ms)
-✔ together: a change for the agent goes out as the host's when a held structure change can't be kept apart, and as local() when not live (5.1781ms)
-✔ together: guests get the script, type at the same time in one paragraph, and all end on the same text (9.908065ms)
-✔ together: Enter and typing at the same time, carets follow, and the undo on a name tag (8.990643ms)
-✔ together: a guest whose base is too old gets a fresh snapshot, and its change is rebased onto it (4.660785ms)
-✔ together: stop sharing ends the room for guests, and the link no longer works (6.113636ms)
-✔ together: a guest whose connection drops keeps what it typed, and it arrives once (3010.083969ms)
-✔ together: typing while the host is away arrives when the host is back (3008.344243ms)
-✔ together: a client told the room is full stops and does not reconnect (41.24465ms)
-✔ together: Ctrl+Z in a room undoes an Enter and a Backspace for everyone (4.354174ms)
-✔ together: a resync lost with the host's connection ends in a snapshot, and typing goes on (172.217394ms)
-✔ together: a batch the host refuses is sent once, then dropped, with no loop (5.56376ms)
-✔ together: back after the log moved on, a batch the host already applied arrives once (39.842373ms)
-✔ together: a catch-up waits while an input method composes (6005.325417ms)
-✔ together: a catch-up entry that fails while a resync is open asks once, and the text arrives once (39.233628ms)
-✔ together: a refused with another seq leaves the batch in flight; a matching one drops only that batch (1.67723ms)
-✔ together: a refused that arrives while an input method composes waits in the queue (1.284767ms)
-✔ together: app messages: the host tells a joining guest, sends to all or one; a guest's ask reaches the host (2.855067ms)
-✔ together: asks and B-roll from the host wait while an input method composes (1.521508ms)
-✔ together: sha256hex matches SHA-256 (1.276401ms)
-✔ together: a copied client id is refused; the same tab back with its secret keeps its asker id (2.248836ms)
-✔ together: an ask about typing not yet sent waits until the host has the text, then the host finds it (7.629995ms)
-✔ together: an ask waiting for text goes when the text settles without a send (a held / removed, a refused batch) (1.60781ms)
-✔ together: a copied client id stays refused while its tab is away, and the tab comes back with its rights (168.534532ms)
-✔ together: an unconfirmed ask goes again after the host was away; a refused one is handed back (0.544697ms)
-✔ together: links keep the key after #, and keys travel as subprotocols (0.556499ms)
-✔ together: a tab without a secret never takes over a live entry, and its client id stays tied (3.05514ms)
-✔ together: a host tab that heard nothing from its room for 7 days does not make it anew (16.377114ms)
-✔ save queue: within one file the newest text and the strongest flags win (2.029046ms)
-✔ save queue: another file keeps the old request as a snapshot and starts a fresh record (0.258432ms)
-✔ save queue: A -> B -> A does not carry B's force onto A (0.232984ms)
-✔ save queue: a waiting request for a script the person left becomes a snapshot when the save ends (1.167739ms)
-✔ save queue: the finished write's lastModified feeds the snapshot's changed-on-disk check (0.243975ms)
-✔ changed on disk: same text or an older file is not a change, force skips the check (0.135643ms)
-✔ site: pages may be indexed, with a description and the canonical address (11.989168ms)
-✔ site: robots.txt keeps /api/ and /mcp out and allows the rest (5.586433ms)
-✔ adapter: a snapshot rebuilds the script exactly, LF and CRLF (10.591991ms)
-✔ adapter: edits made with doc.js travel as operations and give the same file (22.105402ms)
-✔ adapter: attrs from someone else can't put text outside the blocks (0.845126ms)
-✔ adapter: blocks from someone else keep a blank line between them, so the file reads back the same (2.082435ms)
-✔ adapter: a "/" command is held back from the others for the host and guests alike, until it is text (0.299819ms)
-✔ adapter: the host takes a guest's ask only when it fits its script (1.859991ms)
-✔ adapter: only the person who asked, and the host, may Keep or Undo (0.331548ms)
-✔ adapter: the host's check of a guest's Keep, Undo or dismiss (4.185118ms)
-✔ adapter: a guest's ask over someone else's answer leaves it alone; its own older ask gives way (1.792845ms)
-✔ adapter: the snapshot carries the B-roll list, and a guest's load passes it on (0.62198ms)
-✔ adapter: a guest places the host's asks in its own copy, and the agent's caret follows them (5.442965ms)
-✔ adapter: the host's ask desk answers every ref, and a repeat gets the same answer, done once (2.116408ms)
-✔ shareAsks: guests get waiting pictures without the image (step K); the host's asks stay as they are (0.511053ms)
-✔ ops: insert/insert in one block, both orders agree and the first one wins the tie (2.270927ms)
-✔ ops: insert/delete keeps text typed inside a deleted part (0.300701ms)
-✔ ops: delete/delete that overlap remove each character once (0.234387ms)
-✔ ops: split while someone types in the same block (0.384628ms)
-✔ ops: merge while someone types in the joined block (0.2571ms)
-✔ ops: two structure changes on one block are a conflict (0.687913ms)
-✔ ops: random concurrent edits converge (TP1) (58.416336ms)
-✔ ops: random concurrent batches converge (68.563799ms)
-✔ ops: diff finds operations that rebuild the document exactly (21.673065ms)
-✔ ops: a caret follows a remote operation (0.459978ms)
-✔ ops: operations and carets from someone else are checked (0.412519ms)
-✔ relay: a new token's note lasts until its birth + 8 h, with an alarm just after (4.011304ms)
-✔ relay: the alarm refuses what waits, closes the tab and erases everything; an early alarm is set again (4.812258ms)
-✔ relay: a tab with a token already past its time is refused and nothing is written (0.681802ms)
-✔ relay: after Disconnect the token stays refused until its alarm, then the note is gone (0.962185ms)
-✔ relay: a revoke with no note keeps one as long as any token could live, with an alarm (0.352698ms)
-✔ relay: a legacy token's new note ends at the switch-over; an old note gets its alarm when used (0.725133ms)
-✔ worker /api/agent-token: a fresh token with the Worker's time, POST from this site only (4.374783ms)
-✔ worker /api/relay: a token past its time or from the future is closed with 4003, no relay object touched (1.609783ms)
-✔ worker /api/relay: a good token reaches its relay with its birth time; a legacy one without (4.508992ms)
-✔ worker /api/relay: a legacy token reaches its relay until the switch-over, then is closed with 4003 (3.014994ms)
-✔ worker /mcp: an expired token gets 401 without touching a relay; a good one passes its birth time (3.070098ms)
-✔ worker: a picture's upload address passes the bytes to the relay and answers for it (11.981413ms)
-✔ relay: a picture goes to the tab as a head and binary parts, and the tab's answer comes back (12.508747ms)
-✔ worker /api/room: refuses what is not a proper room socket (28.78868ms)
-✔ worker /api/room: the room gets only SHA-256 hashes of the keys, never the keys (7.133319ms)
-✔ zip: crc32 matches the standard check value (4.924086ms)
-✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact (66.245583ms)
-✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes) (0.391601ms)
+✔ agentBrand: MCP clientInfo names and old pretty names become the model's name and logo
+✔ prettyName: readable, short, and never empty
+✔ every brand icon is drawn, filled in one colour, with the credits beside them
+✔ carets: an agent's circle shows its own icon key, else the old agent mark; people show a letter
+✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
+✔ every demo shot is found on the demo script's lines, the range covers three lines
+✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
+✔ Over parsing and matching ignore quotes, …, case and punctuation, and match whole words
+✔ a change in a covered line flags its shot; other lines do not
+✔ the sanitiser keeps line drawings and drops scripts, handlers, links and styles
+✔ the Sketches section: replace a sketch, add one, create the section, keep the line endings
+✔ sketch asks: checkSketch limits, and answer_ask refuses them
+✔ a finished shot does not reopen, and shot ids fit sketch fences
+✔ B-roll export round trip: script order, a Kind column, the Sketches section, parsed back the same
+✔ B-roll export keeps pipes, kinds the How text would not give, unmatched shots last, and no empty Sketches
+✔ storyboard export: one self-contained page, every shot in order, sketches sanitised, no scripts
+✔ B-roll export: extra sketches go last and survive a re-parse; an id with a space is left out
+✔ an empty or unknown Kind cell falls back to the heading and the How text
+✔ the storyboard header offers Unlink whenever a list is linked, also when it can't be read
+✔ addShot: one new row in the main table or Screen recordings; the rest of the file is unchanged byte for byte
+✔ addShot: creates Screen recordings before Sketches, or a main table, when missing
+✔ updateShot changes the row in place; removeShot takes the row and its sketch; other lines stay the same
+✔ next free id: B<n> for B-roll and motion, S<n> for screen, after the highest in use
+✔ Over from a selection matches back to the same blocks: one block, several blocks, a quote found earlier first
+✔ the chosen kind survives a How: Motion plate: <how>, and a Kind column for a B-roll whose How says motion
+✔ an edit keeps untouched cells byte for byte, also in a CRLF file
+✔ a row is never written without an id: a table without an id column gets a standard table next to it
+✔ moving a shot to Screen recordings and back; a screen recording's How cell is kept on save
+✔ a motion plate keeps its kind in a table without a How column
+✔ a motion plate switched to a screen recording moves table and leaves the main table as it was
+✔ a # title ends a ## Screen recordings section for the tables after it
+✔ a new Kind column is filled in for every row
+✔ moveTo keeps a shot's number of paragraphs from the one it goes to, fewer at the end of the script
+✔ snapPara: the spoken paragraph under the pointer, else the nearest one above or below
+✔ edgeSpeed: no scroll away from the edges, faster nearer the edge, up at the top and down at the bottom
+✔ stackPushes: a frame box that would overlap the one above moves down below it
+✔ A move's Over matches back to exactly the new paragraphs, also when the same first words come earlier
+✔ A move in the demo list rewrites only the shot's Over cell
+✔ quoteSelection finds a quote across lines, word for word, and overFor turns it into a matching Over
+✔ checkBrollAnswer: which asks, ids, quotes, screen with how, limits; adds get an Over
+✔ Keep gives the same file as the C3 functions; Keep all is one write in order; Undo writes nothing
+✔ changes for a shot that is gone: one change per shot, not kept when it can't apply, and dropped as undone
+✔ a quote must start and end on whole words; regex characters in the text are plain text
+✔ what the agent sees: a plan ask gets the spoken text and the B-roll; a sketch ask only its shots
+✔ pictures as sketches (step K): read, written, replacing line drawings, exported; bad data refused
+✔ waiting pictures (step K2): only unused ones hold a place; the refusal says how many are free and when one runs out
+✔ removeSketch (step K2): a shot's sketch of either kind goes, its row and other sketches stay
+✔ sketch_shot's answers (step K2): each outcome says what happened, with the shots still asked for
+✔ sketchAnswer (step K2): the write's outcome, or after the time limit the 'writing' answer with the outcome to come
+✔ freeAfter (step K2): when a held picture's place is freed or given back
+✔ pictureRoom (step K2): a held or shrinking picture never sets the time it runs out
+✔ afterListMoved and sketchStatus (step K2): a list read again vs another list or script
+✔ rereadAfterIn (step K2): the extra read only on the same list, with a list, while the picture doesn't show
+✔ pictureFit (step K3): cut to the frame's 260 : 140, at most 640 × 345, never enlarged
+✔ pickPicture (step K3): the first step within the budget, else the smallest valid one
+✔ bigPictures (step K4): only pictures over the budget are made lighter on save
+✔ bigPictures (step K4): code fences are examples, not sketches; the edges; worthLighter
+✔ step L: an Over from a selection that starts after or inside a link finds its paragraph again
+✔ straight in: replace puts the new text in place, as one change, and marks exactly it
+✔ straight in: add goes after the quote with its spaces, and Undo takes exactly that out again
+✔ straight in: replace undone gives back the exact text; refused when the quote changed
+✔ straight in: notes, the script-wide marks and B-roll don't go into the text
+✔ one paragraph: blank lines in an answer become one space; it stays in its block, marked and undoable
+✔ one paragraph: an answer that would change the block's type goes in on one line, without the marks at its start
+✔ marks: follow edits before them, stay outside typing at their edges, vanish on an edit inside
+✔ marks: follow Enter before them into the new line, and a join back
+✔ the agent's caret: at the newest marked change with Undo; Undo moves it to the one before, then it leaves
+✔ shared: a guest's asked change is shared marked, undone by that guest or the host, not by another guest
+✔ shared: a guest's copy with the same text elsewhere shows no mark rather than a wrong one
+✔ after a reload: a marked change kept with the draft comes back only at its exact place
+✔ after a reload: with the same short text earlier, Undo changes back only the agent's copy
+✔ after Discard: a file that lacks the agent's text shows no mark; an old draft without its place neither
+✔ no empty undo step: a land or Undo that can't happen changes nothing
+✔ a change of only spaces gets no mark
+✔ Ctrl/Cmd+Z of a landing: undone; redo: kept, unmarked; Ctrl/Cmd+Z of a tag Undo: kept, unmarked
+✔ the tab's answer_ask result says what happened, per kind
+✔ step M: a mark ends 60 minutes after it went in; the ask stays kept and the text untouched
+✔ step M: a mark without its time (an old draft) counts its 60 minutes from when the tab read it
+✔ step M: read past only once it was on screen and its last line is above the middle
+✔ step M: after an end the agent's caret moves to the next newest mark, then leaves
+✔ step M: in a shared script a guest's scroll past ends the mark for that guest only
+✔ step M: an old draft's mark without its time never becomes the newest
+✔ connection prompt: the server and header come first, for any MCP client
+✔ connection prompt: the Claude Code, Codex and JSON settings are well formed
+✔ connection prompt: it names the prompt and the tools that answer asks
+✔ top bar: no "Saved" time is shown (Lex, 2026-10-29); unsaved, saving and not saved still are
+✔ top bar (Lex, 2026-10-29): Export last and primary with Export all first; Share icon-only; the MCP mark until connected
+✔ round-trips both fixtures exactly
+✔ round-trips edge cases exactly
+✔ 3 blank lines are kept in the separator
+✔ no trailing newline: tail is empty; trailing whitespace goes to tail
+✔ CRLF: separators keep \r\n and content shows \n
+✔ a heading directly followed by text splits into heading + rest with sep \n
+✔ a code fence with blank lines inside stays one raw block
+✔ block types
+✔ demo script: title, front matter, 7 numbered spoken sections and 2 others
+✔ prompter fixture: the prompter's parse reads sections, times, links, QL and notes
+✔ when no heading is numbered, all sections are spoken
+✔ parseHeading reads number, name and times
+✔ block ids are short, unique and stable across edits
+✔ split and merge keep every character
+✔ split a note turns the halves into paras; merging brings the note back
+✔ merge only into a para or note
+✔ Enter at the end of a heading adds an empty para after it
+✔ typing '## ' at the start of a para makes it a heading
+✔ brackets make a para a note and back
+✔ removing the first block keeps the file's leading separator
+✔ insertBlock uses a blank-line separator in the file's line ending
+✔ cloneDoc copies blocks
+✔ camera script: spoken paras only, joined by one blank line, ending with a newline
+✔ camera script collapses soft line breaks
+✔ sentences: one per line, nothing lost
+✔ prompter export reads back in the prompter: 7 sections, titles, times, no line lost
+✔ prompter leaves out the time when the heading has none
+✔ prompter link: deflate-raw + base64url in #s=, default preset, round-trips the export
+✔ prompter link: refuses a script longer than the prompter accepts
+✔ word count and spoken length at 160 words a minute
+✔ snapToWords: half words snap to whole words, outer spaces drop
+✔ reanchor follows edits to the nearest copy of the quote, or drops the ask
+✔ makeAsk fills the data shape
+✔ cleanAnswer accepts the four kinds and caps the message
+✔ applyAnswer: replace swaps the quote; add goes after it with one space
+✔ findQuote looks in spoken paras first
+✔ after setContent, block types match a save and reopen, and exports do not change
+✔ '# x' typed in a para becomes the title only when there is no title before it
+✔ a blank line typed or pasted inside a para splits it into blocks; locate follows the caret
+✔ trailing spaces stay in the block while typing
+✔ no numbered headings and no headings: the prompter gets one SCRIPT section it can read
+✔ CRLF: '## ' typed on a multi-line para splits with \r\n
+✔ insertBlock at the start keeps the file's leading separator
+✔ applyAnswer add: quote at the very end, and text that already starts with a space
+✔ moveAsks: anchors after a Keep keep their quote (replace that changes length, and add)
+✔ moveAsks: a paste before an anchor shifts it; a split moves it to the new block
+✔ checkAnswer refuses unknown or finished asks and kinds that do not fit
+✔ checkAnswer: marks must quote the script word for word, within the limits
+✔ a CRLF file keeps CRLF when one block is split in two
+✔ renumbering: a part at the start, in the middle and at the end; names, separators and times stay
+✔ part templates: the exact Markdown each one inserts, and where the caret goes
+✔ the / filter and where / opens a menu
+✔ a part never makes spoken text stop being spoken; unnumbered scripts get unnumbered headings
+✔ the whole command word counts with the caret inside it; no menu in raw blocks or the title
+✔ withoutCommand: what a save writes while the menu is open; the document itself is not changed
+✔ a line that held only the command is replaced by the part, unless it has an open ask; at the start too
+✔ scriptFileName: the agent's name or the title, a .md file name that is not taken
+✔ wholeText: the script's own line endings, null for the same text; the old copy stays exactly as it was
+✔ keepIds: blocks left word for word keep their ids, once each
+✔ titleFileName: a script in the browser takes its title's name; its own name counts as free (step J)
+✔ the view switch is its own column of the top bar
+✔ the voice and agent labels stay readable for screen readers
+✔ the edit bar: Shorter, Simpler, Sound like me, More ▾ (Explain, Check facts, Find links), B-roll ▾ (or a guest's Suggest B-roll) and Ask
+✔ links: found with their words and address; link lines; spoken text without them
+✔ safe addresses: full https:// or http:// only, no javascript:, data:, spaces or control characters
+✔ a para that starts with a link stays spoken; a reminder is still a note
+✔ prompter export: every link whole, in its section; sentences never split inside a link
+✔ camera script and word counts: only the words, never the address
+✔ planLinks: each quote's first unlinked occurrence in the asked text, on whole words
+✔ checkAnswer and cleanAnswer: links answers, their limits and which asks they fit
+✔ links on a selection: one change, marked from the first new link to the last, and Undo takes it all back
+✔ links on the whole script: spoken paragraphs only, one marked change per paragraph, one landing
+✔ a link at a para's start keeps it a para; the agent hears what went in and what was skipped
+✔ MCP: answer_ask takes links, at most 30, full https:// addresses only; the agent is told how
+✔ B-roll: a shot's Over still finds a line that got a link, and the link alone asks for no check
+✔ links on the whole script stay out of other open work: a waiting ask and a marked change both survive
+✔ links on a selection stay out of other open work in its block
+✔ a quote copied from the spoken text lands across a soft line break or a double space
+✔ closed links: a caret on a link's edge goes just outside it; hidden offsets show at the words
+✔ closed links: a deletion that took a link's hidden Markdown gets it back; a link whose words all went goes whole
+✔ B-roll: a link placed across a soft line break asks for no check
+✔ a B-roll suggestion is not open work for links, waiting or answered
+✔ B-roll: spaces and line breaks alone ask for no check; punctuation does
+✔ initialize echoes a supported protocol version, else the newest
+✔ initialize passes the client's name and version to the relay, cut short
+✔ checkToken: a token lives 8 hours from its birth on the Worker's clock
+✔ /mcp: a token past its time, or from the future, is refused without asking the relay
+✔ tools/list has the ten tools with input schemas and limits
+✔ prompts: watch_script sets up the loop
+✔ ping, unknown methods and unknown tools
+✔ 401 without a valid Bearer token, or when the relay does not know it
+✔ notifications get 202 with no body; GET and DELETE get 405
+✔ a browser Origin from another site is refused; the same origin is fine
+✔ bad JSON, batches and invalid requests
+✔ argument limits are checked before the tab sees the call
+✔ tool calls go to the tab with timeouts; results come back as text JSON
+✔ tool errors: no tab, the tab's own refusal, and a quiet wait
+✔ sketch_shot: schema, limits, and get_script describes the B-roll
+✔ answer_broll: schema, limits and refusals before the tab; the prompt and instructions name it
+✔ mcp: the agent hears that replace and add go into the text at once and can be undone (step F)
+✔ open_script and set_script: arguments
+✔ open_script, set_script and list_scripts go to the tab with their arguments
+✔ room: the host creates the room; a wrong key or no room is refused
+✔ room: guests say who they are first, can't pose as someone else, and reach only the host
+✔ room: the host sends to one guest or to all; the end closes everyone and refuses new joins
+✔ room: the 21st guest is told the room is full
+✔ room: with the host away, a guest's change is answered, never dropped quietly
+✔ room: an oversized op is refused by its seq; other oversized messages get no reply
+✔ room: 30 s without the host ends the room; a host back in time keeps it
+✔ room: an ended room is erased 7 days later; the old link then still says ended
+✔ room: a host gone without a close event is found at the daily check, and the room ends
+✔ room: an ended note from before endedAt gets its erase when someone knocks
+✔ together: a change made for the agent goes out under its name; the host's held "/" text stays back
+✔ together: a change for the agent goes out as the host's when a held structure change can't be kept apart, and as local() when not live
+✔ together: guests get the script, type at the same time in one paragraph, and all end on the same text
+✔ together: Enter and typing at the same time, carets follow, and the undo on a name tag
+✔ together: a guest whose base is too old gets a fresh snapshot, and its change is rebased onto it
+✔ together: stop sharing ends the room for guests, and the link no longer works
+✔ together: a guest whose connection drops keeps what it typed, and it arrives once
+✔ together: typing while the host is away arrives when the host is back
+✔ together: a client told the room is full stops and does not reconnect
+✔ together: Ctrl+Z in a room undoes an Enter and a Backspace for everyone
+✔ together: a resync lost with the host's connection ends in a snapshot, and typing goes on
+✔ together: a batch the host refuses is sent once, then dropped, with no loop
+✔ together: back after the log moved on, a batch the host already applied arrives once
+✔ together: a catch-up waits while an input method composes
+✔ together: a catch-up entry that fails while a resync is open asks once, and the text arrives once
+✔ together: a refused with another seq leaves the batch in flight; a matching one drops only that batch
+✔ together: a refused that arrives while an input method composes waits in the queue
+✔ together: app messages: the host tells a joining guest, sends to all or one; a guest's ask reaches the host
+✔ together: asks and B-roll from the host wait while an input method composes
+✔ together: sha256hex matches SHA-256
+✔ together: a copied client id is refused; the same tab back with its secret keeps its asker id
+✔ together: an ask about typing not yet sent waits until the host has the text, then the host finds it
+✔ together: an ask waiting for text goes when the text settles without a send (a held / removed, a refused batch)
+✔ together: a copied client id stays refused while its tab is away, and the tab comes back with its rights
+✔ together: an unconfirmed ask goes again after the host was away; a refused one is handed back
+✔ together: links keep the key after #, and keys travel as subprotocols
+✔ together: a tab without a secret never takes over a live entry, and its client id stays tied
+✔ together: a host tab that heard nothing from its room for 7 days does not make it anew
+✔ save queue: within one file the newest text and the strongest flags win
+✔ save queue: another file keeps the old request as a snapshot and starts a fresh record
+✔ save queue: A -> B -> A does not carry B's force onto A
+✔ save queue: a waiting request for a script the person left becomes a snapshot when the save ends
+✔ save queue: the finished write's lastModified feeds the snapshot's changed-on-disk check
+✔ changed on disk: same text or an older file is not a change, force skips the check
+✔ site: pages may be indexed, with a description and the canonical address
+✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
+✔ adapter: a snapshot rebuilds the script exactly, LF and CRLF
+✔ adapter: edits made with doc.js travel as operations and give the same file
+✔ adapter: attrs from someone else can't put text outside the blocks
+✔ adapter: blocks from someone else keep a blank line between them, so the file reads back the same
+✔ adapter: a "/" command is held back from the others for the host and guests alike, until it is text
+✔ adapter: the host takes a guest's ask only when it fits its script
+✔ adapter: only the person who asked, and the host, may Keep or Undo
+✔ adapter: the host's check of a guest's Keep, Undo or dismiss
+✔ adapter: a guest's ask over someone else's answer leaves it alone; its own older ask gives way
+✔ adapter: the snapshot carries the B-roll list, and a guest's load passes it on
+✔ adapter: a guest places the host's asks in its own copy, and the agent's caret follows them
+✔ adapter: the host's ask desk answers every ref, and a repeat gets the same answer, done once
+✔ shareAsks: guests get waiting pictures without the image (step K); the host's asks stay as they are
+✔ ops: insert/insert in one block, both orders agree and the first one wins the tie
+✔ ops: insert/delete keeps text typed inside a deleted part
+✔ ops: delete/delete that overlap remove each character once
+✔ ops: split while someone types in the same block
+✔ ops: merge while someone types in the joined block
+✔ ops: two structure changes on one block are a conflict
+✔ ops: random concurrent edits converge (TP1)
+✔ ops: random concurrent batches converge
+✔ ops: diff finds operations that rebuild the document exactly
+✔ ops: a caret follows a remote operation
+✔ ops: operations and carets from someone else are checked
+✔ relay: a new token's note lasts until its birth + 8 h, with an alarm just after
+✔ relay: the alarm refuses what waits, closes the tab and erases everything; an early alarm is set again
+✔ relay: a tab with a token already past its time is refused and nothing is written
+✔ relay: after Disconnect the token stays refused until its alarm, then the note is gone
+✔ relay: a revoke with no note keeps one as long as any token could live, with an alarm
+✔ relay: a legacy token's new note ends at the switch-over; an old note gets its alarm when used
+✔ worker /api/agent-token: a fresh token with the Worker's time, POST from this site only
+✔ worker /api/relay: a token past its time or from the future is closed with 4003, no relay object touched
+✔ worker /api/relay: a good token reaches its relay with its birth time; a legacy one without
+✔ worker /api/relay: a legacy token reaches its relay until the switch-over, then is closed with 4003
+✔ worker /mcp: an expired token gets 401 without touching a relay; a good one passes its birth time
+✔ worker: a picture's upload address passes the bytes to the relay and answers for it
+✔ relay: a picture goes to the tab as a head and binary parts, and the tab's answer comes back
+✔ worker /api/room: refuses what is not a proper room socket
+✔ worker /api/room: the room gets only SHA-256 hashes of the keys, never the keys
+✔ zip: crc32 matches the standard check value
+✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
+✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
 ℹ tests 277
 ℹ suites 0
 ℹ pass 277
@@ -282,5 +282,4 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 12806.274527
 RESULT: ok specs

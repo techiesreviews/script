@@ -23,7 +23,7 @@ Fix: `holdAway(client)` keeps a dropped client away and `comeBack(client)` recon
 
 ## 3. Evidence without timings
 
-`docs/agents/evidence/specs.txt` was rewritten with every test's time on every run (diffs of about 500 lines, and merge conflicts between builders working at once). It is now written without times or durations, so it changes only when a result changes.
+`docs/agents/evidence/specs.txt` was rewritten with every test's time on every run (diffs of about 500 lines, and merge conflicts between builders working at once). It is now written without times or durations, so it changes only when a result changes. `scripts/agents/project.d/specs` drops the `(12.3ms)` after each test and the `duration_ms` line from the file; the screen output keeps them. Two runs in a row give the same file.
 
 ## 4. A short AGENTS.md
 

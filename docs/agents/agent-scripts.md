@@ -5,7 +5,7 @@ Every model and provider uses `scripts/agents/kit` for coding here. Since step N
 The commands used most here:
 
 - `kit doctor`: checks that the worktree is safe to build in (settings, base, hooks, Node), plus this project's `checks.doctor`: the Claude CLI and a `node --check` of every JavaScript file. No installs, no deploys.
-- `kit specs [FILE...]` (this project's own, `scripts/agents/project.d/specs`): runs `node --test` on `tests/*.test.mjs`. Evidence goes to `docs/agents/evidence/specs.txt`. Tests use no network and no paid services.
+- `kit specs [FILE...]` (this project's own, `scripts/agents/project.d/specs`): runs `node --test` on `tests/*.test.mjs`. Evidence goes to `docs/agents/evidence/specs.txt`, results only: no per-test times or duration, so the file changes only when a result changes. Tests use no network and no paid services.
 - `kit review --commit FULL_SHA [--ticket FILE]`: read-only review of one commit by Claude `claude-opus-5-5`, effort medium (the kit's defaults), in a separate session. Evidence goes to `.scratch/reviews/` in the main checkout. The lead runs it after committing only authorized work.
 - `kit bg <name> -- <command…>`, `kit bg --list`, `kit bg --stop <name>`: start, list and stop detached jobs you own (a dev server, headless Chrome). Logs in `.scratch/kit-jobs/<name>/`.
 - `kit wait pid PID`, `kit wait output FILE`, `kit wait job NAME`: bounded waiting for processes, logs or `kit bg` jobs you own.
