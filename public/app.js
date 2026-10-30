@@ -405,7 +405,11 @@ addEventListener("keydown", (e) => {
 }, { capture: true });
 let scrollbarHeld = false; // the scrollbar: its scroll is the person's while the pointer stays down, also after a pause
 addEventListener("pointerdown", (e) => { if (e.target === document.documentElement) { scrollbarHeld = true; personInput(); } }, { capture: true });
-for (const t of ["pointerup", "pointercancel"]) addEventListener(t, () => { scrollbarHeld = false; }, { capture: true });
+// A browser may not send pointerup after a scrollbar drag: the first move without a button held, leaving the window
+// or the tab ends it too.
+for (const t of ["pointerup", "pointercancel", "blur"]) addEventListener(t, () => { scrollbarHeld = false; }, { capture: true });
+addEventListener("pointermove", (e) => { if (!e.buttons) scrollbarHeld = false; }, { passive: true, capture: true });
+document.addEventListener("visibilitychange", () => { if (document.hidden) scrollbarHeld = false; });
 addEventListener("scroll", () => {
   if (!personScroll && !scrollbarHeld && performance.now() - personAt > 1000) return;
   personScroll = true;
@@ -3406,7 +3410,7 @@ document.addEventListener("pointerdown", (e) => {
   if (!mv.id || mv.drag?.on) return;
   // A press elsewhere (a heading, the title, a frame, outside the script) ends the wait only when it is let go as a
   // click: on touch it may start a scroll to the paragraph wanted (then the browser cancels it).
-  mv.down = { para: paraAt(e.target), type: e.pointerType };
+  mv.down = { para: paraAt(e.target), inScript: scriptEl.contains(e.target), type: e.pointerType };
   showTarget([]);
 }, true);
 document.addEventListener("pointerup", (e) => {
@@ -3417,6 +3421,7 @@ document.addEventListener("pointerup", (e) => {
   // as before from the one clicked.
   setTimeout(() => {
     if (!mv.id) return;
+    if (!down.inScript) return endMove(); // a click outside the script, even with a selection still in it
     const sel = moveSelection();
     if (sel) return sel.length ? placeMove(sel) : endMove();
     if (!down.para) return endMove();

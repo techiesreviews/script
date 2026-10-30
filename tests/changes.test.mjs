@@ -465,3 +465,15 @@ test("step M: in a shared script a guest's scroll past ends the mark for that gu
   assert.equal(agentCaret(hostAsks, doc, (a) => mayAct(a, { host: true })).askId, ask.id, "the host still sees it, with Undo");
   assert.equal(C.seenAsks(shown, new Set()), shown, "nothing ended here: the same list");
 });
+
+test("step M: an old draft's mark without its time never becomes the newest", () => {
+  const doc = script(), [p, q] = paras(doc);
+  const old = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
+  landIn(doc, [old], old, 1);
+  delete old.change.at;
+  const fresh = answered(doc, q.id, "A second", { kind: "replace", text: "One more" });
+  landIn(doc, [old, fresh], fresh, 2);
+  const T = fresh.change.at;
+  C.endExpired([old, fresh], T + 1000);
+  assert.equal(C.newestMarked([old, fresh]), fresh);
+});

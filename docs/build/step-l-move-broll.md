@@ -8,12 +8,12 @@ Lex (2026-10-30): "I would like to be able to change the b roll position to anot
 - Move closes the card and the shot waits to be placed: it stays lit, and the script shows that a paragraph can be picked (the spoken paragraph under the pointer gets the light covered-line rule in the accent while hovered; on touch nothing until tapped). No explainer text.
   - **Click or tap a spoken paragraph:** the shot goes there and covers as many spoken paragraphs as before, starting at that one (fewer at the end of the script).
   - **Select text** (one or several spoken paragraphs) and let go: the shot covers exactly those paragraphs, as "Add B-roll" would.
-  - A click on a heading, the title, or outside the script, or Escape, ends the wait and leaves the shot where it was. Typing ends it too.
+  - A click on a heading, the title, or outside the script, or Escape, ends the wait and leaves the shot where it was. Typing ends it too. A press there counts only when it is let go as a click: on touch, a swipe that starts there scrolls and the shot keeps waiting. A click outside the script ends the wait even while text is still selected in it.
 - The text is never changed by a move; the caret and selection behave as usual afterwards.
 
 ## Dragging the tag (fine pointer only)
 
-- On `(hover: hover) and (pointer: fine)` a shot's tag in the margin (`.shot-frame` / `.broll-tag`) can be dragged. While dragging, the spoken paragraph under the pointer shows where it will land (the same accent rule over the paragraphs it would cover); the shot's own lines stay as they are until it is dropped.
+- On `(hover: hover) and (pointer: fine)` (a mouse or a pen) a shot's tag in the margin (`.shot-frame` / `.broll-tag`) can be dragged. While dragging, the spoken paragraph under the pointer shows where it will land (the same accent rule over the paragraphs it would cover); the shot's own lines stay as they are until it is dropped.
 - Dropping on a spoken paragraph moves the shot there, keeping its number of paragraphs (as a click above). Dropping anywhere else, or Escape while dragging, leaves it where it was.
 - A plain click on the tag still lights the shot and opens its card, as now. The drag starts only after the pointer has moved a few pixels.
 - Suggested frames (the agent's B-roll waiting for Keep) and shots with a change waiting for Keep or Undo are not draggable.

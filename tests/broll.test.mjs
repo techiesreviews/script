@@ -1037,6 +1037,6 @@ test("step L: an Over from a selection that starts after or inside a link finds 
     assert.deepEqual(matchOver(list, over), [p.id], over);
   }
   // A selection that ends inside the link's words takes the whole link.
-  const over = overFor(doc, [{ id: p.id, start: 0, end: c.indexOf("page") }]);
-  assert.deepEqual(matchOver(list, over), [p.id], over);
+  assert.equal(overFor(doc, [{ id: p.id, start: 0, end: c.indexOf("page") }]), '"First we open the settings page"');
+  assert.equal(overFor(doc, [{ id: p.id, start: 0, end: c.indexOf("example") }]), '"First we open the settings page"');
 });
