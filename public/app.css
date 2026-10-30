@@ -352,9 +352,14 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 @keyframes landed { from { background: var(--accent-soft); } }
 
 /* The agent's change went straight in (step F): a light tint in the agent's colour while it is untouched; Undo is on
-   the agent's name tag. A new one arrives a little stronger. */
+   the agent's name tag. A new one arrives a little stronger; once scrolled past or after 60 minutes it fades out
+   (step M, data-ending) before it goes. */
 .agent-change { border-radius: 3px; background: light-dark(color-mix(in oklch, var(--agent) 13%, transparent), color-mix(in oklch, var(--agent) 17%, transparent)); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-@media (prefers-reduced-motion: no-preference) { .agent-change[data-new] { animation: agent-in 900ms var(--ease-out); } }
+.agent-change[data-ending] { background: transparent; }
+@media (prefers-reduced-motion: no-preference) {
+  .agent-change[data-new] { animation: agent-in 900ms var(--ease-out); }
+  .agent-change { transition: background-color 400ms var(--ease-out); }
+}
 
 /* Links (step G): the words with a faint dotted underline, like the prompter. "[", "](" and the address show only
    while the caret is at or in the link (data-open), quietly, so they can be edited. */

@@ -1,5 +1,6 @@
 // The agent's answers go straight into the text (step F, Lex 2026-10-28). A "replace" or "add" answer on a selection
-// is applied at once; the ask becomes `kept` and keeps its change, lightly marked, while the changed text is untouched:
+// is applied at once; the ask becomes `kept` and keeps its change, lightly marked, while the changed text is untouched
+// (and until it is scrolled past or 60 minutes are over: step M, at the end of this file):
 //   ask.start/end  the changed text in its block (content offsets), ask.change = { text, removed, at, ctx? }
 // Undo puts `removed` back in place of `text` (only while the text is exactly there) and makes the ask `undone`.
 // The change stays inside its block: blank lines in the answer are already one space (D.cleanAnswer), and a text
@@ -318,3 +319,28 @@ export function markRange(ask) {
   const lead = t.length - t.trimStart().length, trail = t.length - t.trimEnd().length;
   return { start: ask.start + lead, end: Math.max(ask.start + lead, ask.end - trail) };
 }
+
+/* The mark goes away by itself (step M, Lex 2026-10-30): once the person has scrolled past it, or 60 minutes after
+   the change went in (`change.at`, the host's clock), whichever comes first. It ends like an edit inside it: the ask
+   stays kept, its `change` goes, the text is untouched (so its Undo goes too). Pictures in the B-roll list are not
+   asks with a change and keep their mark. */
+export const MARK_MS = 60 * 60 * 1000;
+/** Is this mark's time over? A change without `at` (a draft from before its time stamp) counts from `readAt`. */
+export const markExpired = (ask, now, readAt = now) => isMarked(ask) && now - (Number.isFinite(ask.change.at) ? ask.change.at : readAt) >= MARK_MS;
+/** End the marks whose time is over; a mark without `at` gets `now` as the time this tab read it, so its 60 minutes
+ *  count from then. Returns the asks whose mark ended. */
+export function endExpired(asks, now) {
+  const ended = [];
+  for (const a of asks) {
+    if (!isMarked(a)) continue;
+    if (!Number.isFinite(a.change.at)) a.change.at = now;
+    if (markExpired(a, now)) { delete a.change; ended.push(a); }
+  }
+  return ended;
+}
+/** Has the person read past this mark? `box`: its top and bottom (the bottom of its last line); `view`: the visible
+ *  part of the script. Only once it has been on screen (`seen`) and its last line is above the middle. */
+export const readPast = (box, view, seen) => !!seen && box.bottom < (view.top + view.bottom) / 2;
+/** The asks as this person sees them: in a shared script a mark ended on one screen only (`ended`: ask ids) is gone
+ *  from the copies; everyone else's, and the asks themselves, keep it. */
+export const seenAsks = (asks, ended) => (ended?.size ? asks.map((a) => (isMarked(a) && ended.has(a.id) ? (({ change, ...rest }) => rest)(a) : a)) : asks);

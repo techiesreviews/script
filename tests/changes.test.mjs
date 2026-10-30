@@ -375,3 +375,92 @@ test("the tab's answer_ask result says what happened, per kind", () => {
   assert.equal(C.answerResult("note"), "Shown to the person.");
   assert.equal(C.answerResult("marks"), "Shown to the person. They choose Keep or Undo.");
 });
+
+// Step M: the mark goes away by itself, once scrolled past or 60 minutes after the change went in.
+const MIN = 60 * 1000;
+test("step M: a mark ends 60 minutes after it went in; the ask stays kept and the text untouched", () => {
+  const doc = script(), p = paras(doc)[0];
+  const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
+  const t0 = Date.UTC(2026, 9, 30, 9);
+  landIn(doc, [ask], ask, t0);
+  assert.equal(C.MARK_MS, 60 * MIN);
+  assert.ok(!C.markExpired(ask, t0 + 59 * MIN));
+  assert.deepEqual(C.endExpired([ask], t0 + 59 * MIN), [], "59 minutes: still marked");
+  assert.ok(C.isMarked(ask));
+  assert.ok(C.markExpired(ask, t0 + 61 * MIN));
+  const after = D.serialize(doc);
+  assert.deepEqual(C.endExpired([ask], t0 + 61 * MIN), [ask], "61 minutes: it says which ended");
+  assert.ok(!C.isMarked(ask));
+  assert.equal(ask.status, "kept", "list_asks still says kept");
+  assert.equal(ask.change, undefined);
+  assert.equal(D.serialize(doc), after, "the text is untouched");
+  assert.equal(C.undo(doc, ask), null, "its Undo is gone with it");
+  assert.equal(D.serialize(doc), after);
+});
+
+test("step M: a mark without its time (an old draft) counts its 60 minutes from when the tab read it", () => {
+  const doc = script(), p = paras(doc)[0];
+  const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
+  landIn(doc, [ask], ask, 1);
+  delete ask.change.at;
+  const read = Date.UTC(2026, 9, 30, 12);
+  assert.deepEqual(C.endExpired([ask], read), [], "not ended when read");
+  assert.equal(ask.change.at, read, "its time is when the tab read it");
+  assert.deepEqual(C.endExpired([ask], read + 59 * MIN), []);
+  assert.deepEqual(C.endExpired([ask], read + 61 * MIN), [ask]);
+  // markExpired alone takes the time it was read.
+  const old = { ...answered(doc, p.id, "go on", { kind: "replace", text: "go" }), status: "kept", change: { text: "go", removed: "go on" } };
+  assert.ok(!C.markExpired(old, read + 59 * MIN, read));
+  assert.ok(C.markExpired(old, read + 61 * MIN, read));
+});
+
+test("step M: read past only once it was on screen and its last line is above the middle", () => {
+  const view = { top: 56, bottom: 856 }; // the middle is at 456
+  assert.ok(!C.readPast({ top: 500, bottom: 540 }, view, true), "below the middle: stays");
+  assert.ok(!C.readPast({ top: 420, bottom: 456 }, view, true), "its last line on the middle: stays");
+  assert.ok(!C.readPast({ top: 400, bottom: 480 }, view, true), "its last line still below the middle: stays");
+  assert.ok(C.readPast({ top: 300, bottom: 340 }, view, true), "above the middle: read past");
+  assert.ok(C.readPast({ top: -400, bottom: -360 }, view, true), "scrolled off the top after it was seen: read past");
+  assert.ok(!C.readPast({ top: -400, bottom: -360 }, view, false), "never on screen: stays");
+  assert.ok(!C.readPast({ top: 300, bottom: 340 }, view, false));
+});
+
+test("step M: after an end the agent's caret moves to the next newest mark, then leaves", () => {
+  const doc = script(), [p, q] = paras(doc);
+  const host = (a) => mayAct(a, { host: true });
+  const first = answered(doc, p.id, "start here", { kind: "replace", text: "begin" });
+  const second = answered(doc, q.id, "second", { kind: "replace", text: "next" });
+  const asks = [first, second];
+  landIn(doc, asks, first, 10 * MIN);
+  landIn(doc, asks, second, 40 * MIN);
+  assert.equal(C.newestMarked(asks), second);
+  // Scrolled past alone: the newest ends for good.
+  delete second.change;
+  assert.equal(C.newestMarked(asks), first);
+  assert.equal(agentCaret(asks, doc, host).askId, first.id);
+  assert.deepEqual(C.endExpired(asks, 71 * MIN), [first], "the older one's 60 minutes");
+  assert.equal(C.newestMarked(asks), null);
+  assert.equal(agentCaret(asks, doc, host), null, "it leaves");
+  assert.deepEqual(asks.map((a) => a.status), ["kept", "kept"]);
+});
+
+test("step M: in a shared script a guest's scroll past ends the mark for that guest only", () => {
+  const doc = script(), [p, q] = paras(doc);
+  const ana = { id: "a-ana", name: "Ana" };
+  const older = answered(doc, q.id, "second", { kind: "replace", text: "next" }, ana);
+  const ask = answered(doc, p.id, "start here", { kind: "replace", text: "begin" }, ana);
+  const hostAsks = [older, ask];
+  landIn(doc, hostAsks, older, 1);
+  landIn(doc, hostAsks, ask, 2);
+  const guest = D.cloneDoc(doc);
+  const shown = fitAsks(shareAsks(hostAsks, doc), guest);
+  const passed = new Set([ask.id]); // Ana scrolled past the newest
+  const seen = C.seenAsks(shown, passed);
+  assert.ok(!C.isMarked(seen.find((a) => a.id === ask.id)), "gone on Ana's screen");
+  assert.ok(C.isMarked(shown.find((a) => a.id === ask.id)), "her copy of the asks keeps it");
+  assert.equal(agentCaret(seen, guest, (a) => mayAct(a, { id: "a-ana" })).askId, older.id, "her agent's caret moves to the older one");
+  assert.ok(C.isMarked(ask), "the host's ask is still marked");
+  assert.equal(shareAsks(hostAsks, doc).length, 2, "and still shared with everyone");
+  assert.equal(agentCaret(hostAsks, doc, (a) => mayAct(a, { host: true })).askId, ask.id, "the host still sees it, with Undo");
+  assert.equal(C.seenAsks(shown, new Set()), shown, "nothing ended here: the same list");
+});

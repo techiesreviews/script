@@ -278,7 +278,7 @@ export function createTogether(app) {
   const myId = () => (isGuest() ? room.asker : app.me.id);
   // A guest's asks and presses stay until the host confirms them; a new ask waits until the host has all my text.
   const outbox = createOutbox({ send: (m) => !!room?.send(m), ready: (wait) => room?.status === "live" && (!wait || room.settled()) });
-  const agent = () => (app.doc() ? agentCaret(app.asks(), app.doc(), (a) => mayAct(a, { host: !isGuest(), id: myId() })) : null);
+  const agent = () => (app.doc() ? agentCaret(app.seenAsks ? app.seenAsks() : app.asks(), app.doc(), (a) => mayAct(a, { host: !isGuest(), id: myId() })) : null);
   const caretList = () => [...(room ? room.caretList() : []), ...[agent()].filter(Boolean)];
   const carets = createCarets({
     container: app.sheet,

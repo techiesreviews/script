@@ -227,7 +227,7 @@ function placeCaret(id, offset) {
   setCaretAt(el, offset);
   const r = el.getBoundingClientRect();
   const top = $(".top").getBoundingClientRect().bottom + 8;
-  if (r.top < top || r.top > innerHeight - 40) el.scrollIntoView({ block: "center", behavior: "instant" });
+  if (r.top < top || r.top > innerHeight - 40) { editorJump(); el.scrollIntoView({ block: "center", behavior: "instant" }); }
 }
 
 /* ---------- Rendering ---------- */
@@ -260,7 +260,7 @@ function decorationsFor(id) {
   const items = [];
   for (const a of state.asks) {
     if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) items.push({ kind: "ask", ask: a, start: a.start, end: a.end });
-    else if (C.isMarked(a) && a.blockId === id) items.push({ kind: "landed", ask: a, ...C.markRange(a) });
+    else if (shownMarked(a) && a.blockId === id) items.push({ kind: "landed", ask: a, ...C.markRange(a) });
   }
   for (const a of state.asks) {
     if (a.scope !== "script" || a.status !== "answered") continue;
@@ -368,6 +368,99 @@ function visibleRange(el, start, end = start) {
 
 // When this tab got each of the agent's changes (its own clock): it shows a little stronger as it arrives.
 const arrived = new Map();
+/* The mark goes away by itself (step M): once the person has scrolled past it, or 60 minutes after it went in. Alone,
+   and the host's 60 minutes, end it for good (C.endExpired); in a shared script scrolling past ends it on this screen
+   only (`passedHere`, by ask id), so everyone else keeps theirs until they scroll past it too. */
+const passedHere = new Set();
+const seenMarks = new Set(); // the asks whose mark has been on screen here
+const shownMarked = (a) => C.isMarked(a) && !passedHere.has(a.id);
+// The visible part of the script: below the top bar.
+const scriptView = () => ({ top: $(".top").getBoundingClientRect().bottom, bottom: innerHeight });
+// Each drawn mark is watched for when it is on screen (not under the top bar); the observer follows the bar's height.
+let seenObserver = null, seenTop = -1;
+function watchMark(m) {
+  if (!seenObserver) watchSeen();
+  seenObserver.observe(m);
+}
+function watchSeen() {
+  const top = Math.round($(".top").getBoundingClientRect().height);
+  if (top === seenTop) return;
+  seenObserver?.disconnect();
+  seenTop = top;
+  seenObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting && e.target.isConnected) seenMarks.add(e.target.dataset.ask);
+  }, { rootMargin: `-${top}px 0px 0px 0px` });
+  for (const old of $$(".agent-change[data-ask]", scriptEl)) seenObserver.observe(old);
+}
+addEventListener("resize", () => { if (seenObserver) watchSeen(); });
+// Only the person's own scrolling reads past a mark: the wheel, a touch, the scroll keys or the scrollbar, until the
+// scrolling stops. A jump the editor makes (a section, a shot, the caret brought into view) calls editorJump().
+let personAt = -Infinity, personScroll = false, passTimer = 0;
+const personInput = () => { personAt = performance.now(); };
+const typing = (t) => !!t?.closest?.("[contenteditable]:not([contenteditable='false']), input, textarea, select");
+addEventListener("wheel", personInput, { passive: true, capture: true });
+addEventListener("touchmove", personInput, { passive: true, capture: true });
+addEventListener("keydown", (e) => {
+  if (["PageUp", "PageDown", "ArrowUp", "ArrowDown"].includes(e.key) || ([" ", "Home", "End"].includes(e.key) && !typing(e.target))) personInput();
+}, { capture: true });
+addEventListener("pointerdown", (e) => { if (e.target === document.documentElement) personInput(); }, { capture: true }); // the scrollbar
+addEventListener("scroll", () => {
+  if (!personScroll && performance.now() - personAt > 1000) return;
+  personScroll = true;
+  clearTimeout(passTimer);
+  passTimer = setTimeout(() => { personScroll = false; checkPassed(); }, 150);
+}, { passive: true });
+function editorJump() { personAt = -Infinity; personScroll = false; clearTimeout(passTimer); }
+// After the person's scroll: the marks seen here whose last line is now above the middle end.
+function checkPassed() {
+  if (!state.doc) return;
+  const view = scriptView(), ended = [];
+  for (const m of $$(".agent-change[data-ask]:not([data-ending])", scriptEl)) {
+    const ask = state.asks.find((a) => a.id === m.dataset.ask);
+    const r = m.getBoundingClientRect();
+    if (ask && shownMarked(ask) && (r.width || r.height) && C.readPast(r, view, seenMarks.has(ask.id))) ended.push(ask);
+  }
+  endMarks(ended, state.guest || !!together?.active);
+}
+// The host's tab (or alone) ends the marks whose 60 minutes are over, for everyone: about once a minute and when the
+// tab comes back into view (and when a script or draft is opened: adoptAsks). Marks scrolled past while shared end
+// for good once the script is no longer shared.
+function expireMarks() {
+  if (!state.doc || state.guest) return;
+  if (passedHere.size && !together?.active) {
+    endMarks(state.asks.filter((a) => passedHere.has(a.id) && C.isMarked(a)));
+    passedHere.clear();
+  }
+  endMarks(C.endExpired(state.asks, Date.now()));
+}
+setInterval(expireMarks, 60_000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") expireMarks(); });
+// These marks end: on this screen only (`here`) or for good (the ask stays kept, its change goes; the draft and the
+// room get the asks). The agent's caret moves to the next newest marked change, or leaves, at once; the tint fades
+// out where motion is allowed, then the blocks are drawn again (keeping the person's selection).
+function endMarks(asks, here = false) {
+  if (!asks.length) return;
+  for (const a of asks) { if (here) passedHere.add(a.id); else delete a.change; }
+  const ids = new Set(asks.map((a) => a.id)), blocks = new Set(asks.map((a) => a.blockId));
+  const spans = $$(".agent-change[data-ask]", scriptEl).filter((m) => ids.has(m.dataset.ask));
+  const redraw = () => {
+    const sel = localSelection();
+    for (const id of blocks) if (byId(id) && blockNode(id)) fillBlock(blockNode(id), byId(id));
+    if (sel && blocks.has(sel.id)) restoreSelection(sel);
+    refreshLinks();
+    together?.redraw();
+  };
+  if (!here) {
+    markBase();
+    together?.sync();
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(persistDraft, 400);
+  }
+  together?.redraw();
+  if (reduced.matches || !spans.length) return redraw();
+  for (const m of spans) { delete m.dataset.new; m.dataset.ending = ""; }
+  setTimeout(() => { if (spans.some((m) => m.isConnected)) redraw(); }, 400);
+}
 // In a shared script only the person who asked, and the host, may Keep, Undo or cancel an ask.
 const may = (ask) => !state.guest || !!together?.may(ask);
 function fillBlock(el, b) {
@@ -391,6 +484,7 @@ function fillBlock(el, b) {
       if ((arrived.get(d.ask.id) ?? 0) > Date.now() - 1500) m.dataset.new = "";
       words(m, d);
       nodes.push(m);
+      watchMark(m);
     } else if (d.ask.status === "answered" && d.ask.answer.kind === "note") {
       const c = h("span", "checked", { "data-deco": "", "data-ask": d.ask.id, "data-tone": d.ask.answer.tone });
       words(c, d);
@@ -436,6 +530,7 @@ function fillBlock(el, b) {
   }
   text(at, content.length);
   if (content.endsWith("\n")) nodes.push(h("br", "", { "data-skip": "", "data-deco": "" }));
+  for (const old of el.querySelectorAll(".agent-change")) seenObserver?.unobserve(old);
   el.replaceChildren(...nodes);
   el._decos = decos.length;
   el._chips = chips;
@@ -569,6 +664,7 @@ $("#toc").addEventListener("click", (e) => {
   const a = e.target.closest("a[data-sec]");
   if (!a) return;
   e.preventDefault();
+  editorJump();
   document.getElementById(`s-${a.dataset.sec}`)?.scrollIntoView({ behavior: reduced.matches ? "auto" : "smooth", block: "start" });
 });
 
@@ -1372,7 +1468,7 @@ function undoChange(ask) {
 }
 function undoAgent(askId) {
   const ask = state.asks.find((a) => a.id === askId);
-  if (!ask || !C.isMarked(ask) || !may(ask)) return;
+  if (!ask || !shownMarked(ask) || !may(ask)) return;
   if (state.guest) return void together.act(ask.id, "undo"); // the host undoes it, for everyone
   undoChange(ask);
 }
@@ -1613,6 +1709,8 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.lastStep = null;
   state.asks = [];
   changeBase = null;
+  passedHere.clear();
+  seenMarks.clear();
   state.pendingDraft = null;
   state.frontOpen = false;
   state.hint = null;
@@ -1628,6 +1726,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   renderTop();
   renderAll();
   renderDerived();
+  editorJump();
   scrollTo({ top: 0 });
   loadBroll();
   together?.local();
@@ -1656,6 +1755,7 @@ function adoptAsks(asks) {
   }
   reanchorAll();
   for (const a of state.asks) if (a.scope === "script") settleVoice(a);
+  C.endExpired(state.asks, Date.now()); // a mark whose 60 minutes are over comes back without its tint (step M)
   markBase();
 }
 function showBanner(text, actions) {
@@ -2561,7 +2661,7 @@ function lightShot(id, scroll) {
   renderBroll();
   if (!on) return;
   const first = wrapOf(covered(s)[0]);
-  if (scroll && first) first.scrollIntoView({ behavior: reduced.matches ? "auto" : "smooth", block: "center" });
+  if (scroll && first) { editorJump(); first.scrollIntoView({ behavior: reduced.matches ? "auto" : "smooth", block: "center" }); }
 }
 
 scriptEl.addEventListener("click", (e) => {
@@ -2660,6 +2760,7 @@ function setView(v) {
   closeCard();
   closeShotCard();
   renderView();
+  editorJump();
   scrollTo({ top: board ? 0 : ui.scriptY });
 }
 function renderView() {
@@ -4323,7 +4424,7 @@ function loadGuest(doc, name, sharedBroll = null) {
   renderDerived();
   if (sharedBroll) setRoomBroll(sharedBroll);
   if (sel) restoreSelection(sel);
-  if (first) scrollTo({ top: 0 });
+  if (first) { editorJump(); scrollTo({ top: 0 }); }
 }
 // The host stopped sharing: the guest keeps reading, but can no longer edit.
 function guestEnded(status) {
@@ -4372,6 +4473,7 @@ together = createTogether({
   renderTop: () => renderTop(),
   renderDots: () => { if (state.doc) renderTocDots(); },
   asks: () => state.asks,
+  seenAsks: () => C.seenAsks(state.asks, passedHere), // the agent's caret: without the marks scrolled past here
   setRoomAsks,
   guestAsk,
   guestAct,

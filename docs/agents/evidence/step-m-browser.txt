@@ -1,0 +1,97 @@
+# Step M browser check: headless Chrome (CDP), local Worker (wrangler dev), the agent over MCP fetch; fresh browser contexts; 1280 × 900 and 390 × 844 (touch). 2026-10-30T15:42:30Z, run on the working tree on top of 42dbb55, committed as "Step M: …"
+# The person's scroll: mouse-wheel events at 1280 px, a finger drag (touch events) at 390 px. Editor jumps: a click or tap on a section in the list. The clock: Date.now moved 59 and 61 minutes on in the page (and before a reload), then the tab's visibility check.
+# 1280 px
+ok 1280 px: the demo script is open
+ok 1280 px: the agent is connected over MCP
+ok 1280 px: answer_ask says the change is in the text
+ok 1280 px: the answer is in the text with a light tint
+ok 1280 px: the agent's name tag shows Undo
+ok 1280 px: it landed below the middle
+ok 1280 px: it stays while the person doesn't scroll
+ok 1280 px: a small scroll that leaves it below the middle keeps it
+ok 1280 px: a second answer lands off screen, far below
+  (the jump: a click on a section in the list)
+ok 1280 px: a scroll the editor makes (not the person's) leaves the mark, even above the middle
+ok 1280 px: the tint can fade (400 ms, motion allowed)
+ok 1280 px: scrolled above the middle, the tint is gone
+ok 1280 px: it faded out first
+ok 1280 px: the ask stays kept, without its change
+ok 1280 px: the text is untouched
+ok 1280 px: list_asks still says kept
+ok 1280 px: the one never on screen keeps its mark
+ok 1280 px: the agent's caret moved to the far change, with Undo
+ok 1280 px: the far change brought into view by the person's scroll keeps its mark
+ok 1280 px: scrolled past it, it ends and the agent's caret leaves
+ok 1280 px: a third answer lands in view
+ok 1280 px: 59 minutes later it is still marked
+ok 1280 px: with reduced motion there is no transition
+ok 1280 px: reduced motion: it goes at once, no fade
+ok 1280 px: 61 minutes later the tint and the Undo are gone
+ok 1280 px: and the ask is kept, without its change
+ok 1280 px: an answer lands (the demo has no file, so a draft keeps it)
+ok 1280 px: after a reload the demo offers Restore
+ok 1280 px: Restore brings the mark back (not yet 60 minutes)
+ok 1280 px: with the clock 61 minutes on, Restore brings the text back
+ok 1280 px: but no mark and no Undo
+ok 1280 px: its ask has no change
+# 390 px
+ok 390 px: the demo script is open
+ok 390 px: the agent is connected over MCP
+ok 390 px: answer_ask says the change is in the text
+ok 390 px: the answer is in the text with a light tint
+ok 390 px: the agent's name tag shows Undo
+ok 390 px: it landed below the middle
+ok 390 px: it stays while the person doesn't scroll
+ok 390 px: a small scroll that leaves it below the middle keeps it
+ok 390 px: a second answer lands off screen, far below
+  (the jump: a tap on a section in the list)
+ok 390 px: a scroll the editor makes (not the person's) leaves the mark, even above the middle
+ok 390 px: the tint can fade (400 ms, motion allowed)
+ok 390 px: scrolled above the middle, the tint is gone
+ok 390 px: it faded out first
+ok 390 px: the ask stays kept, without its change
+ok 390 px: the text is untouched
+ok 390 px: list_asks still says kept
+ok 390 px: the one never on screen keeps its mark
+ok 390 px: the agent's caret moved to the far change, with Undo
+ok 390 px: the far change brought into view by the person's scroll keeps its mark
+ok 390 px: scrolled past it, it ends and the agent's caret leaves
+ok 390 px: a third answer lands in view
+ok 390 px: 59 minutes later it is still marked
+ok 390 px: with reduced motion there is no transition
+ok 390 px: reduced motion: it goes at once, no fade
+ok 390 px: 61 minutes later the tint and the Undo are gone
+ok 390 px: and the ask is kept, without its change
+ok 390 px: an answer lands (the demo has no file, so a draft keeps it)
+ok 390 px: after a reload the demo offers Restore
+ok 390 px: Restore brings the mark back (not yet 60 minutes)
+ok 390 px: with the clock 61 minutes on, Restore brings the text back
+ok 390 px: but no mark and no Undo
+ok 390 px: its ask has no change
+# 1280 px room
+ok 1280 px room: the host shares the script
+ok 1280 px room: a guest joins
+ok 1280 px room: the host's tab has the agent's change, marked
+ok 1280 px room: the guest sees it marked too
+ok 1280 px room: the guest scrolled past it: gone on the guest's screen
+ok 1280 px room: the host still sees the mark
+ok 1280 px room: and the host's Undo
+ok 1280 px room: the host's ask keeps its change
+ok 1280 px room: the host scrolled past it too: gone on the host's screen
+ok 1280 px room: still marked in the shared asks (a per-person end)
+ok 1280 px room: 61 minutes on the host's clock end it for the guest too
+ok 1280 px room: the host's ask is kept, without its change
+# 390 px room
+ok 390 px room: the host shares the script
+ok 390 px room: a guest joins
+ok 390 px room: the host's tab has the agent's change, marked
+ok 390 px room: the guest sees it marked too
+ok 390 px room: the guest scrolled past it: gone on the guest's screen
+ok 390 px room: the host still sees the mark
+ok 390 px room: and the host's Undo
+ok 390 px room: the host's ask keeps its change
+ok 390 px room: the host scrolled past it too: gone on the host's screen
+ok 390 px room: still marked in the shared asks (a per-person end)
+ok 390 px room: 61 minutes on the host's clock end it for the guest too
+ok 390 px room: the host's ask is kept, without its change
+RESULT: ok e2e
