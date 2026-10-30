@@ -17,3 +17,6 @@ Owner: Lex (non-technical; explain in plain words). The approved mock-up and the
 ## Agent Kit
 
 Read `docs/agents/agent-scripts.md`. Run `scripts/agents/kit help` and `scripts/agents/kit doctor` before you change code, and `scripts/agents/kit specs` before you hand over.
+
+Kitchen rulebook: `scripts/agents/kit rulebook` (stations, who decides, builder and reviewer pins; this project's extras are `docs/agents/kitchen-extras.md`).
+Agent commands: `scripts/agents/kit --help`; `scripts/agents/kit <command> --help` for one.

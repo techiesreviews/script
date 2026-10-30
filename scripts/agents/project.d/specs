@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+// kit: run the unit tests and save the evidence
+// Usage: kit specs [FILE...]
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+
+const args = process.argv.slice(2);
+if (args.includes('--help') || args.includes('-h')) {
+  console.log('Usage: kit specs [FILE...]\nRun the unit tests (node --test tests/*.test.mjs, or the given files) and save docs/agents/evidence/specs.txt.\nNo network, no paid services.');
+  process.exit(0);
+}
+const root = process.env.KIT_ROOT || spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout.trim();
+const files = args.length ? args.map((f) => resolve(root, f))
+  : readdirSync(join(root, 'tests')).filter((f) => f.endsWith('.test.mjs')).sort().map((f) => join(root, 'tests', f));
+const label = `specs${args.length ? ' ' + args.join(' ') : ''}`;
+if (!files.length) { console.log('RESULT: fail specs no tests in tests/'); process.exit(1); }
+const result = spawnSync(process.execPath, ['--test', ...files], { cwd: root, encoding: 'utf8', timeout: 180000 });
+const ok = result.status === 0;
+const evidence = join(root, 'docs/agents/evidence/specs.txt');
+mkdirSync(dirname(evidence), { recursive: true });
+writeFileSync(evidence, `${result.stdout || ''}${result.stderr || ''}RESULT: ${ok ? 'ok' : 'fail'} specs\n`);
+process.stdout.write(result.stdout || '');
+process.stderr.write(result.stderr || '');
+console.log('evidence: docs/agents/evidence/specs.txt');
+console.log(`RESULT: ${ok ? 'ok' : 'fail'} ${label}`);
+process.exitCode = ok ? 0 : 1;

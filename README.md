@@ -58,7 +58,7 @@ Issues and pull requests are welcome. Please keep the promises above: no built-i
 
 ## Maintainer tooling
 
-`scripts/agents/` holds the Agent Kit, the maintainer's tooling for AI coding agents (checks, tests and reviews). See [`docs/agents/agent-scripts.md`](docs/agents/agent-scripts.md) and [`AGENTS.md`](AGENTS.md). You don't need it to run, test or deploy.
+`scripts/agents/` holds the launcher and settings for the [Agent Kit](https://github.com/techiesreviews/agent-kit), the maintainer's tooling for AI coding agents (checks, tests and reviews), and this project's own kit commands. See [`docs/agents/agent-scripts.md`](docs/agents/agent-scripts.md) and [`AGENTS.md`](AGENTS.md). You don't need it to run, test or deploy.
 
 ## License
 

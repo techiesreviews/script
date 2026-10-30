@@ -5,7 +5,7 @@ if [[ ${1-} == --help || ${1-} == -h ]]; then
   printf 'Usage: kit deploy\nDeploy Worker "script-editor" with wrangler.jsonc to the live address https://script.techies.tools\n(approved by Lex on 2026-10-28) and the workers.dev fallback. Needs the Cloudflare login on this computer.\nIt never pushes to GitHub.\n'
   exit 0
 fi
-cd "$KIT_ROOT"
+cd "${KIT_ROOT:-$(git rev-parse --show-toplevel)}"
 out=$(npx --yes wrangler@4 deploy 2>&1) || { printf '%s\n' "$out"; echo "RESULT: fail deploy"; exit 1; }
 printf '%s\n' "$out" | tail -6
 url=$(printf '%s\n' "$out" | grep -o 'https://[^ ]*workers.dev' | head -1)

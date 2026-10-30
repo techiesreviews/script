@@ -1,0 +1,23 @@
+{
+  "project": "script",
+  "mainRoot": "/home/ubulex/Projects/script-editor",
+  "branches": {
+    "land": "main",
+    "release": "main",
+    "ci": "main"
+  },
+  "checks": {
+    "test": "node --test tests/*.test.mjs",
+    "doctor": [
+      "claude --version",
+      "n=0; for f in $(git ls-files --cached --others --exclude-standard '*.js' '*.mjs'); do [ -e \"$f\" ] || continue; node --check \"$f\" || exit 1; n=$((n+1)); done; echo \"node --check ok: $n files\""
+    ]
+  },
+  "unit": {
+    "run": "node --test",
+    "files": "tests/*.test.mjs"
+  },
+  "commands": "scripts/agents/project.d",
+  "maps": "docs/wayfinder",
+  "rulebookExtras": "docs/agents/kitchen-extras.md"
+}
