@@ -571,18 +571,23 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 /* No room for words in a small frame: "Not saved" is a dot with its reason as the tooltip. */
 .shot-frame .frame__problem { inline-size: 7px; block-size: 7px; margin-inline: 0.3rem 0.1rem; padding: 0; overflow: clip; border-radius: 50%; background: var(--accent); color: transparent; }
 @media (hover: hover) and (pointer: fine) {
+  /* A shot's tag can be dragged to other lines (step L). */
+  .shot-frame[data-drag] .shot-frame__jump { cursor: grab; }
+  :root[data-dragging], :root[data-dragging] :is(*, .shot-frame[data-drag] .shot-frame__jump) { cursor: grabbing; user-select: none; -webkit-user-select: none; }
   .shot-frame__jump:hover .frame__img { box-shadow: inset 0 0 0 1px var(--line-strong); }
   .shot-frame[data-lit] .shot-frame__jump:hover .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
   .shot-frame__jump:hover .broll-tag { color: var(--text); border-color: var(--faint); }
 }
 /* A thin rule beside every covered line; it runs on to the next covered line. */
 .line { --rule-gap: 0.35rem; }
-.line[data-covered]::after {
+.line:is([data-covered], [data-target])::after {
   content: ""; position: absolute; inset-inline-start: calc(100% + var(--rule-gap)); inset-block: 0.45em -0.65em;
   inline-size: 2px; border-radius: 2px; background: var(--line-strong); pointer-events: none;
 }
-.line[data-covered][data-last]::after { inset-block-end: 0.45em; }
+.line[data-covered][data-last]:not([data-target="on"])::after, .line[data-target="last"]::after { inset-block-end: 0.45em; }
 .line[data-lit]::after { background: var(--accent); }
+/* Where a shot being moved would land (step L): the same rule in the accent, a little lighter. */
+.line[data-target]::after { background: color-mix(in oklch, var(--accent) 70%, transparent); }
 .line[data-lit] .line__text { background: var(--accent-faint); box-shadow: 0 0 0 0.3rem var(--accent-faint); }
 @media (prefers-reduced-motion: no-preference) {
   .line__text { transition: background-color 300ms var(--ease-out), box-shadow 300ms var(--ease-out); }
@@ -692,7 +697,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .shot-card__field :is(textarea, input):focus-visible { outline-offset: 0; }
 @media (pointer: fine) { .shot-card__field :is(textarea, input) { font-size: 0.9rem; } }
 .shot-card__problem { color: var(--accent-ink); font-size: 0.8rem; font-weight: 600; }
-.shot-card__remove { margin-inline-end: auto; color: var(--muted); }
+.shot-card__remove { color: var(--muted); }
+.shot-card__move { margin-inline-end: auto; }
 .shot-card .small-btn:disabled { opacity: 0.5; cursor: default; }
 .shot-card .small-btn:disabled:active { background: transparent; }
 .shot-card .use:disabled:active { background: var(--accent); }

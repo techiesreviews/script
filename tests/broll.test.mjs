@@ -5,7 +5,7 @@ import { parse, contentOf, blockById, setContent, cloneDoc, checkAnswer, ACTIONS
 import {
   parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
-  addShot, updateShot, removeShot, nextShotId, overFor, newList,
+  addShot, updateShot, removeShot, nextShotId, overFor, newList, moveTo, wholeParas, moveOver,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
   applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter,
 } from "../public/broll.js";
@@ -526,6 +526,76 @@ test("a new Kind column is filled in for every row", () => {
   assert.ok(added.startsWith("| # | Kind | What to show | Over |"));
   assert.ok(added.includes('| B1 | B-roll | a | "b" |'));
   assert.equal(kindOfId(added, "B1"), "broll");
+});
+
+/* ---------- Step L: move a shot to other paragraphs ---------- */
+test("moveTo keeps a shot's number of paragraphs from the one it goes to, fewer at the end of the script", () => {
+  const list = ["p1", "p2", "p3", "p4"].map((id) => ({ id, n: "" }));
+  assert.deepEqual(moveTo(list, ["p1"], "p3"), ["p3"]);
+  assert.deepEqual(moveTo(list, ["p1", "p2"], "p2"), ["p2", "p3"]);
+  assert.deepEqual(moveTo(list, ["p1", "p2", "p3"], "p3"), ["p3", "p4"]); // shortened at the end
+  assert.deepEqual(moveTo(list, [], "p4"), ["p4"]); // "Not found in the script": one paragraph
+  assert.deepEqual(moveTo(list, ["gone", "p1"], "p2"), ["p2"]); // only paras still in the script count
+  assert.deepEqual(moveTo(list, ["p1"], "h1"), []); // a heading or the title: not a spoken para
+});
+
+test("A move's Over matches back to exactly the new paragraphs, also when the same first words come earlier", () => {
+  const doc = parse("# T\n\n## 1 · A (0:00–0:10)\n\nWe fixed the roof and then we fixed the roof again today.\n\nThen a break for lunch.\n\nWe fixed the roof and then we fixed the roof again with new tiles.\n\n## 2 · B (0:10–0:20)\n\nStep two is hard.\n\nSee [the docs](https://example.com/a) for how this works today.\n");
+  const list = spokenBlocks(doc);
+  const ids = list.map((b) => b.id);
+  const move = (from, to) => { const want = moveTo(list, from, to); return { want, over: moveOver(doc, from, wholeParas(doc, want)) }; };
+  // One paragraph whose first words come earlier: more words until it matches only the new one.
+  let m = move([ids[1]], ids[2]);
+  assert.deepEqual(m.want, [ids[2]]);
+  assert.match(m.over, /^"We fixed the roof and then we fixed the roof again with…"$/);
+  assert.deepEqual(matchOver(list, m.over), [ids[2]]);
+  // A range keeps its length, across a heading.
+  m = move([ids[0], ids[1]], ids[2]);
+  assert.match(m.over, / through "/);
+  assert.deepEqual(matchOver(list, m.over), [ids[2], ids[3]]);
+  // Shortened at the end of the script; a link counts as its words.
+  m = move([ids[0], ids[1], ids[2]], ids[3]);
+  assert.deepEqual(matchOver(list, m.over), [ids[3], ids[4]]);
+  m = move([ids[0]], ids[4]);
+  assert.equal(m.over, '"See the docs for how this works today."');
+  assert.deepEqual(matchOver(list, m.over), [ids[4]]);
+  // A selection of several paragraphs, from inside the first to inside the last: exactly those.
+  const t1 = contentOf(blockById(doc, ids[1])), t3 = contentOf(blockById(doc, ids[3]));
+  const sel = [{ id: ids[1], start: t1.indexOf("break"), end: t1.length }, { id: ids[2], start: 0, end: 5 }, { id: ids[3], start: 0, end: t3.indexOf(" is") }];
+  const over = moveOver(doc, [ids[0]], sel);
+  assert.deepEqual(matchOver(list, over), [ids[1], ids[2], ids[3]]);
+  // Onto the paragraphs it covers already: nothing to write. No spoken para: nothing either.
+  assert.equal(moveOver(doc, [ids[1], ids[2]], wholeParas(doc, [ids[1], ids[2]])), "");
+  assert.equal(moveOver(doc, [ids[1], ids[2], ids[3]], sel), "");
+  assert.equal(moveOver(doc, [ids[1]], []), "");
+});
+
+test("A move in the demo list rewrites only the shot's Over cell", () => {
+  const doc = parse(SCRIPT);
+  const list = spokenBlocks(doc);
+  const shots = matchShots(doc, parseBroll(DEMO).shots);
+  const s = shots.find((x) => x.blockIds.length > 1) || shots[0];
+  const to = list.at(-3).id;
+  const want = moveTo(list, s.blockIds, to);
+  const over = moveOver(doc, s.blockIds, wholeParas(doc, want));
+  const md = updateShot(DEMO, s.id, { over });
+  const before = DEMO.split("\n"), after = md.split("\n");
+  assert.equal(after.length, before.length);
+  const diff = after.map((l, i) => i).filter((i) => after[i] !== before[i]);
+  assert.equal(diff.length, 1);
+  // In that row only the Over cell changed.
+  const cellsOf = (line) => line.split(/(?<!\\)\|/);
+  const a = cellsOf(before[diff[0]]), b = cellsOf(after[diff[0]]);
+  assert.equal(b.length, a.length);
+  const changedCells = b.map((c, i) => i).filter((i) => b[i] !== a[i]);
+  assert.equal(changedCells.length, 1);
+  assert.equal(b[changedCells[0]].trim(), over);
+  const moved = matchShots(doc, parseBroll(md).shots).find((x) => x.id === s.id);
+  const old = parseBroll(DEMO).shots.find((x) => x.id === s.id);
+  assert.deepEqual(moved.blockIds, want);
+  assert.deepEqual({ ...moved, over: "", blockIds: [], sig: "" }, { ...matchShots(doc, [old])[0], over: "", blockIds: [], sig: "" });
+  assert.equal(parseBroll(md).shots.find((x) => x.id === s.id).over, over);
+  assert.deepEqual(parseBroll(md).sketches, parseBroll(DEMO).sketches);
 });
 
 /* ---------- Step C4: the agent suggests B-roll ---------- */
