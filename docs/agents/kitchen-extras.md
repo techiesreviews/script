@@ -7,8 +7,10 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
 
 - **Landing branch `main`, release branch `main`** (`branches` in `scripts/agents/kit.json`). There
   is no dev branch. The GitHub repo is `techiesreviews/script`.
-- **No PR flow** unless Lex asks for one: a reviewed change is merged into `main` and pushed. The
-  shared stations' `kit pr`, `kit pr --release` and Tuesday "ship it" do not apply here.
+- **Landing:** a change lands in `main` through `scripts/agents/kit pr` (its own branch, a PR into
+  `main`, the review attached, merged when it passes), never a raw `git push` to `main`. The repo
+  has no GitHub CI workflow, so `kit pr` runs `checks.test` here and lands after the review
+  (`ci: none`). There is no separate release branch: `kit pr --release` does not apply.
 - **Checks:** `checks.test` is `node --test tests/*.test.mjs`; run it through `kit specs` before
   every hand-over and before `kit review`. `checks.doctor` adds the Claude CLI and a `node --check`
   of every JavaScript file to `kit doctor`.
@@ -26,7 +28,11 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
 
 ## Visible changes
 
-- **Feature list:** `docs/features.md`. No `kit ux` checks are scripted for this project yet.
+- **Feature list:** `docs/features.md` (`featureList`; `paths.visible` is `public/`). `kit pr` stops
+  a change in `public/` that does not update it, unless the step's `## Done` says
+  `Feature list: no change (<reason>)`. No `kit ux` checks are scripted for this project yet.
+- **Motion:** a `requestAnimationFrame`, `setInterval` or `.animate(` that is real motion carries
+  `// motion-exception: <reason>` on its line or the line above.
 - **Screenshots and real input:** start the site with
   `scripts/agents/kit bg dev -- npx --yes wrangler@4 dev --port <free port>` and headless Chrome
   with `kit bg` too, drive it over CDP (desktop and 390 px phone width), stop both with
@@ -38,9 +44,10 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
 
 ## Release
 
-- **Lex's standing OK (2026-10-28):** once a change has passed `kit specs` and `kit review`, push
-  `main` to GitHub and run `scripts/agents/kit deploy`; its `RESULT: ok deploy …` line is the
-  evidence. Check the live page after the deploy. `docs/build/handoff.md` records what is live.
+- **Lex's standing OK (2026-10-28):** once a change has passed `kit specs` and `kit review`, it may
+  go to GitHub (through `kit pr` into `main`) and live with `scripts/agents/kit deploy`, run from
+  `main` after the merge; its `RESULT: ok deploy …` line is the evidence. No Tuesday "ship it" is
+  needed. Check the live page after the deploy. `docs/build/handoff.md` records what is live.
 
 ## Other
 

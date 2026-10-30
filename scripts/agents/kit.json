@@ -19,5 +19,24 @@
   },
   "commands": "scripts/agents/project.d",
   "maps": "docs/wayfinder",
-  "rulebookExtras": "docs/agents/kitchen-extras.md"
+  "rulebookExtras": "docs/agents/kitchen-extras.md",
+  "featureList": "docs/features.md",
+  "paths": {
+    "docs": [
+      "^docs/",
+      "\\.md$"
+    ],
+    "tests": [
+      "^tests/"
+    ],
+    "css": [
+      "\\.css$"
+    ],
+    "visible": [
+      "^public/"
+    ],
+    "unitTests": [
+      "^tests/[^/]+\\.test\\.mjs$"
+    ]
+  }
 }
