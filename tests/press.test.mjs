@@ -164,3 +164,11 @@ test("press: onEnd runs after the listeners are gone, so it may start a new pres
   assert.equal(doc.count(), 4, "only the new press listens (4 on the document, 1 on the window)");
   assert.equal(win.count(), 1);
 });
+
+test("press: a lift that ends the press itself (the shot re-rendered away) gets no move after it", () => {
+  let ended = null;
+  const t = press("mouse", { onLift: (q) => { ended = q; q.end?.("gone"); } });
+  t.doc.fire("pointermove", t.ev(120, 100));
+  assert.ok(ended, "it lifted");
+  assert.deepEqual(t.log.filter((l) => l[0] === "move"), [], "no move on an ended press");
+});

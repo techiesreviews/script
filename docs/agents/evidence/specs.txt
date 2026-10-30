@@ -196,6 +196,7 @@
 ✔ press: pointercancel, window blur and a hidden tab end it, before or after the lift
 ✔ press: other pointers are ignored, and end() is a stop that runs onEnd once
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
+✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ room: the host creates the room; a wrong key or no room is refused
 ✔ room: guests say who they are first, can't pose as someone else, and reach only the host
 ✔ room: the host sends to one guest or to all; the end closes everyone and refuses new joins
@@ -242,6 +243,7 @@
 ✔ changed on disk: same text or an older file is not a change, force skips the check
 ✔ site: pages may be indexed, with a description and the canonical address
 ✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
+✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
 ✔ adapter: a snapshot rebuilds the script exactly, LF and CRLF
 ✔ adapter: edits made with doc.js travel as operations and give the same file
 ✔ adapter: attrs from someone else can't put text outside the blocks
@@ -285,9 +287,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 287
+ℹ tests 289
 ℹ suites 0
-ℹ pass 287
+ℹ pass 289
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
