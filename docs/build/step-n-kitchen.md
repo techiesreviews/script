@@ -35,6 +35,13 @@ The first paragraph of `AGENTS.md`, a growing list of what the editor does, is l
 
 ## 6. One press helper
 
-Three review findings were about presses that did not end cleanly (a swipe that became a scroll, a mouse release lost outside the window, the window losing focus). `public/press.js` tracks one press and ends it on `pointerup`, `pointercancel`, a move with no button held (mouse and pen), the window's `blur` and the tab hidden, with a move threshold and an optional touch hold-to-lift. The B-roll shot drag in `public/app.js` uses it, with no change in behaviour. Unit tests use fake events (`tests/press.test.mjs`).
+Three review findings were about presses that did not end cleanly (a swipe that became a scroll, a mouse release lost outside the window, the window losing focus). `public/press.js` tracks one press and ends it on `pointerup`, `pointercancel`, a move with no button held (mouse and pen), the window's `blur` and the tab hidden, with a move threshold and an optional touch hold-to-lift. The B-roll shot drag in `public/app.js` uses it, with no change in behaviour: `startPress` with `threshold: 5`, `touchSlop: 10`, `hold: HOLD_MS` (400 ms, now exported by `press.js`); `onEnd` drops the shot on `drop` and puts it back on every other end; `endDrag()` ends the press (`stop`), which Escape, a re-render without the shot and the other callers use as before. Its own `pointermove`, `pointerup`, `pointercancel`, `blur` and `visibilitychange` listeners are gone. The drag's `requestAnimationFrame` calls (the frame following the pointer, the edge scroll, the scroll under a still pointer) carry `// motion-exception: <reason>`, for the kitchen's motion check. Unit tests use fake events, targets and a fake clock (`tests/press.test.mjs`).
 
 Browser check: headless Chrome with `--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2`, real CDP input: a mouse drag with the button held, a touch hold-then-drag at 390 px, a lost release. Server and Chrome run under `scripts/agents/kit bg` and stop with `kit bg --stop`. Evidence: `docs/agents/evidence/step-n-browser.txt`.
+
+## Done (2026-10-30)
+
+- Commits on `t3/migrate-shared-kit`, one per item (1 and its follow-up 1b, 2, 3, 4, 5, 6).
+- `scripts/agents/kit doctor` and `scripts/agents/kit specs` end `RESULT: ok` through the new launcher; `kit review --help`, `kit bg --help` and `kit pr --dry-run` work.
+- Browser check: `docs/agents/evidence/step-n-browser.txt` (the same results before and after item 6).
+- Feature list: no change (nothing the person sees changed; the drag behaves as before)

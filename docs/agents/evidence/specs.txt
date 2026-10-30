@@ -187,6 +187,15 @@
 ✔ mcp: the agent hears that replace and add go into the text at once and can be undone (step F)
 ✔ open_script and set_script: arguments
 ✔ open_script, set_script and list_scripts go to the tab with their arguments
+✔ press: a mouse lifts after 5 px, moves follow, and a release after the lift is a drop; the listeners go
+✔ press: a release before the lift is a tap, for a mouse and a finger
+✔ press: a finger lifts after holding still for HOLD_MS, at where it is; a small wobble is fine
+✔ press: a finger that moves past touchSlop before its hold is a swipe: the page scrolls, no lift later
+✔ press: with hold 0 a finger lifts after the threshold, like a mouse
+✔ press: a mouse or pen move with no button held is a lost release; a finger's moves never are
+✔ press: pointercancel, window blur and a hidden tab end it, before or after the lift
+✔ press: other pointers are ignored, and end() is a stop that runs onEnd once
+✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ room: the host creates the room; a wrong key or no room is refused
 ✔ room: guests say who they are first, can't pose as someone else, and reach only the host
 ✔ room: the host sends to one guest or to all; the end closes everyone and refuses new joins
@@ -276,9 +285,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 278
+ℹ tests 287
 ℹ suites 0
-ℹ pass 278
+ℹ pass 287
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

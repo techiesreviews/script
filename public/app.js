@@ -7,6 +7,7 @@ import * as L from "./links.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
+import { startPress, HOLD_MS } from "./press.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -3456,25 +3457,25 @@ function dragFrame(d) {
   const v = B.edgeSpeed(d.py, top, scriptView().bottom), y = scrollY;
   if (v) { personInput(); scrollBy(0, v); }
   dragTo(d);
+  // motion-exception: the edge scroll goes on frame by frame while a dragged shot is held near the edge
   if (scrollY !== y) d.frame = requestAnimationFrame(() => dragFrame(d));
 }
 function liftShot(d) {
   d.on = true;
-  clearTimeout(d.hold);
   closeShotCard();
   hideBar();
   getSelection().removeAllRanges();
   document.documentElement.dataset.dragging = "";
   d.el.dataset.dragged = "";
-  try { d.jump.setPointerCapture(d.pid); } catch { /* the drag still follows the document's events */ }
+  try { d.jump.setPointerCapture(d.press.pid); } catch { /* the drag still follows the document's events */ }
   dragFrame(d);
 }
+// Ends the drag in hand, if any: its press ends ("stop") and the frame goes back.
+function endDrag() { mv.drag?.press.end(); }
 // The frame goes back to its own place, unless it waits there for its move to be written (the list re-renders it).
-function endDrag(keep) {
-  const d = mv.drag;
-  if (!d) return;
+function putBack(d, keep) {
+  if (mv.drag !== d) return;
   mv.drag = null;
-  clearTimeout(d.hold);
   cancelAnimationFrame(d.frame);
   delete document.documentElement.dataset.dragging;
   delete d.el.dataset.dragged;
@@ -3493,50 +3494,44 @@ function redrag() {
   d.el.dataset.dragged = "";
   dragTo(d);
 }
-const HOLD_MS = 400;
 document.addEventListener("pointerdown", () => { mv.dropped = false; }, true);
+// A mouse or pen lifts a shot once it moves 5 px; a finger holds still for HOLD_MS first, and a swipe before that
+// scrolls the page. The press ends on every way out (press.js): a lost release, a cancel, blur or a hidden tab put
+// the shot back.
 scriptEl.addEventListener("pointerdown", (e) => {
   const t = e.target.closest(".shot-frame[data-drag] .shot-frame__jump");
   if (!t || e.button !== 0 || !e.isPrimary || mv.drag || state.guest || state.locked) return;
-  const d = mv.drag = { id: t.dataset.b, jump: t, el: t.closest(".shot-frame"), x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, pid: e.pointerId, touch: e.pointerType === "touch", on: false, to: [], hold: 0, frame: 0 };
-  if (d.touch) d.hold = setTimeout(() => { if (mv.drag === d) liftShot(d); }, HOLD_MS);
+  const d = mv.drag = { id: t.dataset.b, jump: t, el: t.closest(".shot-frame"), px: e.clientX, py: e.clientY, on: false, to: [], frame: 0, press: null };
+  const follow = (p) => { d.px = p.px; d.py = p.py; };
+  d.press = startPress(e, {
+    threshold: 5, touchSlop: 10, hold: HOLD_MS,
+    onLift: (p) => { follow(p); liftShot(d); },
+    onMove: (p, ev) => {
+      follow(p);
+      ev.preventDefault();
+      // motion-exception: the dragged frame follows the pointer, one update per frame
+      d.frame ||= requestAnimationFrame(() => dragFrame(d));
+    },
+    onEnd: (p, how) => (how === "drop" ? dropShot(d, p) : putBack(d)),
+  });
 });
+// Released after the lift: the shot lands beside the paragraph under the pointer, or goes back.
+function dropShot(d, p) {
+  d.px = p.px;
+  d.py = p.py;
+  dragTo(d);
+  const sel = d.to.length && state.doc ? B.wholeParas(state.doc, d.to) : null;
+  putBack(d, !!sel);
+  mv.dropped = true;
+  if (sel) moveShot(d.id, sel).finally(() => { if (d.el.isConnected) d.el.style.translate = ""; });
+}
 // Pictures are never dragged out by the browser; a held finger brings no menu.
 scriptEl.addEventListener("dragstart", (e) => { if (e.target.closest?.(".broll-tags")) e.preventDefault(); });
 scriptEl.addEventListener("contextmenu", (e) => { if (mv.drag && e.target.closest?.(".shot-frame")) e.preventDefault(); });
-document.addEventListener("pointermove", (e) => {
-  const d = mv.drag;
-  if (!d || e.pointerId !== d.pid) return;
-  if (!d.touch && !e.buttons) return endDrag(); // its release was lost (outside the window): it goes back
-  d.px = e.clientX;
-  d.py = e.clientY;
-  if (!d.on) {
-    const far = Math.hypot(d.px - d.x, d.py - d.y);
-    if (d.touch) { if (far > 10) endDrag(); return; } // a swipe before the hold: the page scrolls
-    if (far < 5) return;
-    liftShot(d);
-  }
-  e.preventDefault();
-  d.frame ||= requestAnimationFrame(() => dragFrame(d));
-});
 // While a finger drags a shot the page scrolls only by the edges (each box of frames listens).
 function holdPage(e) { if (mv.drag?.on) e.preventDefault(); }
-document.addEventListener("pointerup", (e) => {
-  const d = mv.drag;
-  if (!d || e.pointerId !== d.pid) return;
-  if (!d.on) return endDrag(); // a click or a tap: it lights the shot and opens its card
-  d.px = e.clientX;
-  d.py = e.clientY;
-  dragTo(d);
-  const sel = d.to.length && state.doc ? B.wholeParas(state.doc, d.to) : null;
-  endDrag(!!sel);
-  mv.dropped = true;
-  if (sel) moveShot(d.id, sel).finally(() => { if (d.el.isConnected) d.el.style.translate = ""; });
-});
-document.addEventListener("pointercancel", (e) => { if (mv.drag && e.pointerId === mv.drag.pid) endDrag(); });
-addEventListener("blur", () => { if (mv.drag) endDrag(); });
-document.addEventListener("visibilitychange", () => { if (document.hidden && mv.drag) endDrag(); });
 // A wheel turned while dragging moves the script under a still pointer.
+// motion-exception: the dragged frame keeps its landing place while the page scrolls under it, one update per frame
 addEventListener("scroll", () => { const d = mv.drag; if (d?.on) d.frame ||= requestAnimationFrame(() => dragFrame(d)); }, { passive: true });
 // Escape puts a dragged shot back where it was.
 addEventListener("keydown", (e) => {
