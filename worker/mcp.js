@@ -13,30 +13,23 @@ export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "202
 // self-made token with a birth time in the past only lives shorter, and one from the future is refused.
 export const MAX_AGE_MS = 8 * 60 * 60 * 1000;
 export const FUTURE_SLACK_MS = 60_000;
-// Tokens from before (43 random characters, made by the tab) work until this date, so every one of them has its full
-// 8 hours and a tab still running the old page has a day to reload. The legacy branch can go after 2026-10-30.
-export const LEGACY_UNTIL = Date.UTC(2026, 9, 30, 12);
-const NEW_TOKEN_RE = /^se2-([0-9a-z]{8,10})-([A-Za-z0-9_-]{43})$/;
-const LEGACY_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
-// The form only; checkToken also checks the time.
-export const TOKEN_RE = new RegExp(`${NEW_TOKEN_RE.source}|${LEGACY_TOKEN_RE.source}`);
+// The form only; checkToken also checks the time. (The tab's own 43-character tokens from before 2026-10-28 stopped
+// working on 2026-10-30 at 12:00 UTC and are refused as malformed since step N.)
+export const TOKEN_RE = /^se2-([0-9a-z]{8,10})-([A-Za-z0-9_-]{43})$/;
 
 export function newToken(now = Date.now()) {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const rand = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   return { token: `se2-${now.toString(36)}-${rand}`, born: now };
 }
-// { ok: true, born } for a token that may be used now (born is null for a legacy token), else { ok: false, reason }.
+// { ok: true, born } for a token that may be used now, else { ok: false, reason }.
 export function checkToken(token, now = Date.now()) {
   const s = String(token ?? "");
-  const m = s.match(NEW_TOKEN_RE);
-  if (m) {
-    const born = parseInt(m[1], 36);
-    if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
-    return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
-  }
-  if (LEGACY_TOKEN_RE.test(s)) return now < LEGACY_UNTIL ? { ok: true, born: null } : { ok: false, reason: "expired" };
-  return { ok: false, reason: "invalid" };
+  const m = s.match(TOKEN_RE);
+  if (!m) return { ok: false, reason: "invalid" };
+  const born = parseInt(m[1], 36);
+  if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
+  return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
 }
 export const NOT_OPEN = "The script editor is not open. Ask the person to open it and keep the tab open.";
 export const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
@@ -338,7 +331,7 @@ export function bearer(request, now = Date.now()) {
 }
 
 // relayFor(token) returns { op(message) } that answers { status: "ok" | "unauthorized" | "no-tab" | "timeout", result?, error? }.
-// Every op message carries the token's birth time (born, null for a legacy token).
+// Every op message carries the token's birth time (born).
 export async function handleMcp(request, { relayFor, now = Date.now }) {
   const url = new URL(request.url);
   if (request.method === "GET" || request.method === "DELETE") return json({ error: "Method not allowed" }, 405, { Allow: "POST" });

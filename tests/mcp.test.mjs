@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleMcp, checkArgs, TOOLS, PROTOCOL_VERSIONS, NOT_OPEN, NO_ASKS, INSTRUCTIONS, WATCH_PROMPT, checkToken, newToken, TOKEN_RE, MAX_AGE_MS, FUTURE_SLACK_MS, LEGACY_UNTIL } from "../worker/mcp.js";
+import { handleMcp, checkArgs, TOOLS, PROTOCOL_VERSIONS, NOT_OPEN, NO_ASKS, INSTRUCTIONS, WATCH_PROMPT, checkToken, newToken, TOKEN_RE, MAX_AGE_MS, FUTURE_SLACK_MS } from "../worker/mcp.js";
 
 const { token: TOKEN, born: BORN } = newToken();
 const BASE = "https://script-editor.example.workers.dev/mcp";
@@ -73,32 +73,26 @@ test("checkToken: a token lives 8 hours from its birth on the Worker's clock", (
   // A clock skew within a minute is fine; further in the future is refused.
   assert.deepEqual(checkToken(token, now - FUTURE_SLACK_MS), { ok: true, born: now });
   assert.deepEqual(checkToken(token, now - FUTURE_SLACK_MS - 1), { ok: false, reason: "invalid" });
-  // Legacy tokens (43 characters, made by the tab) work until the switch-over, then never again.
-  const legacy = "A".repeat(43);
-  assert.deepEqual(checkToken(legacy, LEGACY_UNTIL - 1), { ok: true, born: null });
-  assert.deepEqual(checkToken(legacy, LEGACY_UNTIL), { ok: false, reason: "expired" });
-  assert.equal(LEGACY_UNTIL, Date.parse("2026-10-30T12:00:00Z"));
-  for (const bad of ["", null, "short", "A".repeat(42), "A".repeat(44), "se2-abc-" + "A".repeat(43), `se2-${now.toString(36).toUpperCase()}-${"A".repeat(43)}`, `se1-${now.toString(36)}-${"A".repeat(43)}`, `se2-${now.toString(36)}-${"A".repeat(42)}`, token + " ", "A".repeat(43) + "\n"]) {
+  // The tab's own 43-character tokens from before 2026-10-28 are malformed now, also on a clock from before.
+  assert.deepEqual(checkToken("A".repeat(43), Date.UTC(2026, 9, 27)), { ok: false, reason: "invalid" });
+  assert.ok(!TOKEN_RE.test("A".repeat(43)));
+  for (const bad of ["", null, "short", "A".repeat(43), "A".repeat(42), "A".repeat(44), "se2-abc-" + "A".repeat(43), `se2-${now.toString(36).toUpperCase()}-${"A".repeat(43)}`, `se1-${now.toString(36)}-${"A".repeat(43)}`, `se2-${now.toString(36)}-${"A".repeat(42)}`, token + " ", "A".repeat(43) + "\n"]) {
     assert.deepEqual(checkToken(bad, now), { ok: false, reason: "invalid" }, JSON.stringify(bad));
   }
 });
 
 test("/mcp: a token past its time, or from the future, is refused without asking the relay", async () => {
   const now = Date.UTC(2026, 9, 28, 20);
-  for (const [token, label] of [[newToken(now - MAX_AGE_MS).token, "8 hours old"], [newToken(now + 2 * FUTURE_SLACK_MS).token, "from the future"], ["A".repeat(43), "legacy after the switch-over"]]) {
+  for (const [token, label] of [[newToken(now - MAX_AGE_MS).token, "8 hours old"], [newToken(now + 2 * FUTURE_SLACK_MS).token, "from the future"], ["A".repeat(43), "a 43-character token from before"]]) {
     let asked = 0;
     const relay = { relayFor: () => { asked++; return { op: async () => ({ status: "ok" }) }; } };
-    const at = token.length === 43 ? () => LEGACY_UNTIL : () => now;
     for (const body of [{ jsonrpc: "2.0", id: 1, method: "tools/list" }, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} }, { jsonrpc: "2.0", method: "notifications/initialized" }]) {
-      const r = await rpc(body, { relay, token, now: at });
+      const r = await rpc(body, { relay, token, now: () => now });
       assert.equal(r.status, 401, label);
       assert.equal(r.body.error.code, -32001);
     }
     assert.equal(asked, 0, `${label}: relayFor is never called`);
   }
-  const legacy = fakeRelay();
-  assert.equal((await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { relay: legacy, token: "A".repeat(43), now: () => LEGACY_UNTIL - 1 })).status, 200);
-  assert.ok(legacy.ops.every((o) => o.born === null), "a legacy token's ops carry born: null");
 });
 
 test("tools/list has the ten tools with input schemas and limits", async () => {

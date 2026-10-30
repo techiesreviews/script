@@ -34,7 +34,7 @@ globalThis.Response = class extends BaseResponse {
 
 const { default: worker } = await import("../worker/index.js");
 const { Relay, ALARM_SLACK_MS } = await import("../worker/relay.js");
-const { newToken, MAX_AGE_MS, FUTURE_SLACK_MS, LEGACY_UNTIL } = await import("../worker/mcp.js");
+const { newToken, MAX_AGE_MS, FUTURE_SLACK_MS } = await import("../worker/mcp.js");
 
 function fakeCtx() {
   const data = new Map();
@@ -62,7 +62,7 @@ function relayWith(now) {
   const ctx = fakeCtx();
   const relay = new Relay(ctx, {});
   relay.now = () => now.t;
-  // A tab connects (born: the token's birth time, null for a legacy token); returns the relay's side of its socket
+  // A tab connects (born: the token's birth time; null sends none); returns the relay's side of its socket
   // (a refused one is not kept by ctx).
   const tab = async (born) => {
     const headers = new Headers({ Upgrade: "websocket" });
@@ -151,32 +151,37 @@ test("relay: a revoke with no note keeps one as long as any token could live, wi
   await relay.webSocketMessage(ws, JSON.stringify({ type: "revoke" }));
   const meta = ctx.storage.data.get("meta");
   assert.equal(meta.revoked, true);
-  assert.equal(meta.expiresAt, Math.max(T0 + MAX_AGE_MS, LEGACY_UNTIL));
+  assert.equal(meta.expiresAt, T0 + MAX_AGE_MS);
   assert.equal(ctx.alarm, meta.expiresAt + ALARM_SLACK_MS);
 });
 
-test("relay: a legacy token's new note ends at the switch-over; an old note gets its alarm when used", async () => {
+test("relay: a tab without a birth time, or an op without one, is refused and makes no note", async () => {
   const now = { t: T0 };
-  const legacy = relayWith(now);
-  await legacy.tab(null);
-  assert.deepEqual(legacy.ctx.storage.data.get("meta"), { createdAt: T0, expiresAt: LEGACY_UNTIL, revoked: false, agent: null });
-  assert.equal(legacy.ctx.alarm, LEGACY_UNTIL + ALARM_SLACK_MS);
+  const { ctx, relay, tab } = relayWith(now);
+  const ws = await tab(null);
+  assert.deepEqual([ws.code, ws.reason], [4003, "expired"]);
+  assert.equal(ctx.storage.data.size, 0, "no note");
+  await tab(T0);
+  assert.deepEqual(await relay.op({ op: "auth", born: null }), { status: "unauthorized" });
+  assert.deepEqual(await relay.op({ op: "auth" }), { status: "unauthorized" });
+  assert.deepEqual(await relay.op({ op: "auth", born: T0 }), { status: "ok" });
+});
 
-  // A note from before this change: no expiresAt, no alarm.
+test("relay: a note from before expiresAt gets its alarm when used, 8 hours after it was made, and is erased then", async () => {
+  // Notes from before 2026-10-28: no expiresAt, no alarm. Every one of them is long past its 8 hours.
+  const now = { t: T0 };
   const old = relayWith(now);
-  old.ctx.storage.data.set("meta", { createdAt: T0 - 1000, revoked: false, agent: null });
-  assert.deepEqual(await old.relay.op({ op: "auth", born: null }), { status: "ok" });
-  assert.equal(old.ctx.alarm, LEGACY_UNTIL + ALARM_SLACK_MS);
+  old.ctx.storage.data.set("meta", { createdAt: T0 - 9 * 3600_000, revoked: false, agent: null });
+  assert.deepEqual(await old.relay.op({ op: "auth", born: T0 - 9 * 3600_000 }), { status: "unauthorized" });
+  assert.equal(old.ctx.alarm, T0 - 9 * 3600_000 + MAX_AGE_MS + ALARM_SLACK_MS);
+  await old.relay.alarm();
+  assert.equal(old.ctx.storage.data.size, 0, "erased at its first alarm");
   const revoked = relayWith(now);
-  revoked.ctx.storage.data.set("meta", { createdAt: T0 - 9 * 3600_000, revoked: true, agent: null });
-  assert.equal((await revoked.tab(null)).code, 4003);
-  assert.equal(revoked.ctx.alarm, LEGACY_UNTIL + ALARM_SLACK_MS, "kept (and refusing) until legacy tokens stop");
+  revoked.ctx.storage.data.set("meta", { createdAt: T0 - 1000, revoked: true, agent: null });
+  assert.equal((await revoked.tab(T0 - 1000)).code, 4003);
+  assert.equal(revoked.ctx.alarm, T0 - 1000 + MAX_AGE_MS + ALARM_SLACK_MS, "kept (and refusing) until its token would have ended");
   assert.equal(revoked.ctx.storage.data.get("meta").revoked, true);
-  // Its alarm erases it only after the switch-over.
-  now.t = LEGACY_UNTIL;
-  await revoked.relay.alarm();
-  assert.equal(revoked.ctx.alarm, LEGACY_UNTIL + ALARM_SLACK_MS);
-  now.t = LEGACY_UNTIL + ALARM_SLACK_MS;
+  now.t = T0 - 1000 + MAX_AGE_MS + ALARM_SLACK_MS;
   await revoked.relay.alarm();
   assert.equal(revoked.ctx.storage.data.size, 0);
 });
@@ -240,7 +245,7 @@ test("worker /api/relay: a token past its time or from the future is closed with
   assert.equal(calls.idFromName.length, 0);
 });
 
-test("worker /api/relay: a good token reaches its relay with its birth time; a legacy one without", async () => {
+test("worker /api/relay: a good token reaches its relay with its birth time", async () => {
   const { token, born } = newToken();
   const { env, calls } = relayEnv();
   const res = await worker.fetch(relayRequest(token), env);
@@ -249,24 +254,10 @@ test("worker /api/relay: a good token reaches its relay with its birth time; a l
   assert.equal(calls.fetch[0].init.headers["X-Token-Born"], String(born));
 });
 
-// The Worker reads Date.now(); these pin the clock to either side of the switch-over. Tests in this file run one at a time.
-async function at(time, fn) {
-  const real = Date.now;
-  Date.now = () => time;
-  try { return await fn(); } finally { Date.now = real; }
-}
-test("worker /api/relay: a legacy token reaches its relay until the switch-over, then is closed with 4003", async () => {
-  await at(LEGACY_UNTIL - 1, async () => {
-    const { env, calls } = relayEnv();
-    assert.equal(await (await worker.fetch(relayRequest("A".repeat(43)), env)).text(), "to the relay");
-    assert.equal(calls.fetch[0].init.headers["X-Token-Born"], undefined);
-  });
-  await at(LEGACY_UNTIL, async () => {
-    const { env, calls } = relayEnv();
-    assert.equal((await worker.fetch(relayRequest("A".repeat(43)), env)).status, 101);
-    assert.deepEqual([lastServer().code, lastServer().reason], [4003, "expired"]);
-    assert.deepEqual([calls.idFromName.length, calls.fetch.length], [0, 0]);
-  });
+test("worker /api/relay: a 43-character token from before 2026-10-28 is malformed now: 401, no relay object touched", async () => {
+  const { env, calls } = relayEnv();
+  assert.equal((await worker.fetch(relayRequest("A".repeat(43)), env)).status, 401);
+  assert.deepEqual([calls.idFromName.length, calls.fetch.length], [0, 0]);
 });
 
 test("worker /mcp: an expired token gets 401 without touching a relay; a good one passes its birth time", async () => {

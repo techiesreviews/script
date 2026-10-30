@@ -73,9 +73,7 @@ export default {
       const t = checkToken(token);
       if (!t.ok) return closedSocket(4003, t.reason);
       const stub = await relayStub(env, token);
-      const headers = { Upgrade: "websocket" };
-      if (t.born != null) headers["X-Token-Born"] = String(t.born);
-      return stub.fetch("https://relay/tab", { headers });
+      return stub.fetch("https://relay/tab", { headers: { Upgrade: "websocket", "X-Token-Born": String(t.born) } });
     }
     if (url.pathname === "/api/room") {
       if (request.headers.get("Upgrade") !== "websocket") return noindex(Response.json({ error: "Expected a WebSocket" }, { status: 426 }));

@@ -31,7 +31,7 @@ The first paragraph of `AGENTS.md`, a growing list of what the editor does, is l
 
 ## 5. The old 43-character agent tokens
 
-`docs/build/handoff.md` said: after 2026-10-30 12:00 UTC remove the legacy 43-character token branch (`LEGACY_UNTIL` in `worker/mcp.js`, its use in `worker/relay.js`, and its tests). The date has passed; it is removed and `handoff.md` and `docs/data-shape.md` say so. From now on a dated to-do in the docs is a line `Due YYYY-MM-DD: <what>`, so the kitchen's doctor can list overdue ones.
+`docs/build/handoff.md` said: after 2026-10-30 12:00 UTC remove the legacy 43-character token branch (`LEGACY_UNTIL` in `worker/mcp.js`, its use in `worker/relay.js`, and its tests). The date has passed (checked 2026-10-30 20:52 UTC), and the tab drops any saved token older than 8 hours before it connects, so no 43-character token can still be in use. Removed: `LEGACY_UNTIL` and the 43-character form in `worker/mcp.js` (`TOKEN_RE` is the `se2-` form only, so such a token is malformed: 401 from `/api/relay` and `/mcp`); in `worker/relay.js` a note without `expiresAt` is due 8 hours after its `createdAt`, and a tab or call without a birth time is refused; `worker/index.js` always passes the birth time. The legacy tests are replaced by tests for these. `handoff.md` and `docs/data-shape.md` say so. From now on a dated to-do in the docs is a line `Due YYYY-MM-DD: <what>`, so the kitchen's doctor can list overdue ones.
 
 ## 6. One press helper
 
