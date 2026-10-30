@@ -31,3 +31,23 @@ test("kit specs: the evidence has no times, so two runs in a row give the same f
     assert.match(one.text, /RESULT: fail specs\n$/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test("kit specs: --affected (what kit pr runs) takes an optional --base REF and runs every test; other words are refused", () => {
+  const root = mkdtempSync(join(tmpdir(), "specs-affected-"));
+  try {
+    mkdirSync(join(root, "tests"));
+    writeFileSync(join(root, "tests/a.test.mjs"), 'import { test } from "node:test";\ntest("passes", () => {});\n');
+    const { NODE_TEST_CONTEXT, ...env } = process.env;
+    const run = (...args) => spawnSync(process.execPath, [specs, ...args], { env: { ...env, KIT_ROOT: root }, encoding: "utf8" });
+    for (const args of [["--affected"], ["--affected", "--base", "origin/main"]]) {
+      const r = run(...args);
+      assert.equal(r.status, 0, args.join(" "));
+      assert.match(r.stdout, /RESULT: ok specs --affected \(all tests\)\n$/);
+    }
+    for (const args of [["--affected", "--base"], ["--affected", "--base", "--x"], ["--affected", "extra"]]) {
+      const r = run(...args);
+      assert.equal(r.status, 2, args.join(" "));
+      assert.match(r.stdout, /RESULT: fail specs usage/);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
