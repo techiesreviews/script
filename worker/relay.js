@@ -52,7 +52,7 @@ export class Relay extends DurableObject {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     // No birth time is only possible from outside the Worker; it is refused like a token past its time.
-    const late = !meta && (born == null || now - born >= MAX_AGE_MS);
+    const late = born == null || (!meta && now - born >= MAX_AGE_MS);
     if (late || (meta && !this.valid(meta))) {
       // Not kept: accepted only to say why, then closed, like the Worker and the room do (a socket handed to the
       // hibernation API and closed at once did not finish closing in wrangler dev).
