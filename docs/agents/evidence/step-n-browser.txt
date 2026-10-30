@@ -1,0 +1,78 @@
+# Step N browser check: the B-roll shot drag through public/press.js, with no change in behaviour.
+# Headless Chrome 156 (--headless=new) started with --blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2
+# (a mouse with hover), driven over CDP with real input: Input.dispatchMouseEvent with buttons: 1 on every move while held,
+# Input.dispatchTouchEvent at 390 × 844 (mobile, touch emulation), Input.dispatchKeyEvent for Escape. Window blur is a synthetic
+# blur event (headless Chrome has no real focus change). The demo script and its own B-roll list, local Worker (wrangler dev).
+# Server and Chrome ran under scripts/agents/kit bg (stepn-dev on 127.0.0.1:8831, stepn-before on 8832, stepn-chrome on CDP 9431)
+# and were stopped with kit bg --stop. The same run against the code before this item (9940b9b) gives the same lines; the only
+# difference is how far the swipe's fling scrolled (320 → 651 before, 320 → 656 after).
+# Seen in both, unchanged on purpose: after a blur ends a drag, a later release over the page is a click and opens the shot's card.
+
+# after: the working tree, the drag through public/press.js 2026-10-30T21:03:06.348Z
+# 1280 px mouse
+ok 1280 px mouse: a fine pointer with hover
+ok 1280 px mouse: a click opens the shot's card, no drag
+ok 1280 px mouse: under 5 px it has not lifted
+ok 1280 px mouse: moved past 5 px, the shot is lifted and dragged
+ok 1280 px mouse: the frame follows to its landing place (0px 326px)
+ok 1280 px mouse: released, the shot moved to "Your viewer doesn't care about" ("Your viewer doesn't care about your topic yet.…")
+ok 1280 px mouse: the drop ends the drag and opens no card
+ok 1280 px mouse: dragging (lost release)
+ok 1280 px mouse: a move with no button held ends it; the frame goes back ({"on":false,"translate":"","targets":0})
+ok 1280 px mouse: and the shot did not move
+ok 1280 px mouse: a late release changes nothing
+ok 1280 px mouse: Escape ends the drag; the frame goes back, the shot stays
+ok 1280 px mouse: the release after Escape does not move it
+  (the release after Escape: card stays closed)
+ok 1280 px mouse: window blur (a synthetic blur event) ends the drag; the frame goes back, the shot stays
+ok 1280 px mouse: the release after window blur does not move it
+  (the release after window blur: card opens)
+# 390 px touch
+ok 390 px touch: a coarse pointer (touch)
+ok 390 px touch: a tap opens the shot's card, no drag
+ok 390 px touch: a swipe on a frame before the hold lifts nothing
+ok 390 px touch: the page scrolls instead (320 → 656)
+ok 390 px touch: and the shot did not move
+ok 390 px touch: after 250 ms the finger has not lifted it yet
+ok 390 px touch: held 550 ms (over 400), the shot is lifted
+ok 390 px touch: the frame follows the finger to its landing place
+ok 390 px touch: the page does not scroll under the drag
+ok 390 px touch: let go, the shot moved to "Hi, I'm Sam, and on this demo " ("Hi, I'm Sam, and on this demo channel…")
+ok 390 px touch: the drop ends the drag and opens no card
+ok 390 px touch: a cancelled touch ends the drag; the frame goes back, the shot stays
+RESULT: ok drag-e2e
+
+## The same run before this item
+# before: 9940b9b, the drag with its own listeners 2026-10-30T21:02:56.113Z
+# 1280 px mouse
+ok 1280 px mouse: a fine pointer with hover
+ok 1280 px mouse: a click opens the shot's card, no drag
+ok 1280 px mouse: under 5 px it has not lifted
+ok 1280 px mouse: moved past 5 px, the shot is lifted and dragged
+ok 1280 px mouse: the frame follows to its landing place (0px 326px)
+ok 1280 px mouse: released, the shot moved to "Your viewer doesn't care about" ("Your viewer doesn't care about your topic yet.…")
+ok 1280 px mouse: the drop ends the drag and opens no card
+ok 1280 px mouse: dragging (lost release)
+ok 1280 px mouse: a move with no button held ends it; the frame goes back ({"on":false,"translate":"","targets":0})
+ok 1280 px mouse: and the shot did not move
+ok 1280 px mouse: a late release changes nothing
+ok 1280 px mouse: Escape ends the drag; the frame goes back, the shot stays
+ok 1280 px mouse: the release after Escape does not move it
+  (the release after Escape: card stays closed)
+ok 1280 px mouse: window blur (a synthetic blur event) ends the drag; the frame goes back, the shot stays
+ok 1280 px mouse: the release after window blur does not move it
+  (the release after window blur: card opens)
+# 390 px touch
+ok 390 px touch: a coarse pointer (touch)
+ok 390 px touch: a tap opens the shot's card, no drag
+ok 390 px touch: a swipe on a frame before the hold lifts nothing
+ok 390 px touch: the page scrolls instead (320 → 651)
+ok 390 px touch: and the shot did not move
+ok 390 px touch: after 250 ms the finger has not lifted it yet
+ok 390 px touch: held 550 ms (over 400), the shot is lifted
+ok 390 px touch: the frame follows the finger to its landing place
+ok 390 px touch: the page does not scroll under the drag
+ok 390 px touch: let go, the shot moved to "Hi, I'm Sam, and on this demo " ("Hi, I'm Sam, and on this demo channel…")
+ok 390 px touch: the drop ends the drag and opens no card
+ok 390 px touch: a cancelled touch ends the drag; the frame goes back, the shot stays
+RESULT: ok drag-e2e
