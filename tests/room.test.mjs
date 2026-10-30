@@ -438,18 +438,24 @@ test("together: stop sharing ends the room for guests, and the link no longer wo
 });
 
 const allSame = (ha, ...gs) => gs.every((g) => g.a.text() === ha.text() && !g.c.pending);
+// A dropped client reconnects after its 5 ms backoff, which can beat the 5 ms polls of waitFor (the test then waited
+// for "away" until its timeout). holdAway keeps it away until comeBack reconnects it, at the step the test chooses.
+const holdAway = (c) => { c.backoffMs = 3_600_000; };
+const comeBack = (c) => { c.backoffMs = 5; c.timers.clearTimeout(c.reconnect); c.connect(); };
 
 test("together: a guest whose connection drops keeps what it typed, and it arrives once", async () => {
   const { host, ha, guest } = await session([para("p1", "Hello."), para("p2", "World.")]);
   const g = await guest("Ana"), other = await guest("Ben");
   // The batch reaches the host, but the receipt is lost with the connection.
   g.a.type("p1", 6, " One"); g.c.local();
+  holdAway(g.c);
   g.c.ws.close();
   g.a.type("p1", 10, " Two"); g.c.local(); // typed while away: kept unsent
   ha.type("p2", 0, "Big "); host.local();
   // And a batch that never reached anyone.
-  await waitFor(() => g.c.status === "away");
+  assert.ok(await waitFor(() => g.c.status === "away"));
   g.a.type("p2", 10, " Three"); g.c.local();
+  comeBack(g.c);
   assert.ok(await waitFor(() => g.c.status === "live" && allSame(ha, g, other)), `${ha.text()} / ${g.a.text()}`);
   assert.equal(ha.text(), "Hello. One Two|Big World. Three");
   host.stop();
@@ -459,10 +465,12 @@ test("together: typing while the host is away arrives when the host is back", as
   const { host, ha, guest } = await session([para("p1", "Hello.")]);
   const g = await guest("Ana");
   g.a.type("p1", 6, " Early"); g.c.local(); // in flight when the host's connection drops
+  holdAway(host);
   host.ws.close();
-  await waitFor(() => g.c.status === "away");
+  assert.ok(await waitFor(() => g.c.status === "away"));
   g.a.type("p1", 0, "Away: "); g.c.local();
   ha.type("p1", 6, "!"); host.local(); // the host typed while offline too
+  comeBack(host);
   assert.ok(await waitFor(() => host.status === "live" && g.c.status === "live" && allSame(ha, g)), `${ha.text()} / ${g.a.text()}`);
   assert.equal(ha.text(), "Away: Hello.! Early");
   host.stop();
@@ -572,12 +580,14 @@ test("together: back after the log moved on, a batch the host already applied ar
 test("together: a catch-up waits while an input method composes", async () => {
   const { host, ha, guest } = await session([para("p1", "Hello.")]);
   const g = await guest("Ana");
+  holdAway(g.c);
   g.c.ws.close();
-  await waitFor(() => g.c.status === "away");
+  assert.ok(await waitFor(() => g.c.status === "away"));
   ha.type("p1", 6, " World."); host.local();
   g.a.busyNow = true;
   const before = g.a.applies;
-  await waitFor(() => g.c.queue.some((m) => m.type === "catchup"));
+  comeBack(g.c); // back while composing: the catch-up waits in the queue
+  assert.ok(await waitFor(() => g.c.queue.some((m) => m.type === "catchup")));
   assert.equal(g.a.applies, before, "nothing applied while composing");
   g.a.busyNow = false;
   g.c.resume();

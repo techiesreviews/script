@@ -15,7 +15,11 @@ The project ran an old copy of Agent Kit, so it lacked the kitchen's commands (`
 
 ## 2. A flaky test
 
-`tests/room.test.mjs` "together: a catch-up waits while an input method composes" sometimes took about 6 s instead of about 12 ms: it fell back to a timeout. Find the cause and make it deterministic.
+`tests/room.test.mjs` "together: a catch-up waits while an input method composes" sometimes took about 6 s instead of about 12 ms: it fell back to a timeout.
+
+Cause: the test closes the guest's connection and polls every 5 ms for "away", but the guest reconnects after its own 5 ms backoff (± 25%). When the reconnect won, the guest was already back and live; the wait for "away" and then the wait for the queued catch-up each ran to their 3 s timeout, and since neither result was checked the test still passed. The same race made "a guest whose connection drops keeps what it typed" and "typing while the host is away" take 3 s now and then.
+
+Fix: `holdAway(client)` keeps a dropped client away and `comeBack(client)` reconnects it at the step the test chooses; the three tests use them and now check their waits, so a timeout fails instead of passing slowly.
 
 ## 3. Evidence without timings
 
