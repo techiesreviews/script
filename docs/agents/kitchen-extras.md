@@ -13,7 +13,8 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
   every hand-over and before `kit review`. `checks.doctor` adds the Claude CLI and a `node --check`
   of every JavaScript file to `kit doctor`.
 - **Own commands** (`scripts/agents/project.d`):
-  - `kit specs [FILE...]`: the unit tests, evidence in `docs/agents/evidence/specs.txt`.
+  - `kit specs [FILE...]`: the unit tests, evidence in `docs/agents/evidence/specs.txt` (results
+    only, no timings, so it changes only when a result changes).
   - `kit deploy`: the live site, https://script.techies.tools, and the workers.dev fallback, with
     wrangler. A production deploy, not a preview; it never pushes to GitHub.
 - **Shared file:** none is set. `public/app.js` is the big file most steps touch; two builders in

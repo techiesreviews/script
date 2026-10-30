@@ -17,9 +17,12 @@ const label = `specs${args.length ? ' ' + args.join(' ') : ''}`;
 if (!files.length) { console.log('RESULT: fail specs no tests in tests/'); process.exit(1); }
 const result = spawnSync(process.execPath, ['--test', ...files], { cwd: root, encoding: 'utf8', timeout: 180000 });
 const ok = result.status === 0;
+// The evidence holds results only: no per-test times and no duration line, so it changes only when a result does.
+const untimed = (text) => text.split('\n').filter((line) => !/^\s*ℹ duration_ms\b/.test(line) && !/^\s*duration_ms:/.test(line))
+  .map((line) => line.replace(/ \(\d+(?:\.\d+)?ms\)$/, '')).join('\n');
 const evidence = join(root, 'docs/agents/evidence/specs.txt');
 mkdirSync(dirname(evidence), { recursive: true });
-writeFileSync(evidence, `${result.stdout || ''}${result.stderr || ''}RESULT: ${ok ? 'ok' : 'fail'} specs\n`);
+writeFileSync(evidence, `${untimed(result.stdout || '')}${untimed(result.stderr || '')}RESULT: ${ok ? 'ok' : 'fail'} ${label}\n`);
 process.stdout.write(result.stdout || '');
 process.stderr.write(result.stderr || '');
 console.log('evidence: docs/agents/evidence/specs.txt');
