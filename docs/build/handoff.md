@@ -1,8 +1,10 @@
-# Handoff: script-editor version 1 (updated 2026-10-28)
+# Handoff: script-editor version 1 (updated 2026-10-30)
+
+Dated to-dos are written as a line `Due YYYY-MM-DD: <what>`, so `kit doctor` can list overdue ones. None is open.
 
 Version 1 is live at https://script.techies.tools (open to search engines since 2026-10-28, no-store; the workers.dev address is the fallback). Steps A and B are built, reviewed with `kit review` (evidence in `.scratch/reviews/main/`), fixed and deployed with `kit preview` (now `kit deploy`). A real Claude Code agent answered an ask on the live page over MCP. Smoke evidence: `docs/agents/evidence/smoke-relay.txt`.
 
-Open, low priority (from the step B review): move `followPieces`/`takeUnseen` into `doc.js` with tests, show the message on a "Sounds like me" answer, and Undo-after-Keep should bring back the suggestion. After 2026-10-30 12:00 UTC: remove the legacy 43-character token branch (`LEGACY_UNTIL` in `worker/mcp.js` and its tests). Notes from before 2026-10-28 that are never used again (a few dozen relay notes and ended rooms from testing, and any room that was live during that deploy) have no alarm and stay; they hold no script text.
+Open, low priority (from the step B review): move `followPieces`/`takeUnseen` into `doc.js` with tests, show the message on a "Sounds like me" answer, and Undo-after-Keep should bring back the suggestion. The legacy 43-character token branch (`LEGACY_UNTIL`) was removed in step N (2026-10-30), after its date; a 43-character token is now refused as malformed. Notes from before 2026-10-28 that are never used again (a few dozen relay notes and ended rooms from testing, and any room that was live during that deploy) have no alarm and stay; they hold no script text.
 
 The repo is github.com/techiesreviews/script (main). Next steps from the plan: B-roll both ways (step 2), multiplayer after the editor's agents + multiplayer build.
 

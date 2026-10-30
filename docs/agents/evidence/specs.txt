@@ -262,11 +262,12 @@
 ✔ relay: a tab with a token already past its time is refused and nothing is written
 ✔ relay: after Disconnect the token stays refused until its alarm, then the note is gone
 ✔ relay: a revoke with no note keeps one as long as any token could live, with an alarm
-✔ relay: a legacy token's new note ends at the switch-over; an old note gets its alarm when used
+✔ relay: a tab without a birth time, or an op without one, is refused and makes no note
+✔ relay: a note from before expiresAt gets its alarm when used, 8 hours after it was made, and is erased then
 ✔ worker /api/agent-token: a fresh token with the Worker's time, POST from this site only
 ✔ worker /api/relay: a token past its time or from the future is closed with 4003, no relay object touched
-✔ worker /api/relay: a good token reaches its relay with its birth time; a legacy one without
-✔ worker /api/relay: a legacy token reaches its relay until the switch-over, then is closed with 4003
+✔ worker /api/relay: a good token reaches its relay with its birth time
+✔ worker /api/relay: a 43-character token from before 2026-10-28 is malformed now: 401, no relay object touched
 ✔ worker /mcp: an expired token gets 401 without touching a relay; a good one passes its birth time
 ✔ worker: a picture's upload address passes the bytes to the relay and answers for it
 ✔ relay: a picture goes to the tab as a head and binary parts, and the tab's answer comes back
@@ -275,9 +276,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 277
+ℹ tests 278
 ℹ suites 0
-ℹ pass 277
+ℹ pass 278
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

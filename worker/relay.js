@@ -2,12 +2,12 @@
 // One Durable Object per token hash. It stores only { createdAt, expiresAt, revoked, agent: { name, version } },
 // never script text: calls and results pass through memory. An alarm just after expiresAt erases the note.
 import { DurableObject } from "cloudflare:workers";
-import { MAX_AGE_MS, LEGACY_UNTIL } from "./mcp.js";
+import { MAX_AGE_MS } from "./mcp.js";
 
 export const ALARM_SLACK_MS = 60_000;
 export const IMAGE_PART = 256 * 1024;
-// When a note may go: its expiry, or for a note from before expiresAt (legacy tokens) the day legacy tokens stop.
-const dueOf = (meta) => (meta?.expiresAt ?? LEGACY_UNTIL) + ALARM_SLACK_MS;
+// When a note may go: its expiry, or for a note from before expiresAt 8 hours after it was made (long past).
+const dueOf = (meta) => (meta?.expiresAt ?? (meta?.createdAt ?? 0) + MAX_AGE_MS) + ALARM_SLACK_MS;
 
 export class Relay extends DurableObject {
   constructor(ctx, env) {
@@ -41,7 +41,7 @@ export class Relay extends DurableObject {
     try { ws.send(JSON.stringify(message)); return true; } catch { return false; }
   }
 
-  // The tab connects here. The Worker has already checked the token and passes its birth time (none for a legacy token).
+  // The tab connects here. The Worker has already checked the token and passes its birth time.
   async fetch(request) {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("Expected a WebSocket", { status: 426 });
     const bornHeader = request.headers.get("X-Token-Born");
@@ -51,7 +51,8 @@ export class Relay extends DurableObject {
     await this.keepTimed(meta);
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    const late = !meta && born != null && now - born >= MAX_AGE_MS;
+    // No birth time is only possible from outside the Worker; it is refused like a token past its time.
+    const late = !meta && (born == null || now - born >= MAX_AGE_MS);
     if (late || (meta && !this.valid(meta))) {
       // Not kept: accepted only to say why, then closed, like the Worker and the room do (a socket handed to the
       // hibernation API and closed at once did not finish closing in wrangler dev).
@@ -59,9 +60,7 @@ export class Relay extends DurableObject {
       server.close(4003, meta?.revoked ? "revoked" : "expired");
     } else {
       if (!meta) {
-        meta = born != null
-          ? { createdAt: born, expiresAt: born + MAX_AGE_MS, revoked: false, agent: null }
-          : { createdAt: now, expiresAt: LEGACY_UNTIL, revoked: false, agent: null };
+        meta = { createdAt: born, expiresAt: born + MAX_AGE_MS, revoked: false, agent: null };
         await this.save(meta);
       }
       // Only the newest tab receives calls.
@@ -87,7 +86,7 @@ export class Relay extends DurableObject {
       // The revoked note stays until its alarm, so the token is refused until it would have expired anyway. Without a
       // note (rare) the token's birth time is unknown here: it is kept as long as any token could still live.
       const now = this.now();
-      const meta = (await this.meta()) ?? { createdAt: now, expiresAt: Math.max(now + MAX_AGE_MS, LEGACY_UNTIL), agent: null };
+      const meta = (await this.meta()) ?? { createdAt: now, expiresAt: now + MAX_AGE_MS, agent: null };
       await this.save({ ...meta, revoked: true, agent: null });
       for (const p of this.pending.values()) p.done({ status: "unauthorized" });
       for (const s of this.ctx.getWebSockets()) { try { s.close(4003, "revoked"); } catch { /* closed */ } }
@@ -109,12 +108,12 @@ export class Relay extends DurableObject {
     await this.ctx.storage.deleteAll();
   }
 
-  // Called by the Worker for each MCP request; message.born is the token's birth time (null for a legacy token).
+  // Called by the Worker for each MCP request; message.born is the token's birth time.
   async op(message) {
     const meta = await this.meta();
     await this.keepTimed(meta);
     if (!this.valid(meta)) return { status: "unauthorized" };
-    if (message.born != null && this.now() - message.born >= MAX_AGE_MS) return { status: "unauthorized" };
+    if (!Number.isFinite(message.born) || this.now() - message.born >= MAX_AGE_MS) return { status: "unauthorized" };
     if (message.op === "auth") return { status: "ok" };
     if (message.op === "agent") {
       meta.agent = { name: String(message.name ?? "").slice(0, 60), version: String(message.version ?? "").slice(0, 30) };
