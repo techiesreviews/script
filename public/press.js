@@ -42,6 +42,7 @@ export function startPress(e, {
       if (p.touch && hold) { if (far > touchSlop) finish("swipe", ev); return; }
       if (far < threshold) return;
       lift(ev);
+      if (p.ended) return; // onLift may end the press itself
     }
     onMove(p, ev);
   };

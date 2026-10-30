@@ -162,6 +162,10 @@ test("relay: a tab without a birth time, or an op without one, is refused and ma
   assert.deepEqual([ws.code, ws.reason], [4003, "expired"]);
   assert.equal(ctx.storage.data.size, 0, "no note");
   await tab(T0);
+  // Also with a note already there: a tab without its birth time gets no socket.
+  const late = await tab(null);
+  assert.deepEqual([late.code, late.reason], [4003, "expired"]);
+  assert.equal(ctx.getWebSockets("tab").length, 1, "only the first tab");
   assert.deepEqual(await relay.op({ op: "auth", born: null }), { status: "unauthorized" });
   assert.deepEqual(await relay.op({ op: "auth" }), { status: "unauthorized" });
   assert.deepEqual(await relay.op({ op: "auth", born: T0 }), { status: "ok" });
