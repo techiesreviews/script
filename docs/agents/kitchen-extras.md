@@ -20,7 +20,8 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
   - `kit specs [FILE...]`: the unit tests, evidence in `docs/agents/evidence/specs.txt` (results
     only, no timings, so it changes only when a result changes).
   - `kit deploy`: the live site, https://script.techies.tools, and the workers.dev fallback, with
-    wrangler. A production deploy, not a preview; it never pushes to GitHub.
+    wrangler. A production deploy, not a preview; it starts with `kit release-check` and never
+    pushes to GitHub.
 - **Shared file:** none is set. `public/app.js` is the big file most steps touch; two builders in
   it at once should expect to merge.
 - **Docs the shared rulebook names:** no runner guide, issue tracker guide or UX rulebook. A change
@@ -49,7 +50,8 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
 - **Lex's standing OK (2026-10-28):** once a change has passed `kit specs` and `kit review`, it may
   go to GitHub (through `kit pr` into `dev`, then `kit pr --release --base main` into `main`) and
   live with `scripts/agents/kit deploy`, run from `main` after the release; its `RESULT: ok deploy …`
-  line is the evidence. No Tuesday "ship it" is needed. Check the live page after the deploy.
+  line is the evidence. `kit deploy` starts with `scripts/agents/kit release-check`, so it refuses
+  unsaved files and anything that is not exactly `origin/main`. No Tuesday "ship it" is needed. Check the live page after the deploy.
   `docs/build/handoff.md` records what is live.
 
 ## Other
