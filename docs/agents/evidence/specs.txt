@@ -146,9 +146,9 @@
 ✔ keepIds: blocks left word for word keep their ids, once each
 ✔ titleFileName: a script in the browser takes its title's name; its own name counts as free (step J)
 ✔ kit.json lands on dev, releases to main, and the docs agree
-✔ kit deploy runs kit release-check before wrangler
 ✔ kit deploy stops before wrangler when kit release-check fails
 ✔ kit deploy reaches wrangler when kit release-check passes
+✔ kit deploy refuses files git ignores in public/, which wrangler would upload
 ✔ the view switch is its own column of the top bar
 ✔ the voice and agent labels stay readable for screen readers
 ✔ the edit bar: Shorter, Simpler, Sound like me, More ▾ (Explain, Check facts, Find links), B-roll ▾ (or a guest's Suggest B-roll) and Ask

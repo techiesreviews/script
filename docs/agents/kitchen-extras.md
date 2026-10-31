@@ -51,9 +51,11 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
   go to GitHub (through `kit pr` into `dev`, then `kit pr --release --base main` into `main`) and
   live with `scripts/agents/kit deploy`, run from `main` after the release; its `RESULT: ok deploy …`
   line is the evidence. `kit deploy` starts with `scripts/agents/kit release-check`, so it refuses
-  changed and untracked files and anything that is not exactly `origin/main` (files git ignores are
-  not checked, so none may sit in `public/`). A lead who must deploy past the check runs
-  `scripts/agents/kit release-check --waive "<reason>"`, then `npx --yes wrangler@4 deploy`.
+  changed and untracked files outside `.scratch/` and anything that is not exactly `origin/main`;
+  it then refuses files git ignores in `public/`, which wrangler would upload. A lead who must
+  deploy past the check runs `scripts/agents/kit release-check --waive "<reason>"`, then
+  `npx --yes wrangler@4 deploy`; the waiver's `RESULT:` line and wrangler's output are then the
+  evidence.
   No Tuesday "ship it" is needed. Check the live page after the deploy. `docs/build/handoff.md`
   records what is live.
 

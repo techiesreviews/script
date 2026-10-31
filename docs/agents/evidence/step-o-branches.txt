@@ -20,7 +20,8 @@ RESULT: fail release-check: HEAD c7c35d9 is 3 commits ahead of origin/dev: a rel
 ## scripts/agents/kit pr --dry-run --base main
 RESULT: fail guards: --base main requires --release
 
-# Added 2026-10-31 at bf79d11 on fix/ke-90-deploy-release-check (base origin/dev 949205c)
+# Added 2026-10-31 at bf79d11 on fix/ke-90-deploy-release-check (base origin/dev 949205c); later commits on that branch
+# changed the deploy's failure line and added the ignored-files stop, which tests/kit-branches.test.mjs runs
 
 ## scripts/agents/kit pr --release --dry-run (no --base main)
 RESULT: fail guards: --release requires --base main
