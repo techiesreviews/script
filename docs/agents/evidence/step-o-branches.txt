@@ -1,0 +1,21 @@
+# Step O evidence, 2026-10-31, at c7c35d9 on chore/ke-90-land-on-dev (base origin/dev 667287f)
+
+## scripts/agents/kit doctor
+✓ settings: scripts/agents/kit.json (script, lands on dev)
+✓ base: contains origin/dev 667287f
+RESULT: ok doctor 13/13 checks passed; warning: 3 setup pieces missing (run scripts/agents/kit init)
+
+## scripts/agents/kit pr --dry-run
+guards: ok
+fetch: ok
+rebase: ok
+unit: ok
+specs: ok
+'gh' 'pr' 'create' '--base' 'dev' '--head' 'chore/ke-90-land-on-dev' '--title' 'Review fixes: step N'\''s extras line points to step O; step O names its evidence' '--body-file' BODY '--repo' 'techiesreviews/script'
+RESULT: ok dry-run c7c35d9 chore/ke-90-land-on-dev -> dev
+
+## scripts/agents/kit pr --release --base main --dry-run
+RESULT: fail release-check: HEAD c7c35d9 is 3 commits ahead of origin/dev: a release carries only what landed on dev; land it with kit pr first
+
+## scripts/agents/kit pr --dry-run --base main
+RESULT: fail guards: --base main requires --release
