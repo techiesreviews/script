@@ -5,12 +5,12 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
 
 ## Branches, checks and the shared file
 
-- **Landing branch `main`, release branch `main`** (`branches` in `scripts/agents/kit.json`). There
-  is no dev branch. The GitHub repo is `techiesreviews/script`.
-- **Landing:** a change lands in `main` through `scripts/agents/kit pr` (its own branch, a PR into
-  `main`, the review attached, merged when it passes), never a raw `git push` to `main`. The repo
-  has no GitHub CI workflow, so `kit pr` runs `checks.test` here and lands after the review
-  (`ci: none`). There is no separate release branch: `kit pr --release` does not apply.
+- **Landing branch `dev`, release branch `main`** (`branches` in `scripts/agents/kit.json`). The
+  GitHub repo is `techiesreviews/script`.
+- **Landing:** a change lands on `dev` through `scripts/agents/kit pr` (its own branch, a PR into
+  `dev`, the review attached, merged when it passes), never a raw `git push`. `main` only takes
+  `dev`, through `scripts/agents/kit pr --release --base main`. The repo has no GitHub CI workflow, so `kit pr`
+  runs `checks.test` here and lands after the review.
 - **Checks:** `checks.test` is `node --test tests/*.test.mjs`; run it through `kit specs` before
   every hand-over and before `kit review`. `checks.doctor` adds the Claude CLI and a `node --check`
   of every JavaScript file to `kit doctor`.
@@ -45,8 +45,8 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
 ## Release
 
 - **Lex's standing OK (2026-10-28):** once a change has passed `kit specs` and `kit review`, it may
-  go to GitHub (through `kit pr` into `main`) and live with `scripts/agents/kit deploy`, run from
-  `main` after the merge; its `RESULT: ok deploy …` line is the evidence. No Tuesday "ship it" is
+  go to GitHub (through `kit pr` into `dev`, then `kit pr --release` into `main`) and live with
+  `scripts/agents/kit deploy`, run from `main` after the release; its `RESULT: ok deploy …` line is the evidence. No Tuesday "ship it" is
   needed. Check the live page after the deploy. `docs/build/handoff.md` records what is live.
 
 ## Other
