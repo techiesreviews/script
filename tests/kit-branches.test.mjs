@@ -23,18 +23,18 @@ test("kit.json lands on dev, releases to main, and the docs agree", () => {
 
 // The deploy script itself, run with a stub kit and a stub npx: a failed check stops before wrangler.
 const deployScript = fileURLToPath(new URL("../scripts/agents/project.d/deploy", import.meta.url));
-const runDeploy = (t, checkStatus, { ignoredFile } = {}) => {
+const runDeploy = (t, checkStatus, { ignoredFile, args = [] } = {}) => {
   const root = mkdtempSync(join(tmpdir(), "script-deploy-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   spawnSync("git", ["init", "-q", root]);
   writeFileSync(join(root, ".gitignore"), "*.log\n/bin/\n/scripts/\n/kit-args\n/wrangler-ran\n");
   mkdirSync(join(root, "public"));
-  if (ignoredFile) writeFileSync(join(root, "public", ignoredFile), "not on main\n");
+  if (ignoredFile) { mkdirSync(join(root, "public", ignoredFile, ".."), { recursive: true }); writeFileSync(join(root, "public", ignoredFile), "not on main\n"); }
   const stub = (path, body) => { mkdirSync(join(path, ".."), { recursive: true }); writeFileSync(path, `#!/bin/sh\n${body}\n`); chmodSync(path, 0o755); };
   stub(join(root, "scripts/agents/kit"), `echo "$@" > "${join(root, "kit-args")}"; echo "RESULT: ${checkStatus ? "fail" : "ok"} release-check: stub"; exit ${checkStatus}`);
   const marker = join(root, "wrangler-ran");
   stub(join(root, "bin/npx"), `touch "${marker}"; echo "https://script-editor.example.workers.dev"`);
-  const result = spawnSync(deployScript, [], { encoding: "utf8", env: { ...process.env, KIT_ROOT: root, PATH: `${join(root, "bin")}:${process.env.PATH}` } });
+  const result = spawnSync(deployScript, args, { encoding: "utf8", env: { ...process.env, KIT_ROOT: root, PATH: `${join(root, "bin")}:${process.env.PATH}` } });
   const kitArgs = existsSync(join(root, "kit-args")) ? readFileSync(join(root, "kit-args"), "utf8").trim() : null;
   return { result, ran: existsSync(marker), kitArgs, last: result.stdout.trimEnd().split("\n").at(-1) };
 };
@@ -54,10 +54,21 @@ test("kit deploy reaches wrangler when kit release-check passes", t => {
   assert.equal(ran, true);
 });
 
-test("kit deploy refuses files git ignores in public/, which wrangler would upload", t => {
-  const { result, ran, last } = runDeploy(t, 0, { ignoredFile: "debug.log" });
-  assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.match(result.stdout, /^public\/debug\.log$/m);
-  assert.equal(last, "RESULT: fail deploy: ignored files in public/");
+test("kit deploy refuses files git ignores in public/, which wrangler would upload, after release-check", t => {
+  for (const ignoredFile of ["debug.log", "sub/trace.log"]) {
+    const { result, ran, kitArgs, last } = runDeploy(t, 0, { ignoredFile });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(kitArgs, "release-check");
+    assert.match(result.stdout, new RegExp(`^public/${ignoredFile.replace(".", "\\.")}$`, "m"));
+    assert.equal(last, "RESULT: fail deploy: ignored files in public/");
+    assert.equal(ran, false);
+  }
+});
+
+test("kit deploy refuses arguments", t => {
+  const { result, ran, kitArgs, last } = runDeploy(t, 0, { args: ["--waive", "x"] });
+  assert.equal(result.status, 2, result.stdout + result.stderr);
+  assert.equal(last, "RESULT: fail deploy: usage");
+  assert.equal(kitArgs, null);
   assert.equal(ran, false);
 });
