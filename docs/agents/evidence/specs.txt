@@ -150,6 +150,9 @@
 ✔ kit deploy reaches wrangler when kit release-check passes
 ✔ kit deploy refuses files git ignores in public/, which wrangler would upload, after release-check
 ✔ kit deploy refuses arguments
+✔ both files run the push guard on Bash and the stop guard, and only it, when a turn ends
+✔ Claude runs the brief guard on every way to start a subagent, and agent-cap counts native subagents
+✔ every hook name either file uses is one the kit runs
 ✔ the view switch is its own column of the top bar
 ✔ the voice and agent labels stay readable for screen readers
 ✔ the edit bar: Shorter, Simpler, Sound like me, More ▾ (Explain, Check facts, Find links), B-roll ▾ (or a guest's Suggest B-roll) and Ask
@@ -293,9 +296,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 295
+ℹ tests 298
 ℹ suites 0
-ℹ pass 295
+ℹ pass 298
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
