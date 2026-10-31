@@ -148,7 +148,8 @@
 ✔ kit.json lands on dev, releases to main, and the docs agree
 ✔ kit deploy stops before wrangler when kit release-check fails
 ✔ kit deploy reaches wrangler when kit release-check passes
-✔ kit deploy refuses files git ignores in public/, which wrangler would upload
+✔ kit deploy refuses files git ignores in public/, which wrangler would upload, after release-check
+✔ kit deploy refuses arguments
 ✔ the view switch is its own column of the top bar
 ✔ the voice and agent labels stay readable for screen readers
 ✔ the edit bar: Shorter, Simpler, Sound like me, More ▾ (Explain, Check facts, Find links), B-roll ▾ (or a guest's Suggest B-roll) and Ask
@@ -292,9 +293,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 294
+ℹ tests 295
 ℹ suites 0
-ℹ pass 294
+ℹ pass 295
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
