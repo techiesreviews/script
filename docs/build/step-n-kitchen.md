@@ -6,7 +6,7 @@ Lex (2026-10-30): after the retro he approved six changes. Each is its own commi
 
 The project ran an old copy of Agent Kit, so it lacked the kitchen's commands (`kit bg`, `kit ux`, `kit pr`, `kit status`, the hooks, …). It now runs the shared kit (github.com/techiesreviews/agent-kit) through the launcher `scripts/agents/kit`, written by `kit init` from the machine copy, with the settings in `scripts/agents/kit.json`:
 
-- Branches: land, release and CI are `main` (no dev branch; GitHub repo `techiesreviews/script`).
+- Branches: land, release and CI are `main` (no dev branch; GitHub repo `techiesreviews/script`). Replaced on 2026-10-31 by `step-o-land-on-dev.md`: changes land on `dev`, and `main` only takes `dev`.
 - Checks: `node --test tests/*.test.mjs`; `kit doctor` also checks the Claude CLI and runs `node --check` on every JavaScript file.
 - Own commands in `scripts/agents/project.d`: `kit specs` (the unit tests, evidence in `docs/agents/evidence/specs.txt`) and `kit deploy` (wrangler, https://script.techies.tools and the workers.dev fallback), as before.
 - Review pins stay Claude `claude-opus-5-5`, medium (the kit's defaults, repeated in the extras).
