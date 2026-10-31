@@ -1,6 +1,6 @@
 # Step O: changes land on `dev`, `main` only takes `dev`
 
-Lex (2026-10-31): "Yes a branch can go into dev, main can only get dev." The same day he asked for this in every project ("Yes all of these"). Kitchen tickets 89 and 90 carry it out; this step is the script editor's part. It replaces the branch line of `step-n-kitchen.md` item 1 (no dev branch). Nothing the person writing a script sees changes.
+Lex (2026-10-31): "Yes a branch can go into dev, main can only get dev." The same day he asked for this in every project ("Yes all of these"). Kitchen tickets 89 and 90 carry it out; this step is the script editor's part. It replaces the branch and extras lines of `step-n-kitchen.md` item 1 (no dev branch, `main` only). Nothing the person writing a script sees changes.
 
 ## What changes
 
@@ -18,4 +18,6 @@ Evidence: `docs/agents/evidence/step-o-branches.txt` (the commit each run was ma
 - `scripts/agents/kit pr --dry-run` from the change's branch fetches and rebases onto `origin/dev`.
 - `scripts/agents/kit pr --release --base main --dry-run` from the same branch is refused: "HEAD … is N commits ahead of origin/dev: a release carries only what landed on dev".
 - `scripts/agents/kit pr --dry-run --base main` is refused: "--base main requires --release".
+- `tests/kit-branches.test.mjs` checks the branch settings and that `AGENTS.md` and the extras say the same.
+- `kit doctor` also warns that three hook entries the kit added since (brief-guard, stop-guard) are missing; they are left for a later `kit init`, because this step changes only the branches.
 - Feature list: no change (nothing the person sees changed)
