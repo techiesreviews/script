@@ -2,7 +2,7 @@
 # kit: deploy the live site (script.techies.tools and the workers.dev fallback)
 set -euo pipefail
 if [[ ${1-} == --help || ${1-} == -h ]]; then
-  printf 'Usage: kit deploy\nDeploy Worker "script-editor" with wrangler.jsonc to the live address https://script.techies.tools\n(approved by Lex on 2026-10-28) and the workers.dev fallback. Needs the Cloudflare login on this computer.\nIt starts with kit release-check (a clean tree, HEAD exactly origin/main) and never pushes to GitHub.\n'
+  printf 'Usage: kit deploy\nDeploy Worker "script-editor" with wrangler.jsonc to the live address https://script.techies.tools\n(approved by Lex on 2026-10-28) and the workers.dev fallback. Needs the Cloudflare login on this computer.\nIt starts with kit release-check (a clean tree, HEAD exactly origin/<branches.release>, here main) and never pushes to GitHub.\n'
   exit 0
 fi
 cd "${KIT_ROOT:-$(git rev-parse --show-toplevel)}"
