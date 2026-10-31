@@ -19,3 +19,13 @@ RESULT: fail release-check: HEAD c7c35d9 is 3 commits ahead of origin/dev: a rel
 
 ## scripts/agents/kit pr --dry-run --base main
 RESULT: fail guards: --base main requires --release
+
+# Added 2026-10-31 at bf79d11 on fix/ke-90-deploy-release-check (base origin/dev 949205c)
+
+## scripts/agents/kit pr --release --dry-run (no --base main)
+RESULT: fail guards: --release requires --base main
+
+## scripts/agents/project.d/deploy off main (npx replaced by a stub that would fail, so wrangler could not run)
+problem: HEAD bf79d11 is 6 commits ahead of origin/main: what goes live must be on main; land it on dev with kit pr, then kit pr --release
+RESULT: fail HEAD bf79d11 is 6 commits ahead of origin/main: what goes live must be on main; land it on dev with kit pr, then kit pr --release
+RESULT: fail deploy: release-check (deploy from main after kit pr --release --base main)
