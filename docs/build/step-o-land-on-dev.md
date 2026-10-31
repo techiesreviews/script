@@ -7,7 +7,7 @@ Lex (2026-10-31): "Yes a branch can go into dev, main can only get dev." The sam
 - `scripts/agents/kit.json`: `branches.land` and `branches.ci` are `dev`; `branches.release` stays `main`.
 - Every change lands on `dev` through `scripts/agents/kit pr` (a PR into `dev`).
 - `main` changes only by a release of `dev`: `scripts/agents/kit pr --release --base main` from a branch that is exactly `origin/dev`.
-- Lex's standing OK to push and `kit deploy` (2026-10-28) holds: `kit deploy` runs from `main` after a release, and it starts with `scripts/agents/kit release-check`, so it refuses unsaved files and anything that is not exactly `origin/main` (the kit's rule for a live deploy command).
+- Lex's standing OK to push and `kit deploy` (2026-10-28) holds: `kit deploy` runs from `main` after a release, and it starts with `scripts/agents/kit release-check`, so it refuses changed and untracked files and anything that is not exactly `origin/main` (files git ignores are not checked) (the kit's rule for a live deploy command).
 - `AGENTS.md` and `docs/agents/kitchen-extras.md` say the same.
 
 ## Done (2026-10-31)
