@@ -2,12 +2,15 @@
 # kit: deploy the live site (script.techies.tools and the workers.dev fallback)
 set -euo pipefail
 if [[ ${1-} == --help || ${1-} == -h ]]; then
-  printf 'Usage: kit deploy\nDeploy Worker "script-editor" with wrangler.jsonc to the live address https://script.techies.tools\n(approved by Lex on 2026-10-28) and the workers.dev fallback. Needs the Cloudflare login on this computer.\nIt starts with kit release-check (a clean tree, HEAD exactly origin/<branches.release>, here main) and never pushes to GitHub.\n'
+  printf 'Usage: kit deploy\nDeploy Worker "script-editor" with wrangler.jsonc to the live address https://script.techies.tools\n(approved by Lex on 2026-10-28) and the workers.dev fallback. Needs the Cloudflare login on this computer.\nIt starts with kit release-check (a clean tree, HEAD exactly origin/<branches.release>, here main), refuses files git ignores in public/, and never pushes to GitHub.\n'
   exit 0
 fi
 cd "${KIT_ROOT:-$(git rev-parse --show-toplevel)}"
 # Only a release goes live: nothing unsaved, HEAD exactly origin/main (kitchen 89/90).
-scripts/agents/kit release-check || { echo "RESULT: fail deploy: release-check (deploy from main after kit pr --release --base main)"; exit 1; }
+scripts/agents/kit release-check || { echo "RESULT: fail deploy: release-check (see the line above)"; exit 1; }
+# release-check skips files git ignores, but wrangler uploads all of public/: none may be there.
+ignored=$(git ls-files --others --ignored --exclude-standard -- public/)
+[[ -z $ignored ]] || { printf '%s\n' "$ignored"; echo "RESULT: fail deploy: ignored files in public/"; exit 1; }
 out=$(npx --yes wrangler@4 deploy 2>&1) || { printf '%s\n' "$out"; echo "RESULT: fail deploy"; exit 1; }
 printf '%s\n' "$out" | tail -6
 url=$(printf '%s\n' "$out" | grep -o 'https://[^ ]*workers.dev' | head -1)
