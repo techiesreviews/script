@@ -20,5 +20,5 @@ Evidence: `docs/agents/evidence/step-o-branches.txt` (the commit each run was ma
 - `scripts/agents/kit pr --dry-run --base main` is refused: "--base main requires --release"; `kit pr --release --dry-run` without `--base main` is refused: "--release requires --base main".
 - `scripts/agents/kit release-check` on a branch that is not `origin/main` fails, so `kit deploy` stops before wrangler.
 - `tests/kit-branches.test.mjs` checks the branch settings, that `kit deploy` runs `kit release-check` before wrangler, and that `AGENTS.md` and the extras say the same.
-- `kit doctor` also warns that three setup pieces the kit added since are missing (the brief-guard entry in `.claude/settings.json` and the stop-guard entries in `.claude/settings.json` and `.codex/hooks.json`); they are left for a later `kit init`, because this step changes only the branches.
+- `kit doctor` also warns that three setup pieces the kit added since are missing (the brief-guard entry in `.claude/settings.json` and the stop-guard entries in `.claude/settings.json` and `.codex/hooks.json`); this step changed only the branches, and the commit "Kit setup: add what kit init writes today (kit ed29ab6)" added all three later, so `kit doctor` no longer warns about them.
 - Feature list: no change (nothing the person sees changed)
