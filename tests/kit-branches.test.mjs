@@ -12,5 +12,11 @@ test("kit.json lands on dev, releases to main, and the docs agree", () => {
     assert.match(text, /lands? on `dev`/, doc);
     assert.match(text, /kit pr --release --base main`/, doc);
     assert.doesNotMatch(text, /lands? in `main`|[Ll]anding branch `main`/, doc);
+    assert.match(text, /`kit deploy` runs from `main` after the release|kit deploy`, run from `main` after the release/, doc);
   }
+});
+
+test("kit deploy runs kit release-check before wrangler", () => {
+  const deploy = read("scripts/agents/project.d/deploy");
+  assert.match(deploy, /^scripts\/agents\/kit release-check \|\| \{[^\n]*exit 1; \}$[\s\S]*wrangler@4 deploy/m);
 });
