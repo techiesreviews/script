@@ -12,7 +12,10 @@ Lex (2026-10-31): "Yes a branch can go into dev, main can only get dev." The sam
 
 ## Done (2026-10-31)
 
+Evidence: `docs/agents/evidence/step-o-branches.txt` (the commit each run was made at is named there).
+
 - `scripts/agents/kit doctor` ends `RESULT: ok` and names `dev` as the landing branch.
 - `scripts/agents/kit pr --dry-run` from the change's branch fetches and rebases onto `origin/dev`.
-- `scripts/agents/kit pr --release --base main --dry-run` from the same branch is refused: "HEAD … is 1 commit ahead of origin/dev: a release carries only what landed on dev".
+- `scripts/agents/kit pr --release --base main --dry-run` from the same branch is refused: "HEAD … is N commits ahead of origin/dev: a release carries only what landed on dev".
+- `scripts/agents/kit pr --dry-run --base main` is refused: "--base main requires --release".
 - Feature list: no change (nothing the person sees changed)
