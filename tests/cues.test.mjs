@@ -7,6 +7,7 @@ import * as D from "../public/doc.js";
 import * as C from "../public/changes.js";
 import * as Q from "../public/cues.js";
 import * as L from "../public/links.js";
+import * as B from "../public/broll.js";
 import { checkArgs, TOOLS, INSTRUCTIONS } from "../worker/mcp.js";
 
 const sel = (content, words) => { const s = content.indexOf(words); return [s, s + words.length]; };
@@ -286,4 +287,70 @@ test("lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an
   const doc2 = script(), q2 = paras(doc2)[1], c2 = D.contentOf(q2);
   const over = D.makeAsk(doc2, { blockId: q2.id, start: c2.indexOf("==second=="), end: c2.indexOf("==second==") + 10, action: "simpler", by: { id: "lex", name: "Lex" } });
   assert.deepEqual(C.planCues(doc2, "unmark", [{ quote: "second" }], { asks: [over] }), { segments: [], skipped: [{ quote: "second", why: "under an open ask or change" }] });
+});
+
+test("PR 8 fixes: the cue tools don't treat the agent's highlighted changes as busy; open asks still count", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe ==start here== now. Then on.\n");
+  const p = paras(doc)[0], c = D.contentOf(p), q = "We ==start here== now.";
+  const ask = D.makeAsk(doc, { blockId: p.id, start: 0, end: q.length, action: "simpler", by: { id: "lex", name: "Lex" } });
+  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "We begin now." }, answeredBy: { id: "agent:x", name: "X" } });
+  const res = C.land(doc, ask, 1);
+  C.setMark(ask, res.mark);
+  assert.equal(res.cuesDropped, 1);
+  assert.equal(C.isMarked(ask), true);
+  // Told it may mark again, the agent can: on the rewritten words, still highlighted.
+  const again = C.planCues(doc, "mark", [{ quote: "begin" }], { asks: [ask] });
+  assert.deepEqual(again.segments.map((s) => s.content), ["We ==begin== now. Then on."]);
+  // And it can take off a cue it just marked.
+  const parts = C.landCues(doc, again, "mark", { id: "agent:x", name: "X" }, 2);
+  assert.deepEqual(C.planCues(doc, "unmark", [{ quote: "begin" }], { asks: [ask, parts[0].ask] }).segments.map((s) => s.content), ["We begin now. Then on."]);
+  assert.ok(c);
+});
+
+test("PR 8 fixes: a letter or digit right outside == is not a cue, so ordinary text stays as it is", () => {
+  assert.deepEqual(Q.textCues("if a==3 and b==4"), []);
+  assert.equal(Q.stripCues("if a==3 and b==4"), "if a==3 and b==4");
+  assert.deepEqual(Q.textCues("x==go== y ==go==z").map((c) => c.label), []);
+  assert.deepEqual(Q.textCues("(==go==), ==on==.").map((c) => c.label), ["go", "on"]);
+  const doc = D.parse("# T\n\n## A\n\nIf a==3 and b==4 we stop.\n");
+  assert.match(D.exportCamera(doc), /If a==3 and b==4 we stop/);
+  assert.match(D.exportPrompter(doc), /If a==3 and b==4 we stop/);
+});
+
+test("PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds the marks", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe start here now and go on.\n");
+  const p = paras(doc)[0], c = D.contentOf(p);
+  const sig = B.coverText(doc, [p.id]);
+  D.setContent(doc, p.id, "We ==start here== now and go on.");
+  assert.equal(B.coverText(doc, [p.id]), sig);
+  const shots = [{ id: "B1", blockIds: [p.id], sig }];
+  assert.deepEqual(B.touchShots(doc, shots), []);
+  const n = D.contentOf(p);
+  const over = (s, e) => B.overFor(doc, [{ id: p.id, start: s, end: e }]);
+  assert.doesNotMatch(over(n.indexOf("==start"), n.indexOf("now") + 3), /=/);
+  // A selection that starts inside the cue takes the whole cue, so no lone marks.
+  assert.match(over(n.indexOf("here"), n.indexOf("now") + 3), /^"start here now/);
+  assert.ok(c);
+});
+
+test("PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion", () => {
+  const text = "Read this.\n- Docs: https://example.com/guide";
+  const doc = D.parse(`# T\n\n## A\n\n${text}\n`);
+  const plan = C.planCues(doc, "mark", [{ quote: "guide" }]);
+  assert.deepEqual(plan, { segments: [], skipped: [{ quote: "guide", why: "inside a link" }] });
+  const i = text.indexOf("guide");
+  assert.equal(Q.toggleCue(text, i, i + 5), null);
+  assert.deepEqual(Q.textCues("Read.\n- Docs: https://example.com/==guide=="), []);
+  // Backspace next to a closed cue: Chromium takes the hidden "==" with the character; it is put back.
+  const old = "Say ==go== now", closed = Q.textCues(old);
+  assert.deepEqual(L.keepHidden(old, "Say ==go now", closed, 8), { content: "Say ==go== now", caret: 10 });
+  assert.deepEqual(L.keepHidden("Say ==go==", "Say ", Q.textCues("Say ==go=="), 4), null);
+});
+
+test("bold style: plain bold by default, own colours only as a valid choice, kept per person", () => {
+  assert.deepEqual(Q.boldStyle(null), Q.BOLD_DEFAULTS);
+  assert.equal(Q.BOLD_DEFAULTS.own, false);
+  assert.deepEqual(Q.boldStyle({ own: true, background: "#112233", color: "#ABCDEF" }), { own: true, background: "#112233", color: "#ABCDEF" });
+  // Anything else falls back, so nothing odd reaches the page's CSS.
+  assert.deepEqual(Q.boldStyle({ own: "yes", background: "red;}", color: "url(x)" }), Q.BOLD_DEFAULTS);
 });
