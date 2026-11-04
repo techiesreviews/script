@@ -49,18 +49,19 @@ function taken(content) {
   }
   return out;
 }
-const overlaps = (ranges, s, e) => ranges.some(([a, b]) => s < b && e > a);
+export const overlaps = (ranges, s, e) => ranges.some(([a, b]) => s < b && e > a);
 // A quote that starts or ends with a letter or digit is linked only on whole words ("AI" not inside "MAIL").
-const wholeWords = (content, s, e) => !(WORDY.test(content[s] ?? "") && WORDY.test(content[s - 1] ?? "")) && !(WORDY.test(content[e - 1] ?? "") && WORDY.test(content[e] ?? ""));
+export const wholeWords = (content, s, e) => !(WORDY.test(content[s] ?? "") && WORDY.test(content[s - 1] ?? "")) && !(WORDY.test(content[e - 1] ?? "") && WORDY.test(content[e] ?? ""));
 // The agent reads the spoken text with line breaks and runs of spaces made one space, so a quote's spaces match any
 // run of spaces and line breaks in the content ("Claude Code" finds "Claude\nCode"); the link's words get one space.
-const quoteRe = (quote) => new RegExp(quote.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "g");
+export const quoteRe = (quote) => new RegExp(quote.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "g");
 const oneSpace = (text) => text.replace(/\s+/g, " ");
 
 /**
  * Put the agent's links into the asked text: each quote's first unlinked occurrence becomes "[quote](url)".
  * segments: [{ id, content, from, to, avoid? }] in reading order (the asked text in each block: a selection is one
- * segment, the whole script one per spoken paragraph). `avoid`: [[start, end]] in the content that other open work
+ * segment, the whole script one per spoken paragraph). `cues`: [[start, end]] of the cues there (cues.js; a link never
+ * goes inside a cue, whose words hold no brackets). `avoid`: [[start, end]] in the content that other open work
  * points at (open asks, "Sounds like me" marks, the agent's marked changes): a segment's change (from its first new
  * link to its last) never reaches into them. others: the content of the blocks where links don't go (headings,
  * reminders), only to say why a quote found there was skipped.
@@ -68,7 +69,7 @@ const oneSpace = (text) => text.replace(/\s+/g, " ");
  * from…to is the changed stretch in the old content, delta the change in length), skipped: [{ quote, why }] }.
  */
 export function planLinks(segments, links, { others = [] } = {}) {
-  const state = segments.map((s) => ({ ...s, taken: taken(s.content), avoid: s.avoid || [], picks: [] }));
+  const state = segments.map((s) => ({ ...s, taken: taken(s.content), cues: s.cues || [], avoid: s.avoid || [], picks: [] }));
   const skipped = [], seen = new Set();
   for (const link of links || []) {
     const quote = String(link?.quote ?? "").trim(), url = link?.url;
@@ -78,13 +79,14 @@ export function planLinks(segments, links, { others = [] } = {}) {
     if (seen.has(oneSpace(quote))) { skip("already linked in this answer"); continue; }
     if (/[[\]]/.test(quote)) { skip("not found word for word in the asked text"); continue; }
     const re = quoteRe(quote);
-    let found = false, linked = false, busy = false, across = false;
+    let found = false, linked = false, busy = false, across = false, cued = false;
     for (const s of state) {
       re.lastIndex = s.from;
       for (let m = re.exec(s.content); m && m.index + m[0].length <= s.to; re.lastIndex = m.index + 1, m = re.exec(s.content)) {
         const i = m.index, e = i + m[0].length;
         if (!wholeWords(s.content, i, e)) continue;
         if (overlaps(s.taken, i, e)) { linked = true; continue; }
+        if (overlaps(s.cues, i, e)) { cued = true; continue; }
         if (overlaps(s.avoid, i, e)) { busy = true; continue; }
         // The segment's change runs from its first link to its last: it must not take in other open work.
         const from = Math.min(i, ...s.picks.map((p) => p.start)), to = Math.max(e, ...s.picks.map((p) => p.end));
@@ -100,6 +102,7 @@ export function planLinks(segments, links, { others = [] } = {}) {
     if (busy) skip("under an open ask or change");
     else if (across) skip("an open ask or change sits between it and another link in its paragraph");
     else if (linked) skip("already linked");
+    else if (cued) skip("inside a cue, where links don't go");
     else if (others.some((c) => { re.lastIndex = 0; return re.test(String(c)); })) skip("in a heading or reminder, where links don't go");
     else skip("not found word for word in the asked text");
   }

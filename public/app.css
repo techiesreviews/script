@@ -367,9 +367,16 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .md-link:not([data-open]) .md-link__mark { display: none; }
 .md-link__mark { color: var(--faint); overflow-wrap: anywhere; }
 @media (hover: hover) and (pointer: fine) {
-  .md-link__words:hover { text-decoration-color: var(--accent); }
-  .script[data-mod] .md-link__words { cursor: pointer; }
+  .md-link:not(.md-cue) .md-link__words:hover { text-decoration-color: var(--accent); }
+  .script[data-mod] .md-link:not(.md-cue) .md-link__words { cursor: pointer; }
 }
+/* Cues (fleet issue #14): the "==" marks hide and show like a link's Markdown. The cue look lives only in this rule,
+   from the theme's accent tokens, so the prompter's shared look can replace it later. */
+.md-cue .md-link__words { text-decoration: none; background: var(--accent-soft); color: var(--text); font-weight: 600; border-radius: 0.2em; box-decoration-break: clone; }
+.edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
+.edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
+.menu-action__check { margin-inline-start: auto; color: var(--accent-ink); }
+.menu-action[aria-pressed="false"] .menu-action__check { visibility: hidden; }
 @keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
 
 /* A note in place (check facts) */
