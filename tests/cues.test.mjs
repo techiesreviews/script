@@ -568,3 +568,50 @@ test("Bold marking on: an edit that breaks a bold stretch settles it, with no st
     assert.equal(Q.settleMarks(old, now, 1), null, now);
   }
 });
+
+test("review: the mirror of the comparison bug, the AI's own comparisons, and rewrites that wouldn't read back", () => {
+  for (const t of ['if "Lex"==name or "7"==id', "f(x)==3 and g(y)==4", "a[1]==b and c[2]==d"]) {
+    assert.deepEqual(Q.textCues(t), [], t);
+    assert.ok(D.exportCamera(D.parse(`# T\n\n## A\n\n${t}\n`)).includes(t), t);
+  }
+  assert.deepEqual(Q.textCues('"==up==" and (==on==), and ==go==s').map((c) => c.label), ["up", "on", "go"]);
+  for (const t of ["a !== b", "a <== b", "a >== b", "f(x)==3", 'say "a"==b', "x[1]==2"]) assert.equal(Q.dropLoneMarks(t), t);
+  assert.equal(Q.dropLoneMarks("here== today"), "here today");
+  // A cue whose words would come right after a comparison sign can't read back as a cue: it goes, and the agent is told.
+  assert.deepEqual(Q.keepCues("==go==", "Stop!go now"), { text: "Stop!go now", dropped: 1 });
+  assert.deepEqual(Q.keepCues("==go==", "We go now"), { text: "We ==go== now", dropped: 0 });
+  // Typing a letter right after a bold word that follows a quote or bracket would read as a comparison: the marks go.
+  assert.equal(Q.settleMarks('say "==go==" x', 'say "==go==s" x', 12)?.content, 'say "==go==s" x'.replace(/==/g, ""));
+});
+
+test("review: turning Bold marking off or on flags no B-roll shot", () => {
+  const doc = D.parse("# T\n\n## A\n\nSay ==go== now.\n");
+  const p = paras(doc)[0], shots = [{ id: "B1", blockIds: [p.id] }];
+  B.refreshSigs(doc, shots);
+  whileOff(() => {
+    B.refreshSigs(doc, shots);
+    assert.deepEqual(B.touchShots(doc, shots), [], "off: nothing flagged");
+    assert.equal(shots[0].check, undefined);
+  });
+  B.refreshSigs(doc, shots);
+  assert.deepEqual(B.touchShots(doc, shots), [], "on again: nothing flagged");
+  D.setContent(doc, p.id, "Say ==go== later.");
+  assert.deepEqual(B.touchShots(doc, shots), ["B1"], "a changed word still asks for a check");
+});
+
+test("typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed", () => {
+  const run = (old, now, caret, typedBefore) => { const r = Q.settleMarks(old, now, caret, { typedBefore }); return r && [r.content, r.caret, r.typedBefore ?? null]; };
+  assert.deepEqual(run("==go== now", "b==go== now", 1, null), ["==bgo== now", 3, 3]);
+  assert.deepEqual(run("==bgo== now", "==bigo== now", 4, 3), ["==bigo== now", 4, 4]);
+  assert.deepEqual(run("==bigo== now", "==biggo== now", 5, 4), ["==biggo== now", 5, 5]);
+  assert.deepEqual(run("==biggo== now", "==big go== now", 6, 5), ["big ==go== now", 4, null]);
+  // A typo in the word typed: Backspace keeps track.
+  assert.deepEqual(run("==biggo== now", "==bigo== now", 4, 5), ["==bigo== now", 4, 4]);
+  // A space typed anywhere else in a bold word stays in it, and a word joined by deleting a space isn't "typing".
+  assert.equal(Q.settleMarks("==big go==", "==big  go==", 6), null);
+  assert.equal(Q.settleMarks("==biggo==", "==big go==", 6), null);
+  assert.equal(Q.settleMarks("foo ==go==", "foo==go==", 3).typedBefore ?? null, null);
+  // A word typed mid-line, after other words.
+  assert.deepEqual(run("Say ==go== now", "Say x==go== now", 5, null), ["Say ==xgo== now", 7, 7]);
+  assert.deepEqual(run("Say ==xgo== now", "Say ==x go== now", 8, 7), ["Say x ==go== now", 6, null]);
+});

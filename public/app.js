@@ -878,6 +878,7 @@ function applyContent(id, content, caretOffset) {
 /* ---------- Editing ---------- */
 // The links that were closed when a deletion began (beforeinput), so that their hidden Markdown survives it.
 let linksBefore = null;
+let boldTyping = null; // A word being typed in front of a bold word: { id, content, end } (K.settleMarks).
 function syncFromDom(el) {
   const id = el.dataset.id, b = byId(id);
   if (!b) return;
@@ -886,8 +887,14 @@ function syncFromDom(el) {
   const before = linksBefore?.id === id && linksBefore.content === D.contentOf(b) ? linksBefore.closed : null;
   linksBefore = null;
   let fix = before && L.keepHidden(D.contentOf(b), typed, before, getCaret()?.offset);
-  // A bold stretch this edit broke is settled, so its marks never stay behind as literal text (K.settleMarks).
-  if (b.type === "para") fix = K.settleMarks(D.contentOf(b), fix ? fix.content : typed, fix ? fix.caret : getCaret()?.offset) || fix;
+  // A bold stretch this edit broke is settled, so its marks never stay behind as literal text (K.settleMarks). A word
+  // being typed in front of one is followed from edit to edit, until its space is typed.
+  if (b.type === "para") {
+    const old = D.contentOf(b), going = boldTyping?.id === id && boldTyping.content === old ? boldTyping.end : null;
+    const settled = K.settleMarks(old, fix ? fix.content : typed, fix ? fix.caret : getCaret()?.offset, { typedBefore: going });
+    fix = settled || fix;
+    boldTyping = settled?.typedBefore != null ? { id, content: settled.content, end: settled.typedBefore } : null;
+  }
   const content = fix ? fix.content : typed;
   if (content === D.contentOf(b)) {
     if (fix || !domMatches(el, id)) renderBlock(id, fix ? { id, offset: fix.caret } : getCaret());
@@ -1162,6 +1169,7 @@ function cuesChanged() {
   cueMemo = null;
   renderCueMenu();
   if (state.doc) {
+    if (broll.status === "ok") B.refreshSigs(state.doc, broll.shots); // read anew, no word changed: no shot asks for a check
     renderAll(getCaret());
     renderDerived(); // the prompter link and its too-long check follow the export setting at once
   }
