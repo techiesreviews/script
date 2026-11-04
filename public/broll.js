@@ -1007,7 +1007,7 @@ export function pendingImages({ shotIds = [], waiting = {}, marked = [], suggest
   const count = open.waiting.length + open.marked.length + open.suggested.length;
   return { ...open, count, show: count >= 2 };
 }
-/** How far to scroll the page so the caret's line is clear of the bar (step Q2): 0 when it already is. */
+/** How far to scroll the page so the caret's line is clear of the bar (step Q): 0 when it already is. */
 export function barScroll(caret, bar, gap = 8) {
   if (!caret || !bar || caret.bottom <= bar.top || caret.top >= bar.bottom) return 0;
   return caret.top - bar.bottom - gap;
