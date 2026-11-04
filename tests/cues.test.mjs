@@ -43,9 +43,9 @@ test("format: ==words== in a line; no brackets, = or line breaks inside; a lette
 test("toggle: marks the selected words, a second toggle takes the marks off, the words stay", () => {
   const c = "We start here. Then we go on.";
   const on = Q.toggleCue(c, ...sel(c, "start here"));
-  assert.deepEqual(on, { content: "We ==start here==. Then we go on.", start: 5, end: 15, cue: true });
+  assert.deepEqual(on, { content: "We ==start here==. Then we go on.", start: 5, end: 15, cue: true, from: 3, to: 13 });
   const off = Q.toggleCue(on.content, on.start, on.end);
-  assert.deepEqual(off, { content: c, start: 3, end: 13, cue: false });
+  assert.deepEqual(off, { content: c, start: 3, end: 13, cue: false, from: 3, to: 17 });
   // The whole cue selected with its marks showing (caret inside it) takes it off too.
   assert.equal(Q.toggleCue(on.content, 3, 17).content, c);
   // A part of the cue's words, inside it: the cue goes.
@@ -193,4 +193,37 @@ test("review: links never land inside a cue; a rewrite whose cues would change t
   const res = C.land(doc, ask, 1);
   assert.equal(D.contentOf(p), "We ==start== now and ==go== on.");
   assert.equal(res.cuesDropped, 0);
+});
+
+test("review 2: Ctrl+B never cuts into an open ask; the toggle says which stretch it changes", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe start here now.\n");
+  const p = paras(doc)[0], c = D.contentOf(p);
+  const ask = D.makeAsk(doc, { blockId: p.id, start: 3, end: 17, action: "simpler", by: { id: "lex", name: "Lex" } });
+  const res = Q.toggleCue(c, ...sel(c, "start"));
+  assert.deepEqual([res.from, res.to], [3, 8]);
+  assert.equal(C.cueBlocked([ask], p.id, res.from, res.to), true);
+  assert.equal(C.cueBlocked([ask], p.id, 0, 2), false);
+  assert.equal(C.cueBlocked([{ ...ask, status: "cancelled" }], p.id, res.from, res.to), false);
+});
+
+test("review 2: a rewrite over half a cue takes the whole cue in, so no stray == is left; duplicates count", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe ==start here== now.\n");
+  const p = paras(doc)[0], c = D.contentOf(p);
+  const [s, e] = sel(c, "here== now");
+  const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "there now" }, answeredBy: { id: "agent:x", name: "X" } });
+  const res = C.land(doc, ask, 1);
+  assert.equal(D.contentOf(p), "We start there now.");
+  assert.equal(res.cuesDropped, 1);
+  C.setMark(ask, res.mark);
+  assert.equal(C.undo(doc, ask).blockId, p.id);
+  assert.equal(D.contentOf(p), c);
+  // An add right inside a cue goes after the cue.
+  const add = D.makeAsk(doc, { blockId: p.id, start: c.indexOf("here"), end: c.indexOf("here") + 4, action: "explain", by: { id: "lex", name: "Lex" } });
+  Object.assign(add, { status: "answered", answer: { kind: "add", text: "and more" }, answeredBy: { id: "agent:x", name: "X" } });
+  C.land(doc, add, 2);
+  assert.equal(Q.textCues(D.contentOf(p)).length, 1);
+  assert.equal(D.contentOf(p).replace(/==[^=]+==/g, "").includes("=="), false);
+  assert.deepEqual(Q.keepCues("==go== and ==go==", "We go and go"), { text: "We ==go== and ==go==", dropped: 0 });
+  assert.deepEqual(Q.keepCues("==go== and ==go==", "We ==go== now"), { text: "We ==go== now", dropped: 1 });
 });

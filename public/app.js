@@ -1178,8 +1178,12 @@ function agentCueSettings(args, by) {
   if (forScript && !state.name) return { error: "The open script has no file name yet, so it can't have its own settings. Leave out forScript to set them for the person." };
   const was = cues(), undoTo = setCues(patch, forScript), now = cues();
   const words = cueChangeWords(was, now);
-  if (words) showBanner(`${by.name} ${words}${forScript ? " for this script" : ""}`, [["Undo", () => { hideBanner(); restoreCues(undoTo); }]]);
-  return { result: { message: words ? "Done: the person sees the change, with Undo." : "Those settings were in force already: nothing the person sees changed.", ...now, forScript: ownCues() } };
+  const stored = JSON.stringify(undoTo.prev) !== JSON.stringify(store.get(undoTo.key));
+  const undoIt = [["Undo", () => { hideBanner(); restoreCues(undoTo); }]];
+  if (words) showBanner(`${by.name} ${words}${forScript ? " for this script" : ""}`, undoIt);
+  else if (stored) showBanner(`${by.name} changed your own cue settings; this script keeps its own`, undoIt);
+  const message = words ? "Done: the person sees the change, with Undo." : stored ? "Saved for the person, but this script has its own cue settings, which win; pass forScript: true to change them." : "Those settings were in force already: nothing changed.";
+  return { result: { message, ...now, forScript: ownCues() } };
 }
 // Ctrl/Cmd+B and the Cue button: toggle a cue on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
 // Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
@@ -1190,7 +1194,7 @@ function toggleCueHere() {
   if (!b || b.type !== "para" || !s.el.contains(s.range.startContainer) || !s.el.contains(s.range.endContainer)) return;
   if (!B.spokenBlocks(state.doc).some((x) => x.id === b.id)) return;
   const res = K.toggleCue(D.contentOf(b), s.start, s.end);
-  if (!res) return;
+  if (!res || C.cueBlocked(state.asks, b.id, res.from, res.to)) return;
   checkpoint("cue", b.id);
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
