@@ -1287,6 +1287,9 @@ function showBar() {
   const cueBlock = byId(s.id), cueBtn = $("#cueBtn");
   cueBtn.hidden = !cues().on || cueBlock?.type !== "para" || !spoken;
   cueBtn.setAttribute("aria-pressed", String(!!cueBlock && K.cueSelected(D.contentOf(cueBlock), s.start, s.end)));
+  // Disabled where the toggle can't work: across paragraphs, a link or an "=" in the way, under an open ask.
+  const cueTry = cueBlock && !cueBtn.hidden && s.el.contains(s.range.endContainer) && K.toggleCue(D.contentOf(cueBlock), s.start, s.end);
+  cueBtn.disabled = !cueTry || C.cueBlocked(state.asks, cueBlock.id, cueTry.from, cueTry.to);
   const n = D.countWords(K.spokenWords(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
@@ -4264,6 +4267,8 @@ function handleCall({ id, tool, args = {} }) {
     if (tool === "set_cue_settings") return send(agentCueSettings(args, agentBy()));
     if (tool === "list_cues") return send({ result: { cues: C.listCues(state.doc), settings: cues() } });
     if (tool === "mark_cue" || tool === "unmark_cue") {
+      const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
+      if (busy) return send({ error: busy });
       if (tool === "mark_cue" && !cues().on) return send({ error: "Cue marking is off. Turn it on with set_cue_settings only when the person asks for cues." });
       const mode = tool === "mark_cue" ? "mark" : "unmark";
       const plan = C.planCues(state.doc, mode, args.cues, { asks: state.asks });
