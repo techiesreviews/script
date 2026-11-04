@@ -8,7 +8,7 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 - No "Saved" time is shown (Lex, 2026-10-29): only an orange dot for unsaved changes, "Saving…" on Ctrl/Cmd+S and "Not saved" when a save fails.
 - A new script is saved in the browser at once (step J) and can be moved to a file with Export → Markdown file.
 - The file name opens a switcher of recent scripts.
-- Cues (step P, Lex 2026-11-04), optional and off by default: with **Cue marking** on (Cues, in the file name's menu), Ctrl+B (⌘B on a Mac) or the **Cue** button on the selection bar marks the selected words as a cue, and again takes it off; one Ctrl/Cmd+Z step each. A cue shows tinted, its `==` marks only while the caret is in it. The prompter file strips cues unless **Cues in the prompter file** is on; **Camera action with each cue** is stored for the prompter, off by default. Off, the editor works as before (no shortcut, no button, no cue look); text that already holds `==words==` still comes out of the prompter file and word counts as plain words.
+- Bold words (step P, Lex 2026-11-04; "cues" to the agent and in the code), optional and off by default: with **Bold marking** on (Bold, in the file name's menu), Ctrl+B (⌘B on a Mac) or the **B** button before the text input on the selection bar marks the selected words, and again takes it off; one Ctrl/Cmd+Z step each. They show bold, their `==` marks only while the caret is in them. **Use my own colours for bold** adds a background and a font colour, off by default. The prompter file strips the marks unless **Bold words in the prompter file** is on; **Camera action with bold words** is stored for the prompter, off by default. Off, the editor works as before (no shortcut, no button, no bold look); text that already holds `==words==` still comes out of the prompter file and word counts as plain words.
 
 ## Top bar and export
 
@@ -20,7 +20,7 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 
 - Select text and use the edit bar ("Sound like me", "Simpler", "Shorter", "Explain how it works", "Check facts", "Find links", "Ask…"; "Find links in the script" in the agent menu): this makes an **ask**.
 - The person's **own connected agent** (over MCP) answers it: a new text or an addition goes straight into the script, lightly marked, with Undo on the agent's name tag (step F), until the person scrolls past it or 60 minutes are over (step M); a note shows beside the text.
-- The agent can read and change the cue settings (shown on a line at the top with Undo), list cues, and mark or remove them (each lightly marked, with Undo on its name tag); a rewrite keeps a cue whose words survive and tells the agent when one went.
+- The agent can read and change the bold settings (shown on a line at the top with Undo; not the colours), list bold words, and mark or remove them (each lightly marked, with Undo on its name tag); a rewrite keeps bold words that survive and tells the agent when some went.
 - Asked for a whole script, the agent can also open one of the person's recent scripts, open a new script it wrote, or put in the whole text with an Undo line (step H).
 
 ## B-roll
