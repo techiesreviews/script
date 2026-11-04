@@ -149,6 +149,7 @@ async function noCover(page, tag) {
     await sleep(120);
     check(await page.eval(caretClear), `${tag}: ${what}: the caret's line is clear of the bar`);
   }
+  check((await page.eval(`getComputedStyle(document.querySelector("#slashMenu")).position`)) === "fixed", `${tag}: the "/" menu keeps its own place: the bar's styles lost no other rule`);
   await page.eval(`getSelection().removeAllRanges()`);
   await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
 }
