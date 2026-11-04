@@ -4,6 +4,7 @@ import * as Q from "./save-queue.js";
 import * as B from "./broll.js";
 import * as C from "./changes.js";
 import * as L from "./links.js";
+import * as K from "./cues.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
@@ -15,6 +16,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const fine = matchMedia("(hover: hover) and (pointer: fine)");
 
 const ICONS = {
+  cue: '<path d="M4 20h8M14.5 4.5l5 5L11 18H6v-5z"/>',
   wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
   simpler: '<path d="M4 7h16M4 12h10M4 17h6"/>',
   shorter: '<path d="M4 12h10M10 8l4 4-4 4M20 5v14"/>',
@@ -282,17 +284,24 @@ function decorationsFor(id) {
    address are hidden while the caret is outside the link; with the caret at or in it, or a selection touching it, the
    link is open (data-open) and shows all of its Markdown. The text nodes are still the block's exact content, so
    offsets, asks, carets and the room are unchanged. A link cut by a decoration's edge shows as plain Markdown. */
-const linksOf = (b) => (b.type === "para" ? L.textLinks(D.contentOf(b)) : []);
+/* Cues (fleet issue #14, Lex 2026-11-04): with cue marking on, a "==words==" in a para is drawn with the same trick:
+   the "==" marks are hidden while the caret is outside it, and the words get the cue look (.md-cue in app.css; the
+   prompter owns the final look). Off (the default), "==" shows as plain text, as before. */
+const linksOf = (b) => {
+  if (b.type !== "para") return [];
+  const content = D.contentOf(b), links = L.textLinks(content);
+  return cues().on ? [...links, ...K.textCues(content)].sort((x, y) => x.start - y.start) : links;
+};
 function linkNodes(content, from, to, links) {
   const nodes = [];
   let at = from;
   for (const l of links) {
     if (l.start < at || l.end > to) continue;
     if (l.start > at) nodes.push(document.createTextNode(content.slice(at, l.start)));
-    const a = h("span", "md-link", { "data-link": "", title: l.url });
-    a.dataset.href = l.url;
+    const a = l.cue ? h("span", "md-link md-cue", { "data-link": "", "data-cue": "" }) : h("span", "md-link", { "data-link": "", title: l.url });
+    if (!l.cue) a.dataset.href = l.url;
     const head = h("span", "md-link__mark"), words = h("span", "md-link__words"), tail = h("span", "md-link__mark");
-    head.textContent = "[";
+    head.textContent = content.slice(l.start, l.words.start);
     words.textContent = content.slice(l.words.start, l.words.end);
     tail.textContent = content.slice(l.words.end, l.end);
     a.append(head, words, tail);
@@ -317,8 +326,8 @@ function linkStart(el, a) {
 }
 // A drawn link as L.textLinks gives it ({ start, end, words: { start, end } }), from its element and where it starts.
 function shownLink({ a, start }) {
-  const words = readContent(a.querySelector(".md-link__words")).length;
-  return { start, end: start + readContent(a).length, words: { start: start + 1, end: start + 1 + words } };
+  const words = readContent(a.querySelector(".md-link__words")).length, head = readContent(a.querySelector(".md-link__mark")).length;
+  return { start, end: start + readContent(a).length, words: { start: start + head, end: start + head + words } };
 }
 const closedLinks = (el) => [...el.querySelectorAll(".md-link:not([data-open])")].map((a) => shownLink({ a, start: linkStart(el, a) }));
 // Open the links in `el` that touch start…end (content offsets); close the others (start < 0: close all).
@@ -715,7 +724,7 @@ function renderDerived() {
   const st = D.stats(state.doc);
   $("#docMeta").textContent = `${st.words.toLocaleString("en")} words · ${st.spoken} spoken`;
   // The prompter link is made ahead of the click; a script that is too long gets a quiet note instead.
-  const pro = D.exportPrompter(state.doc);
+  const pro = D.exportPrompter(state.doc, prompterOpts());
   const tooLong = pro.length > D.PROMPTER_MAX_CHARS;
   $("#prompterAction").disabled = tooLong;
   $("#prompterNote").hidden = !tooLong;
@@ -758,7 +767,7 @@ async function prompterUrl(text) {
 }
 async function openPrompter() {
   if (!state.doc) return;
-  const text = D.exportPrompter(state.doc);
+  const text = D.exportPrompter(state.doc, prompterOpts());
   const url = prompterCache.text === text ? prompterCache.url : await prompterUrl(text);
   if (url) window.open(url, "_blank", "noopener");
 }
@@ -1105,6 +1114,125 @@ scriptEl.addEventListener("paste", (e) => {
   pasteText(el, e.clipboardData?.getData("text/plain") || "");
 });
 
+/* ---------- Cues (fleet issue #14, Lex 2026-11-04) ---------- */
+// Optional, off by default. Settings (K.cueSettings): the person's own, and the open script's own when one was set
+// for it (by the agent, or by the person once a script has its own); kept in this browser.
+const cueKey = () => `cues:${state.name || ""}`;
+let cueMemo = null;
+function cues() {
+  if (cueMemo?.name !== state.name) cueMemo = { name: state.name, value: K.cueSettings(store.get("cues"), state.name ? store.get(cueKey()) : null) };
+  return cueMemo.value;
+}
+const ownCues = () => !!state.name && store.get(cueKey()) != null;
+// The prompter file keeps cue marks only when cue marking is on and its export setting says show.
+const prompterOpts = () => ({ cues: cues().on ? cues().export : "strip" });
+// Store a settings change (for the open script or the person) and redraw what it changes. Returns what it
+// replaced, for Undo.
+function setCues(patch, forScript) {
+  const key = forScript ? cueKey() : "cues", prev = store.get(key);
+  store.set(key, { ...(prev || {}), ...patch });
+  cuesChanged();
+  return { key, prev };
+}
+function restoreCues({ key, prev }) {
+  if (prev == null) store.del(key);
+  else store.set(key, prev);
+  cuesChanged();
+}
+function cuesChanged() {
+  cueMemo = null;
+  renderCueMenu();
+  if (state.doc) renderAll(getCaret());
+  if (!bar.hidden) showBar();
+}
+function renderCueMenu() {
+  const c = cues(), g = $("#cueGroup");
+  g.hidden = !state.doc;
+  for (const b of $$("[data-cue-set]", g)) {
+    const k = b.dataset.cueSet;
+    b.setAttribute("aria-pressed", String(k === "on" ? c.on : k === "action" ? c.action === "camera" : c.export === "show"));
+    if (k !== "on") b.hidden = !c.on;
+  }
+}
+$("#scriptMenu").addEventListener("toggle", renderCueMenu);
+$("#cueGroup").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-cue-set]");
+  if (!b) return;
+  const c = cues(), k = b.dataset.cueSet;
+  setCues(k === "on" ? { on: !c.on } : k === "action" ? { action: c.action === "camera" ? "highlight" : "camera" } : { export: c.export === "show" ? "strip" : "show" }, ownCues());
+});
+// The agent's set_cue_settings: shown at once on a line at the top, with Undo, like its other changes.
+function cueChangeWords(was, now) {
+  const out = [];
+  if (was.on !== now.on) out.push(`turned cue marking ${now.on ? "on" : "off"}`);
+  if (was.action !== now.action) out.push(now.action === "camera" ? "gave cues a camera action" : "made cues a highlight only");
+  if (was.export !== now.export) out.push(now.export === "show" ? "kept cues in the prompter file" : "took cues out of the prompter file");
+  return out.join(" and ");
+}
+function agentCueSettings(args, by) {
+  const { forScript = false, ...patch } = args;
+  if (forScript && !state.name) return { error: "The open script has no file name yet, so it can't have its own settings. Leave out forScript to set them for the person." };
+  const was = cues(), undoTo = setCues(patch, forScript), now = cues();
+  const words = cueChangeWords(was, now);
+  if (words) showBanner(`${by.name} ${words}${forScript ? " for this script" : ""}`, [["Undo", () => { hideBanner(); restoreCues(undoTo); }]]);
+  return { result: { message: words ? "Done: the person sees the change, with Undo." : "Those settings were in force already: nothing the person sees changed.", ...now, forScript: ownCues() } };
+}
+// Ctrl/Cmd+B and the Cue button: toggle a cue on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
+// Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
+function toggleCueHere() {
+  if (!cues().on || state.locked || state.pendingDraft) return;
+  const s = currentSelection();
+  const b = s && byId(s.id);
+  if (!b || b.type !== "para" || !s.el.contains(s.range.startContainer) || !s.el.contains(s.range.endContainer)) return;
+  if (!B.spokenBlocks(state.doc).some((x) => x.id === b.id)) return;
+  const res = K.toggleCue(D.contentOf(b), s.start, s.end);
+  if (!res) return;
+  checkpoint("cue", b.id);
+  const r = D.setContent(state.doc, b.id, res.content);
+  followPieces(b.id, r);
+  renderBlock(b.id);
+  const el = blockNode(b.id);
+  if (el) {
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(rangeAt(el, res.start, res.end));
+  }
+  changed();
+}
+const cueKeys = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘B" : "Ctrl+B";
+$("#cueBtn").title = `Cue (${cueKeys})`;
+$("#cueBtn").addEventListener("click", toggleCueHere);
+// The agent's mark_cue and unmark_cue: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script),
+// a marked change with Undo on the agent's name tag per paragraph (C.landCues). Returns how many cues changed.
+function landAgentCues(plan, mode, by) {
+  together?.local();
+  const before = D.cloneDoc(state.doc);
+  const parts = C.landCues(state.doc, plan, mode, by, Date.now());
+  if (!parts.length) return 0;
+  checkpoint("agent", parts[0].blockId, before);
+  if (!together?.active) state.undo.at(-1).land = { id: parts[0].ask.id, status: "undone", ...(parts.length > 1 ? { also: parts.slice(1).map((p) => p.ask.id) } : {}) };
+  for (const p of parts) {
+    moveAsks(p.blockId, p.blockId, p.at, p.delta);
+    followPieces(p.blockId, p.result);
+  }
+  followMarks(); // the agent's earlier changes follow these
+  const now = Date.now();
+  for (const p of parts) {
+    arrived.set(p.ask.id, now);
+    state.asks.push(p.ask);
+    emit("kept", p.ask);
+  }
+  markBase();
+  together?.localAs("agent");
+  renderAll(getCaret());
+  renderAgent();
+  changed();
+  return parts.reduce((n, p) => n + p.ask.answer.cues.length, 0);
+}
+const cueSkips = (skipped) => (skipped.length ? ` Skipped: ${skipped.map((x) => `${JSON.stringify(x.quote)} (${x.why})`).join("; ")}.` : "");
+// How many cues a rewrite dropped, per ask, for the agent's answer_ask result.
+const cueDrops = new Map();
+
 /* ---------- Edit bar ---------- */
 const bar = $("#editBar");
 let barSel = null;
@@ -1148,7 +1276,10 @@ function showBar() {
   // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
   $("#brollBtn").hidden = state.guest;
   $("#suggestBroll").hidden = !state.guest;
-  const n = D.countWords(L.spokenText(s.quote));
+  const cueBlock = byId(s.id), cueBtn = $("#cueBtn");
+  cueBtn.hidden = !cues().on || cueBlock?.type !== "para" || !spoken;
+  cueBtn.setAttribute("aria-pressed", String(!!cueBlock && K.cueSelected(D.contentOf(cueBlock), s.start, s.end)));
+  const n = D.countWords(K.spokenWords(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
   placeBar(s.range);
@@ -1407,6 +1538,7 @@ function landAnswer(ask) {
   const before = D.cloneDoc(state.doc);
   const res = C.land(state.doc, ask, Date.now(), { asks: state.asks });
   if (!res) { closeAsk(ask, "cancelled"); renderBlock(b.id, getCaret()); changed(); return false; }
+  if (res.cuesDropped) cueDrops.set(ask.id, res.cuesDropped);
   // One Ctrl/Cmd+Z step, taken only now the change happened; undoing it makes the ask undone again (restore).
   checkpoint("agent", b.id, before);
   if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "undone" };
@@ -2059,7 +2191,7 @@ function download(text, name, type) {
 function exportFile(kind) {
   if (!state.doc || state.guest) return;
   if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
-  else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
+  else if (kind === "prompter") download(D.exportPrompter(state.doc, prompterOpts()), `${baseName()}-prompter.md`, "text/markdown");
   else if (kind === "prompter-open") openPrompter();
   else if (kind === "markdown") saveAs();
   else if (kind === "all") exportAll();
@@ -2084,7 +2216,7 @@ function exportAll() {
   const files = [
     { name: /\.(md|markdown|txt)$/i.test(state.name) ? state.name : `${base}.md`, text: saveText() },
     { name: `${base}-camera.txt`, text: D.exportCamera(state.doc) },
-    { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc) },
+    { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc, prompterOpts()) },
   ];
   if (broll.status === "ok") files.push(...brollExports());
   download(makeZip(files), `${base}.zip`, "application/zip");
@@ -2418,6 +2550,7 @@ document.addEventListener("keydown", (e) => {
   if (!state.doc || e.target.closest?.("input, textarea")) return;
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
+  else if (k === "b" && !e.shiftKey && cues().on && scriptEl.contains(e.target)) { e.preventDefault(); toggleCueHere(); }
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
@@ -4071,6 +4204,7 @@ function scriptInfo() {
     words: st.words,
     spoken: st.spoken,
     broll: broll.status === "ok" ? broll.shots.map(B.forAgent) : [],
+    ...(cues().on ? { cues: C.listCues(state.doc), cueSettings: cues() } : {}),
   };
 }
 function handleCall({ id, tool, args = {} }) {
@@ -4117,6 +4251,17 @@ function handleCall({ id, tool, args = {} }) {
       return send({ result: "Done: the whole text is in the editor now. The person can undo it." });
     }
     if (tool === "list_asks") return send({ result: { asks: state.asks.map(askForList) } });
+    if (tool === "get_cue_settings") return send({ result: { ...cues(), forScript: ownCues() } });
+    if (tool === "set_cue_settings") return send(agentCueSettings(args, agentBy()));
+    if (tool === "list_cues") return send({ result: { cues: C.listCues(state.doc), settings: cues() } });
+    if (tool === "mark_cue" || tool === "unmark_cue") {
+      if (tool === "mark_cue" && !cues().on) return send({ error: "Cue marking is off. Turn it on with set_cue_settings only when the person asks for cues." });
+      const mode = tool === "mark_cue" ? "mark" : "unmark";
+      const plan = C.planCues(state.doc, mode, args.cues, { asks: state.asks });
+      const n = plan.segments.length ? landAgentCues(plan, mode, agentBy()) : 0;
+      if (!n) return send({ error: `No cue changed.${cueSkips(plan.skipped)}` });
+      return send({ result: `Done: ${n} ${n === 1 ? "cue" : "cues"} ${mode === "mark" ? "marked" : "removed"} in the text now. The person can undo it.${cueSkips(plan.skipped)}` });
+    }
     if (tool === "answer_ask") {
       const ask = state.asks.find((a) => a.id === args.askId);
       const checked = D.checkAnswer(ask, args, state.doc);
@@ -4130,7 +4275,9 @@ function handleCall({ id, tool, args = {} }) {
       }
       if (!C.fits(state.doc, ask, checked.answer)) return send({ error: STAYS_IN_PARAGRAPH });
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
-      return send({ result: C.answerResult(checked.answer.kind) });
+      const cuesDropped = cueDrops.get(ask.id) || 0;
+      cueDrops.delete(ask.id);
+      return send({ result: C.answerResult(checked.answer.kind, { cuesDropped }) });
     }
     if (tool === "answer_broll") {
       if (args.askId == null) return send(ownBroll(args));

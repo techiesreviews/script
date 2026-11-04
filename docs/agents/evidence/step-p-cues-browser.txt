@@ -1,0 +1,32 @@
+# Cue marking browser check: headless Chrome Chrome/157.0.8103.38 (CDP), wrangler dev, real key and mouse input, the agent over MCP fetch; 1280 × 900 and 390 × 844.
+ok the demo script is open; its first spoken paragraph has no cue
+ok cue marking off (the default): Ctrl+B leaves the text as it was
+ok cue marking off: no browser bold and no cue drawn
+ok cue marking off: no Cue button on the selection bar
+ok the script menu shows the Cues settings
+ok Cue marking is on after one click
+ok the prompter-file setting shows, off (strip) by default
+ok with cue marking on, the selection bar shows the Cue button
+ok Ctrl+B makes "A blank" a cue in the text (==A blank==)
+ok the cue is drawn with the cue look
+ok with the caret outside, the == marks are hidden
+ok the cue words have the tinted background
+ok one Ctrl+Z takes the cue off again
+ok a click on the Cue button marks the selected words
+ok the Cue button shows pressed while the selection is the cue
+ok Ctrl+B on the cue's words takes the cue off, the words stay
+ok a selection from inside a cue to past it joins into one cue
+ok two Ctrl+Z steps bring the text back as it was
+ok Wait for MCP gives a connection token
+ok get_cue_settings: { "on": true, "action": "highlight", "export": "strip", "forScript": false }
+ok mark_cue: Done: 1 cue marked in the text now. The person can undo it. Skipped: "no such words here" (not found word for word in the spoken text).
+ok the agent's cue is in the text
+ok the agent's name tag shows Undo
+ok list_cues lists it
+ok Undo on the agent's name tag (its button, clicked from script; a real mouse click there hit the section under it in headless Chrome) takes the agent's cue back
+ok set_cue_settings shows: "Claude turned cue marking offUndo"
+ok mark_cue is refused while cue marking is off
+ok Undo on that line turns cue marking back on
+ok 390 px: the Cue button shows on the selection bar, inside the screen
+ok 390 px: no sideways scroll
+ok no page errors
