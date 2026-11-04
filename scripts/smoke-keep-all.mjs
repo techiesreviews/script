@@ -38,11 +38,13 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
   cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
 });
 
-async function openPage(width, height) {
-  const { browserContextId } = await send("Target.createBrowserContext"); // its own storage: a fresh person
+async function openPage(width, height, sameAs = null) {
+  const { browserContextId } = sameAs ? { browserContextId: sameAs.contextId } : await send("Target.createBrowserContext"); // its own storage: a fresh person
   const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   const page = {
+    contextId: browserContextId,
+    targetId,
     send: (method, params) => send(method, params, sessionId),
     async eval(expression) {
       const r = await page.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
@@ -273,6 +275,67 @@ async function runRename(width, height) {
   await page.eval(`document.querySelector("#saveAsAction").click()`);
   await kept("Save as", was, { label: "the page stays where it was scrolled to", test: `scrollY === ${yWas}` });
 
+  await page.close();
+}
+
+// Undo on the agent's settings line still works once the script has a new name, and another tab isn't redrawn by the rename.
+async function runUndoAndTabs(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const name = `document.querySelector(".doc__name").textContent`;
+  const onInMenu = `document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`;
+  const pressUndo = () => page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent.includes("Undo")).click()`);
+  const key = (n) => `script-editor:cues:${n}`;
+  const saveKeys = async () => { await page.send("Page.bringToFront"); for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", modifiers: 2, windowsVirtualKeyCode: 83 }); };
+
+  await agent("set_cue_settings", { on: true, forScript: true });
+  await page.until(onInMenu, "the script's own bold on");
+  const was = await page.eval(name);
+  await saveKeys();
+  await page.until(`${name} !== ${JSON.stringify(was)}`, "the name after saving", 10000);
+  await sleep(300);
+
+  // Undo after the rename: the settings go back under the script's new name.
+  const named = await page.eval(name);
+  await page.until(`[...document.querySelectorAll("#banner button")].some((b) => b.textContent.includes("Undo"))`, "the Undo line after saving");
+  await pressUndo();
+  check(await page.until(`!(${onInMenu})`, "bold off after Undo"), `${tag}: Undo after a rename turns the script's bold off again`);
+  check((await page.eval(`localStorage.getItem(${JSON.stringify(key(named))})`)) === null, `${tag}: Undo after a rename leaves no settings under the new name`);
+
+  // A change on top of settings the script already had: Undo brings those back, under the newest name.
+  await agent("set_cue_settings", { on: true, forScript: true });
+  await page.until(onInMenu, "bold on again");
+  await agent("set_cue_settings", { action: "camera", forScript: true });
+  const before = await page.eval(name);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  const titleAt = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
+  await page.send("Page.bringToFront");
+  await clickAt(page, titleAt);
+  await sleep(150);
+  await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); })()`);
+  await pressKey(page, "q", "KeyQ", 81, "q");
+  await page.until(`${name} !== ${JSON.stringify(before)}`, "the name after the title change", 10000);
+  const after = await page.eval(name);
+  await pressUndo();
+  await sleep(200);
+  const stored = JSON.parse((await page.eval(`localStorage.getItem(${JSON.stringify(key(after))})`)) || "{}");
+  check(stored.on === true && stored.action !== "camera", `${tag}: Undo after a rename brings back the settings the script had`, JSON.stringify(stored));
+  check((await page.eval(`localStorage.getItem(${JSON.stringify(key(before))})`)) === null, `${tag}: Undo writes nothing under the old name`);
+
+  // Last, as a second tab takes over the agent's connection: it stays as it is when the first tab renames.
+  const other = await openPage(width, height, page);
+  await other.send("Page.navigate", { url: `${BASE}/` });
+  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the second tab");
+  await other.click("#emptySample");
+  await other.until(`document.querySelectorAll("#script .line").length >= 8`, "the second tab's script");
+  await other.eval(`window.__line = document.querySelector("#script .line")`);
+  const third = await page.eval(name);
+  await page.eval(`window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("saved-tabs.md", { create: true })`);
+  await page.eval(`document.querySelector("#saveAsAction").click()`);
+  const moved = await page.until(`${name} !== ${JSON.stringify(third)}`, "the name in the first tab", 10000);
+  await sleep(400);
+  check(moved && (await page.eval(`localStorage.getItem("script-editor:cues:saved-tabs.md")`)) !== null && (await other.eval(`window.__line.isConnected`)), `${tag}: a rename with own settings in one tab doesn't redraw another tab`);
+  await send("Target.closeTarget", { targetId: other.targetId });
   await page.close();
 }
 
@@ -617,6 +680,7 @@ try {
   await runBold(390, 760);
   await runRename(1280, 800);
   await runRename(390, 760);
+  await runUndoAndTabs(1280, 800);
 } catch (e) {
   check(false, `stopped: ${e.message}`);
 }
