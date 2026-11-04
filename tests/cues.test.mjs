@@ -257,3 +257,33 @@ test("review 5: with cue marking off, a dropped cue is reported without asking t
   assert.doesNotMatch(C.answerResult("replace", { cuesDropped: 1, cuesOn: false }), /mark_cue/);
   assert.match(C.answerResult("replace", { cuesDropped: 1, cuesOn: false }), /removed 1 cue/);
 });
+
+test("lead fixes: Ctrl+B takes off a cue the agent just marked; a shown cue never splits across prompter lines", () => {
+  const doc = script();
+  const [p1, p2] = paras(doc);
+  const by = { id: "agent:x", name: "X" };
+  const parts = C.landCues(doc, C.planCues(doc, "mark", [{ quote: "start here" }]), "mark", by, 1);
+  const asks = parts.map((p) => p.ask);
+  assert.equal(C.isMarked(asks[0]), true);
+  const c = D.contentOf(p1), res = Q.toggleCue(c, ...sel(c, "start here"));
+  assert.equal(res.cue, false);
+  assert.equal(C.cueBlocked(asks, p1.id, res.from, res.to), false);
+  // Open asks still block the person's toggle.
+  const open = D.makeAsk(doc, { blockId: p2.id, start: 4, end: 10, action: "simpler", by: { id: "lex", name: "Lex" } });
+  assert.equal(C.cueBlocked([open], p2.id, 2, 12), true);
+  const md = D.exportPrompter(D.parse("# T\n\n## A\n\nWe ==stop. Then go== on. Next one.\n"), { cues: "show" });
+  assert.match(md, /^We ==stop\. Then go== on\.$/m);
+  assert.match(md, /^Next one\.$/m);
+});
+
+test("lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an open ask over the cue", () => {
+  const doc = script();
+  const [p1, p2] = paras(doc);
+  const plan = C.planCues(doc, "mark", [{ quote: "start here" }, { quote: "line" }]);
+  const parts = C.landCues(doc, plan, "mark", { id: "agent:x", name: "X" }, 1);
+  assert.deepEqual(parts.map((p) => p.blockId), [p1.id, p2.id]);
+  assert.equal(parts.every((p) => C.isMarked(p.ask)), true);
+  const doc2 = script(), q2 = paras(doc2)[1], c2 = D.contentOf(q2);
+  const over = D.makeAsk(doc2, { blockId: q2.id, start: c2.indexOf("==second=="), end: c2.indexOf("==second==") + 10, action: "simpler", by: { id: "lex", name: "Lex" } });
+  assert.deepEqual(C.planCues(doc2, "unmark", [{ quote: "second" }], { asks: [over] }), { segments: [], skipped: [{ quote: "second", why: "under an open ask or change" }] });
+});
