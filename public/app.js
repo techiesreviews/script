@@ -3682,7 +3682,13 @@ function imagesOpen() {
 function renderImagesAll() {
   const open = imagesOpen();
   const el = $("#imagesAll");
-  if (!open.show) { el.hidden = true; el.replaceChildren(); return; }
+  if (!open.show) {
+    // The keyboard doesn't fall back to the top of the page: it goes to the view switch, just before the bar.
+    if (el.contains(document.activeElement)) $('#viewSwitch [aria-pressed="true"]').focus({ preventScroll: true });
+    el.hidden = true;
+    el.replaceChildren();
+    return;
+  }
   // Built once, then only its words change: focus and a press in progress stay, and it doesn't animate in again.
   if (el.hidden) {
     el.innerHTML = `<span class="change__bar"><span class="change__what">${icon("sketch")}<span></span></span>`

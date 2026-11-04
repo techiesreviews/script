@@ -13,7 +13,7 @@ Lex (2026-11-04): when the AI updates several images (B-roll sketches, each with
 
 ## Checks
 
-`tests/broll.test.mjs` (`pendingImages`). `scripts/smoke-keep-all.mjs` in a real browser at 1280 px and 390 px, with the agent over MCP and real clicks: start the site with `scripts/agents/kit bg dev -- npx --yes wrangler@4 dev --port <port>` and Chrome with `scripts/agents/kit bg chrome -- google-chrome --headless=new --remote-debugging-port=<port> --user-data-dir=<a scratch folder> about:blank`, then run `node scripts/smoke-keep-all.mjs http://127.0.0.1:<port> <Chrome's port>`. The run is in `docs/agents/evidence/step-q-browser.txt`.
+`tests/broll.test.mjs` (`pendingImages`). `scripts/smoke-keep-all.mjs` in a real browser at 1280 px and 390 px, with the agent over MCP and real clicks: start the site with `scripts/agents/kit bg dev -- npx --yes wrangler@4 dev --port <port>` and Chrome with `scripts/agents/kit bg chrome -- google-chrome --headless=new --remote-debugging-port=<port> --user-data-dir=<a scratch folder> about:blank`, then run `node scripts/smoke-keep-all.mjs http://127.0.0.1:<port> <Chrome's port>`. The run is in `docs/agents/evidence/step-q-browser.txt`. Not covered by a browser step: only some of the writes failing during one Keep all, a failed Undo all, a suggested add under a storyboard filter, and a list kept in a real file (the check uses the demo's list, kept in the browser; each of these goes through the code a single Keep or Undo uses).
 
 ## Done
 

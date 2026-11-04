@@ -1,4 +1,4 @@
-# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks over CDP; 1280 px and 390 px; a fresh browser context per width and for the guest. 2026-11-04T20:58:32Z, run on the working tree on top of a17ec24.
+# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px and 390 px; a fresh browser context per width and for the guest. 2026-11-04T21:02:48Z, run on the working tree on top of 70235cb.
 ok 1280 px: one picture waiting, no Keep all
 ok 1280 px: two pictures waiting, Keep all shows
 ok 1280 px: the text doesn't move when the bar comes
@@ -31,12 +31,13 @@ ok 1280 px: the mix's suggested adds are in the list
 ok 1280 px: Keep all shows in the storyboard
 ok 1280 px: it is clear of the storyboard's bar
 ok 1280 px: it stays in sight at the end of the storyboard
+ok 1280 px: Keep all by keyboard leaves the focus on the view switch
 ok 1280 px: Keep all in the storyboard puts them in
 ok 1280 px: the line for B8 is in the script
 ok 1280 px: over the script, a picture for a shot without a line doesn't count
 ok 1280 px: in the storyboard, where that shot is listed, it does
 ok 1280 px: a filter that leaves one picture in sight takes the bar away
-ok 1280 px: the kept pictures are there after a reload
+ok 1280 px: pictures kept with Keep all are there after a reload
 ok 1280 px: nothing waits after a reload
 ok 1280 px: the host has the bar
 ok 1280 px: the guest sees the pictures
@@ -73,11 +74,12 @@ ok 390 px: the mix's suggested adds are in the list
 ok 390 px: Keep all shows in the storyboard
 ok 390 px: it is clear of the storyboard's bar
 ok 390 px: it stays in sight at the end of the storyboard
+ok 390 px: Keep all by keyboard leaves the focus on the view switch
 ok 390 px: Keep all in the storyboard puts them in
 ok 390 px: the line for B8 is in the script
 ok 390 px: over the script, a picture for a shot without a line doesn't count
 ok 390 px: in the storyboard, where that shot is listed, it does
 ok 390 px: a filter that leaves one picture in sight takes the bar away
-ok 390 px: the kept pictures are there after a reload
+ok 390 px: pictures kept with Keep all are there after a reload
 ok 390 px: nothing waits after a reload
 RESULT: ok
