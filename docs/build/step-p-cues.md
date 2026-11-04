@@ -21,6 +21,8 @@ Open a script, open the file name's menu, turn on Bold marking. Select a few wor
 
 The release review of PR #14 found: with Bold marking off, `if name=="Lex" or id=="7"` exported as `if name"Lex" or id"7"`; and deleting all of a bold stretch's words left `====`. Decisions: off, nothing is read or stripped anywhere; on, an opening `==` right after a letter, digit, `=`, `!`, `<` or `>` is plain text; an edit that empties a bold stretch takes its marks away. Words marked bold earlier show their `==` while it is off.
 
+The next review's fixes, by the same lead's guidance: `==` after a closing bracket or closing quote is plain too; a guest's edit is settled at edit time, without any setting travelling, when it empties a stretch (the one change that happens while bold is off: `====` from that edit goes, read from the text alone). An open ask follows a bold word when a letter is typed right before it; `mark_cue` checks each quote on its own.
+
 ## Not in this step
 
 The prompter reading cues, a camera action that does something, the shared cue look and reader from the prompter (`public/shared/`).

@@ -130,6 +130,11 @@
 ✔ review: the mirror of the comparison bug, the AI's own comparisons, and rewrites that wouldn't read back
 ✔ review: turning Bold marking off or on flags no B-roll shot
 ✔ typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed
+✔ an opening == after a closing bracket or closing quote is plain text; after an opening quote or bracket it is bold
+✔ the settling follows the same rule: no literal marks after a join next to a quote or bracket
+✔ emptying a bold stretch takes its marks at edit time for everyone, even with Bold marking off (a guest's default)
+✔ an open ask follows when a word is typed before a bold word; its answer keeps what was typed
+✔ mark_cue checks each quote on its own: one that can't read as a cue doesn't stop the others in its paragraph
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -341,9 +346,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 343
+ℹ tests 348
 ℹ suites 0
-ℹ pass 343
+ℹ pass 348
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
