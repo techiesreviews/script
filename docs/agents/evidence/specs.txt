@@ -91,7 +91,7 @@
 ✔ top bar: no "Saved" time is shown (Lex, 2026-10-29); unsaved, saving and not saved still are
 ✔ top bar (Lex, 2026-10-29): Export last and primary with Export all first; Share icon-only; the MCP mark until connected
 ✔ settings: off by default, highlight only, export strips; a script's own settings win over the person's
-✔ format: ==words== in a line; no brackets, = or line breaks inside; a letter or digit; not inside a link
+✔ format: **words** in a line; no brackets, * or line breaks inside; a letter or digit; not inside a link
 ✔ toggle: marks the selected words, a second toggle takes the marks off, the words stay
 ✔ toggle: half a cue or across two joins into one cue; refuses links, line breaks and no words
 ✔ export: the prompter file strips cues unless the export setting says show
@@ -101,17 +101,14 @@
 ✔ agent: landed cues are marked changes with Undo on the agent's name tag; Undo puts the text back
 ✔ rewrite: a cue stays when its words survive the agent's new text; else it is dropped and the agent is told
 ✔ MCP: list_cues, mark_cue, unmark_cue and the cue settings, with their checks
-✔ review: no stray == marks: a quote across a line break or next to an = sign is skipped, with the reason
 ✔ review: links never land inside a cue; a rewrite whose cues would change the block keeps the text without them
 ✔ review 2: Ctrl+B never cuts into an open ask; the toggle says which stretch it changes
-✔ review 2: a rewrite over half a cue takes the whole cue in, so no stray == is left; duplicates count
-✔ review 3: Ctrl+B next to an = sign changes nothing; a cueId names its words, so a moved cue is not removed by mistake
+✔ review 2: a rewrite over half a cue takes the whole cue in, so no stray ** is left; duplicates count
 ✔ Lex's decision 6: a rewrite reaching into a cue keeps it only if its words survive, and the agent is told
 ✔ review 5: with cue marking off, a dropped cue is reported without asking the agent to mark it again
 ✔ lead fixes: Ctrl+B takes off a cue the agent just marked; a shown cue never splits across prompter lines
 ✔ lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an open ask over the cue
 ✔ PR 8 fixes: the cue tools don't treat the agent's highlighted changes as busy; open asks still count
-✔ a letter or digit touching both sides of the marks means ordinary text, so it stays as it is
 ✔ PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds the marks
 ✔ PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion
 ✔ bold style: plain bold by default, own colours only as a valid choice, kept per person
@@ -122,23 +119,17 @@
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
 ✔ last round: set_cue_settings says where the change really goes
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
-✔ typing next to a bold word: it stays bold and the marks never reach the exports
-✔ an AI answer: a lone == it copied from the asked text goes; ordinary text and whole cues stay
-✔ Bold marking off: nothing reads == anywhere; the exports and counts are byte for byte as before bold
-✔ Bold marking on: an opening == right after a letter, digit or comparison sign is plain text; earlier cases hold
-✔ Bold marking on: an edit that breaks a bold stretch settles it, with no stray marks; an edit that doesn't changes nothing
-✔ review: the mirror of the comparison bug, the AI's own comparisons, and rewrites that wouldn't read back
-✔ review: turning Bold marking off or on flags no B-roll shot
 ✔ typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed
-✔ an opening == after a closing bracket or closing quote is plain text; after an opening quote or bracket it is bold
-✔ the settling follows the same rule: no literal marks after a join next to a quote or bracket
+✔ Bold marking off: nothing reads ** anywhere; the exports and counts are byte for byte as before bold
+✔ Bold marking on: a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read
+✔ an edit that breaks a bold stretch settles it, with no stray marks and no spoken word lost
+✔ every small edit next to bold words leaves only marks that read as bold, and every spoken word
+✔ typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed
 ✔ emptying a bold stretch takes its marks at edit time for everyone, even with Bold marking off (a guest's default)
-✔ an open ask follows when a word is typed before a bold word; its answer keeps what was typed
-✔ mark_cue checks each quote on its own: one that can't read as a cue doesn't stop the others in its paragraph
-✔ a comparison with a space before its first == stays plain; several bold words end before a letter, digit or stray quote
-✔ typing right after several bold words, or deleting the space after them, joins them: no literal marks
-✔ a lone mark after a bold stretch ending in ! goes; a real comparison stays
-✔ an ask follows a bold word only: it never lands in the middle of other words
+✔ asks are anchored by offsets through mark changes: they follow, and never jump into another word
+✔ marks never change a B-roll shot's check, whatever anyone's setting says; a changed word does
+✔ mark_cue checks each quote on its own; a quote across a line break, or with * in it, is skipped with the reason
+✔ an AI answer: a lone ** it copied from the asked text goes; ordinary text and whole bold words stay
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -350,9 +341,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 352
+ℹ tests 343
 ℹ suites 0
-ℹ pass 352
+ℹ pass 343
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
