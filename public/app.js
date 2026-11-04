@@ -2958,7 +2958,6 @@ function setView(v) {
   renderView();
   editorJump();
   scrollTo({ top: board ? 0 : ui.scriptY });
-  caretClearOfBar(); // after the scroll is back: over the script it may have put the caret's line behind the bar
 }
 function renderView() {
   const board = ui.view === "board" && !!state.doc;
@@ -3843,8 +3842,8 @@ function keepAllAction() {
   return `<span class="board__all"><button class="board__btn" type="button" data-act="s-keep-all">Keep all</button><span aria-hidden="true">·</span><button class="board__btn" type="button" data-act="s-undo-all">Undo all</button></span>`;
 }
 
-/* "Keep all" and "Undo all" for the agent's pictures (step Q): over the script and the storyboard, from two pictures
-   on. Each picture goes the way its own Keep or Undo goes; a kept picture has no Undo afterwards, like a single Keep. */
+/* "Keep all" and "Undo all" for the agent's pictures (step Q): in a row at the top of the script and the storyboard,
+   from two pictures on. Each picture goes the way its own Keep or Undo goes; a kept picture has no Undo afterwards, like a single Keep. */
 function imagesOpen() {
   if (state.guest || !state.doc) return B.pendingImages(); // guests see the pictures; the host keeps or undoes them
   // Only what is in sight: over the script the shots with a frame, over the storyboard the shots its filter shows.
@@ -3893,20 +3892,6 @@ function renderImagesAll() {
   $(".undo", el).setAttribute("aria-label", `Undo all ${n} images`);
   $(".keep", el).setAttribute("aria-label", `Keep all ${n} images`);
 }
-// The bar stays in sight, but never over the words being typed: the caret's line moves just below it. The page moves
-// only on typing (and on the way back from the storyboard), so a click, a double-click or a redraw never shifts it.
-function caretClearOfBar() {
-  const bar = $("#imagesAll .change__bar");
-  const sel = getSelection();
-  if (!bar || ui.view === "board" || !sel.rangeCount || !sel.isCollapsed || !scriptEl.contains(sel.anchorNode)) return;
-  const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
-  const caret = sel.getRangeAt(0).getClientRects()[0] || node.closest(".line")?.getBoundingClientRect();
-  const by = B.barScroll(caret, bar.getBoundingClientRect());
-  if (!by) return;
-  editorJump();
-  scrollBy({ top: by, behavior: "instant" });
-}
-scriptEl.addEventListener("input", caretClearOfBar);
 function keepAllImages() {
   const open = imagesOpen();
   // A picture put in at once is in the list already: keeping it only takes its mark and its Undo away.
