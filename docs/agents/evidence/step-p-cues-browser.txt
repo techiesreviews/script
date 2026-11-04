@@ -6,6 +6,8 @@ ok bold marking off (the default): no B button on the selection bar
 ok bold off: the page shows the comparison, ==bold== and ==== as plain text
 ok bold off: the prompter link keeps them byte for byte
 ok bold off: one Ctrl+Z takes it out again
+ok bold off: deleting the words of ==x== leaves no ====, at edit time
+ok bold off: Ctrl+Z takes the typing back
 ok the script menu shows the Bold settings
 ok Bold marking is on after one click
 ok the prompter-file setting shows, off (strip) by default
@@ -69,6 +71,9 @@ ok undo brings it all back
 ok typing a word and its space before a bold word leaves the word plain
 ok one Ctrl+Z takes the typing back
 ok the next takes the bold off
+ok an ask sits on the bold word
+ok typing a letter right before the bold word keeps the ask open
+ok the words are back as they were
 ok Enter inside a bold stretch leaves no lone marks
 ok undo brings it all back
 ok Wait for MCP gives a connection token

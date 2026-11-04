@@ -820,14 +820,14 @@ function reanchorBlock(id) {
     if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) {
       const r = b && D.reanchor(a, D.contentOf(b));
       if (!r) { closeAsk(a, "cancelled"); moved = true; }
-      else if (r.start !== a.start) { a.start = r.start; a.end = r.end; moved = true; }
+      else if (r.start !== a.start || r.quote) { a.start = r.start; a.end = r.end; if (r.quote) a.quote = r.quote; moved = true; }
     }
     if (a.scope === "script" && a.status === "answered") {
       for (const m of a.answer.marks) {
         if (m.state !== "open" || m.blockId !== id) continue;
         const r = b && D.reanchor(m, D.contentOf(b));
         if (!r) { m.state = "gone"; moved = true; }
-        else if (r.start !== m.start) { m.start = r.start; m.end = r.end; moved = true; }
+        else if (r.start !== m.start || r.quote) { m.start = r.start; m.end = r.end; if (r.quote) m.quote = r.quote; moved = true; }
       }
       settleVoice(a);
     }
