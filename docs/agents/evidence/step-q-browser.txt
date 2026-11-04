@@ -1,4 +1,4 @@
-# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px; a fresh browser context per width and for the guest. 2026-11-04T21:42:58Z, run on the working tree on top of 50d25a2.
+# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px; a fresh browser context per width and for the guest. 2026-11-04T21:45:56Z, run on the working tree on top of e1ffa1c.
 ok 1280 px: one picture waiting, no Keep all
 ok 1280 px: two pictures waiting, Keep all shows
 ok 1280 px: at the top of the page the bar has its own row, above the text
@@ -20,6 +20,7 @@ ok 1280 px: undo: the caret's line is clear of the bar
 ok 1280 px: Enter: the caret's line is clear of the bar
 ok 1280 px: Backspace joining two lines: the caret's line is clear of the bar
 ok 1280 px: an arrow key: the caret's line is clear of the bar
+ok 1280 px: the "/" menu keeps its own place: the bar's styles lost no other rule
 ok 1280 px: at the end of the script it has scrolled away with the page
 ok 1280 px: with large text every part of the bar is on screen
 ok 1280 px: one kept by itself, the count goes down
@@ -78,6 +79,7 @@ ok 390 px: undo: the caret's line is clear of the bar
 ok 390 px: Enter: the caret's line is clear of the bar
 ok 390 px: Backspace joining two lines: the caret's line is clear of the bar
 ok 390 px: an arrow key: the caret's line is clear of the bar
+ok 390 px: the "/" menu keeps its own place: the bar's styles lost no other rule
 ok 390 px: at the end of the script it has scrolled away with the page
 ok 390 px: with large text every part of the bar is on screen
 ok 390 px: one kept by itself, the count goes down
@@ -123,6 +125,7 @@ ok 1920 px: undo: the caret's line is clear of the bar
 ok 1920 px: Enter: the caret's line is clear of the bar
 ok 1920 px: Backspace joining two lines: the caret's line is clear of the bar
 ok 1920 px: an arrow key: the caret's line is clear of the bar
+ok 1920 px: the "/" menu keeps its own place: the bar's styles lost no other rule
 ok 1920 px: Undo all takes both pictures away
 ok 1920 px: the storyboard's bar ends where the storyboard ends
 ok 1920 px: Keep all puts them in
