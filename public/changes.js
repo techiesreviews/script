@@ -146,7 +146,13 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   // goes after it, so no lone "==" is left (cues.js).
   if (ask.answer.kind === "replace") {
     const w = K.widenOverCues(content, ask.start, ask.end);
-    if (w) { ask.start = w.start; ask.end = w.end; text = w.before + text + w.after; }
+    if (w) {
+      // The cue's outside words join the new text, so its fit is checked again on the wider range.
+      ask.start = w.start;
+      ask.end = w.end;
+      text = fitText(content, { ...ask, answer: { ...ask.answer, text: w.before + text + w.after } }, type);
+      if (text === null) return null;
+    }
   } else {
     const c = K.textCues(content).find((x) => ask.end > x.start && ask.end < x.end);
     if (c) ask.end = c.end;
