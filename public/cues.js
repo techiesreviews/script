@@ -91,8 +91,9 @@ export function stripCues(text) {
   for (const c of textCues(t)) { out += t.slice(at, c.start) + c.label; at = c.end; }
   return out + t.slice(at);
 }
-/** A quote read without the marks (the agent gets the spoken text that way), found across a cue's edge: its range,
- *  taking in every cue it reaches into so no lone "==" is left, and the text there as it is now. null when not found. */
+/** A quote read without the marks (the agent gets the spoken text that way), found across a cue's edge: its range, only
+ *  as far as was quoted, and the text there as it is now. A rewrite of it takes in the whole cue and keeps the cue's
+ *  other words (widenOverCues), so no spoken word is lost and no lone "==" is left. null when not found. */
 export function quoteAcrossCues(content, quote) {
   const text = String(content ?? ""), cues = textCues(text);
   if (!cues.length || !quote) return null;
@@ -103,11 +104,7 @@ export function quoteAcrossCues(content, quote) {
   copy(at, text.length);
   const i = plain.indexOf(quote);
   if (i < 0) return null;
-  let start = map[i], end = map[i + quote.length - 1] + 1;
-  for (const c of cues) {
-    if (start > c.start && start < c.end) start = c.start;
-    if (end > c.start && end < c.end) end = c.end;
-  }
+  const start = map[i], end = map[i + quote.length - 1] + 1;
   return { start, end, quote: text.slice(start, end) };
 }
 /** What is spoken (links.js spokenText) without the cue marks: for word counts and the camera script. */
