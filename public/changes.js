@@ -15,6 +15,7 @@
 // Pure: no DOM. The editor (app.js) calls these and draws the mark; the room carries the text like any change.
 import * as D from "./doc.js";
 import * as L from "./links.js";
+import * as Q from "./cues.js";
 import { diff, movePoint } from "./together/ops.js";
 
 export const STRAIGHT_IN = ["replace", "add", "links"];
@@ -57,8 +58,10 @@ export function fits(doc, ask, answer) {
   return !r || fitText(D.contentOf(b), { ...ask, ...r, answer }, b.type) !== null;
 }
 /** What the tab tells the agent after answer_ask, per kind. For links: how many went in, and the quotes skipped. */
-export function answerResult(kind, { linked = 0, skipped = [] } = {}) {
+export function answerResult(kind, { linked = 0, skipped = [], cuesDropped = 0 } = {}) {
   if (kind === "note") return "Shown to the person.";
+  // A rewrite kept the cues whose words survived (cues.js keepCues); the others went, and the agent may mark again.
+  if (cuesDropped) return `${answerResult(kind, { linked, skipped })} It removed ${cuesDropped} ${cuesDropped === 1 ? "cue" : "cues"} whose words are gone; mark again with mark_cue if they still matter.`;
   if (kind === "marks") return "Shown to the person. They choose Keep or Undo.";
   if (kind === "links") return `Done: ${linked} ${linked === 1 ? "link is" : "links are"} in the text now. The person can undo them.${skippedText(skipped)}`;
   return "Done: the change is in the text now. The person can undo it.";
@@ -83,13 +86,14 @@ function busyRanges(asks, except) {
   }
   return out;
 }
+const cueRanges = (content) => Q.textCues(content).map((c) => [c.start, c.end]);
 // Blocks a whole-script "Find links" may link: the spoken paragraphs; the other blocks only explain a skip.
 function scriptSegments(doc, busy) {
   const spoken = new Set(D.outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para").map((b) => b.id)));
   const segments = [], others = [];
   for (const b of doc.blocks) {
     const content = D.contentOf(b);
-    if (spoken.has(b.id)) segments.push({ id: b.id, content, from: 0, to: content.length, avoid: busy.get(b.id) || [] });
+    if (spoken.has(b.id)) segments.push({ id: b.id, content, from: 0, to: content.length, avoid: busy.get(b.id) || [], cues: cueRanges(content) });
     else if (b.type !== "para") others.push(content);
   }
   return { segments, others };
@@ -108,7 +112,7 @@ export function planFor(doc, ask, answer = ask.answer, { asks = [] } = {}) {
     const r = b && D.reanchor(ask, D.contentOf(b));
     if (!r) return null;
     const content = D.contentOf(b);
-    const segment = b.type === "para" ? [{ id: b.id, content, from: r.start, to: r.end, avoid: busy.get(b.id) || [] }] : [];
+    const segment = b.type === "para" ? [{ id: b.id, content, from: r.start, to: r.end, avoid: busy.get(b.id) || [], cues: cueRanges(content) }] : [];
     plan = L.planLinks(segment, answer.links, { others: b.type === "para" ? [] : [content] });
   }
   const segments = [], skipped = [...plan.skipped];
@@ -136,8 +140,12 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   const r = D.reanchor(ask, content);
   if (!r) return null;
   Object.assign(ask, r);
-  const text = fitText(content, ask, type);
+  let text = fitText(content, ask, type);
   if (text === null) return null;
+  // A replace over cues keeps each cue whose words survive (cues.js); the agent is told how many went.
+  const kept = ask.answer.kind === "replace" ? Q.keepCues(content.slice(ask.start, ask.end), text) : { text, dropped: 0 };
+  if (kept.text !== text && keepsType(D.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: kept.text } }).content, type)) text = kept.text;
+  else if (kept.text !== text) kept.dropped = Q.textCues(content.slice(ask.start, ask.end)).length;
   ask.answer = { ...ask.answer, text };
   const res = D.applyAnswer(content, ask);
   // The whole changed stretch: for "add" that includes the spaces put around the text, so Undo removes them too.
@@ -149,7 +157,7 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   const result = D.setContent(doc, b.id, res.content);
   const inPlace = !result.changed && !result.created.length && b.type === type && D.contentOf(b) === res.content;
   const mark = inPlace && res.content.slice(from, to).trim() ? { start: from, end: to, change: { text: res.content.slice(from, to), removed, at: now } } : null;
-  return { blockId: b.id, at, delta, result, mark };
+  return { blockId: b.id, at, delta, result, mark, cuesDropped: kept.dropped };
 }
 // One plan segment into its block: { at, delta, result, mark } (null when the block would change its type).
 function landSegment(doc, seg, now) {
@@ -344,3 +352,51 @@ export const readPast = (box, view, seen) => !!seen && box.bottom < (view.top + 
 /** The asks as this person sees them: in a shared script a mark ended on one screen only (`ended`: ask ids) is gone
  *  from the copies; everyone else's, and the asks themselves, keep it. */
 export const seenAsks = (asks, ended) => (ended?.size ? asks.map((a) => (isMarked(a) && ended.has(a.id) ? (({ change, ...rest }) => rest)(a) : a)) : asks);
+
+/* ---------- Cues (fleet issue #14): the agent's list_cues, mark_cue and unmark_cue ---------- */
+// The spoken paragraphs, each with the ranges other open work points at; the other blocks only explain a skip.
+function spokenSegments(doc, asks) {
+  const busy = busyRanges(asks, null);
+  const { segments, others } = scriptSegments(doc, busy);
+  return { segments: segments.map(({ id, content, avoid }) => ({ id, content, avoid })), others };
+}
+/** Every cue in the spoken text: [{ cueId, quote, section, before, after }] (before/after: up to 40 characters). */
+export function listCues(doc) {
+  const out = [];
+  for (const s of spokenSegments(doc, []).segments) {
+    Q.textCues(s.content).forEach((c, i) => out.push({
+      cueId: `${s.id}:${i + 1}`, quote: c.label, section: D.sectionOfBlock(doc, s.id),
+      before: s.content.slice(Math.max(0, c.start - 40), c.start), after: s.content.slice(c.end, c.end + 40),
+    }));
+  }
+  return out;
+}
+/** What mark_cue (mode "mark") or unmark_cue ("unmark") would do now, without changing anything (Q.planCues).
+ *  A paragraph whose change would turn it into another kind of block is left out; its quotes are skipped. */
+export function planCues(doc, mode, items, { asks = [] } = {}) {
+  const { segments, others } = spokenSegments(doc, asks);
+  const plan = Q.planCues(segments, items, mode, { others });
+  const out = [], skipped = [...plan.skipped];
+  for (const seg of plan.segments) {
+    if (keepsType(seg.content, D.blockById(doc, seg.id)?.type)) out.push(seg);
+    else for (const c of seg.cues) skipped.push({ quote: c.quote.slice(0, 80), why: "its paragraph would become another kind of block" });
+  }
+  return { segments: out, skipped };
+}
+/**
+ * Put a cue plan in: every paragraph that changes is a marked change of the agent (`by`), as a kept selection ask of
+ * its own (action "cue"), so Undo on the agent's name tag takes it back one paragraph at a time.
+ * Returns [{ ask, blockId, at, delta, result }] (empty when nothing changed).
+ */
+export function landCues(doc, plan, mode, by, now = Date.now()) {
+  const parts = [];
+  for (const seg of plan.segments) {
+    const res = landSegment(doc, seg, now);
+    if (!res) continue;
+    const ask = D.makeAsk(doc, { blockId: seg.id, start: res.mark.start, end: res.mark.end, action: "cue", instruction: mode === "mark" ? "Mark cues" : "Remove cues", by, now: new Date(now) });
+    Object.assign(ask, { status: "kept", answer: { kind: "cue", cues: seg.cues }, answeredBy: by });
+    setMark(ask, res.mark);
+    parts.push({ ask, blockId: res.blockId, at: res.at, delta: res.delta, result: res.result });
+  }
+  return parts;
+}
