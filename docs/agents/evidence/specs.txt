@@ -109,7 +109,7 @@
 ✔ lead fixes: Ctrl+B takes off a cue the agent just marked; a shown cue never splits across prompter lines
 ✔ lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an open ask over the cue
 ✔ PR 8 fixes: the cue tools don't treat the agent's highlighted changes as busy; open asks still count
-✔ PR 8 fixes: a letter or digit right outside == is not a cue, so ordinary text stays as it is
+✔ a letter or digit touching both sides of the marks means ordinary text, so it stays as it is
 ✔ PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds the marks
 ✔ PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion
 ✔ bold style: plain bold by default, own colours only as a valid choice, kept per person
@@ -120,6 +120,8 @@
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
 ✔ last round: set_cue_settings says where the change really goes
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
+✔ typing next to a bold word: it stays bold and the marks never reach the exports
+✔ an AI answer: a lone == it copied from the asked text goes; ordinary text and whole cues stay
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -331,9 +333,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 333
+ℹ tests 335
 ℹ suites 0
-ℹ pass 333
+ℹ pass 335
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
