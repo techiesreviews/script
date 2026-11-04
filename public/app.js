@@ -1132,9 +1132,12 @@ function setCues(patch, forScript) {
   const key = forScript ? cueKey() : "cues", prev = store.get(key);
   store.set(key, { ...(prev || {}), ...patch });
   cuesChanged();
-  return { key, prev };
+  return { forScript: !!forScript, key, prev };
 }
-function restoreCues({ key, prev }) {
+// The script may have a new name by now and its settings went with it, so the key is worked out here. The Undo line
+// closes when another script opens, so this is still the same script.
+function restoreCues({ forScript, prev }) {
+  const key = forScript ? cueKey() : "cues";
   if (prev == null) store.del(key);
   else store.set(key, prev);
   cuesChanged();
@@ -1177,7 +1180,15 @@ function renderCueMenu() {
 }
 $("#scriptMenu").addEventListener("toggle", renderCueMenu);
 // Settings changed in another tab of this browser.
-addEventListener("storage", (e) => { if (e.key == null || e.key.startsWith(`${LS}cues`)) cuesChanged(); else if (e.key === `${LS}boldStyle`) renderCueMenu(); });
+// Another tab changed settings: this page is redrawn only if its own really changed (a rename there moves that script's).
+addEventListener("storage", (e) => {
+  if (e.key === `${LS}boldStyle`) return renderCueMenu();
+  if (e.key != null && !e.key.startsWith(`${LS}cues`)) return;
+  const was = JSON.stringify(cues());
+  cueMemo = null;
+  if (JSON.stringify(cues()) !== was) cuesChanged();
+  else renderCueMenu();
+});
 $("#cueGroup").addEventListener("click", (e) => {
   const b = e.target.closest("[data-cue-set]");
   if (!b) return;
@@ -2439,7 +2450,7 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
   // A script's own bold settings go with it, so a new name changes nothing on the page and nothing is redrawn. The new
   // name belongs to this script now: settings left there before go. If they can't be written (storage full) they stay
-  // under the old name, and the memo keeps them for this session, so the page stays as it is.
+  // under the old name, and the memo keeps them until the next settings change or reload, so the page stays as it is.
   const own = store.get(cueKey(from));
   store.del(cueKey(to));
   if (own != null && store.set(cueKey(to), own) && clear) store.del(cueKey(from));
