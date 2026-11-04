@@ -8,8 +8,9 @@
 import { textLinks, isLinkLine, spokenText, quoteRe, overlaps } from "./links.js";
 
 export const CUE_LIMITS = { cues: 30 };
-// A letter, digit or "=" right outside the marks means this is ordinary text ("if a==3 and b==4"), not a cue.
-const CUE = /(?<![=\p{L}\p{N}\p{M}])==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?![=\p{L}\p{N}\p{M}])/gu;
+// An "=" right outside the marks is never a cue; textCues also refuses a letter or digit touching both sides, which is
+// ordinary text ("if a==3 and b==4"). Touching one side stays a cue, so typing next to a bold word leaves no literal marks.
+const CUE = /(?<!=)==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?!=)/gu;
 const WORDY = /[\p{L}\p{N}]/u;
 const BAD_WORDS = /[=[\]\n]/;
 // Whole words for a cue: a letter, digit or combining mark on both sides of an edge means the edge cuts a word (or,
@@ -79,10 +80,24 @@ export function textCues(content) {
   const out = [];
   for (const m of text.matchAll(CUE)) {
     const start = m.index, end = start + m[0].length;
-    if (!WORDY.test(m[1]) || overlaps(links, start, end)) continue;
+    if (!WORDY.test(m[1]) || overlaps(links, start, end) || (WORD_CHAR.test(text[start - 1] ?? "") && WORD_CHAR.test(text[end] ?? ""))) continue;
     out.push({ start, end, words: { start: start + 2, end: end - 2 }, label: m[1], cue: true });
   }
   return out;
+}
+/** An AI's new text, when the text it was asked about held marks: a "==" it copied that makes no cue goes. Ordinary text
+ *  stays: a letter or digit on both sides ("a==3"), or spaces on both sides ("x == y"). */
+export function dropLoneMarks(text) {
+  const t = String(text ?? ""), cues = textCues(t);
+  let out = "", at = 0;
+  for (const m of t.matchAll(/(?<!=)==(?!=)/g)) {
+    const i = m.index, e = i + 2, l = t[i - 1] ?? "", r = t[e] ?? "";
+    if (cues.some((c) => i === c.start || e === c.end)) continue;
+    if ((WORD_CHAR.test(l) && WORD_CHAR.test(r)) || (/\s/.test(l) && /\s/.test(r))) continue;
+    out += t.slice(at, i);
+    at = e;
+  }
+  return out + t.slice(at);
 }
 /** The text with each cue replaced by its words. */
 export function stripCues(text) {
