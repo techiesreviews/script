@@ -51,7 +51,7 @@ function taken(content) {
 }
 export const overlaps = (ranges, s, e) => ranges.some(([a, b]) => s < b && e > a);
 // A quote that starts or ends with a letter or digit is linked only on whole words ("AI" not inside "MAIL").
-export const wholeWords = (content, s, e) => !(WORDY.test(content[s] ?? "") && WORDY.test(content[s - 1] ?? "")) && !(WORDY.test(content[e - 1] ?? "") && WORDY.test(content[e] ?? ""));
+const wholeWords = (content, s, e) => !(WORDY.test(content[s] ?? "") && WORDY.test(content[s - 1] ?? "")) && !(WORDY.test(content[e - 1] ?? "") && WORDY.test(content[e] ?? ""));
 // The agent reads the spoken text with line breaks and runs of spaces made one space, so a quote's spaces match any
 // run of spaces and line breaks in the content ("Claude Code" finds "Claude\nCode"); the link's words get one space.
 export const quoteRe = (quote) => new RegExp(quote.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "g");
