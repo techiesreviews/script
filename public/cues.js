@@ -11,8 +11,8 @@ import { textLinks, isLinkLine, spokenText, quoteRe, overlaps } from "./links.js
 export const CUE_LIMITS = { cues: 30 };
 // An opening "==" right after a letter, digit, comparison sign, closing bracket or closing quote is ordinary text
 // (name=="Lex", a<=="b", f(x)=="a", "Lex"==name), and an "=" right after the closing marks too. A straight quote closes
-// when something other than a space or an opening bracket comes before it. A letter right after the closing marks stays
-// a cue: typing right after a bold word.
+// when something other than a space or an opening bracket comes before it. Several words end before a letter, digit or
+// stray straight quote too (name =="Lex" or id=="7", if a ==3 or b==4). One word keeps a letter typed right after it.
 const PLAIN_BEFORE = /[=!<>)\]”’]$|[^\s([]["']$/u;
 const CUE = /(?<![=!<>)\]”’\p{L}\p{N}\p{M}]|[^\s([]["'])==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?!=)/gu;
 let reading = () => false;
@@ -70,6 +70,11 @@ export function settingsOutcome({ words, forScript, hadOwn, stored }) {
 }
 
 /* ---------- Reading cues ---------- */
+// Words with a space in them, right before a letter, digit or a straight quote that doesn't match one before them.
+function endsTooSoon(words, text, start, end) {
+  const next = text[end] ?? "";
+  return /\s/.test(words) && (WORD_CHAR.test(next) || (/["']/.test(next) && text[start - 1] !== next));
+}
 // Where cues may not be: text links and link lines ("- Label: https://…").
 function linkRanges(text) {
   const out = textLinks(text).map((l) => [l.start, l.end]);
@@ -89,14 +94,14 @@ export function textCues(content) {
   const out = [];
   for (const m of text.matchAll(CUE)) {
     const start = m.index, end = start + m[0].length;
-    if (!WORDY.test(m[1]) || overlaps(links, start, end)) continue;
+    if (!WORDY.test(m[1]) || overlaps(links, start, end) || endsTooSoon(m[1], text, start, end)) continue;
     out.push({ start, end, words: { start: start + 2, end: end - 2 }, label: m[1], cue: true });
   }
   return out;
 }
 /** An AI's new text, when the text it was asked about held marks: a "==" it copied that makes no cue goes. Ordinary text
- *  stays: a comparison sign before it (a !== b), a word, quote or bracket before it and more text after it (a==3,
- *  name=="Lex", f(x)==3), or spaces on both sides (x == y). */
+ *  stays: a comparison sign with a space before it (a !== b), a word, quote, bracket or sign before it and more text
+ *  after it (a==3, name=="Lex", f(x)==3, a!==b), or spaces on both sides (x == y). "Halt!== now" loses its marks. */
 export function dropLoneMarks(text) {
   const t = String(text ?? ""), cues = textCues(t);
   if (!reading()) return t;
@@ -104,7 +109,8 @@ export function dropLoneMarks(text) {
   for (const m of t.matchAll(/(?<!=)==(?!=)/g)) {
     const i = m.index, e = i + 2, l = t[i - 1] ?? "", r = t[e] ?? "";
     if (cues.some((c) => i === c.start || e === c.end)) continue;
-    if (/[=!<>]/.test(l) || ((WORD_CHAR.test(l) || SHUTS.test(l)) && r && !/[\s.,;:!?)\]]/.test(r)) || (/\s/.test(l) && /\s/.test(r))) continue;
+    const more = r && !/[\s.,;:!?)\]]/.test(r), sign = /[!<>]/.test(l);
+    if ((sign && (more || i < 2 || /\s/.test(t[i - 2]))) || ((WORD_CHAR.test(l) || SHUTS.test(l)) && more) || (/\s/.test(l) && /\s/.test(r))) continue;
     out += t.slice(at, i);
     at = e;
   }
@@ -118,9 +124,9 @@ export function stripCues(text) {
   return out + t.slice(at);
 }
 /** A quote read without the marks (the agent gets the spoken text that way), found across a cue's edge: its range, only
- *  as far as was quoted, and the text there as it is now. A rewrite of it takes in the whole cue and keeps the cue's
+ *  as far as was quoted, and the text there as it is now; `inCue`: only where it starts inside a cue's words. A rewrite of it takes in the whole cue and keeps the cue's
  *  other words (widenOverCues), so no spoken word is lost and no lone "==" is left. null when not found. */
-export function quoteAcrossCues(content, quote, near = 0) {
+export function quoteAcrossCues(content, quote, near = 0, { inCue = false } = {}) {
   const text = String(content ?? ""), cues = textCues(text);
   if (!cues.length || !quote) return null;
   const map = [];
@@ -129,7 +135,10 @@ export function quoteAcrossCues(content, quote, near = 0) {
   for (const c of cues) { copy(at, c.start); copy(c.words.start, c.words.end); at = c.end; }
   copy(at, text.length);
   let i = -1;
-  for (let j = plain.indexOf(quote); j >= 0; j = plain.indexOf(quote, j + 1)) if (i < 0 || Math.abs(map[j] - near) < Math.abs(map[i] - near)) i = j;
+  for (let j = plain.indexOf(quote); j >= 0; j = plain.indexOf(quote, j + 1)) {
+    if (inCue && !cues.some((c) => map[j] >= c.words.start && map[j] < c.words.end)) continue;
+    if (i < 0 || Math.abs(map[j] - near) < Math.abs(map[i] - near)) i = j;
+  }
   if (i < 0) return null;
   const start = map[i], end = map[i + quote.length - 1] + 1;
   return { start, end, quote: text.slice(start, end) };
@@ -195,7 +204,7 @@ function editSpan(old, now, caret) {
 function emptied(old, now, p, oe, ne) {
   const from = p - 2;
   if (ne !== p || oe <= p || from < 0 || now.slice(from, p + 2) !== "====" || old.slice(from, p) !== "==" || old.slice(oe, oe + 2) !== "==") return null;
-  if (/[=\n]/.test(old.slice(p, oe)) || old[oe + 2] === "=" || WORD_CHAR.test(old[from - 1] ?? "") || PLAIN_BEFORE.test(old.slice(Math.max(0, from - 2), from))) return null;
+  if (/[=\n]/.test(old.slice(p, oe)) || /\s/.test(old[p]) || /\s/.test(old[oe - 1]) || old[oe + 2] === "=" || WORD_CHAR.test(old[from - 1] ?? "") || PLAIN_BEFORE.test(old.slice(Math.max(0, from - 2), from))) return null;
   return { content: now.slice(0, from) + now.slice(p + 2), caret: from, typedBefore: null };
 }
 /**
@@ -226,7 +235,11 @@ export function settleMarks(old, now, caret = null, { typedBefore = null } = {})
     const lead = inner.length - inner.trimStart().length, trail = inner.length - inner.trimEnd().length;
     let start = open;
     if (!lead) while (start > 0 && WORD_CHAR.test(now[start - 1])) start--;
-    if (!WORDY.test(words) || BAD_WORDS.test(words) || now[close + 2] === "=" || (!lead && PLAIN_BEFORE.test(now.slice(Math.max(0, start - 2), start)))) {
+    // Several words, then a letter typed or joined right after them: the word joins them, as one typed before does.
+    let finish = close + 2;
+    if (/\s/.test(words)) while (finish < now.length && WORD_CHAR.test(now[finish])) finish++;
+    const quoteNext = /\s/.test(words) && /["']/.test(now[finish] ?? "") && finish === close + 2 && now[open - 1] !== now[finish];
+    if (!WORDY.test(words) || BAD_WORDS.test(words) || now[finish] === "=" || quoteNext || (!lead && PLAIN_BEFORE.test(now.slice(Math.max(0, start - 2), start)))) {
       take(open, 2);
       take(close, 2);
       continue;
@@ -243,6 +256,7 @@ export function settleMarks(old, now, caret = null, { typedBefore = null } = {})
       if (!lead && added && p === c.start && !/\s/.test(added)) typing = ne + 2;
     }
     if (trail) { put(close - trail); take(close, 2); }
+    else if (finish > close + 2) { take(close, 2); put(finish); }
   }
   if (!ops.length) return typing == null ? null : { content: now, caret, typedBefore: typing };
   ops.sort((a, b) => a.at - b.at);

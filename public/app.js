@@ -4369,7 +4369,7 @@ function handleCall({ id, tool, args = {} }) {
     if (tool === "mark_cue" || tool === "unmark_cue") {
       const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
       if (busy) return send({ error: busy });
-      if (tool === "mark_cue" && !cues().on) return send({ error: "Cue marking is off. Turn it on with set_cue_settings only when the person asks for cues." });
+      if (!cues().on) return send({ error: "Cue marking is off, so == is plain text. Turn it on with set_cue_settings only when the person asks for cues." });
       const mode = tool === "mark_cue" ? "mark" : "unmark";
       const plan = C.planCues(state.doc, mode, args.cues, { asks: state.asks });
       const n = plan.segments.length ? landAgentCues(plan, mode, agentBy()) : 0;

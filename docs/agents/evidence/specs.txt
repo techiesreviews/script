@@ -135,6 +135,10 @@
 ✔ emptying a bold stretch takes its marks at edit time for everyone, even with Bold marking off (a guest's default)
 ✔ an open ask follows when a word is typed before a bold word; its answer keeps what was typed
 ✔ mark_cue checks each quote on its own: one that can't read as a cue doesn't stop the others in its paragraph
+✔ a comparison with a space before its first == stays plain; several bold words end before a letter, digit or stray quote
+✔ typing right after several bold words, or deleting the space after them, joins them: no literal marks
+✔ a lone mark after a bold stretch ending in ! goes; a real comparison stays
+✔ an ask follows a bold word only: it never lands in the middle of other words
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -346,9 +350,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 348
+ℹ tests 352
 ℹ suites 0
-ℹ pass 348
+ℹ pass 352
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
