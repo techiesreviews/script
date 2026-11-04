@@ -124,6 +124,9 @@
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
 ✔ typing next to a bold word: it stays bold and the marks never reach the exports
 ✔ an AI answer: a lone == it copied from the asked text goes; ordinary text and whole cues stay
+✔ Bold marking off: nothing reads == anywhere; the exports and counts are byte for byte as before bold
+✔ Bold marking on: an opening == right after a letter, digit or comparison sign is plain text; earlier cases hold
+✔ Bold marking on: an edit that breaks a bold stretch settles it, with no stray marks; an edit that doesn't changes nothing
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -335,9 +338,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 337
+ℹ tests 340
 ℹ suites 0
-ℹ pass 337
+ℹ pass 340
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
