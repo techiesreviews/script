@@ -741,6 +741,15 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .frame__body { display: grid; gap: 0.45rem; }
 .kind-tag[data-kind="suggested"] { border-style: dashed; border-color: var(--accent); color: var(--accent-ink); }
 .board__all { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--faint); font-size: 0.8rem; }
+/* "Keep all" for the agent's pictures: stays in sight under the top bar and takes no room over the script, so the text
+   doesn't move when it comes. Over the storyboard it has its own row, clear of the storyboard's bar. */
+.images-all { position: sticky; inset-block-start: calc(var(--top) + 1.5rem); z-index: 10; display: flex; justify-content: flex-end; block-size: 0; pointer-events: none; }
+.images-all .change__bar { align-self: flex-start; margin-inline-start: 0; translate: 0 -1.4rem; pointer-events: auto; }
+@container app (width < 52rem) {
+  .layout:not([data-view="board"]):has(.toc ol:not(:empty)) .images-all { inset-block-start: calc(var(--top) + 4.375rem); } /* under the section list too */
+}
+.layout[data-view="board"] .images-all { inset-block-start: calc(var(--top) + 0.25rem); block-size: auto; margin-block-end: 0.5rem; }
+.layout[data-view="board"] .images-all .change__bar { translate: none; }
 
 /* ---------- "/" parts menu at the caret (in the style of the script menu) ---------- */
 .slash-menu {
