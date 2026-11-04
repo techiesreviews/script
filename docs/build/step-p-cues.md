@@ -17,6 +17,10 @@ Lex's design change (2026-11-04, spec section 8, folded into this step): the "Cu
 
 Open a script, open the file name's menu, turn on Bold marking. Select a few words and press Ctrl+B (⌘B on a Mac) or B on the selection bar; press again to take it off; Ctrl+Z undoes either. Ask your agent to mark some words, then undo it from its name tag. Try "Use my own colours for bold". Export the prompter file: the words come out plain unless "Bold words in the prompter file" is on.
 
+## Off means off (2026-11-05, fleet lead for Lex)
+
+The release review of PR #14 found: with Bold marking off, `if name=="Lex" or id=="7"` exported as `if name"Lex" or id"7"`; and deleting all of a bold stretch's words left `====`. Decisions: off, nothing is read or stripped anywhere; on, an opening `==` right after a letter, digit, `=`, `!`, `<` or `>` is plain text; an edit that empties a bold stretch takes its marks away. Words marked bold earlier show their `==` while it is off.
+
 ## Not in this step
 
 The prompter reading cues, a camera action that does something, the shared cue look and reader from the prompter (`public/shared/`).
