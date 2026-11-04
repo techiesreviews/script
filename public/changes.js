@@ -142,6 +142,8 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   Object.assign(ask, r);
   let text = fitText(content, ask, type);
   if (text === null) return null;
+  // The agent reads the asked text with its "==" marks and may send one back alone: it goes (cues.js).
+  if (content.slice(ask.start, ask.end).includes("==")) text = K.dropLoneMarks(text);
   // A replace that reaches into a cue takes the whole cue in (its outside words stay, plain), and an add inside a cue
   // goes after it, so no lone "==" is left (cues.js).
   if (ask.answer.kind === "replace") {

@@ -308,10 +308,12 @@ test("PR 8 fixes: the cue tools don't treat the agent's highlighted changes as b
   assert.deepEqual(C.planCues(doc, "unmark", [{ quote: "begin" }], { asks: [ask, parts[0].ask] }).segments.map((s) => s.content), ["We begin now. Then on."]);
 });
 
-test("PR 8 fixes: a letter or digit right outside == is not a cue, so ordinary text stays as it is", () => {
+test("a letter or digit touching both sides of the marks means ordinary text, so it stays as it is", () => {
   assert.deepEqual(Q.textCues("if a==3 and b==4"), []);
   assert.equal(Q.stripCues("if a==3 and b==4"), "if a==3 and b==4");
-  assert.deepEqual(Q.textCues("x==go== y ==go==z").map((c) => c.label), []);
+  assert.deepEqual(Q.textCues("x==go==y").map((c) => c.label), []);
+  // Touching one side only: it stays bold, so typing next to a bold word never leaves literal marks.
+  assert.deepEqual(Q.textCues("x==go== y ==go==z").map((c) => c.label), ["go", "go"]);
   assert.deepEqual(Q.textCues("(==go==), ==on==.").map((c) => c.label), ["go", "on"]);
   const doc = D.parse("# T\n\n## A\n\nIf a==3 and b==4 we stop.\n");
   assert.match(D.exportCamera(doc), /If a==3 and b==4 we stop/);
@@ -442,4 +444,44 @@ test("Sounds like me: a rewrite of a quote over part of a cue never deletes the 
   assert.deepEqual(land("here now", "there today"), ["We start there today.", 1]);
   assert.deepEqual(land("We start here", "We start here today"), ["We ==start here== today now.", 0]);
   assert.deepEqual(land("We start here now", "We go"), ["We go.", 1]);
+});
+
+test("typing next to a bold word: it stays bold and the marks never reach the exports", () => {
+  for (const [typed, spoken] of [["Say ==go==s now.", "Say gos now."], ["Say ==go==now.", "Say gonow."], ["Sayx==go== now.", "Sayxgo now."], ["Say ==g o== now.", "Say g o now."]]) {
+    assert.equal(Q.textCues(typed).length, 1, typed);
+    assert.equal(Q.stripCues(typed), spoken);
+    const doc = D.parse(`# T\n\n## A\n\n${typed}\n`);
+    assert.doesNotMatch(D.exportCamera(doc), /=/, typed);
+    assert.doesNotMatch(D.exportPrompter(doc), /=/, typed);
+    assert.equal(D.stats(doc).words, D.countWords(spoken));
+  }
+  // It can still be taken off, with its words kept.
+  assert.equal(Q.toggleCue("Say ==go==now.", 6, 8).content, "Say gonow.");
+  // A B-roll shot over the line asks for a check only because a word changed, never because of the marks.
+  const doc = D.parse("# T\n\n## A\n\nSay go now.\n");
+  const p = paras(doc)[0], sig = B.coverText(doc, [p.id]);
+  D.setContent(doc, p.id, "Say ==go== now.");
+  assert.equal(B.coverText(doc, [p.id]), sig);
+  D.setContent(doc, p.id, "Say ==go==now.");
+  assert.notEqual(B.coverText(doc, [p.id]), sig);
+});
+
+test("an AI answer: a lone == it copied from the asked text goes; ordinary text and whole cues stay", () => {
+  assert.equal(Q.dropLoneMarks("here== today"), "here today");
+  assert.equal(Q.dropLoneMarks("==here today"), "here today");
+  assert.equal(Q.dropLoneMarks("==go== and here=="), "==go== and here");
+  assert.equal(Q.dropLoneMarks("a==3 and b==4"), "a==3 and b==4");
+  assert.equal(Q.dropLoneMarks("if x == y"), "if x == y");
+  const land = (doc, quote, kind, text) => {
+    const p = paras(doc)[0], [s, e] = sel(D.contentOf(p), quote);
+    const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+    Object.assign(ask, { status: "answered", answer: { kind, text }, answeredBy: { id: "agent:x", name: "X" } });
+    C.land(doc, ask, 1);
+    return D.contentOf(p);
+  };
+  const bold = () => D.parse("# T\n\n## A\n\nWe ==start here== now.\n");
+  assert.equal(land(bold(), "here== now", "replace", "here== today"), "We ==start here== today.");
+  assert.equal(land(bold(), "==start here==", "add", "and here== too"), "We ==start here== and here too now.");
+  // No marks in what was asked about: the AI's text goes in as it wrote it.
+  assert.equal(land(D.parse("# T\n\n## A\n\nWe start now.\n"), "start", "replace", "check a== b"), "We check a== b now.");
 });
