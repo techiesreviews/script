@@ -1,4 +1,4 @@
-# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px and 390 px, the storyboard at 1920 px; a fresh browser context per width and for the guest. 2026-11-04T21:27:57Z, run on the working tree on top of 33f593b.
+# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px and 390 px, the storyboard at 1920 px; a fresh browser context per width and for the guest. 2026-11-04T21:36:30Z, run on the working tree on top of 869ca42.
 ok 1280 px: one picture waiting, no Keep all
 ok 1280 px: two pictures waiting, Keep all shows
 ok 1280 px: at the top of the page the bar has its own row, above the text
@@ -11,7 +11,10 @@ ok 1280 px: it is under the top bar and the section list
 ok 1280 px: still in sight at the end of the script
 ok 1280 px: nothing covers the button
 ok 1280 px: a line of text runs beside the bar
-ok 1280 px: a click on a line beside the bar moves that line clear of it
+ok 1280 px: a click on a line beside the bar leaves the page where it is
+ok 1280 px: a caret change alone doesn't move the page
+ok 1280 px: a double-click beside the bar selects one word, and the page stays
+ok 1280 px: back from the storyboard, the caret's line is clear of the bar
 ok 1280 px: scrolling alone may pass a line under the bar
 ok 1280 px: typing on a line behind the bar moves it clear
 ok 1280 px: deleting keeps it clear
@@ -65,7 +68,6 @@ ok 390 px: it is under the top bar and the section list
 ok 390 px: still in sight at the end of the script
 ok 390 px: nothing covers the button
 ok 390 px: a line of text runs beside the bar
-ok 390 px: a click on a line beside the bar moves that line clear of it
 ok 390 px: typing on a line behind the bar moves it clear
 ok 390 px: deleting keeps it clear
 ok 390 px: a jump to a section stops below the bar

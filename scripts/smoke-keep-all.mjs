@@ -178,9 +178,32 @@ async function run(width, height) {
   for (let i = 0; i < 80 && !at0; i++) { at0 = await page.eval(spot); if (!at0) { await page.eval(`scrollBy({ top: 13, behavior: "instant" })`); await sleep(20); } }
   check(!!at0, `${tag}: a line of text runs beside the bar`);
   if (at0) {
+    // The page moves only when the person types: not on a click, a double-click or any other caret change.
+    const y0 = await page.eval(`scrollY`);
     await clickAt(page, at0);
     await sleep(800); // on a phone Chrome moves a tapped line into view a moment later
-    check(await page.eval(caretClear), `${tag}: a click on a line beside the bar moves that line clear of it`);
+    if (width > 500) {
+      check((await page.eval(`scrollY`)) === y0 && !(await page.eval(caretClear)), `${tag}: a click on a line beside the bar leaves the page where it is`);
+      await page.eval(`document.dispatchEvent(new Event("selectionchange"))`);
+      await sleep(60);
+      check((await page.eval(`scrollY`)) === y0, `${tag}: a caret change alone doesn't move the page`);
+      for (const clickCount of [1, 2]) for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...at0, button: "left", clickCount });
+      await sleep(100);
+      const word = await page.eval(`getSelection().toString().trim()`);
+      check(word && !/\s/.test(word) && (await page.eval(`scrollY`)) === y0, `${tag}: a double-click beside the bar selects one word, and the page stays`, word);
+      // Back from the storyboard with the caret behind the bar: its line comes out from under the bar.
+      await clickAt(page, at0);
+      await sleep(100);
+      await page.click(`#viewSwitch [data-view="board"]`);
+      await page.until(`!document.querySelector("#board").hidden`, "the storyboard for the return check");
+      await page.click(`#viewSwitch [data-view="script"]`);
+      await page.until(`document.querySelector("#board").hidden`, "the script after the storyboard");
+      await sleep(150);
+      check(await page.eval(caretClear), `${tag}: back from the storyboard, the caret's line is clear of the bar`);
+      // The view button has the keyboard now: a click on the caret's line gives it back to the script.
+      await clickAt(page, await page.eval(`(() => { const r = getSelection().getRangeAt(0).getClientRects()[0]; return { x: r.left + 1, y: r.top + r.height / 2 }; })()`));
+      await sleep(100);
+    }
     // Scrolled back so the caret is behind the bar: typing brings it out, and the text is as it was afterwards.
     await page.eval(`(() => { const b = ${bar}.querySelector(".change__bar").getBoundingClientRect(), r = getSelection().getRangeAt(0).getClientRects()[0]; scrollBy({ top: r.top - b.top, behavior: "instant" }); })()`);
     await sleep(60);
