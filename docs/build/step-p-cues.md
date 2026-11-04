@@ -21,4 +21,4 @@ The prompter reading cues, a camera action that does something, the shared cue l
 ## Done
 
 - `kit specs`: see `docs/agents/evidence/specs.txt`. Browser: `docs/agents/evidence/step-p-cues-browser.txt` (headless Chrome, real Ctrl+B and clicks, 1280 px and 390 px, the agent over MCP).
-- Ctrl+B in Chrome: the page gets it first and nothing else takes it (Chrome has no Ctrl+B shortcut of its own; with cue marking off it does nothing, as before). Firefox (Ctrl+B opens the bookmarks sidebar unless a page takes it) and Safari are not checked yet.
+- Ctrl+B in Chrome: the page gets it first and nothing else takes it (Chrome has no Ctrl+B shortcut of its own; with cue marking off it does nothing, as before). Firefox (Ctrl+B opens the bookmarks sidebar unless a page takes it) and Safari (⌘B) are not checked: scripted key input goes to the page and never through the browser's own shortcuts, so this needs a hand check. Due 2026-11-10: Lex (or the lead) presses Ctrl+B in Firefox and ⌘B in Safari on a selection with cue marking on; if a browser takes it, the shortcut becomes Ctrl+Alt+B there (Lex's decision 9).
