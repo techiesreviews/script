@@ -129,13 +129,17 @@ export function keepCues(removed, text) {
 }
 
 /** A replace over start…end that cuts a cue in half takes the whole cue in, so no lone "==" is left: the new range,
- *  and the cue's words outside the old range (plain) to put around the new text. null when no cue is cut. */
-export function widenOverCues(content, start, end) {
+ *  and the cue's words outside the old range (plain) to put around the new text. A range inside one cue's words
+ *  stays as it is (the cue goes on around the new words) unless `next`, the new text, can't sit in a cue. null when
+ *  nothing changes. */
+export function widenOverCues(content, start, end, next = "") {
   const text = String(content ?? "");
   let s = start, e = end;
   for (const c of textCues(text)) {
-    const cut = (start > c.start && start < c.end) || (end > c.start && end < c.end);
-    if (cut) { s = Math.min(s, c.start); e = Math.max(e, c.end); }
+    const startIn = start > c.start && start < c.end, endIn = end > c.start && end < c.end;
+    if (!startIn && !endIn) continue;
+    if (startIn && endIn && start >= c.words.start && end <= c.words.end && !BAD_WORDS.test(next) && next.trim() === next && WORDY.test(next)) continue;
+    s = Math.min(s, c.start); e = Math.max(e, c.end);
   }
   if (s === start && e === end) return null;
   // Cue words hold no "=", so dropping every "=" outside the old range takes exactly the cut cue's marks away.
