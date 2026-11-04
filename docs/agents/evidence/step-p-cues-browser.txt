@@ -33,6 +33,23 @@ ok turning on Bold words in the prompter file: the link is ready at once, with t
 ok the words are back as they were
 ok a selection from inside a cue to past it joins into one cue
 ok two Ctrl+Z steps bring the text back as it was
+ok typing right after a bold word: the text is ==A blank==s pa…
+ok typing right after a bold word: still bold, the marks hidden
+ok typing right after a bold word: no marks in the prompter link
+ok one Ctrl+Z takes the typed letter back
+ok deleting the space after a bold word: the text is ==A blank==pag…
+ok deleting the space after a bold word: still bold, the marks hidden
+ok deleting the space after a bold word: no marks in the prompter link
+ok one Ctrl+Z puts the space back
+ok typing right before a bold word: the text is x==A …
+ok typing right before a bold word: still bold, the marks hidden
+ok typing right before a bold word: no marks in the prompter link
+ok one Ctrl+Z takes it back
+ok typing inside a bold word: the text is ==Ay b…
+ok typing inside a bold word: still bold, the marks hidden
+ok typing inside a bold word: no marks in the prompter link
+ok one Ctrl+Z takes it back
+ok and the Ctrl+Z before it takes the bold off
 ok Wait for MCP gives a connection token
 ok get_cue_settings: { "on": true, "action": "highlight", "export": "strip", "forScript": false }
 ok mark_cue: Done: 1 cue marked in the text now. The person can undo it. Skipped: "no such words here" (not found word for word in the spoken text).
