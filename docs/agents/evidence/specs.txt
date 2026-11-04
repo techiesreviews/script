@@ -59,6 +59,8 @@
 ✔ pendingImages: pictures waiting, pictures put in at once and suggested adds with a picture all count
 ✔ pendingImages: the buttons show only from two pictures on
 ✔ pendingImages: only what the person can act on counts
+✔ the Keep all bar is not sticky, not fixed and not lifted over the text
+✔ the stylesheet's braces balance, so no rule is lost
 ✔ straight in: replace puts the new text in place, as one change, and marks exactly it
 ✔ straight in: add goes after the quote with its spaces, and Undo takes exactly that out again
 ✔ straight in: replace undone gives back the exact text; refused when the quote changed
@@ -333,9 +335,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 335
+ℹ tests 337
 ℹ suites 0
-ℹ pass 335
+ℹ pass 337
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
