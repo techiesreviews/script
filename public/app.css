@@ -372,7 +372,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 }
 /* Cues (fleet issue #14): the "==" marks hide and show like a link's Markdown. The cue look lives only in this rule,
    from the theme's accent tokens, so the prompter's shared look can replace it later. */
-.md-cue .md-link__words { text-decoration: none; background: var(--accent-soft); color: var(--text); border-radius: 0.2em; box-decoration-break: clone; }
+.md-cue .md-link__words { text-decoration: none; background: var(--accent-faint); box-shadow: inset 0 -2px 0 var(--accent-ink); color: var(--text); box-decoration-break: clone; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
 .menu-action__check { margin-inline-start: auto; }
