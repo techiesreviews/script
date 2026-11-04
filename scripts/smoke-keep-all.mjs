@@ -23,6 +23,8 @@ let nextId = 0;
 const waiting = new Map();
 cdp.addEventListener("message", (e) => {
   const m = JSON.parse(e.data);
+  // "Leave this page?" after the script changed: yes, or the reload would wait for it for ever.
+  if (m.method === "Page.javascriptDialogOpening") cdp.send(JSON.stringify({ id: ++nextId, method: "Page.handleJavaScriptDialog", params: { accept: true }, sessionId: m.sessionId }));
   if (!m.id || !waiting.has(m.id)) return;
   const { resolve, reject } = waiting.get(m.id);
   waiting.delete(m.id);
@@ -30,7 +32,8 @@ cdp.addEventListener("message", (e) => {
 });
 const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
   const id = ++nextId;
-  waiting.set(id, { resolve, reject });
+  const timer = setTimeout(() => { waiting.delete(id); reject(new Error(`Chrome didn't answer ${method}`)); }, 20000);
+  waiting.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
   cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
 });
 
@@ -81,6 +84,7 @@ async function mcp(token, name, args) {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
+    signal: AbortSignal.timeout(15000),
   });
   const body = await res.json();
   const text = body?.result?.content?.[0]?.text ?? "";
@@ -117,12 +121,17 @@ async function run(width, height) {
   await agent("sketch_shot", { shotId: "B1", svg: drawing(1) });
   await page.until(pendingPic("B1"), "the first drawing waits");
   check((await shown()) === "", `${tag}: one picture waiting, no Keep all`);
+  const firstLine = `document.querySelector("#script .line").getBoundingClientRect().top`;
+  const lineWas = await page.eval(firstLine);
   await agent("sketch_shot", { shotId: "B2", svg: drawing(2) });
   check(await barIs("2 images", "two pictures"), `${tag}: two pictures waiting, Keep all shows`);
+  check((await page.eval(firstLine)) === lineWas, `${tag}: the text doesn't move when the bar comes`);
   check((await page.eval(`${bar}.querySelector(".keep").textContent`)) === "Keep all", `${tag}: the button says Keep all`);
   check((await page.eval(`${bar}.querySelector(".undo").textContent`)) === "Undo all", `${tag}: the button says Undo all`);
+  await page.eval(`${bar}.querySelector(".keep").focus()`);
   await agent("sketch_shot", { shotId: "B3", svg: drawing(3) });
   check(await barIs("3 images", "three pictures"), `${tag}: the count follows`);
+  check(await page.eval(`document.activeElement === ${bar}.querySelector(".keep") && document.activeElement.getAttribute("aria-label") === "Keep all 3 images"`), `${tag}: the keyboard stays on Keep all when another picture comes, and its label follows`);
 
   // It fits, and stays in sight under the top bar.
   const fit = () => page.eval(`(() => { const r = ${bar}.querySelector(".change__bar").getBoundingClientRect(), t = document.querySelector(".top").getBoundingClientRect(), l = document.querySelector(".toc").getBoundingClientRect(), stuck = getComputedStyle(document.querySelector(".toc")).position === "sticky"; return { left: r.left, right: r.right, top: r.top, under: r.top >= (stuck ? l.bottom : t.bottom), wide: document.documentElement.scrollWidth, view: innerWidth }; })()`);
@@ -173,6 +182,21 @@ async function run(width, height) {
   await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "z", code: "KeyZ", modifiers: 2, windowsVirtualKeyCode: 90 });
   await sleep(150);
   check((await picOf("B5")).includes(`cx="${40 + 8 * 20}"`), `${tag}: Ctrl+Z after Keep all leaves the pictures in, as after a single Keep`);
+
+  // A write that fails: each picture says so, the bar comes back, and Keep all can try again.
+  for (const id of ["B4", "B5"]) await agent("sketch_shot", { shotId: id, svg: drawing(Number(id[1]) + 5) });
+  await barIs("2 images", "two to fail");
+  await page.eval(`(() => { window.__put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = () => { throw new Error("no room"); }; })()`);
+  await page.click(`#imagesAll .keep`);
+  check(await page.until(`document.querySelectorAll('#script .frame__problem').length === 2 && !${bar}.hidden`, "the failed writes"), `${tag}: a failed write shows Not saved on each picture and the bar comes back`);
+  await page.eval(`IDBObjectStore.prototype.put = window.__put`);
+  await page.click(`#imagesAll .keep`);
+  await page.until(`${waitingCount} === 0 && ${bar}.hidden`, "the second try");
+  check((await picOf("B5")).includes(`cx="${40 + 10 * 20}"`) && (await page.eval(`document.querySelectorAll('#script .frame__problem').length`)) === 0, `${tag}: Keep all again puts them in`);
+  await agent("sketch_shot", { shotId: "B5", svg: drawing(8) });
+  await page.until(pendingPic("B5"), "B5 once more");
+  await page.click(`#script .frame__bar .keep[data-b="B5"]`);
+  await page.until(`${waitingCount} === 0`, "B5 kept");
 
   // Pictures put in at once carry only Undo; they count too.
   const png = await page.eval(`(() => { const c = document.createElement("canvas"); c.width = 400; c.height = 220; const g = c.getContext("2d"); g.fillStyle = "#274"; g.fillRect(0, 0, 400, 220); return c.toDataURL("image/png").split(",")[1]; })()`);
@@ -229,10 +253,34 @@ async function run(width, height) {
   const clear = await page.eval(`(() => { const a = ${bar}.querySelector(".change__bar").getBoundingClientRect(), b = document.querySelector(".board__bar").getBoundingClientRect(); return { a: a.bottom, b: b.top, wide: document.documentElement.scrollWidth, view: innerWidth }; })()`);
   check(clear.a <= clear.b + 1 && clear.wide <= clear.view, `${tag}: it is clear of the storyboard's bar`, JSON.stringify(clear));
   await page.shot(`${width}-board`);
+  await page.eval(`scrollTo(0, document.documentElement.scrollHeight)`);
+  await sleep(120);
+  const down = await page.eval(`(() => { const r = ${bar}.querySelector(".change__bar").getBoundingClientRect(), t = document.querySelector(".top").getBoundingClientRect(); return { top: r.top, bottom: t.bottom, view: innerHeight }; })()`);
+  check(down.top >= down.bottom && down.top < down.view, `${tag}: it stays in sight at the end of the storyboard`, JSON.stringify(down));
+  await page.eval(`scrollTo(0, 0)`);
   await page.click(`#imagesAll .keep`);
   await page.until(`${bar}.hidden && !document.querySelector('#board .frame__bar .keep')`, "after Keep all in the storyboard");
   check(await page.eval(`document.querySelector('#board .frame[data-b="B2"] .frame__img').innerHTML.includes('cx="100"')`), `${tag}: Keep all in the storyboard puts them in`);
   await page.click(`#viewSwitch [data-view="script"]`);
+
+  // Only what is in sight counts: a shot whose line is gone over the script, a shot the filter hides in the storyboard.
+  const text = JSON.parse(await listed()).markdown;
+  check(text.includes("So, three things."), `${tag}: the line for B8 is in the script`);
+  await agent("set_script", { markdown: text.replace("So, three things.", "") });
+  await page.until(`!document.querySelector('#script .shot-frame__jump[data-b="B8"]')`, "B8 without a line");
+  for (const id of ["B7", "B8", "S2"]) await agent("sketch_shot", { shotId: id, svg: drawing(4) });
+  check(await barIs("2 images", "script count"), `${tag}: over the script, a picture for a shot without a line doesn't count`);
+  await page.click(`#viewSwitch [data-view="board"]`);
+  check(await barIs("3 images", "board count"), `${tag}: in the storyboard, where that shot is listed, it does`);
+  await page.click(`#board [data-filter="screen"]`);
+  await page.until(`${bar}.hidden`, "a filter leaves one");
+  check((await shown()) === "", `${tag}: a filter that leaves one picture in sight takes the bar away`);
+  await page.click(`#board [data-filter="all"]`);
+  await barIs("3 images", "all again");
+  await page.click(`#imagesAll .undo`);
+  await page.until(`${bar}.hidden && !document.querySelector('#board .frame__bar .keep')`, "after Undo all in the storyboard");
+  await page.click(`#viewSwitch [data-view="script"]`);
+  await agent("set_script", { markdown: text });
 
   // Kept means written: they are there when the demo is opened again after a reload (its list is kept in the browser).
   await page.until(`${bar}.hidden`, "the last write");
@@ -244,6 +292,26 @@ async function run(width, height) {
   await page.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the script after a reload", 12000);
   check((await picOf("B5")).includes(`cx="${40 + 8 * 20}"`), `${tag}: the kept pictures are there after a reload`);
   check((await shown()) === "", `${tag}: nothing waits after a reload`);
+
+  // A guest in a shared script sees the pictures but no bar: the host keeps or undoes them.
+  if (width > 500) {
+    await page.eval(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__link = t; } } })`);
+    await page.click("#shareBtn");
+    await page.until(`!!window.__link`, "the share link");
+    const link = await page.eval(`window.__link`);
+    const guest = await openPage(width, height);
+    await guest.send("Page.navigate", { url: link });
+    await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+    await guest.eval(`document.querySelector("#joinName").value = "Guest"`);
+    await guest.click("#joinForm button");
+    await guest.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the guest's script", 12000);
+    await agent("sketch_shot", { shotId: "B1", svg: drawing(5) });
+    await agent("sketch_shot", { shotId: "B2", svg: drawing(6) });
+    check(await barIs("2 images", "the host"), `${tag}: the host has the bar`);
+    check(await guest.until(`document.querySelectorAll("#script .frame__img[data-pending]").length >= 2`, "the guest sees the pictures", 12000), `${tag}: the guest sees the pictures`);
+    check(await guest.eval(`document.querySelector("#imagesAll").hidden`), `${tag}: the guest has no bar`);
+    await guest.close();
+  }
   await page.close();
 }
 
