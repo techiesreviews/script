@@ -1,7 +1,7 @@
 // The script document: parse, serialize, edit, export and ask anchoring.
 // Pure module: no DOM, no network. Imported by the app and by the tests.
 import { textLinks, isLinkLine, safeUrl, LINK_LIMITS } from "./links.js";
-import { spokenWords, stripCues, textCues } from "./cues.js";
+import { spokenWords, stripCues, textCues, quoteAcrossCues } from "./cues.js";
 
 /* ---------- Actions and their standard instructions ---------- */
 export const ACTIONS = {
@@ -490,6 +490,11 @@ export function findQuote(doc, quote, near = null) {
   for (const b of order) {
     const i = contentOf(b).indexOf(quote);
     if (i >= 0) return { blockId: b.id, start: i, end: i + quote.length };
+  }
+  // The agent reads the spoken text without cue marks: a quote across a cue's edge is found here, with the text as it is.
+  for (const b of order) {
+    const r = quoteAcrossCues(contentOf(b), quote);
+    if (r) return { blockId: b.id, ...r };
   }
   return null;
 }
