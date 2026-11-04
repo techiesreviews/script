@@ -1,7 +1,7 @@
 // The script document: parse, serialize, edit, export and ask anchoring.
 // Pure module: no DOM, no network. Imported by the app and by the tests.
 import { textLinks, isLinkLine, safeUrl, LINK_LIMITS } from "./links.js";
-import { spokenWords, stripCues } from "./cues.js";
+import { spokenWords, stripCues, textCues } from "./cues.js";
 
 /* ---------- Actions and their standard instructions ---------- */
 export const ACTIONS = {
@@ -337,10 +337,11 @@ export function exportCamera(doc) {
 // inside a "[words](https://…)" link: the prompter gets every link whole.
 const SENTENCE_GAP = /(?<=[.!?…]["'”’)\]]*)\s+(?=["'“‘(\[]?[\p{Lu}\p{N}])/gu;
 export function sentences(text) {
-  const t = collapse(text), links = textLinks(t), out = [];
+  // Never split inside a link or a cue (a cue shown in the prompter file keeps its "==" marks on one line).
+  const t = collapse(text), whole = [...textLinks(t), ...textCues(t)], out = [];
   let at = 0;
   for (const m of t.matchAll(SENTENCE_GAP)) {
-    if (links.some((l) => m.index > l.start && m.index < l.end)) continue;
+    if (whole.some((l) => m.index > l.start && m.index < l.end)) continue;
     out.push(t.slice(at, m.index));
     at = m.index + m[0].length;
   }
