@@ -238,3 +238,16 @@ test("review 3: Ctrl+B next to an = sign changes nothing; a cueId names its word
   assert.deepEqual(C.planCues(doc, "unmark", [{ cueId: `${p2.id}:1:second` }]).skipped, [{ quote: `${p2.id}:1:second`, why: "this cue has changed; call list_cues again" }]);
   assert.deepEqual(C.planCues(doc, "unmark", [{ cueId: `${p2.id}:2:second` }]).segments.map((s) => s.content), ["A ==new== and second line, we go."]);
 });
+
+test("review 4: a rewrite of words inside one cue keeps the cue around the new words", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe ==start here== now.\n");
+  const p = paras(doc)[0], c = D.contentOf(p);
+  const [s, e] = sel(c, "here");
+  const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "there" }, answeredBy: { id: "agent:x", name: "X" } });
+  const res = C.land(doc, ask, 1);
+  assert.equal(D.contentOf(p), "We ==start there== now.");
+  assert.equal(res.cuesDropped, 0);
+  // New words that can't sit in a cue (an = sign) take the whole cue in instead.
+  assert.deepEqual(Q.widenOverCues("We ==start here== now.", 11, 15, "a=b"), { start: 3, end: 17, before: "start ", after: "" });
+});
