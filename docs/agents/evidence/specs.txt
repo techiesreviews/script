@@ -127,6 +127,9 @@
 ✔ Bold marking off: nothing reads == anywhere; the exports and counts are byte for byte as before bold
 ✔ Bold marking on: an opening == right after a letter, digit or comparison sign is plain text; earlier cases hold
 ✔ Bold marking on: an edit that breaks a bold stretch settles it, with no stray marks; an edit that doesn't changes nothing
+✔ review: the mirror of the comparison bug, the AI's own comparisons, and rewrites that wouldn't read back
+✔ review: turning Bold marking off or on flags no B-roll shot
+✔ typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -338,9 +341,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 340
+ℹ tests 343
 ℹ suites 0
-ℹ pass 340
+ℹ pass 343
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
