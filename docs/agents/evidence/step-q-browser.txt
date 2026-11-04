@@ -1,4 +1,4 @@
-# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px and 390 px, the storyboard at 1920 px; a fresh browser context per width and for the guest. 2026-11-04T21:36:30Z, run on the working tree on top of 869ca42.
+# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px; a fresh browser context per width and for the guest. 2026-11-04T21:42:58Z, run on the working tree on top of 50d25a2.
 ok 1280 px: one picture waiting, no Keep all
 ok 1280 px: two pictures waiting, Keep all shows
 ok 1280 px: at the top of the page the bar has its own row, above the text
@@ -8,17 +8,19 @@ ok 1280 px: the count follows
 ok 1280 px: the keyboard stays on Keep all when another picture comes, and its label follows
 ok 1280 px: it fits the width, nothing scrolls sideways
 ok 1280 px: it is under the top bar and the section list
-ok 1280 px: still in sight at the end of the script
 ok 1280 px: nothing covers the button
-ok 1280 px: a line of text runs beside the bar
-ok 1280 px: a click on a line beside the bar leaves the page where it is
-ok 1280 px: a caret change alone doesn't move the page
-ok 1280 px: a double-click beside the bar selects one word, and the page stays
-ok 1280 px: back from the storyboard, the caret's line is clear of the bar
-ok 1280 px: scrolling alone may pass a line under the bar
-ok 1280 px: typing on a line behind the bar moves it clear
-ok 1280 px: deleting keeps it clear
-ok 1280 px: a jump to a section stops below the bar
+ok 1280 px: the bar is in the page's flow, not sticky and not floating
+ok 1280 px: the bar is above all the text, scrolled to 0
+ok 1280 px: the bar is above all the text, scrolled to 300
+ok 1280 px: the bar is above all the text, scrolled to 900
+ok 1280 px: a line of text to click on
+ok 1280 px: a click: the caret's line is clear of the bar
+ok 1280 px: typing: the caret's line is clear of the bar
+ok 1280 px: undo: the caret's line is clear of the bar
+ok 1280 px: Enter: the caret's line is clear of the bar
+ok 1280 px: Backspace joining two lines: the caret's line is clear of the bar
+ok 1280 px: an arrow key: the caret's line is clear of the bar
+ok 1280 px: at the end of the script it has scrolled away with the page
 ok 1280 px: with large text every part of the bar is on screen
 ok 1280 px: one kept by itself, the count goes down
 ok 1280 px: one picture left, Keep all goes
@@ -41,7 +43,6 @@ ok 1280 px: the mix's waiting picture is in
 ok 1280 px: the mix's suggested adds are in the list
 ok 1280 px: Keep all shows in the storyboard
 ok 1280 px: it is clear of the storyboard's bar
-ok 1280 px: it stays in sight at the end of the storyboard
 ok 1280 px: Keep all by keyboard leaves the focus on the view switch
 ok 1280 px: Keep all in the storyboard puts them in
 ok 1280 px: the frames don't jump when two pictures become one
@@ -65,12 +66,19 @@ ok 390 px: the count follows
 ok 390 px: the keyboard stays on Keep all when another picture comes, and its label follows
 ok 390 px: it fits the width, nothing scrolls sideways
 ok 390 px: it is under the top bar and the section list
-ok 390 px: still in sight at the end of the script
 ok 390 px: nothing covers the button
-ok 390 px: a line of text runs beside the bar
-ok 390 px: typing on a line behind the bar moves it clear
-ok 390 px: deleting keeps it clear
-ok 390 px: a jump to a section stops below the bar
+ok 390 px: the bar is in the page's flow, not sticky and not floating
+ok 390 px: the bar is above all the text, scrolled to 0
+ok 390 px: the bar is above all the text, scrolled to 300
+ok 390 px: the bar is above all the text, scrolled to 900
+ok 390 px: a line of text to click on
+ok 390 px: a click: the caret's line is clear of the bar
+ok 390 px: typing: the caret's line is clear of the bar
+ok 390 px: undo: the caret's line is clear of the bar
+ok 390 px: Enter: the caret's line is clear of the bar
+ok 390 px: Backspace joining two lines: the caret's line is clear of the bar
+ok 390 px: an arrow key: the caret's line is clear of the bar
+ok 390 px: at the end of the script it has scrolled away with the page
 ok 390 px: with large text every part of the bar is on screen
 ok 390 px: one kept by itself, the count goes down
 ok 390 px: one picture left, Keep all goes
@@ -93,7 +101,6 @@ ok 390 px: the mix's waiting picture is in
 ok 390 px: the mix's suggested adds are in the list
 ok 390 px: Keep all shows in the storyboard
 ok 390 px: it is clear of the storyboard's bar
-ok 390 px: it stays in sight at the end of the storyboard
 ok 390 px: Keep all by keyboard leaves the focus on the view switch
 ok 390 px: Keep all in the storyboard puts them in
 ok 390 px: the frames don't jump when two pictures become one
@@ -105,5 +112,18 @@ ok 390 px: in the storyboard, where that shot is listed, it does
 ok 390 px: a filter that leaves one picture in sight takes the bar away
 ok 390 px: pictures kept with Keep all are there after a reload
 ok 390 px: nothing waits after a reload
+ok 1920 px: the bar is in the page's flow, not sticky and not floating
+ok 1920 px: the bar is above all the text, scrolled to 0
+ok 1920 px: the bar is above all the text, scrolled to 300
+ok 1920 px: the bar is above all the text, scrolled to 900
+ok 1920 px: a line of text to click on
+ok 1920 px: a click: the caret's line is clear of the bar
+ok 1920 px: typing: the caret's line is clear of the bar
+ok 1920 px: undo: the caret's line is clear of the bar
+ok 1920 px: Enter: the caret's line is clear of the bar
+ok 1920 px: Backspace joining two lines: the caret's line is clear of the bar
+ok 1920 px: an arrow key: the caret's line is clear of the bar
+ok 1920 px: Undo all takes both pictures away
 ok 1920 px: the storyboard's bar ends where the storyboard ends
+ok 1920 px: Keep all puts them in
 RESULT: ok
