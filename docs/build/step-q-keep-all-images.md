@@ -10,7 +10,7 @@ Lex (2026-11-04): when the AI updates several images (B-roll sketches, each with
 4. **Undo all** does what each picture's own Undo does. It was cheap: all three kinds already have an Undo to call.
 5. **Undo after Keep all:** a single Keep can't be undone today (the B-roll list isn't part of Ctrl/Cmd+Z), so a Keep all can't either. This matches the existing behaviour.
 6. The bar has its own row above the script or the storyboard, which moves them down by that row when it comes (a page scrolled further down keeps its place where the browser does scroll anchoring). The row stays when the count falls below two, until the view or the list changes, so nothing under the pointer jumps. In the storyboard it lines up with the storyboard.
-7. **It never covers the words being edited** (Lex's lead, 2026-11-04, after the release review): scrolled down, the bar stays in sight, and a caret on a line behind it moves that line just below it (`barScroll` in `public/broll.js`, on a selection change, on typing and when the bar comes). Text may pass under it while scrolling, as it does under the top bar. Jumps to a section stop below it. With large text or in a narrow window its parts wrap, so every one can be reached.
+7. **It never covers the words being typed** (lead's decision, 2026-11-04, after the reviews): scrolled down, the bar stays in sight, and typing on a line behind it moves that line just below it (`barScroll` in `public/broll.js`). The page moves only on typing, and on the way back from the storyboard: a click, a double-click or a redraw never shifts it, so a caret can sit behind the bar until the next key. Text may pass under it while scrolling, as it does under the top bar. Jumps to a section stop below it. With large text or in a narrow window its parts wrap, so every one can be reached.
 
 ## Checks
 
@@ -18,4 +18,4 @@ Lex (2026-11-04): when the AI updates several images (B-roll sketches, each with
 
 ## Done
 
-Built and checked as above. A caret on a phone: Chrome's phone mode moves a tapped line back into view by itself, so the browser check can only park a line behind the bar on the desktop width; typing beside the bar is checked at both. Feature list: updated (`docs/features.md`).
+Built and checked as above. A caret on a phone: Chrome's phone mode moves a tapped line back into view by itself, so the browser check can only park a line behind the bar, and try a click, a double-click and the way back from the storyboard there, on the desktop width; typing beside the bar is checked at both. Feature list: updated (`docs/features.md`).

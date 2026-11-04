@@ -1118,7 +1118,7 @@ test("pendingImages: only what the person can act on counts", () => {
   assert.deepEqual(both.marked, []);
 });
 
-/* Step Q2: the bar never covers the words being edited. */
+/* Step Q: the bar never covers the words being edited. */
 test("barScroll: a caret behind the bar is moved just below it; a caret clear of it stays", () => {
   const bar = { top: 100, bottom: 127 };
   assert.equal(barScroll({ top: 110, bottom: 130 }, bar), -25, "behind the bar: the page moves so the line starts 8 px under it");
