@@ -20,6 +20,10 @@ ok one Ctrl+Z takes the cue off again
 ok a click on the B button marks the selected words
 ok the B button shows pressed while the selection is bold
 ok Ctrl+B on the cue's words takes the cue off, the words stay
+ok the Ask input has the focus
+ok a click on B with the Ask input focused marks the selected words, and the input keeps the focus
+ok the B button shows pressed
+ok a second click takes it off again
 ok a selection from inside a cue to past it joins into one cue
 ok two Ctrl+Z steps bring the text back as it was
 ok Wait for MCP gives a connection token
