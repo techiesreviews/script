@@ -3859,28 +3859,53 @@ function imagesOpen() {
     saving: broll.saving,
   });
 }
+let imagesWhere = ""; // the list and the view the bar last showed in
 function renderImagesAll() {
   const open = imagesOpen();
   const el = $("#imagesAll");
+  const where = `${broll.token}:${ui.view}`;
   if (!open.show) {
-    // The keyboard doesn't fall back to the top of the page: it goes to the view switch, just before the bar.
+    // The keyboard doesn't fall back to the top of the page: it goes to the view switch, earlier in the page.
     if (el.contains(document.activeElement)) $('#viewSwitch [aria-pressed="true"]').focus({ preventScroll: true });
+    if (el.hidden) return;
+    // Its row stays while this list and view stay, so what is under the pointer doesn't jump as the count goes down.
+    if (imagesWhere === where) {
+      if (el.firstChild) { el.style.blockSize = `${el.getBoundingClientRect().height}px`; el.replaceChildren(); }
+      return;
+    }
     el.hidden = true;
     el.replaceChildren();
+    el.style.removeProperty("block-size");
     return;
   }
+  imagesWhere = where;
   // Built once, then only its words change: focus and a press in progress stay, and it doesn't animate in again.
-  if (el.hidden) {
+  const fresh = !el.firstChild;
+  if (fresh) {
     el.innerHTML = `<span class="change__bar"><span class="change__what">${icon("sketch")}<span></span></span>`
       + `<button type="button" class="undo" data-act="undo-all">${icon("undo")}Undo all</button>`
       + `<button type="button" class="keep" data-act="keep-all">${icon("check")}Keep all</button></span>`;
+    el.style.removeProperty("block-size");
     el.hidden = false;
   }
   const n = open.count;
   $(".change__what > span", el).textContent = `${n} images`;
   $(".undo", el).setAttribute("aria-label", `Undo all ${n} images`);
   $(".keep", el).setAttribute("aria-label", `Keep all ${n} images`);
+  if (fresh) caretClearOfBar();
 }
+// The bar stays in sight, but never over the words being edited: the caret's line moves just below it.
+function caretClearOfBar() {
+  const bar = $("#imagesAll .change__bar");
+  const sel = getSelection();
+  if (!bar || ui.view === "board" || !sel.rangeCount || !sel.isCollapsed || !scriptEl.contains(sel.anchorNode)) return;
+  const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+  const caret = sel.getRangeAt(0).getClientRects()[0] || node.closest(".line")?.getBoundingClientRect();
+  const by = B.barScroll(caret, bar.getBoundingClientRect());
+  if (by) scrollBy({ top: by, behavior: "instant" });
+}
+document.addEventListener("selectionchange", caretClearOfBar);
+scriptEl.addEventListener("input", caretClearOfBar);
 function keepAllImages() {
   const open = imagesOpen();
   // A picture put in at once is in the list already: keeping it only takes its mark and its Undo away.
