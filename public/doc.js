@@ -1,6 +1,7 @@
 // The script document: parse, serialize, edit, export and ask anchoring.
 // Pure module: no DOM, no network. Imported by the app and by the tests.
-import { textLinks, isLinkLine, spokenText, safeUrl, LINK_LIMITS } from "./links.js";
+import { textLinks, isLinkLine, safeUrl, LINK_LIMITS } from "./links.js";
+import { spokenWords, stripCues } from "./cues.js";
 
 /* ---------- Actions and their standard instructions ---------- */
 export const ACTIONS = {
@@ -328,7 +329,7 @@ const spokenParas = (doc) => outline(doc).sections.filter((s) => s.spoken).flatM
 
 // The camera script shows only the spoken words: a link's words without its address, no link lines.
 export function exportCamera(doc) {
-  const paras = spokenParas(doc).map((b) => collapse(spokenText(contentOf(b)))).filter(Boolean);
+  const paras = spokenParas(doc).map((b) => collapse(spokenWords(contentOf(b)))).filter(Boolean);
   return paras.length ? paras.join("\n\n") + "\n" : "";
 }
 
@@ -367,7 +368,8 @@ export function prompterLabel(info) {
   return [info.num, info.name.toUpperCase(), info.start].filter(Boolean).join(" · ");
 }
 
-export function exportPrompter(doc) {
+// Cues ("==words==", cues.js) are stripped to their words unless `cues` is "show" (the cue export setting).
+export function exportPrompter(doc, { cues = "strip" } = {}) {
   const out = [`# ${titleOf(doc) || "Script"}`];
   for (const s of outline(doc).sections) {
     if (!s.spoken) continue;
@@ -377,7 +379,7 @@ export function exportPrompter(doc) {
     for (const b of s.blocks) {
       const c = contentOf(b);
       if (!c.trim()) continue;
-      if (b.type === "para") out.push("", ...paraLines(c));
+      if (b.type === "para") out.push("", ...paraLines(cues === "show" ? c : stripCues(c)));
       else if (b.type === "note") out.push("", ...noteLines(c));
       else if (b.type === "raw") {
         // Lists, tables and code stay out of the prompter; their link lines go in, in their place.
@@ -418,7 +420,7 @@ export function formatDuration(seconds) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 export function stats(doc) {
-  const words = spokenParas(doc).reduce((n, b) => n + countWords(spokenText(contentOf(b))), 0);
+  const words = spokenParas(doc).reduce((n, b) => n + countWords(spokenWords(contentOf(b))), 0);
   const seconds = Math.round((words / WORDS_PER_MINUTE) * 60);
   return { words, seconds, spoken: formatDuration(seconds) };
 }

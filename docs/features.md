@@ -8,6 +8,7 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 - No "Saved" time is shown (Lex, 2026-10-29): only an orange dot for unsaved changes, "Saving…" on Ctrl/Cmd+S and "Not saved" when a save fails.
 - A new script is saved in the browser at once (step J) and can be moved to a file with Export → Markdown file.
 - The file name opens a switcher of recent scripts.
+- Cues (step P, Lex 2026-11-04), optional and off by default: with **Cue marking** on (Cues, in the file name's menu), Ctrl+B (⌘B on a Mac) or the **Cue** button on the selection bar marks the selected words as a cue, and again takes it off; one Ctrl/Cmd+Z step each. A cue shows tinted, its `==` marks only while the caret is in it. The prompter file strips cues unless **Cues in the prompter file** is on; **Camera action with each cue** is stored for the prompter, off by default. Off, everything works as before.
 
 ## Top bar and export
 
@@ -19,6 +20,7 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 
 - Select text and use the edit bar ("Sound like me", "Simpler", "Shorter", "Explain how it works", "Check facts", "Find links", "Ask…"; "Find links in the script" in the agent menu): this makes an **ask**.
 - The person's **own connected agent** (over MCP) answers it: a new text or an addition goes straight into the script, lightly marked, with Undo on the agent's name tag (step F), until the person scrolls past it or 60 minutes are over (step M); a note shows beside the text.
+- The agent can read and change the cue settings (shown on a line at the top with Undo), list cues, and mark or remove them (each lightly marked, with Undo on its name tag); a rewrite keeps a cue whose words survive and tells the agent when one went.
 - Asked for a whole script, the agent can also open one of the person's recent scripts, open a new script it wrote, or put in the whole text with an Undo line (step H).
 
 ## B-roll

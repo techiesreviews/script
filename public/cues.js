@@ -1,0 +1,200 @@
+// Cues in the script (fleet issue #14, Lex 2026-11-04): "==words==" in a spoken line marks words that matter there.
+// Optional and off by default (settings below); with cue marking off the editor works as before. The prompter owns
+// the final cue look and reader; until it reads cues, its export strips them (setting `export`). Rules like links
+// (links.js): words on one line, no brackets or "=" inside, at least one letter or digit, never inside a link.
+// Pure: no DOM. app.js draws cues with the links' show/hide trick; changes.js plans the agent's cue changes.
+import { textLinks, spokenText, quoteRe, wholeWords, overlaps } from "./links.js";
+
+export const CUE_LIMITS = { cues: 30 };
+const CUE = /(?<!=)==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?!=)/g;
+const WORDY = /[\p{L}\p{N}]/u;
+const BAD_WORDS = /[=[\]\n]/;
+
+/* ---------- Settings (Lex 2026-11-04: chosen by the person and by the agent) ----------
+   on: cue marking on or off (off: no shortcut, no button, cues show as plain text, as before).
+   action: "highlight" (only a highlight) or "camera" (also a camera action; stored only, the prompter acts later).
+   export: "strip" (the prompter file shows plain words) or "show" (it keeps the "==" marks). */
+export const CUE_DEFAULTS = Object.freeze({ on: false, action: "highlight", export: "strip" });
+const CHOICES = { on: [true, false], action: ["highlight", "camera"], export: ["strip", "show"] };
+const pick = (from) => Object.fromEntries(Object.keys(CHOICES).filter((k) => from && CHOICES[k].includes(from[k])).map((k) => [k, from[k]]));
+/** The settings in force: the defaults, then the person's, then the open script's own (the agent may set those). */
+export const cueSettings = (person, script) => ({ ...CUE_DEFAULTS, ...pick(person), ...pick(script) });
+/** A settings change's problem ("" when fine). `extra`: other argument names allowed beside the settings. */
+export function checkSettings(patch, extra = []) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return "Settings must be an object.";
+  for (const k of Object.keys(patch)) if (!(k in CHOICES) && !extra.includes(k)) return `Unknown setting: ${k}.`;
+  if (!Object.keys(CHOICES).some((k) => patch[k] !== undefined)) return "Give at least one of on, action or export.";
+  if (patch.on !== undefined && typeof patch.on !== "boolean") return "on must be true or false.";
+  if (patch.action !== undefined && !CHOICES.action.includes(patch.action)) return "action must be highlight or camera.";
+  if (patch.export !== undefined && !CHOICES.export.includes(patch.export)) return "export must be strip or show.";
+  return "";
+}
+
+/* ---------- Reading cues ---------- */
+/** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
+ *  same shape as textLinks() so the editor draws both alike). A "==…==" inside or across a link is not a cue. */
+export function textCues(content) {
+  const text = String(content ?? "");
+  const links = textLinks(text).map((l) => [l.start, l.end]);
+  const out = [];
+  for (const m of text.matchAll(CUE)) {
+    const start = m.index, end = start + m[0].length;
+    if (!WORDY.test(m[1]) || overlaps(links, start, end)) continue;
+    out.push({ start, end, words: { start: start + 2, end: end - 2 }, label: m[1], cue: true });
+  }
+  return out;
+}
+/** The text with each cue replaced by its words. */
+export function stripCues(text) {
+  const t = String(text ?? "");
+  let out = "", at = 0;
+  for (const c of textCues(t)) { out += t.slice(at, c.start) + c.label; at = c.end; }
+  return out + t.slice(at);
+}
+/** What is spoken (links.js spokenText) without the cue marks: for word counts and the camera script. */
+export const spokenWords = (content) => stripCues(spokenText(content));
+
+/* ---------- Ctrl/Cmd+B on a selection ---------- */
+// The selection without the spaces at its ends.
+function trimRange(content, start, end) {
+  let s = Math.max(0, Math.min(start, end)), e = Math.min(content.length, Math.max(start, end));
+  while (s < e && /\s/.test(content[s])) s++;
+  while (e > s && /\s/.test(content[e - 1])) e--;
+  return [s, e];
+}
+const inside = (c, s, e) => s >= c.start && e <= c.end;
+/** Is the selection inside one cue (the button shows pressed, a toggle takes the cue off)? */
+export function cueSelected(content, start, end) {
+  const [s, e] = trimRange(String(content ?? ""), start, end);
+  return e > s && textCues(content).some((c) => inside(c, s, e));
+}
+/**
+ * Toggle a cue on the selected words (start…end, content offsets, already snapped to whole words):
+ * inside one cue: that cue's marks go, its words stay; otherwise the selection and every cue it touches become one
+ * cue (half a cue or across two joins into one). Returns { content, start, end, cue } (start…end: the words, to
+ * select again; cue: whether they are a cue now) or null when nothing can change (no words, a line break, a
+ * bracket or "=" in the way, a link touched).
+ */
+export function toggleCue(content, start, end) {
+  const text = String(content ?? "");
+  const [s, e] = trimRange(text, start, end);
+  if (e <= s) return null;
+  const cues = textCues(text);
+  const own = cues.find((c) => inside(c, s, e));
+  if (own) {
+    return { content: text.slice(0, own.start) + own.label + text.slice(own.end), start: own.start, end: own.start + own.label.length, cue: false };
+  }
+  const touched = cues.filter((c) => s < c.end && e > c.start);
+  const from = Math.min(s, ...touched.map((c) => c.start)), to = Math.max(e, ...touched.map((c) => c.end));
+  if (overlaps(textLinks(text).map((l) => [l.start, l.end]), from, to)) return null;
+  const words = stripCues(text.slice(from, to));
+  if (!WORDY.test(words) || BAD_WORDS.test(words) || words !== words.trim()) return null;
+  return { content: `${text.slice(0, from)}==${words}==${text.slice(to)}`, start: from + 2, end: from + 2 + words.length, cue: true };
+}
+
+/* ---------- The agent's rewrites ---------- */
+/**
+ * A replace by the agent over text that held cues: each cue whose words are still in the new text (whole words,
+ * outside links and cues already there) is marked on them again; the others are dropped. Cues the agent kept itself
+ * stay. Returns { text, dropped } (dropped: how many cues went, for the agent's answer).
+ */
+export function keepCues(removed, text) {
+  const old = textCues(removed);
+  let out = String(text ?? ""), dropped = 0;
+  for (const c of old) {
+    if (textCues(out).some((x) => x.label === c.label)) continue;
+    const taken = [...textCues(out), ...textLinks(out)].map((x) => [x.start, x.end]);
+    const re = quoteRe(c.label);
+    let hit = null;
+    for (let m = re.exec(out); m; re.lastIndex = m.index + 1, m = re.exec(out)) {
+      const i = m.index, j = i + m[0].length;
+      if (wholeWords(out, i, j) && !overlaps(taken, i, j) && out[i - 1] !== "=" && out[j] !== "=") { hit = [i, j]; break; }
+    }
+    if (!hit) { dropped++; continue; }
+    out = `${out.slice(0, hit[0])}==${out.slice(hit[0], hit[1])}==${out.slice(hit[1])}`;
+  }
+  return { text: out, dropped };
+}
+
+/* ---------- The agent's mark_cue and unmark_cue ---------- */
+/**
+ * Plan the agent's cue changes in the spoken paragraphs. segments: [{ id, content, avoid? }] in reading order
+ * (`avoid`: [[start, end]] other open work points at, as for links). mode "mark": items [{ quote, occurrence? }]:
+ * the quote's first free whole-word occurrence (or its `occurrence`-th one, counting every match in reading order)
+ * becomes a cue. mode "unmark": items [{ quote } | { cueId }]: that cue's marks go (cueId "<blockId>:<n>", the n-th
+ * cue in its block, as listCues gives it). others: the content of blocks where cues don't go, only to explain a skip.
+ * Returns { segments: [{ id, content, cues: [{ quote }], from, to, delta }] (only the ones that changed; from…to the
+ * changed stretch in the old content), skipped: [{ quote, why }] }.
+ */
+export function planCues(segments, items, mode, { others = [] } = {}) {
+  const state = segments.map((s) => ({ ...s, cues: textCues(s.content), links: textLinks(s.content).map((l) => [l.start, l.end]), avoid: s.avoid || [], picks: [] }));
+  const skipped = [], seen = new Set();
+  const span = (s, i, e) => [Math.min(i, ...s.picks.map((p) => p.start)), Math.max(e, ...s.picks.map((p) => p.end))];
+  for (const item of items || []) {
+    const quote = String(item?.quote ?? "").trim(), cueId = typeof item?.cueId === "string" ? item.cueId : "";
+    const skip = (why) => skipped.push({ quote: (quote || cueId).slice(0, 80), why });
+    if (mode === "unmark") {
+      let found = null;
+      if (cueId) {
+        const [id, n] = [cueId.slice(0, cueId.lastIndexOf(":")), Number(cueId.slice(cueId.lastIndexOf(":") + 1))];
+        const s = state.find((x) => x.id === id);
+        const c = s && Number.isInteger(n) && n >= 1 ? s.cues[n - 1] : null;
+        if (c) found = { s, c };
+        else { skip("no cue with this cueId"); continue; }
+      } else {
+        const key = quote.split(/\s+/).join(" ");
+        for (const s of state) { const c = s.cues.find((x) => x.label.split(/\s+/).join(" ") === key && !s.picks.some((p) => p.start === x.start)); if (c) { found = { s, c }; break; } }
+        if (!found) { skip(quote ? "no cue with these words" : "empty quote"); continue; }
+      }
+      const { s, c } = found;
+      if (s.picks.some((p) => p.start === c.start)) { skip("already in this answer"); continue; }
+      if (overlaps(s.avoid, c.start, c.end)) { skip("under an open ask or change"); continue; }
+      if (overlaps(s.avoid, ...span(s, c.start, c.end))) { skip("an open ask or change sits between it and another cue in its paragraph"); continue; }
+      s.picks.push({ start: c.start, end: c.end, put: c.label, quote: c.label });
+      continue;
+    }
+    const occurrence = Number.isInteger(item?.occurrence) ? item.occurrence : 0;
+    if (!quote) { skip("empty quote"); continue; }
+    if (BAD_WORDS.test(quote)) { skip("cue words hold no brackets, = signs or line breaks"); continue; }
+    if (!WORDY.test(quote)) { skip("not found word for word in the spoken text"); continue; }
+    const key = `${quote.split(/\s+/).join(" ")}#${occurrence}`;
+    if (seen.has(key)) { skip("already in this answer"); continue; }
+    const re = quoteRe(quote);
+    let n = 0, done = false, why = "";
+    for (const s of state) {
+      re.lastIndex = 0;
+      for (let m = re.exec(s.content); m; re.lastIndex = m.index + 1, m = re.exec(s.content)) {
+        const i = m.index, e = i + m[0].length;
+        if (!wholeWords(s.content, i, e)) continue;
+        n++;
+        if (occurrence && n !== occurrence) continue;
+        const cueHere = overlaps(s.cues.map((c) => [c.start, c.end]), i, e) || s.picks.some((p) => i < p.end && e > p.start);
+        let problem = "";
+        if (cueHere) problem = "already a cue";
+        else if (overlaps(s.links, i, e)) problem = "inside a link";
+        else if (overlaps(s.avoid, i, e)) problem = "under an open ask or change";
+        else if (overlaps(s.avoid, ...span(s, i, e))) problem = "an open ask or change sits between it and another cue in its paragraph";
+        if (problem) { why ||= problem; if (occurrence) break; continue; }
+        s.picks.push({ start: i, end: e, put: `==${m[0]}==`, quote });
+        done = true;
+        break;
+      }
+      if (done || (occurrence && n >= occurrence)) break;
+    }
+    if (done) { seen.add(key); continue; }
+    if (why) skip(why);
+    else if (occurrence && n) skip(`only ${n} ${n === 1 ? "occurrence" : "occurrences"} in the spoken text`);
+    else if (others.some((c) => { re.lastIndex = 0; return re.test(String(c)); })) skip("in a heading or reminder, where cues don't go");
+    else skip("not found word for word in the spoken text");
+  }
+  const out = [];
+  for (const s of state) {
+    if (!s.picks.length) continue;
+    s.picks.sort((a, b) => a.start - b.start);
+    let content = "", at = 0;
+    for (const p of s.picks) { content += s.content.slice(at, p.start) + p.put; at = p.end; }
+    content += s.content.slice(at);
+    out.push({ id: s.id, content, cues: s.picks.map(({ quote }) => ({ quote })), from: s.picks[0].start, to: s.picks.at(-1).end, delta: content.length - s.content.length });
+  }
+  return { segments: out, skipped };
+}
