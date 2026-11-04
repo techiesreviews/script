@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import * as D from "../public/doc.js";
 import * as C from "../public/changes.js";
 import * as Q from "../public/cues.js";
+import * as L from "../public/links.js";
 import { checkArgs, TOOLS, INSTRUCTIONS } from "../worker/mcp.js";
 
 const sel = (content, words) => { const s = content.indexOf(words); return [s, s + words.length]; };
@@ -170,4 +171,26 @@ test("MCP: list_cues, mark_cue, unmark_cue and the cue settings, with their chec
   assert.match(checkArgs("set_cue_settings", { forScript: true }), /at least one/);
   assert.match(INSTRUCTIONS, /==words==/);
   assert.match(INSTRUCTIONS, /off by default/);
+});
+
+test("review: no stray == marks: a quote across a line break or next to an = sign is skipped, with the reason", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe start\nhere now, x=go and go=y.\n");
+  const plan = C.planCues(doc, "mark", [{ quote: "start here" }, { quote: "go" }]);
+  assert.deepEqual(plan.segments, []);
+  assert.deepEqual(plan.skipped, [{ quote: "start here", why: "spans a line break" }, { quote: "go", why: "next to an = sign" }]);
+  // A rewrite that splits the cue's words over two lines drops the cue instead of leaving broken marks.
+  assert.deepEqual(Q.keepCues("We ==start here== now", "So we start\nhere today"), { text: "So we start\nhere today", dropped: 1 });
+  // A cue never ends before a combining mark (half a letter).
+  assert.deepEqual(C.planCues(D.parse("# T\n\n## A\n\nनमस्ते दोस्त\n"), "mark", [{ quote: "नमस" }]).segments, []);
+});
+
+test("review: links never land inside a cue; a rewrite whose cues would change the block keeps the text without them", () => {
+  assert.deepEqual(L.planLinks([{ id: "p", content: "We ==go== now", from: 0, to: 13, cues: [[3, 9]] }], [{ quote: "go", url: "https://example.com" }]).skipped, [{ quote: "go", why: "inside a cue, where links don't go" }]);
+  const doc = D.parse("# T\n\n## A\n\nWe ==start== now and ==go== on.\n");
+  const p = paras(doc)[0];
+  const ask = D.makeAsk(doc, { blockId: p.id, start: 0, end: D.contentOf(p).length, action: "simpler", by: { id: "lex", name: "Lex" } });
+  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "We start now and ==go== on." }, answeredBy: { id: "agent:x", name: "X" } });
+  const res = C.land(doc, ask, 1);
+  assert.equal(D.contentOf(p), "We ==start== now and ==go== on.");
+  assert.equal(res.cuesDropped, 0);
 });
