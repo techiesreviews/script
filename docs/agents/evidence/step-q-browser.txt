@@ -1,6 +1,8 @@
-# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px; a fresh browser context per width and for the guest. 2026-11-04T21:45:56Z, run on the working tree on top of e1ffa1c.
+# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px, and bold marking (step P) at 1280 px and 390 px; a fresh browser context per run and for the guest. 2026-11-04T21:55:06Z, run on the working tree on top of f27b485, itself on top of step P.
 ok 1280 px: one picture waiting, no Keep all
+ok 1280 px: a paragraph to open the menus on
 ok 1280 px: two pictures waiting, Keep all shows
+ok 1280 px: the "/" menu follows the text down when the row comes
 ok 1280 px: at the top of the page the bar has its own row, above the text
 ok 1280 px: the button says Keep all
 ok 1280 px: the button says Undo all
@@ -59,7 +61,9 @@ ok 1280 px: the host has the bar
 ok 1280 px: the guest sees the pictures
 ok 1280 px: the guest has no bar
 ok 390 px: one picture waiting, no Keep all
+ok 390 px: a paragraph to open the menus on
 ok 390 px: two pictures waiting, Keep all shows
+ok 390 px: the "/" menu follows the text down when the row comes
 ok 390 px: at the top of the page the bar has its own row, above the text
 ok 390 px: the button says Keep all
 ok 390 px: the button says Undo all
@@ -114,6 +118,7 @@ ok 390 px: in the storyboard, where that shot is listed, it does
 ok 390 px: a filter that leaves one picture in sight takes the bar away
 ok 390 px: pictures kept with Keep all are there after a reload
 ok 390 px: nothing waits after a reload
+ok 1920 px: the selection bar follows the text down when the row comes
 ok 1920 px: the bar is in the page's flow, not sticky and not floating
 ok 1920 px: the bar is above all the text, scrolled to 0
 ok 1920 px: the bar is above all the text, scrolled to 300
@@ -129,4 +134,20 @@ ok 1920 px: the "/" menu keeps its own place: the bar's styles lost no other rul
 ok 1920 px: Undo all takes both pictures away
 ok 1920 px: the storyboard's bar ends where the storyboard ends
 ok 1920 px: Keep all puts them in
+ok 1280 px: a word to select
+ok 1280 px: selecting a word shows the selection bar
+ok 1280 px: Bold marking off (the default): no B button
+ok 1280 px: Bold marking off: Ctrl+B changes nothing
+ok 1280 px: Bold marking can be switched on in the file-name menu
+ok 1280 px: Bold marking on: the B button shows
+ok 1280 px: B marks the word in the text
+ok 1280 px: the marked word shows bold
+ok 390 px: a word to select
+ok 390 px: selecting a word shows the selection bar
+ok 390 px: Bold marking off (the default): no B button
+ok 390 px: Bold marking off: Ctrl+B changes nothing
+ok 390 px: Bold marking can be switched on in the file-name menu
+ok 390 px: Bold marking on: the B button shows
+ok 390 px: B marks the word in the text
+ok 390 px: the marked word shows bold
 RESULT: ok

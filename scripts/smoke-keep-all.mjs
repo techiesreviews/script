@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Browser check for step Q: "Keep all" and "Undo all" for the agent's pictures, at 1280 px and 390 px, and the storyboard at 1920 px.
+// Browser check for step Q: "Keep all" and "Undo all" for the agent's pictures, at 1280, 390 and 1920 px; and that bold marking (step P)
+// stays off until it is switched on. It also runs against the live site after a deploy: it sends only test data, through this browser.
 // Start the Worker and a headless Chrome first (docs/build/step-q-keep-all-images.md says how), then:
 // node scripts/smoke-keep-all.mjs <base URL> <Chrome debugging port> [folder for screenshots]
 // It plays the agent over fetch to /mcp and the person with real clicks over CDP. Only local traffic.
@@ -154,14 +155,63 @@ async function noCover(page, tag) {
   await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
 }
 
+// A word in the first paragraph that fits on screen, for a real double-click.
+const wordSpot = `(() => { const l = [...document.querySelectorAll("#script .line__text, #script .line")].find((x) => x.textContent.includes("A blank page. A deadline")), w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { const at = n.textContent.indexOf("deadline"); if (at < 0) continue; const r = document.createRange(); r.setStart(n, at); r.setEnd(n, at + 8); const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; } return null; })()`;
+const doubleClick = async (page, at) => { for (const clickCount of [1, 2]) for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount }); await sleep(250); };
+
+// Bold marking (step P) is off by default: no B button and Ctrl+B does nothing; switched on, B marks and shows bold.
+async function runBold(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const text = async () => JSON.parse(await agent("get_script", {})).markdown;
+  const before = await text();
+  const at = await page.eval(wordSpot);
+  check(!!at, `${tag}: a word to select`);
+  await doubleClick(page, at);
+  check(await page.until(`!document.querySelector("#editBar").hidden`, "the selection bar"), `${tag}: selecting a word shows the selection bar`);
+  check(await page.eval(`document.querySelector("#boldBtn").hidden`), `${tag}: Bold marking off (the default): no B button`);
+  const ctrlB = async () => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "b", code: "KeyB", modifiers: 2, windowsVirtualKeyCode: 66 }); await sleep(200); };
+  await ctrlB();
+  check((await text()) === before && (await page.eval(`document.querySelectorAll("#script [data-cue]").length`)) === 0, `${tag}: Bold marking off: Ctrl+B changes nothing`);
+  await page.eval(`getSelection().removeAllRanges()`);
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(400); // it animates open
+  await page.click(`#cueGroup [data-cue-set="on"]`);
+  check(await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on"), `${tag}: Bold marking can be switched on in the file-name menu`);
+  await pressKey(page, "Escape", "Escape", 27);
+  await sleep(150);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  await doubleClick(page, await page.eval(wordSpot));
+  const word = await page.eval(`getSelection().toString().trim()`);
+  check(await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button"), `${tag}: Bold marking on: the B button shows`);
+  await page.click("#boldBtn");
+  await sleep(250);
+  check((await text()).includes(`==${word}==`), `${tag}: B marks the word in the text`, word);
+  await page.eval(`getSelection().removeAllRanges()`);
+  await sleep(150);
+  const weight = await page.eval(`(() => { const c = [...document.querySelectorAll("#script [data-cue], #script [data-cue] *")].map((e) => Number(getComputedStyle(e).fontWeight)); return c.length ? Math.max(...c) : 0; })()`);
+  check(weight >= 600, `${tag}: the marked word shows bold`, weight);
+  await page.close();
+}
+
 // Very wide: the same rules, and the storyboard's bar lines up with the storyboard.
 async function runWide(width, height) {
   const tag = `${width} px`;
   const { page, agent } = await openDemo(width, height);
   const hasBar = `!!document.querySelector("#imagesAll .keep")`;
   await agent("sketch_shot", { shotId: "B1", svg: drawing(1) });
+  await page.until(`!!document.querySelector('#script .frame__img[data-pending]')`, "the first picture");
+  // The selection bar follows the text down when the row comes, so it can't sit on the selected words.
+  await doubleClick(page, await page.eval(wordSpot));
+  await page.until(`!document.querySelector("#editBar").hidden`, "the selection bar");
+  const barGap = `document.querySelector("#editBar").getBoundingClientRect().top - getSelection().getRangeAt(0).getClientRects()[0].top`;
+  const gapWas = await page.eval(barGap);
   await agent("sketch_shot", { shotId: "B2", svg: drawing(2) });
   await page.until(hasBar, "the bar over the script");
+  const gapNow = await page.eval(barGap);
+  check(Math.abs(gapNow - gapWas) <= 1, `${tag}: the selection bar follows the text down when the row comes`, `${gapWas} ${gapNow}`);
+  await page.eval(`getSelection().removeAllRanges()`);
   await noCover(page, tag);
   await pressBar(page, "undo");
   await page.until(`!${hasBar} && !document.querySelector('#script .frame__bar .keep')`, "after Undo all");
@@ -197,8 +247,26 @@ async function run(width, height) {
   await agent("sketch_shot", { shotId: "B1", svg: drawing(1) });
   await page.until(pendingPic("B1"), "the first drawing waits");
   check((await shown()) === "", `${tag}: one picture waiting, no Keep all`);
+  // A menu over the text follows it down when the row comes, so it can't sit on the words being edited.
+  const menuSpot = await page.eval(wordSpot);
+  check(!!menuSpot, `${tag}: a paragraph to open the menus on`);
+  await clickAt(page, menuSpot);
+  await sleep(150);
+  await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); })()`);
+  await pressKey(page, " ", "Space", 32, " ");
+  await pressKey(page, "/", "Slash", 191, "/");
+  const slashOpen = await page.until(`!document.querySelector("#slashMenu").hidden`, "the / menu", 2000);
+  const slashGap = `document.querySelector("#slashMenu").getBoundingClientRect().top - getSelection().getRangeAt(0).getClientRects()[0].bottom`;
+  await sleep(300); // it animates open
+  const gapWas = await page.eval(slashGap);
   await agent("sketch_shot", { shotId: "B2", svg: drawing(2) });
   check(await barIs("2 images", "two pictures"), `${tag}: two pictures waiting, Keep all shows`);
+  const gapNow = await page.eval(slashGap);
+  check(slashOpen && Math.abs(gapNow - gapWas) <= 1, `${tag}: the "/" menu follows the text down when the row comes`, `${gapWas} ${gapNow}`);
+  await pressKey(page, "Escape", "Escape", 27);
+  await pressKey(page, "Backspace", "Backspace", 8);
+  await pressKey(page, "Backspace", "Backspace", 8);
+  await page.eval(`getSelection().removeAllRanges()`);
   check(await page.eval(`scrollY === 0 && ${bar}.querySelector(".change__bar").getBoundingClientRect().bottom <= document.querySelector("#script .line").getBoundingClientRect().top`), `${tag}: at the top of the page the bar has its own row, above the text`);
   check((await page.eval(`${bar}.querySelector(".keep").textContent`)) === "Keep all", `${tag}: the button says Keep all`);
   check((await page.eval(`${bar}.querySelector(".undo").textContent`)) === "Undo all", `${tag}: the button says Undo all`);
@@ -428,6 +496,8 @@ try {
   await run(1280, 800);
   await run(390, 760);
   await runWide(1920, 1000);
+  await runBold(1280, 800);
+  await runBold(390, 760);
 } catch (e) {
   check(false, `stopped: ${e.message}`);
 }

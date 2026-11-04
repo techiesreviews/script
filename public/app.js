@@ -1390,7 +1390,9 @@ for (const m of barMenus) {
 }
 let selTimer = 0;
 document.addEventListener("selectionchange", () => { refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
-addEventListener("scroll", () => { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }, { passive: true });
+// What floats over the text follows it: on a scroll, and when the Keep all row moves the text without one (step Q).
+function placeOverText() { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }
+addEventListener("scroll", placeOverText, { passive: true });
 addEventListener("resize", () => { if (document.activeElement === $("#askInput")) fitAsk(true); if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } positionShotCard(); });
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
 bar.addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) makeAsk(b.dataset.act); });
@@ -3876,6 +3878,8 @@ function renderImagesAll() {
     el.hidden = true;
     el.replaceChildren();
     el.style.removeProperty("block-size");
+    placeOverText();
+    positionSlash();
     return;
   }
   imagesWhere = where;
@@ -3884,8 +3888,10 @@ function renderImagesAll() {
     el.innerHTML = `<span class="change__bar"><span class="change__what">${icon("sketch")}<span></span></span>`
       + `<button type="button" class="undo" data-act="undo-all">${icon("undo")}Undo all</button>`
       + `<button type="button" class="keep" data-act="keep-all">${icon("check")}Keep all</button></span>`;
+    const came = el.hidden;
     el.style.removeProperty("block-size");
     el.hidden = false;
+    if (came) { placeOverText(); positionSlash(); }
   }
   const n = open.count;
   $(".change__what > span", el).textContent = `${n} images`;
