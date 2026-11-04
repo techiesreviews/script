@@ -21,7 +21,7 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 - Select text and use the edit bar ("Sound like me", "Simpler", "Shorter", "Explain how it works", "Check facts", "Find links", "Ask…"; "Find links in the script" in the agent menu): this makes an **ask**.
 - The person's **own connected agent** (over MCP) answers it: a new text or an addition goes straight into the script, lightly marked, with Undo on the agent's name tag (step F), until the person scrolls past it or 60 minutes are over (step M); a note shows beside the text.
 - The agent can read and change the bold settings (shown on a line at the top with Undo; not the colours), list bold words, and mark or remove them (each lightly marked, with Undo on its name tag); a rewrite keeps bold words that survive and tells the agent when some went.
-- A script with a new name (its title in the browser, Save as) starts with the person's bold settings, and the page follows at once (step Q).
+- A script keeps its own bold settings when it gets a new name (its title in the browser, Save as), and nothing on the page is redrawn (step Q).
 - Asked for a whole script, the agent can also open one of the person's recent scripts, open a new script it wrote, or put in the whole text with an Undo line (step H).
 
 ## B-roll
