@@ -220,7 +220,7 @@ async function runRename(width, height) {
     check((await page.eval(drawn)) === 1 && (await page.eval(onInMenu)), `${tag}: ${what}: the script keeps its own bold setting`);
     check(await page.eval(`window.__word?.isConnected && window.__word === document.querySelector("#script [data-cue]") && !!window.__title?.isConnected`), `${tag}: ${what}: nothing on the page is redrawn`);
     check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: ${what}: the person's own setting is untouched`);
-    if (extra) check(await page.eval(extra), `${tag}: ${what}: the selection and the place on the page stay`);
+    if (extra) check(await page.eval(extra.test), `${tag}: ${what}: ${extra.label}`);
   };
 
   // The demo saved into the browser takes the title's name.
@@ -229,7 +229,7 @@ async function runRename(width, height) {
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", modifiers: 2, windowsVirtualKeyCode: 83 });
   await kept("saved into the browser", was);
 
-  // A script in the browser follows its title, with a word selected and the page scrolled meanwhile.
+  // A script in the browser follows its title, with a word selected meanwhile.
   await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   was = await page.eval(name);
   const title = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
@@ -241,8 +241,26 @@ async function runRename(width, height) {
   await hold();
   await doubleClick(page, await page.eval(wordSpot));
   const chosen = await page.eval(`getSelection().toString().trim()`);
-  await kept("the title changed", was, `getSelection().toString().trim() === ${JSON.stringify(chosen)} && ${JSON.stringify(chosen)} !== ""`);
+  await kept("the title changed", was, { label: "the selected word stays selected", test: `getSelection().toString().trim() === ${JSON.stringify(chosen)} && ${JSON.stringify(chosen)} !== ""` });
   check(!(await page.eval(`document.querySelector("#boldBtn").hidden`)), `${tag}: the B button is still there after the rename`);
+  await page.eval(`getSelection().removeAllRanges()`);
+
+  // Storage full during a rename: the page stays as it is, and the settings aren't lost from the old name.
+  was = await page.eval(name);
+  await page.eval(`(() => { window.__setItem = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (String(k).startsWith("script-editor:cues:")) throw new Error("full"); return window.__setItem.call(this, k, v); }; })()`);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  const titleAgain = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
+  await clickAt(page, titleAgain);
+  await sleep(150);
+  await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); })()`);
+  await pressKey(page, "y", "KeyY", 89, "y");
+  await sleep(100);
+  await hold();
+  await kept("the title changed with storage full", was);
+  check((await page.eval(`localStorage.getItem(${JSON.stringify(`script-editor:cues:${was}`)})`)) !== null, `${tag}: storage full: the settings stay under the old name`);
+  await doubleClick(page, await page.eval(wordSpot));
+  check(await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button with storage full"), `${tag}: storage full: bold is still on for this script, the B button shows`);
+  await page.eval(`Storage.prototype.setItem = window.__setItem`);
   await page.eval(`getSelection().removeAllRanges()`);
 
   // Save as: the file's name.
@@ -253,7 +271,8 @@ async function runRename(width, height) {
   const yWas = await page.eval(`scrollY`);
   await page.eval(`window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("saved-as.md", { create: true })`);
   await page.eval(`document.querySelector("#saveAsAction").click()`);
-  await kept("Save as", was, `scrollY === ${yWas}`);
+  await kept("Save as", was, { label: "the page stays where it was scrolled to", test: `scrollY === ${yWas}` });
+
   await page.close();
 }
 
