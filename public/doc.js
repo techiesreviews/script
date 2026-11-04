@@ -2,7 +2,6 @@
 // Pure module: no DOM, no network. Imported by the app and by the tests.
 import { textLinks, isLinkLine, safeUrl, LINK_LIMITS } from "./links.js";
 import { spokenWords, stripCues, textCues, quoteAcrossCues } from "./cues.js";
-const withoutMarks = (quote) => quote.replace(/==/g, "");
 
 /* ---------- Actions and their standard instructions ---------- */
 export const ACTIONS = {
@@ -338,7 +337,7 @@ export function exportCamera(doc) {
 // inside a "[words](https://…)" link: the prompter gets every link whole.
 const SENTENCE_GAP = /(?<=[.!?…]["'”’)\]]*)\s+(?=["'“‘(\[]?[\p{Lu}\p{N}])/gu;
 export function sentences(text) {
-  // Never split inside a link or a cue (a cue shown in the prompter file keeps its "==" marks on one line).
+  // Never split inside a link or a cue (a cue shown in the prompter file keeps its "**" marks on one line).
   const t = collapse(text), whole = [...textLinks(t), ...textCues(t)], out = [];
   let at = 0;
   for (const m of t.matchAll(SENTENCE_GAP)) {
@@ -370,7 +369,7 @@ export function prompterLabel(info) {
   return [info.num, info.name.toUpperCase(), info.start].filter(Boolean).join(" · ");
 }
 
-// Cues ("==words==", cues.js) are stripped to their words unless `cues` is "show" (the cue export setting).
+// Cues ("**words**", cues.js) are stripped to their words unless `cues` is "show" (the cue export setting).
 export function exportPrompter(doc, { cues = "strip" } = {}) {
   const out = [`# ${titleOf(doc) || "Script"}`];
   for (const s of outline(doc).sections) {
@@ -450,9 +449,7 @@ export function reanchor(anchor, content) {
     const d = Math.abs(i - start);
     if (d < dist) { best = i; dist = d; }
   }
-  if (best >= 0) return { start: best, end: best + quote.length };
-  // A bold word's marks moved (a letter typed right before it): the same words, with their new quote.
-  return quote.includes("==") ? quoteAcrossCues(content, withoutMarks(quote), start, { inCue: true }) : null;
+  return best < 0 ? null : { start: best, end: best + quote.length };
 }
 
 export function sectionOfBlock(doc, blockId) {
