@@ -134,7 +134,7 @@ async function run(width, height) {
   check(await page.eval(`document.activeElement === ${bar}.querySelector(".keep") && document.activeElement.getAttribute("aria-label") === "Keep all 3 images"`), `${tag}: the keyboard stays on Keep all when another picture comes, and its label follows`);
 
   // It fits, and stays in sight under the top bar.
-  const fit = () => page.eval(`(() => { const r = ${bar}.querySelector(".change__bar").getBoundingClientRect(), t = document.querySelector(".top").getBoundingClientRect(), l = document.querySelector(".toc").getBoundingClientRect(), stuck = getComputedStyle(document.querySelector(".toc")).position === "sticky"; return { left: r.left, right: r.right, top: r.top, under: r.top >= (stuck ? l.bottom : t.bottom), wide: document.documentElement.scrollWidth, view: innerWidth }; })()`);
+  const fit = () => page.eval(`(() => { const r = ${bar}.querySelector(".change__bar").getBoundingClientRect(), t = document.querySelector(".top").getBoundingClientRect(), l = document.querySelector(".toc").getBoundingClientRect(), stuck = getComputedStyle(document.querySelector(".toc")).position === "sticky"; return { left: r.left, right: r.right, top: r.top, high: innerHeight, under: r.top >= (stuck ? l.bottom : t.bottom), wide: document.documentElement.scrollWidth, view: innerWidth }; })()`);
   let f = await fit();
   check(f.left >= 0 && f.right <= f.view && f.wide <= f.view, `${tag}: it fits the width, nothing scrolls sideways`, JSON.stringify(f));
   check(f.under, `${tag}: it is under the top bar and the section list`, JSON.stringify(f));
@@ -142,7 +142,7 @@ async function run(width, height) {
   await page.eval(`scrollTo(0, document.documentElement.scrollHeight)`);
   await sleep(120);
   f = await fit();
-  check(f.under && f.top < f.view * 2 && f.top >= 0, `${tag}: still in sight at the end of the script`, JSON.stringify(f));
+  check(f.under && f.top < f.high && f.top >= 0, `${tag}: still in sight at the end of the script`, JSON.stringify(f));
   await page.shot(`${width}-script-end`);
   await page.eval(`scrollTo(0, 0)`);
   const press = await page.eval(`(() => { const r = ${bar}.querySelector(".keep").getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("button")?.dataset.act || ""; })()`);
@@ -169,7 +169,7 @@ async function run(width, height) {
   for (const id of ["B4", "B5", "B6"]) await agent("sketch_shot", { shotId: id, svg: drawing(Number(id[1]) + 3) });
   await barIs("3 images", "three again");
   await page.eval(`(() => { const t = document.querySelector("#script p, #script [data-id]"); getSelection().collapse(t.firstChild?.nodeType === 3 ? t.firstChild : t, 1); })()`);
-  const caret = `getSelection().anchorNode?.textContent?.slice(0, 20)`;
+  const caret = `(() => { const s = getSelection(); return s.anchorNode?.textContent?.slice(0, 20) + " @" + s.anchorOffset; })()`;
   const at = await page.eval(caret);
   await page.click(`#imagesAll .keep`);
   await page.until(`${waitingCount} === 0 && ${bar}.hidden`, "after Keep all");
@@ -258,8 +258,11 @@ async function run(width, height) {
   const down = await page.eval(`(() => { const r = ${bar}.querySelector(".change__bar").getBoundingClientRect(), t = document.querySelector(".top").getBoundingClientRect(); return { top: r.top, bottom: t.bottom, view: innerHeight }; })()`);
   check(down.top >= down.bottom && down.top < down.view, `${tag}: it stays in sight at the end of the storyboard`, JSON.stringify(down));
   await page.eval(`scrollTo(0, 0)`);
-  await page.click(`#imagesAll .keep`);
+  // By keyboard: the focus doesn't fall back to the top of the page when the bar goes.
+  await page.eval(`${bar}.querySelector(".keep").focus()`);
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
   await page.until(`${bar}.hidden && !document.querySelector('#board .frame__bar .keep')`, "after Keep all in the storyboard");
+  check(await page.eval(`document.activeElement === document.querySelector('#viewSwitch [aria-pressed="true"]')`), `${tag}: Keep all by keyboard leaves the focus on the view switch`);
   check(await page.eval(`document.querySelector('#board .frame[data-b="B2"] .frame__img').innerHTML.includes('cx="100"')`), `${tag}: Keep all in the storyboard puts them in`);
   await page.click(`#viewSwitch [data-view="script"]`);
 
@@ -290,7 +293,7 @@ async function run(width, height) {
   await page.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen after a reload");
   await page.click("#emptySample");
   await page.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the script after a reload", 12000);
-  check((await picOf("B5")).includes(`cx="${40 + 8 * 20}"`), `${tag}: the kept pictures are there after a reload`);
+  check((await picOf("B6")).includes(`cx="${40 + 9 * 20}"`) && (await picOf("B2")).includes('cx="100"'), `${tag}: pictures kept with Keep all are there after a reload`);
   check((await shown()) === "", `${tag}: nothing waits after a reload`);
 
   // A guest in a shared script sees the pictures but no bar: the host keeps or undoes them.
