@@ -885,7 +885,9 @@ function syncFromDom(el) {
   const typed = readContent(el);
   const before = linksBefore?.id === id && linksBefore.content === D.contentOf(b) ? linksBefore.closed : null;
   linksBefore = null;
-  const fix = before && L.keepHidden(D.contentOf(b), typed, before, getCaret()?.offset);
+  let fix = before && L.keepHidden(D.contentOf(b), typed, before, getCaret()?.offset);
+  // A bold stretch this edit broke is settled, so its marks never stay behind as literal text (K.settleMarks).
+  if (b.type === "para") fix = K.settleMarks(D.contentOf(b), fix ? fix.content : typed, fix ? fix.caret : getCaret()?.offset) || fix;
   const content = fix ? fix.content : typed;
   if (content === D.contentOf(b)) {
     if (fix || !domMatches(el, id)) renderBlock(id, fix ? { id, offset: fix.caret } : getCaret());
@@ -913,6 +915,14 @@ function splitAt(el, start, end, lineBreak) {
     return;
   }
   checkpoint("enter", id);
+  // Enter inside a bold stretch: it is settled as if the line broke there, so no lone marks are left in either part.
+  const settled = b.type === "para" ? K.settleMarks(content, `${content.slice(0, start)}\n${content.slice(end)}`, start + 1) : null;
+  if (settled?.content[settled.caret - 1] === "\n") {
+    start = end = settled.caret - 1;
+    content = settled.content.slice(0, start) + settled.content.slice(start + 1);
+    D.setContent(state.doc, id, content);
+    reanchorBlock(id);
+  }
   if (end > start) {
     content = content.slice(0, start) + content.slice(end);
     D.setContent(state.doc, id, content);
@@ -961,9 +971,13 @@ function mergeInto(prevId, id) {
   const offset = D.contentOf(prev).length;
   checkpoint("merge", id);
   moveAsks(id, prevId, 0, offset);
+  const joining = `${D.contentOf(prev)}\n${D.contentOf(byId(id))}`;
   const m = D.mergeWithPrevious(state.doc, id);
+  // The next paragraph's bold word right after a word: it is settled as if the line break between them was deleted.
+  const settled = prev.type === "para" ? K.settleMarks(joining, D.contentOf(prev), m.offset) : null;
+  if (settled) D.setContent(state.doc, prevId, settled.content);
   reanchorBlock(prevId);
-  renderAll({ id: m.into, offset: m.offset });
+  renderAll({ id: m.into, offset: settled ? settled.caret : m.offset });
   changed();
 }
 
@@ -996,7 +1010,8 @@ function pasteText(el, raw) {
   checkpoint("paste", id);
   const content = D.contentOf(b);
   moveAsks(id, id, sel.end, text.length - (sel.end - sel.start));
-  applyContent(id, content.slice(0, sel.start) + text + content.slice(sel.end), sel.start + text.length);
+  const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
+  applyContent(id, settled ? settled.content : pasted, settled ? settled.caret : sel.start + text.length);
   changed();
 }
 
@@ -1123,6 +1138,7 @@ function cues() {
   if (cueMemo?.name !== state.name) cueMemo = { name: state.name, value: K.cueSettings(store.get("cues"), state.name ? store.get(cueKey()) : null) };
   return cueMemo.value;
 }
+K.readCuesWhen(() => cues().on);
 const ownCues = () => !!state.name && store.get(cueKey()) != null;
 // The prompter file keeps cue marks only when cue marking is on and its export setting says show.
 const prompterOpts = () => ({ cues: cues().on ? cues().export : "strip" });

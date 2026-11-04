@@ -10,6 +10,9 @@ import * as L from "../public/links.js";
 import * as B from "../public/broll.js";
 import { checkArgs, TOOLS, INSTRUCTIONS } from "../worker/mcp.js";
 
+// Bold marking on for this file, unless a test says otherwise (Bold marking off: `whileOff`).
+Q.readCuesWhen(() => true);
+const whileOff = (fn) => { Q.readCuesWhen(() => false); try { return fn(); } finally { Q.readCuesWhen(() => true); } };
 const sel = (content, words) => { const s = content.indexOf(words); return [s, s + words.length]; };
 
 test("settings: off by default, highlight only, export strips; a script's own settings win over the person's", () => {
@@ -312,8 +315,8 @@ test("a letter or digit touching both sides of the marks means ordinary text, so
   assert.deepEqual(Q.textCues("if a==3 and b==4"), []);
   assert.equal(Q.stripCues("if a==3 and b==4"), "if a==3 and b==4");
   assert.deepEqual(Q.textCues("x==go==y").map((c) => c.label), []);
-  // Touching one side only: it stays bold, so typing next to a bold word never leaves literal marks.
-  assert.deepEqual(Q.textCues("x==go== y ==go==z").map((c) => c.label), ["go", "go"]);
+  // Only the opening decides: a letter right after the closing marks stays bold (typing right after a bold word).
+  assert.deepEqual(Q.textCues("x==go== y ==go==z").map((c) => c.label), ["go"]);
   assert.deepEqual(Q.textCues("(==go==), ==on==.").map((c) => c.label), ["go", "on"]);
   const doc = D.parse("# T\n\n## A\n\nIf a==3 and b==4 we stop.\n");
   assert.match(D.exportCamera(doc), /If a==3 and b==4 we stop/);
@@ -447,7 +450,7 @@ test("Sounds like me: a rewrite of a quote over part of a cue never deletes the 
 });
 
 test("typing next to a bold word: it stays bold and the marks never reach the exports", () => {
-  for (const [typed, spoken] of [["Say ==go==s now.", "Say gos now."], ["Say ==go==now.", "Say gonow."], ["Sayx==go== now.", "Sayxgo now."], ["Say ==g o== now.", "Say g o now."]]) {
+  for (const [typed, spoken] of [["Say ==go==s now.", "Say gos now."], ["Say ==go==now.", "Say gonow."], ["Say ==g o== now.", "Say g o now."]]) {
     assert.equal(Q.textCues(typed).length, 1, typed);
     assert.equal(Q.stripCues(typed), spoken);
     const doc = D.parse(`# T\n\n## A\n\n${typed}\n`);
@@ -484,4 +487,84 @@ test("an AI answer: a lone == it copied from the asked text goes; ordinary text 
   assert.equal(land(bold(), "==start here==", "add", "and here== too"), "We ==start here== and here too now.");
   // No marks in what was asked about: the AI's text goes in as it wrote it.
   assert.equal(land(D.parse("# T\n\n## A\n\nWe start now.\n"), "start", "replace", "check a== b"), "We check a== b now.");
+});
+
+const CODE = 'if name=="Lex" or id=="7"';
+test("Bold marking off: nothing reads == anywhere; the exports and counts are byte for byte as before bold", () => whileOff(() => {
+  const md = `# T\n\n## A\n\n${CODE}\n\nWe ==go. Then on== ok.\n\nA ==== B and ==bold== here.\n`;
+  const doc = D.parse(md);
+  const [p1, p2, p3] = paras(doc);
+  const pro = D.exportPrompter(doc), cam = D.exportCamera(doc);
+  assert.ok(pro.includes(`\n${CODE}\n`), "the prompter file keeps the comparison");
+  assert.ok(cam.includes(CODE), "the camera script keeps the comparison");
+  // Sentences split where they did before bold, even inside ==…==.
+  assert.ok(pro.includes("\nWe ==go.\nThen on== ok.\n"));
+  assert.ok(pro.includes("\nA ==== B and ==bold== here.\n"));
+  assert.ok(cam.includes("A ==== B and ==bold== here."));
+  assert.equal(D.exportPrompter(doc, { cues: "show" }), pro);
+  assert.equal(D.exportPrompter(doc, { cues: "strip" }), pro);
+  // The pieces under them read nothing either.
+  assert.deepEqual(Q.textCues(D.contentOf(p3)), []);
+  assert.equal(Q.stripCues(D.contentOf(p3)), D.contentOf(p3));
+  assert.equal(Q.spokenWords(D.contentOf(p1)), CODE);
+  assert.ok(B.coverText(doc, [p3.id]).includes("==bold=="));
+  assert.match(B.overFor(doc, [{ id: p3.id, start: 0, end: D.contentOf(p3).length }]), /====/);
+  assert.equal(D.stats(doc).words, D.countWords(CODE) + D.countWords(D.contentOf(p2)) + D.countWords(D.contentOf(p3)));
+  assert.deepEqual(C.listCues(doc), []);
+  assert.deepEqual(C.planCues(doc, "unmark", [{ quote: "bold" }]).segments, []);
+  assert.equal(D.findQuote(doc, "and bold here"), null);
+  assert.equal(Q.dropLoneMarks("here== today"), "here== today");
+  assert.equal(Q.settleMarks("==a== x", "==== x", 2), null);
+  // A rewrite and a link go in as they did before bold.
+  const c3 = D.contentOf(p3), [s, e] = sel(c3, "==bold");
+  const ask = D.makeAsk(doc, { blockId: p3.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "big== x" }, answeredBy: { id: "agent:x", name: "X" } });
+  const res = C.land(doc, ask, 1);
+  assert.equal(D.contentOf(p3), "A ==== B and big== x== here.");
+  assert.equal(res.cuesDropped, 0);
+  const links = C.planFor(D.parse("# T\n\n## A\n\nUse ==go== now.\n"), { id: "x", scope: "script" }, { links: [{ quote: "go", url: "https://example.com" }] });
+  assert.equal(links.segments[0].content, "Use ==[go](https://example.com)== now.");
+}));
+
+test("Bold marking on: an opening == right after a letter, digit or comparison sign is plain text; earlier cases hold", () => {
+  for (const t of [CODE, "a==3 and b==4", "x==go== now", "7==go== now", "a<==go== now", "a>==go== now", "a!==go== now", "a===go== now", "<==go==", "!==go=="]) {
+    assert.deepEqual(Q.textCues(t), [], t);
+    assert.equal(Q.stripCues(t), t);
+  }
+  assert.deepEqual(Q.textCues("==go==s now, (==on==), \"==up==\"").map((c) => c.label), ["go", "on", "up"]);
+  const doc = D.parse(`# T\n\n## A\n\n${CODE}\n\nSay ==go== now.\n`);
+  assert.ok(D.exportPrompter(doc).includes(`\n${CODE}\n`));
+  assert.ok(D.exportCamera(doc).includes(CODE));
+  assert.ok(D.exportCamera(doc).includes("Say go now."));
+  // The AI's own comparison stays even when the asked text held marks; a lone mark it copied goes.
+  assert.equal(Q.dropLoneMarks(CODE), CODE);
+  assert.equal(Q.dropLoneMarks("here== today"), "here today");
+  assert.equal(Q.dropLoneMarks("here==."), "here.");
+});
+
+test("Bold marking on: an edit that breaks a bold stretch settles it, with no stray marks; an edit that doesn't changes nothing", () => {
+  const settle = (old, now, caret) => { const r = Q.settleMarks(old, now, caret); return r && [r.content, r.caret]; };
+  // All its words deleted: the marks go.
+  assert.deepEqual(settle("We ==a== now", "We ==== now", 5), ["We  now", 3]);
+  assert.deepEqual(settle("==a==", "====", 2), ["", 0]);
+  assert.deepEqual(settle("==a b== x", "== == x", 3), ["  x", 1]);
+  // Spaces at its edges move outside.
+  assert.deepEqual(settle("==A blank== x", "== blank== x", 2), [" ==blank== x", 0]);
+  assert.deepEqual(settle("==A b== x", "==A == x", 4), ["==A==  x", 6]);
+  // A letter typed or joined right before it: it joins the bold word, so the typing goes on inside.
+  assert.deepEqual(settle("==go== now", "x==go== now", 1), ["==xgo== now", 3]);
+  assert.deepEqual(settle("foo ==go== now", "foo==go== now", 3), ["==foogo== now", 5]);
+  assert.deepEqual(settle("abc\n==go== x", "abc==go== x", 3), ["==abcgo== x", 5]);
+  // A sign right before it, an = inside it, a line break in it, or an edit that takes one mark: the marks go, the words stay.
+  assert.deepEqual(settle("==go== x", "<==go== x", 1), ["<go x", 1]);
+  assert.deepEqual(settle("==go== x", "==g=o== x", 4), ["g=o x", 2]);
+  assert.deepEqual(settle("==a b== x", "==a\n b== x", 4), ["a\n b x", 2]);
+  assert.deepEqual(settle("We ==start here== now", "We here== now", 3), ["We here now", 3]);
+  assert.deepEqual(settle("We ==start here== now", "We ==start now", 10), ["We start now", 8]);
+  assert.deepEqual(settle("==go== x", "=go== x", 1), ["go x", 0]);
+  assert.deepEqual(settle("==a== ==b==", "==a====b==", 5), ["ab", 1]);
+  // Nothing to settle: typing right after it, deleting the space after it, typing inside it, elsewhere, or no bold at all.
+  for (const [old, now] of [["==go== now", "==go==s now"], ["==go== now", "==go==now"], ["==go== now", "==gxo== now"], ["==go== now", "==go== nowx"], ["a==b", "a== b"], ["plain", "plainer"]]) {
+    assert.equal(Q.settleMarks(old, now, 1), null, now);
+  }
 });

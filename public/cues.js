@@ -2,15 +2,19 @@
 // Optional and off by default (settings below); with cue marking off the editor works as before. The prompter owns
 // the final cue look and reader; until it reads cues, its export strips them (setting `export`). Rules like links
 // (links.js): words on one line, no brackets or "=" inside, at least one letter or digit, never inside a link.
-// With cue marking off, text that already holds "==words==" is still read as cues for word counts, the camera script,
-// the prompter export (stripped), links and rewrites, so the marks never reach the prompter by surprise.
+// With cue marking off nothing reads "==" anywhere: textCues finds none, so the page, the exports, word counts, links and
+// rewrites treat it as plain text, byte for byte as before cues existed (Lex's promise, 2026-11-05). The app says when
+// cues are read (readCuesWhen); until it does, they are not.
 // Pure: no DOM. app.js draws cues with the links' show/hide trick; changes.js plans the agent's cue changes.
 import { textLinks, isLinkLine, spokenText, quoteRe, overlaps } from "./links.js";
 
 export const CUE_LIMITS = { cues: 30 };
-// An "=" right outside the marks is never a cue; textCues also refuses a letter or digit touching both sides, which is
-// ordinary text ("if a==3 and b==4"). Touching one side stays a cue, so typing next to a bold word leaves no literal marks.
-const CUE = /(?<!=)==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?!=)/gu;
+// An opening "==" right after a letter, digit or comparison sign is ordinary text (name=="Lex", a<=="b"), and an "=" right
+// after the closing marks too. A letter right after the closing marks stays a cue: typing right after a bold word.
+const CUE = /(?<![=!<>\p{L}\p{N}\p{M}])==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?!=)/gu;
+let reading = () => false;
+/** Say when cues are read: fn() is true while cue marking is on (asked each time, so it follows the open script). */
+export const readCuesWhen = (fn) => { reading = fn; };
 const WORDY = /[\p{L}\p{N}]/u;
 const BAD_WORDS = /[=[\]\n]/;
 // Whole words for a cue: a letter, digit or combining mark on both sides of an edge means the edge cuts a word (or,
@@ -75,25 +79,27 @@ function linkRanges(text) {
 /** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
  *  same shape as textLinks() so the editor draws both alike). A "==…==" inside or across a link is not a cue. */
 export function textCues(content) {
+  if (!reading()) return [];
   const text = String(content ?? "");
   const links = linkRanges(text);
   const out = [];
   for (const m of text.matchAll(CUE)) {
     const start = m.index, end = start + m[0].length;
-    if (!WORDY.test(m[1]) || overlaps(links, start, end) || (WORD_CHAR.test(text[start - 1] ?? "") && WORD_CHAR.test(text[end] ?? ""))) continue;
+    if (!WORDY.test(m[1]) || overlaps(links, start, end)) continue;
     out.push({ start, end, words: { start: start + 2, end: end - 2 }, label: m[1], cue: true });
   }
   return out;
 }
 /** An AI's new text, when the text it was asked about held marks: a "==" it copied that makes no cue goes. Ordinary text
- *  stays: a letter or digit on both sides ("a==3"), or spaces on both sides ("x == y"). */
+ *  stays: a letter or digit before it and no end of a word after it (a==3, name=="Lex"), or spaces on both sides (x == y). */
 export function dropLoneMarks(text) {
   const t = String(text ?? ""), cues = textCues(t);
+  if (!reading()) return t;
   let out = "", at = 0;
   for (const m of t.matchAll(/(?<!=)==(?!=)/g)) {
     const i = m.index, e = i + 2, l = t[i - 1] ?? "", r = t[e] ?? "";
     if (cues.some((c) => i === c.start || e === c.end)) continue;
-    if ((WORD_CHAR.test(l) && WORD_CHAR.test(r)) || (/\s/.test(l) && /\s/.test(r))) continue;
+    if ((WORD_CHAR.test(l) && r && !/[\s.,;:!?)\]]/.test(r)) || (/\s/.test(l) && /\s/.test(r))) continue;
     out += t.slice(at, i);
     at = e;
   }
@@ -164,6 +170,51 @@ export function toggleCue(content, start, end) {
   // The new marks must read back as one cue (not next to an "=" sign), with every other cue still there.
   if (!textCues(next).some((c) => c.start === from && c.label === words) || textCues(next).length !== cues.length - touched.length + 1) return null;
   return { content: next, start: from + 2, end: from + 2 + words.length, cue: true, from, to };
+}
+
+/* ---------- The person's edits ---------- */
+/**
+ * After one edit of a block (`old` → `now`; caret: its offset in `now`): every cue the edit broke is settled, so its
+ * marks never stay behind as literal text. All its words gone, or a "=", bracket or line break in them, or one of its
+ * marks hit: the marks go, the words stay. Spaces at its edges move outside it. A letter or digit now right before it (typed, or the space
+ * before it deleted): the word joins the cue. A comparison sign right before it, or "=" right after: the marks go.
+ * Returns { content, caret }, or null when no cue needs settling (no cue was there, or the edit broke none).
+ */
+export function settleMarks(old, now, caret = null) {
+  const cues = textCues(old);
+  if (!cues.length || old === now) return null;
+  let p = 0, oe = old.length, ne = now.length;
+  while (p < oe && p < ne && old[p] === now[p]) p++;
+  while (oe > p && ne > p && old[oe - 1] === now[ne - 1]) { oe--; ne--; }
+  const delta = ne - oe, to = (i) => (i < p ? i : i + delta), ops = [];
+  const take = (at, del) => ops.push({ at, del, ins: "" }), put = (at) => ops.push({ at, del: 0, ins: "==" });
+  for (const c of cues) {
+    const marks = [c.start, c.end - 2];
+    if (marks.some((m) => (p < m + 2 && oe > m) || (p === oe && p > m && p < m + 2))) {
+      for (const m of marks) for (const i of [m, m + 1]) if (i < p || i >= oe) take(to(i), 1);
+      continue;
+    }
+    const open = to(c.start), close = to(c.end - 2), inner = now.slice(open + 2, close), words = inner.trim();
+    const lead = inner.length - inner.trimStart().length, trail = inner.length - inner.trimEnd().length;
+    let start = open;
+    if (!lead) while (start > 0 && WORD_CHAR.test(now[start - 1])) start--;
+    if (!WORDY.test(words) || BAD_WORDS.test(words) || now[close + 2] === "=" || (!lead && /[=!<>]/.test(now[start - 1] ?? ""))) {
+      take(open, 2);
+      take(close, 2);
+      continue;
+    }
+    if (lead || start < open) { take(open, 2); put(lead ? open + 2 + lead : start); }
+    if (trail) { put(close - trail); take(close, 2); }
+  }
+  if (!ops.length) return null;
+  ops.sort((a, b) => a.at - b.at);
+  let content = "", at = 0, moved = caret;
+  for (const op of ops) {
+    content += now.slice(at, op.at) + op.ins;
+    at = op.at + op.del;
+    if (caret != null && op.at < caret) moved += op.ins.length - Math.min(op.del, caret - op.at);
+  }
+  return { content: content + now.slice(at), caret: moved };
 }
 
 /* ---------- The agent's rewrites ---------- */
