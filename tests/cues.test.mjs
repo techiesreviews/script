@@ -240,17 +240,19 @@ test("review 3: Ctrl+B next to an = sign changes nothing; a cueId names its word
   assert.deepEqual(C.planCues(doc, "unmark", [{ cueId: `${p2.id}:2:second` }]).segments.map((s) => s.content), ["A ==new== and second line, we go."]);
 });
 
-test("review 4: a rewrite of words inside one cue keeps the cue around the new words", () => {
-  const doc = D.parse("# T\n\n## A\n\nWe ==start here== now.\n");
-  const p = paras(doc)[0], c = D.contentOf(p);
-  const [s, e] = sel(c, "here");
-  const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
-  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "there" }, answeredBy: { id: "agent:x", name: "X" } });
-  const res = C.land(doc, ask, 1);
-  assert.equal(D.contentOf(p), "We ==start there== now.");
-  assert.equal(res.cuesDropped, 0);
-  // New words that can't sit in a cue (an = sign) take the whole cue in instead.
-  assert.deepEqual(Q.widenOverCues("We ==start here== now.", 11, 15, "a=b"), { start: 3, end: 17, before: "start ", after: "" });
+test("Lex's decision 6: a rewrite reaching into a cue keeps it only if its words survive, and the agent is told", () => {
+  const land = (quote, text) => {
+    const doc = D.parse("# T\n\n## A\n\nWe ==start here== now.\n");
+    const p = paras(doc)[0], [s, e] = sel(D.contentOf(p), quote);
+    const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+    Object.assign(ask, { status: "answered", answer: { kind: "replace", text }, answeredBy: { id: "agent:x", name: "X" } });
+    const res = C.land(doc, ask, 1);
+    return [D.contentOf(p), res.cuesDropped];
+  };
+  assert.deepEqual(land("start here", "begin"), ["We begin now.", 1]);
+  assert.deepEqual(land("here", "there"), ["We start there now.", 1]);
+  assert.deepEqual(land("start here", "start here today"), ["We ==start here== today now.", 0]);
+  assert.deepEqual(Q.widenOverCues("We ==start here== now.", 11, 15), { start: 3, end: 17, before: "start ", after: "" });
 });
 
 test("review 5: with cue marking off, a dropped cue is reported without asking the agent to mark it again", () => {
@@ -353,4 +355,53 @@ test("bold style: plain bold by default, own colours only as a valid choice, kep
   assert.deepEqual(Q.boldStyle({ own: true, background: "#112233", color: "#ABCDEF" }), { own: true, background: "#112233", color: "#ABCDEF" });
   // Anything else falls back, so nothing odd reaches the page's CSS.
   assert.deepEqual(Q.boldStyle({ own: "yes", background: "red;}", color: "url(x)" }), Q.BOLD_DEFAULTS);
+});
+
+test("agent settings: what the person and the agent are told says where the setting went", () => {
+  const say = (o) => Q.settingsOutcome({ words: "", forScript: false, hadOwn: false, stored: true, ...o });
+  assert.deepEqual(say({ words: "turned bold marking on" }), { banner: "turned bold marking on", message: "Done: the person sees the change, with Undo." });
+  assert.equal(say({ words: "turned bold marking on", forScript: true }).banner, "turned bold marking on for this script");
+  // A fresh browser, { on: false }: nothing the person sees changed, and no script has settings of its own.
+  assert.deepEqual(say({}), { banner: null, message: "Those settings were in force already: nothing changed." });
+  assert.deepEqual(say({ stored: false, hadOwn: true }), { banner: null, message: "Those settings were in force already: nothing changed." });
+  // { on: true, forScript: true } while the person's is on already: the script now has its own.
+  assert.match(say({ forScript: true }).banner, /gave this script its own bold settings/);
+  assert.match(say({ forScript: true }).message, /now has its own settings/);
+  assert.match(say({ forScript: true, hadOwn: true }).banner, /changed this script's bold settings/);
+  assert.match(say({ hadOwn: true }).banner, /your own bold settings; this script keeps its own/);
+  assert.match(say({ hadOwn: true }).message, /pass forScript: true/);
+});
+
+test("Sounds like me: a quote read without the marks is found across a cue's edge, covering the whole cue", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe ==start here== now. Then on.\n");
+  const p = paras(doc)[0], id = p.id;
+  assert.deepEqual(D.findQuote(doc, "We start here now"), { blockId: id, start: 0, end: 21, quote: "We ==start here== now" });
+  assert.deepEqual(D.findQuote(doc, "We start"), { blockId: id, start: 0, end: 17, quote: "We ==start here==" });
+  assert.deepEqual(D.findQuote(doc, "here now"), { blockId: id, start: 3, end: 21, quote: "==start here== now" });
+  // Word for word in the text: as before, without a new quote.
+  assert.deepEqual(D.findQuote(doc, "Then on"), { blockId: id, start: 23, end: 30 });
+  assert.equal(D.findQuote(doc, "We begin"), null);
+  const ask = { id: "v", scope: "script", action: "voice", status: "waiting" };
+  assert.equal(D.checkAnswer(ask, { askId: "v", kind: "marks", marks: [{ quote: "We start here now", why: "stiff", rewrite: "Start." }] }, doc).error, undefined);
+});
+
+test("Ctrl+B changes nothing where taking the marks off would change the kind of block", () => {
+  const doc = D.parse("# T\n\n## A\n\nWe ==start here== now.\n\n==- item two==\n");
+  const [p1, p2] = paras(doc), c2 = D.contentOf(p2);
+  assert.equal(p2.type, "para");
+  const off = Q.toggleCue(c2, 2, c2.length - 2);
+  assert.equal(off.content, "- item two");
+  assert.equal(C.canToggleCue([], p2.id, p2.type, off), false);
+  const fine = Q.toggleCue(D.contentOf(p1), 5, 15);
+  assert.equal(fine.content, "We start here now.");
+  assert.equal(C.canToggleCue([], p1.id, p1.type, fine), true);
+  const open = D.makeAsk(doc, { blockId: p1.id, start: 3, end: 17, action: "simpler", by: { id: "lex", name: "Lex" } });
+  assert.equal(C.canToggleCue([open], p1.id, p1.type, fine), false);
+});
+
+test("edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps; off, as before", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../public/app.css", import.meta.url), "utf8");
+  assert.match(css, /\.edit-bar__controls:has\(#boldBtn:not\(\[hidden\]\)\) \{ flex-wrap: wrap; \}/);
+  assert.match(css, /\.edit-bar__controls:has\(#boldBtn:not\(\[hidden\]\)\) \.edit-bar__ask \{ flex: 1 1 200px; min-inline-size: 200px;/);
 });

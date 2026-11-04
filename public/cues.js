@@ -47,6 +47,19 @@ export const boldStyle = (stored) => ({
   color: HEX.test(stored?.color) ? stored.color : BOLD_DEFAULTS.color,
 });
 
+/** What the person (the banner, after the agent's name; null for none) and the agent are told after set_cue_settings.
+ *  words: what changed in force (empty when nothing did); forScript: where it was saved; hadOwn: the open script had
+ *  its own settings before; stored: whether what is saved changed. */
+export function settingsOutcome({ words, forScript, hadOwn, stored }) {
+  const same = { banner: null, message: "Those settings were in force already: nothing changed." };
+  if (words) return { banner: `${words}${forScript ? " for this script" : ""}`, message: "Done: the person sees the change, with Undo." };
+  if (!stored) return same;
+  if (forScript && !hadOwn) return { banner: "gave this script its own bold settings", message: "Done: this script now has its own settings, the same as those in force. The person can undo it." };
+  if (forScript) return { banner: "changed this script's bold settings", message: "Done: saved in this script's own settings; what is in force did not change. The person can undo it." };
+  if (hadOwn) return { banner: "changed your own bold settings; this script keeps its own", message: "Saved for the person, but this script has its own cue settings, which win; pass forScript: true to change them." };
+  return same;
+}
+
 /* ---------- Reading cues ---------- */
 // Where cues may not be: text links and link lines ("- Label: https://…").
 function linkRanges(text) {
@@ -77,6 +90,25 @@ export function stripCues(text) {
   let out = "", at = 0;
   for (const c of textCues(t)) { out += t.slice(at, c.start) + c.label; at = c.end; }
   return out + t.slice(at);
+}
+/** A quote read without the marks (the agent gets the spoken text that way), found across a cue's edge: its range,
+ *  taking in every cue it reaches into so no lone "==" is left, and the text there as it is now. null when not found. */
+export function quoteAcrossCues(content, quote) {
+  const text = String(content ?? ""), cues = textCues(text);
+  if (!cues.length || !quote) return null;
+  const map = [];
+  let plain = "", at = 0;
+  const copy = (from, to) => { for (let i = from; i < to; i++) { map.push(i); plain += text[i]; } };
+  for (const c of cues) { copy(at, c.start); copy(c.words.start, c.words.end); at = c.end; }
+  copy(at, text.length);
+  const i = plain.indexOf(quote);
+  if (i < 0) return null;
+  let start = map[i], end = map[i + quote.length - 1] + 1;
+  for (const c of cues) {
+    if (start > c.start && start < c.end) start = c.start;
+    if (end > c.start && end < c.end) end = c.end;
+  }
+  return { start, end, quote: text.slice(start, end) };
 }
 /** What is spoken (links.js spokenText) without the cue marks: for word counts and the camera script. */
 export const spokenWords = (content) => stripCues(spokenText(content));
@@ -149,18 +181,15 @@ export function keepCues(removed, text) {
   return { text: out, dropped };
 }
 
-/** A replace over start…end that cuts a cue in half takes the whole cue in, so no lone "==" is left: the new range,
- *  and the cue's words outside the old range (plain) to put around the new text. A range inside one cue's words
- *  stays as it is (the cue goes on around the new words) unless `next`, the new text, can't sit in a cue. null when
- *  nothing changes. */
-export function widenOverCues(content, start, end, next = "") {
+/** A replace over start…end that reaches into a cue takes the whole cue in, so no lone "==" is left and keepCues
+ *  applies Lex's rule (the cue stays only if its words survive): the new range, and the cue's words outside the old
+ *  range (plain) to put around the new text. null when no cue is reached into. */
+export function widenOverCues(content, start, end) {
   const text = String(content ?? "");
   let s = start, e = end;
   for (const c of textCues(text)) {
     const startIn = start > c.start && start < c.end, endIn = end > c.start && end < c.end;
-    if (!startIn && !endIn) continue;
-    if (startIn && endIn && start >= c.words.start && end <= c.words.end && !BAD_WORDS.test(next) && next.trim() === next && WORDY.test(next)) continue;
-    s = Math.min(s, c.start); e = Math.max(e, c.end);
+    if (startIn || endIn) { s = Math.min(s, c.start); e = Math.max(e, c.end); }
   }
   if (s === start && e === end) return null;
   // Cue words hold no "=", so dropping every "=" outside the old range takes exactly the cut cue's marks away.
