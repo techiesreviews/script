@@ -2,13 +2,19 @@
 // Optional and off by default (settings below); with cue marking off the editor works as before. The prompter owns
 // the final cue look and reader; until it reads cues, its export strips them (setting `export`). Rules like links
 // (links.js): words on one line, no brackets or "=" inside, at least one letter or digit, never inside a link.
+// With cue marking off, text that already holds "==words==" is still read as cues for word counts, the camera script,
+// the prompter export (stripped), links and rewrites, so the marks never reach the prompter by surprise.
 // Pure: no DOM. app.js draws cues with the links' show/hide trick; changes.js plans the agent's cue changes.
-import { textLinks, spokenText, quoteRe, wholeWords, overlaps } from "./links.js";
+import { textLinks, spokenText, quoteRe, overlaps } from "./links.js";
 
 export const CUE_LIMITS = { cues: 30 };
 const CUE = /(?<!=)==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?!=)/g;
 const WORDY = /[\p{L}\p{N}]/u;
 const BAD_WORDS = /[=[\]\n]/;
+// Whole words for a cue: a letter, digit or combining mark on both sides of an edge means the edge cuts a word (or,
+// for a combining mark, a letter). Languages written without spaces only get cues on whole runs of text.
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
+const wholeWords = (t, s, e) => !(WORD_CHAR.test(t[s] ?? "") && WORD_CHAR.test(t[s - 1] ?? "")) && !(WORD_CHAR.test(t[e - 1] ?? "") && WORD_CHAR.test(t[e] ?? ""));
 
 /* ---------- Settings (Lex 2026-11-04: chosen by the person and by the agent) ----------
    on: cue marking on or off (off: no shortcut, no button, cues show as plain text, as before).
@@ -108,7 +114,7 @@ export function keepCues(removed, text) {
     let hit = null;
     for (let m = re.exec(out); m; re.lastIndex = m.index + 1, m = re.exec(out)) {
       const i = m.index, j = i + m[0].length;
-      if (wholeWords(out, i, j) && !overlaps(taken, i, j) && out[i - 1] !== "=" && out[j] !== "=") { hit = [i, j]; break; }
+      if (wholeWords(out, i, j) && !overlaps(taken, i, j) && out[i - 1] !== "=" && out[j] !== "=" && !m[0].includes("\n")) { hit = [i, j]; break; }
     }
     if (!hit) { dropped++; continue; }
     out = `${out.slice(0, hit[0])}==${out.slice(hit[0], hit[1])}==${out.slice(hit[1])}`;
@@ -171,6 +177,8 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
         const cueHere = overlaps(s.cues.map((c) => [c.start, c.end]), i, e) || s.picks.some((p) => i < p.end && e > p.start);
         let problem = "";
         if (cueHere) problem = "already a cue";
+        else if (m[0].includes("\n")) problem = "spans a line break";
+        else if (s.content[i - 1] === "=" || s.content[e] === "=") problem = "next to an = sign";
         else if (overlaps(s.links, i, e)) problem = "inside a link";
         else if (overlaps(s.avoid, i, e)) problem = "under an open ask or change";
         else if (overlaps(s.avoid, ...span(s, i, e))) problem = "an open ask or change sits between it and another cue in its paragraph";
@@ -194,6 +202,11 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
     let content = "", at = 0;
     for (const p of s.picks) { content += s.content.slice(at, p.start) + p.put; at = p.end; }
     content += s.content.slice(at);
+    // Safety net: every new cue must read back as one (else the paragraph would show stray "==").
+    if (mode === "mark" && textCues(content).length !== s.cues.length + s.picks.length) {
+      for (const p of s.picks) skipped.push({ quote: p.quote.slice(0, 80), why: "would not read as a cue there" });
+      continue;
+    }
     out.push({ id: s.id, content, cues: s.picks.map(({ quote }) => ({ quote })), from: s.picks[0].start, to: s.picks.at(-1).end, delta: content.length - s.content.length });
   }
   return { segments: out, skipped };

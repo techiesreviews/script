@@ -27,6 +27,11 @@ ok Undo on the agent's name tag (its button, clicked from script; a real mouse c
 ok set_cue_settings shows: "Claude turned cue marking offUndo"
 ok mark_cue is refused while cue marking is off
 ok Undo on that line turns cue marking back on
+ok Ctrl+B in a heading changes nothing
+ok Ctrl+B across two paragraphs changes nothing
+ok set_cue_settings forScript: the script has its own settings, cue marking off for it
+ok the top line says it was for this script, with Undo
+ok then set_cue_settings without forScript turns it on where it counts (the script's own)
 ok 390 px: the Cue button shows on the selection bar, inside the screen
 ok 390 px: no sideways scroll
 ok no page errors

@@ -16,7 +16,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const fine = matchMedia("(hover: hover) and (pointer: fine)");
 
 const ICONS = {
-  cue: '<path d="M4 20h8M14.5 4.5l5 5L11 18H6v-5z"/>',
+  cue: '<path d="M4 21h16M8.5 14.5l7-9.5 4 3-7 9.5zM8.5 14.5 6 18.5h4.5l2-1.5"/>',
   wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
   simpler: '<path d="M4 7h16M4 12h10M4 17h6"/>',
   shorter: '<path d="M4 12h10M10 8l4 4-4 4M20 5v14"/>',
@@ -1155,6 +1155,8 @@ function renderCueMenu() {
   }
 }
 $("#scriptMenu").addEventListener("toggle", renderCueMenu);
+// Settings changed in another tab of this browser.
+addEventListener("storage", (e) => { if (e.key == null || e.key.startsWith(`${LS}cues`)) cuesChanged(); });
 $("#cueGroup").addEventListener("click", (e) => {
   const b = e.target.closest("[data-cue-set]");
   if (!b) return;
@@ -1170,7 +1172,9 @@ function cueChangeWords(was, now) {
   return out.join(" and ");
 }
 function agentCueSettings(args, by) {
-  const { forScript = false, ...patch } = args;
+  // Without forScript the change goes where the person's own menu click would: to the script's own settings when it
+  // has them (they win), else to the person's.
+  const { forScript = ownCues(), ...patch } = args;
   if (forScript && !state.name) return { error: "The open script has no file name yet, so it can't have its own settings. Leave out forScript to set them for the person." };
   const was = cues(), undoTo = setCues(patch, forScript), now = cues();
   const words = cueChangeWords(was, now);
@@ -1732,6 +1736,7 @@ $("#vcUse").addEventListener("click", () => {
     state.asks.push(ask);
     emit("answered", ask);
     landAnswer(ask); // the person picked the rewrite: it goes straight in, with Undo on the agent's name tag
+    cueDrops.delete(ask.id); // no answer_ask waits to hear about dropped cues
   }
   if (b) renderBlock(b.id, getCaret());
   renderVoice();
