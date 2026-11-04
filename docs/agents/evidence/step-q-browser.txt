@@ -1,0 +1,62 @@
+# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks over CDP; 1280 px and 390 px; a fresh browser context per width. 2026-11-04T20:44:20Z, run on the working tree on top of f0afc42.
+ok 1280 px: one picture waiting, no Keep all
+ok 1280 px: two pictures waiting, Keep all shows
+ok 1280 px: the button says Keep all
+ok 1280 px: the button says Undo all
+ok 1280 px: the count follows
+ok 1280 px: it fits the width, nothing scrolls sideways
+ok 1280 px: it is under the top bar and the section list
+ok 1280 px: still in sight at the end of the script
+ok 1280 px: nothing covers the button
+ok 1280 px: one kept by itself, the count goes down
+ok 1280 px: one picture left, Keep all goes
+ok 1280 px: Undo all takes the pictures away, the shot's earlier sketch stays
+ok 1280 px: the caret stays where it was
+ok 1280 px: Keep all puts all three in
+ok 1280 px: the agent still reads the list
+ok 1280 px: Ctrl+Z after Keep all leaves the pictures in, as after a single Keep
+ok 1280 px: one picture in at once, no Keep all
+ok 1280 px: two pictures in at once, Keep all shows
+ok 1280 px: Undo all puts back what those shots had
+ok 1280 px: Keep all leaves the pictures in, without their mark and Undo
+ok 1280 px: the shot can be dragged again
+ok 1280 px: suggested adds and a waiting picture count together; words without a picture do not
+ok 1280 px: the suggestion without a picture still waits
+ok 1280 px: the mix's waiting picture is in
+ok 1280 px: the mix's suggested adds are in the list
+ok 1280 px: Keep all shows in the storyboard
+ok 1280 px: it is clear of the storyboard's bar
+ok 1280 px: Keep all in the storyboard puts them in
+ok 1280 px: the kept pictures are there after a reload
+ok 1280 px: nothing waits after a reload
+ok 390 px: one picture waiting, no Keep all
+ok 390 px: two pictures waiting, Keep all shows
+ok 390 px: the button says Keep all
+ok 390 px: the button says Undo all
+ok 390 px: the count follows
+ok 390 px: it fits the width, nothing scrolls sideways
+ok 390 px: it is under the top bar and the section list
+ok 390 px: still in sight at the end of the script
+ok 390 px: nothing covers the button
+ok 390 px: one kept by itself, the count goes down
+ok 390 px: one picture left, Keep all goes
+ok 390 px: Undo all takes the pictures away, the shot's earlier sketch stays
+ok 390 px: the caret stays where it was
+ok 390 px: Keep all puts all three in
+ok 390 px: the agent still reads the list
+ok 390 px: Ctrl+Z after Keep all leaves the pictures in, as after a single Keep
+ok 390 px: one picture in at once, no Keep all
+ok 390 px: two pictures in at once, Keep all shows
+ok 390 px: Undo all puts back what those shots had
+ok 390 px: Keep all leaves the pictures in, without their mark and Undo
+ok 390 px: the shot can be dragged again
+ok 390 px: suggested adds and a waiting picture count together; words without a picture do not
+ok 390 px: the suggestion without a picture still waits
+ok 390 px: the mix's waiting picture is in
+ok 390 px: the mix's suggested adds are in the list
+ok 390 px: Keep all shows in the storyboard
+ok 390 px: it is clear of the storyboard's bar
+ok 390 px: Keep all in the storyboard puts them in
+ok 390 px: the kept pictures are there after a reload
+ok 390 px: nothing waits after a reload
+RESULT: ok

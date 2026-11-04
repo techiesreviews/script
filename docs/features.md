@@ -26,6 +26,7 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 - Asked in its own chat, the agent can suggest B-roll, each new shot with its sketch, and sketch shots in the list; they show with Keep and Undo like answers to asks (step I).
 - A sketch can also be a picture the agent made and uploaded (`upload_image`); it is kept in the B-roll list file as a Markdown image (step K).
 - A picture for a shot in the list goes in at once with Undo, and a used picture frees its place among the 24 that may wait (step K2).
+- From two open pictures on, one bar with "Keep all" and "Undo all" stays in sight in the script and the storyboard; a Keep all can't be undone, like a single Keep (step Q).
 - Pictures are cut to the storyboard frame and kept small (640 × 345, WebP, about 60 KB; step K3); line drawings stay for agents without an image tool.
 - Big pictures in a list made elsewhere, or kept before step K3, are made lighter the same way whenever the list is saved (step K4).
 - A shot moves to another paragraph by dragging it, its picture or its tag, straight away (a finger holds it first); while dragging it snaps beside the paragraph it will land on (steps L, L2).

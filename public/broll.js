@@ -992,6 +992,21 @@ export function askForAgent(a, { spokenText = "", shots = null, voiceGuide = "" 
 /** The changes a Keep writes: only the ones still open. An undone change writes nothing. */
 export const changesToKeep = (answer, ns) => ns.map((n) => answer?.changes?.[n]).filter((c) => c?.state === "open");
 /** After a Keep or Undo: the ask's final status once every change is done ("kept" when any was kept), else null. */
+/**
+ * The agent's pictures the person can still act on (step Q), for "Keep all" and "Undo all": pictures waiting for Keep
+ * or Undo, pictures put in at once with their Undo (step K2), and suggested adds with a picture. A shot gone from the
+ * list and anything being written stay out. `show`: the buttons appear from two pictures on.
+ */
+export function pendingImages({ shotIds = [], waiting = {}, marked = [], suggestions = [], saving = {} } = {}) {
+  const shots = new Set(shotIds);
+  const open = {
+    waiting: Object.keys(waiting).filter((id) => waiting[id] && shots.has(id) && !saving[id]),
+    marked: marked.filter((id) => !waiting[id] && shots.has(id) && !saving[id]),
+    suggested: suggestions.filter((x) => x.c?.op === "add" && x.c.sketch && !saving[x.key]).map((x) => x.key),
+  };
+  const count = open.waiting.length + open.marked.length + open.suggested.length;
+  return { ...open, count, show: count >= 2 };
+}
 export function settleBroll(answer) {
   const list = answer?.changes || [];
   if (list.some((c) => c.state === "open")) return null;
