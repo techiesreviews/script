@@ -78,7 +78,7 @@ export function cueSelected(content, start, end) {
  * Toggle a cue on the selected words (start…end, content offsets, already snapped to whole words):
  * inside one cue: that cue's marks go, its words stay; otherwise the selection and every cue it touches become one
  * cue (half a cue or across two joins into one). Returns { content, start, end, cue } (start…end: the words, to
- * select again; cue: whether they are a cue now) or null when nothing can change (no words, a line break, a
+ * select again; cue: whether they are a cue now; from…to: the stretch of the old content it changes) or null when nothing can change (no words, a line break, a
  * bracket or "=" in the way, a link touched).
  */
 export function toggleCue(content, start, end) {
@@ -88,14 +88,14 @@ export function toggleCue(content, start, end) {
   const cues = textCues(text);
   const own = cues.find((c) => inside(c, s, e));
   if (own) {
-    return { content: text.slice(0, own.start) + own.label + text.slice(own.end), start: own.start, end: own.start + own.label.length, cue: false };
+    return { content: text.slice(0, own.start) + own.label + text.slice(own.end), start: own.start, end: own.start + own.label.length, cue: false, from: own.start, to: own.end };
   }
   const touched = cues.filter((c) => s < c.end && e > c.start);
   const from = Math.min(s, ...touched.map((c) => c.start)), to = Math.max(e, ...touched.map((c) => c.end));
   if (overlaps(textLinks(text).map((l) => [l.start, l.end]), from, to)) return null;
   const words = stripCues(text.slice(from, to));
   if (!WORDY.test(words) || BAD_WORDS.test(words) || words !== words.trim()) return null;
-  return { content: `${text.slice(0, from)}==${words}==${text.slice(to)}`, start: from + 2, end: from + 2 + words.length, cue: true };
+  return { content: `${text.slice(0, from)}==${words}==${text.slice(to)}`, start: from + 2, end: from + 2 + words.length, cue: true, from, to };
 }
 
 /* ---------- The agent's rewrites ---------- */
@@ -107,8 +107,11 @@ export function toggleCue(content, start, end) {
 export function keepCues(removed, text) {
   const old = textCues(removed);
   let out = String(text ?? ""), dropped = 0;
+  // Cues the agent kept itself count once each, so two old cues on the same words need two in the new text.
+  const already = new Map();
+  for (const x of textCues(out)) already.set(x.label, (already.get(x.label) || 0) + 1);
   for (const c of old) {
-    if (textCues(out).some((x) => x.label === c.label)) continue;
+    if (already.get(c.label) > 0) { already.set(c.label, already.get(c.label) - 1); continue; }
     const taken = [...textCues(out), ...textLinks(out)].map((x) => [x.start, x.end]);
     const re = quoteRe(c.label);
     let hit = null;
@@ -120,6 +123,20 @@ export function keepCues(removed, text) {
     out = `${out.slice(0, hit[0])}==${out.slice(hit[0], hit[1])}==${out.slice(hit[1])}`;
   }
   return { text: out, dropped };
+}
+
+/** A replace over start…end that cuts a cue in half takes the whole cue in, so no lone "==" is left: the new range,
+ *  and the cue's words outside the old range (plain) to put around the new text. null when no cue is cut. */
+export function widenOverCues(content, start, end) {
+  const text = String(content ?? "");
+  let s = start, e = end;
+  for (const c of textCues(text)) {
+    const cut = (start > c.start && start < c.end) || (end > c.start && end < c.end);
+    if (cut) { s = Math.min(s, c.start); e = Math.max(e, c.end); }
+  }
+  if (s === start && e === end) return null;
+  // Cue words hold no "=", so dropping every "=" outside the old range takes exactly the cut cue's marks away.
+  return { start: s, end: e, before: text.slice(s, start).replace(/=/g, ""), after: text.slice(end, e).replace(/=/g, "") };
 }
 
 /* ---------- The agent's mark_cue and unmark_cue ---------- */
