@@ -759,15 +759,18 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .frame__body { display: grid; gap: 0.45rem; }
 .kind-tag[data-kind="suggested"] { border-style: dashed; border-color: var(--accent); color: var(--accent-ink); }
 .board__all { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--faint); font-size: 0.8rem; }
-/* "Keep all" for the agent's pictures: stays in sight under the top bar and takes no room over the script, so the text
-   doesn't move when it comes. Over the storyboard it has its own row, clear of the storyboard's bar. */
-.images-all { position: sticky; inset-block-start: calc(var(--top) + 1.5rem); z-index: 10; display: flex; justify-content: flex-end; block-size: 0; pointer-events: none; }
-.images-all .change__bar { align-self: flex-start; margin-block-start: -1.4rem; margin-inline-start: 0; pointer-events: auto; }
+/* "Keep all" for the agent's pictures: its own row above the script or the storyboard, then in sight under the top bar
+   (and the section list on a phone). Jumps and the caret stop below it; caretClearOfBar in app.js sees to the caret. */
+.images-all { position: sticky; inset-block-start: calc(var(--top) + 0.25rem); z-index: 10; display: flex; justify-content: flex-end; margin-block-end: 0.5rem; pointer-events: none; }
+.images-all .change__bar { flex-wrap: wrap; justify-content: flex-end; max-inline-size: 100%; margin-inline-start: 0; border-radius: 1rem; pointer-events: auto; }
+.layout[data-view="board"] .images-all { max-inline-size: 80rem; margin-inline: auto; }
+html:has(.images-all .change__bar) { scroll-padding-block-start: calc(var(--top) + 3rem); }
+html:has(.images-all .change__bar) .section { scroll-margin-block-start: calc(var(--top) + 3rem); }
+@media (width < 52rem) { html:has(.images-all .change__bar) { scroll-padding-block-start: calc(var(--top) + 6rem); } }
 @container app (width < 52rem) {
-  .layout:not([data-view="board"]):has(.toc ol:not(:empty)) .images-all { inset-block-start: calc(var(--top) + 4.375rem); } /* under the section list too */
+  .layout:not([data-view="board"]):has(.toc ol:not(:empty)) .images-all { inset-block-start: calc(var(--top) + 3.125rem); }
+  html:has(.images-all .change__bar) .section { scroll-margin-block-start: calc(var(--top) + 6rem); }
 }
-.layout[data-view="board"] .images-all { inset-block-start: calc(var(--top) + 0.25rem); block-size: auto; margin-block-end: 0.5rem; }
-.layout[data-view="board"] .images-all .change__bar { margin-block-start: 0; }
 
 /* ---------- "/" parts menu at the caret (in the style of the script menu) ---------- */
 .slash-menu {
