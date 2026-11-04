@@ -2,7 +2,7 @@
 // Pure module: no DOM, no network. Imported by the app and by the tests.
 import { textLinks, isLinkLine, safeUrl, LINK_LIMITS } from "./links.js";
 import { spokenWords, stripCues, textCues, quoteAcrossCues } from "./cues.js";
-const stripWholeMarks = (quote) => quote.replace(/==/g, "");
+const withoutMarks = (quote) => quote.replace(/==/g, "");
 
 /* ---------- Actions and their standard instructions ---------- */
 export const ACTIONS = {
@@ -452,7 +452,7 @@ export function reanchor(anchor, content) {
   }
   if (best >= 0) return { start: best, end: best + quote.length };
   // A bold word's marks moved (a letter typed right before it): the same words, with their new quote.
-  return quote.includes("==") ? quoteAcrossCues(content, stripWholeMarks(quote), start) : null;
+  return quote.includes("==") ? quoteAcrossCues(content, withoutMarks(quote), start, { inCue: true }) : null;
 }
 
 export function sectionOfBlock(doc, blockId) {
