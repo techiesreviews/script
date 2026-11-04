@@ -5,7 +5,7 @@ import { safeUrl } from "../public/links.js";
 import { checkSettings, CUE_LIMITS } from "../public/cues.js";
 import { SKETCH_MAX, BROLL_LIMITS, IMAGE_UPLOAD_MAX } from "../public/broll.js";
 
-export const VERSION = "0.8.0";
+export const VERSION = "0.9.0";
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 // An agent token: "se2-<birth time>-<random>", made by the Worker (POST /api/agent-token). The birth time is the
 // Worker's Date.now() in base36; the random part is 32 random bytes in base64url. The Worker's clock both writes and
@@ -227,7 +227,7 @@ export const TOOLS = [
   {
     name: "mark_cue",
     title: "Mark cues",
-    description: `Marks words in the spoken text as cues (==words==), at once, lightly marked, as one change the person can undo (Undo on your name tag). Only while cue marking is on (get_cue_settings). Each quote is words copied exactly from the spoken text, whole words, no brackets or = signs; its first occurrence that is not a cue yet is marked, or the occurrence-th one (1 = the first, counting every occurrence in reading order). Text in headings, reminders, links, other cues, open asks or your changes still marked is skipped; skipped quotes are listed in the result with the reason. At most ${CUE_LIMITS.cues} per call.`,
+    description: `Marks words in the spoken text as cues (==words==), at once, lightly marked, as one change the person can undo (Undo on your name tag). Only while cue marking is on (get_cue_settings). Each quote is words copied exactly from the spoken text, whole words, no brackets or = signs; its first occurrence that is not a cue yet is marked, or the occurrence-th one (1 = the first, counting every occurrence in reading order). The person sees cues as bold words. Text in headings, reminders, links, other cues or open asks is skipped; skipped quotes are listed in the result with the reason. At most ${CUE_LIMITS.cues} per call.`,
     inputSchema: {
       type: "object",
       properties: {
