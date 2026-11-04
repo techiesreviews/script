@@ -2958,6 +2958,7 @@ function setView(v) {
   renderView();
   editorJump();
   scrollTo({ top: board ? 0 : ui.scriptY });
+  caretClearOfBar(); // after the scroll is back: over the script it may have put the caret's line behind the bar
 }
 function renderView() {
   const board = ui.view === "board" && !!state.doc;
@@ -3880,8 +3881,7 @@ function renderImagesAll() {
   }
   imagesWhere = where;
   // Built once, then only its words change: focus and a press in progress stay, and it doesn't animate in again.
-  const fresh = !el.firstChild;
-  if (fresh) {
+  if (!el.firstChild) {
     el.innerHTML = `<span class="change__bar"><span class="change__what">${icon("sketch")}<span></span></span>`
       + `<button type="button" class="undo" data-act="undo-all">${icon("undo")}Undo all</button>`
       + `<button type="button" class="keep" data-act="keep-all">${icon("check")}Keep all</button></span>`;
@@ -3892,9 +3892,9 @@ function renderImagesAll() {
   $(".change__what > span", el).textContent = `${n} images`;
   $(".undo", el).setAttribute("aria-label", `Undo all ${n} images`);
   $(".keep", el).setAttribute("aria-label", `Keep all ${n} images`);
-  if (fresh) caretClearOfBar();
 }
-// The bar stays in sight, but never over the words being edited: the caret's line moves just below it.
+// The bar stays in sight, but never over the words being typed: the caret's line moves just below it. The page moves
+// only on typing (and on the way back from the storyboard), so a click, a double-click or a redraw never shifts it.
 function caretClearOfBar() {
   const bar = $("#imagesAll .change__bar");
   const sel = getSelection();
@@ -3902,9 +3902,10 @@ function caretClearOfBar() {
   const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
   const caret = sel.getRangeAt(0).getClientRects()[0] || node.closest(".line")?.getBoundingClientRect();
   const by = B.barScroll(caret, bar.getBoundingClientRect());
-  if (by) scrollBy({ top: by, behavior: "instant" });
+  if (!by) return;
+  editorJump();
+  scrollBy({ top: by, behavior: "instant" });
 }
-document.addEventListener("selectionchange", caretClearOfBar);
 scriptEl.addEventListener("input", caretClearOfBar);
 function keepAllImages() {
   const open = imagesOpen();
