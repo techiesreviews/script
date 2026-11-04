@@ -216,6 +216,11 @@ export function coverText(doc, blockIds) {
   // check; a change of words, punctuation or case still does.
   return blockIds.map((id) => { const b = blockById(doc, id); return b ? spokenWords(contentOf(b)).replace(/\s+/g, " ").trim() : "\u0000"; }).join("\u0001");
 }
+/** The shots' covered text as it reads now, flagging nothing: for when the words didn't change but how they are read did
+ *  (Bold marking turned on or off). */
+export function refreshSigs(doc, shots) {
+  for (const s of shots) if (s.blockIds?.length) s.sig = coverText(doc, s.blockIds);
+}
 /** After an edit, Keep or undo: a shot whose covered text changed gets check = true. Returns the ids flagged now. */
 export function touchShots(doc, shots) {
   const flagged = [];

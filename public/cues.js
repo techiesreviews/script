@@ -17,6 +17,9 @@ let reading = () => false;
 export const readCuesWhen = (fn) => { reading = fn; };
 const WORDY = /[\p{L}\p{N}]/u;
 const BAD_WORDS = /[=[\]\n]/;
+// A closing quote or bracket before an opening "==", with a letter or digit after the closing one, is a comparison
+// read from its other end ("Lex"==name or "7"==id).
+const SHUTS = /[)\]"'’”]/;
 // Whole words for a cue: a letter, digit or combining mark on both sides of an edge means the edge cuts a word (or,
 // for a combining mark, a letter). Languages written without spaces only get cues on whole runs of text.
 const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
@@ -85,13 +88,14 @@ export function textCues(content) {
   const out = [];
   for (const m of text.matchAll(CUE)) {
     const start = m.index, end = start + m[0].length;
-    if (!WORDY.test(m[1]) || overlaps(links, start, end)) continue;
+    if (!WORDY.test(m[1]) || overlaps(links, start, end) || (SHUTS.test(text[start - 1] ?? "") && WORD_CHAR.test(text[end] ?? ""))) continue;
     out.push({ start, end, words: { start: start + 2, end: end - 2 }, label: m[1], cue: true });
   }
   return out;
 }
 /** An AI's new text, when the text it was asked about held marks: a "==" it copied that makes no cue goes. Ordinary text
- *  stays: a letter or digit before it and no end of a word after it (a==3, name=="Lex"), or spaces on both sides (x == y). */
+ *  stays: a comparison sign before it (a !== b), a word, quote or bracket before it and more text after it (a==3,
+ *  name=="Lex", f(x)==3), or spaces on both sides (x == y). */
 export function dropLoneMarks(text) {
   const t = String(text ?? ""), cues = textCues(t);
   if (!reading()) return t;
@@ -99,7 +103,7 @@ export function dropLoneMarks(text) {
   for (const m of t.matchAll(/(?<!=)==(?!=)/g)) {
     const i = m.index, e = i + 2, l = t[i - 1] ?? "", r = t[e] ?? "";
     if (cues.some((c) => i === c.start || e === c.end)) continue;
-    if ((WORD_CHAR.test(l) && r && !/[\s.,;:!?)\]]/.test(r)) || (/\s/.test(l) && /\s/.test(r))) continue;
+    if (/[=!<>]/.test(l) || ((WORD_CHAR.test(l) || SHUTS.test(l)) && r && !/[\s.,;:!?)\]]/.test(r)) || (/\s/.test(l) && /\s/.test(r))) continue;
     out += t.slice(at, i);
     at = e;
   }
@@ -178,15 +182,22 @@ export function toggleCue(content, start, end) {
  * marks never stay behind as literal text. All its words gone, or a "=", bracket or line break in them, or one of its
  * marks hit: the marks go, the words stay. Spaces at its edges move outside it. A letter or digit now right before it (typed, or the space
  * before it deleted): the word joins the cue. A comparison sign right before it, or "=" right after: the marks go.
- * Returns { content, caret }, or null when no cue needs settling (no cue was there, or the edit broke none).
+ * A word being typed in front of a cue joins it only until its space is typed, then stays plain: `typedBefore` says where
+ * that word ends in `old`, and the result's `typedBefore` where it ends now (null once the person is doing anything else).
+ * Returns { content, caret, typedBefore }, or null when no cue needs settling (no cue was there, or the edit broke none).
  */
-export function settleMarks(old, now, caret = null) {
+export function settleMarks(old, now, caret = null, { typedBefore = null } = {}) {
   const cues = textCues(old);
   if (!cues.length || old === now) return null;
   let p = 0, oe = old.length, ne = now.length;
   while (p < oe && p < ne && old[p] === now[p]) p++;
   while (oe > p && ne > p && old[oe - 1] === now[ne - 1]) { oe--; ne--; }
-  const delta = ne - oe, to = (i) => (i < p ? i : i + delta), ops = [];
+  // A repeated letter reads more than one way: the caret says where the edit really happened.
+  const grew = now.length - old.length;
+  if (Number.isInteger(caret) && grew > 0 && caret >= grew && old.slice(0, caret - grew) + now.slice(caret - grew, caret) + old.slice(caret - grew) === now) [p, oe, ne] = [caret - grew, caret - grew, caret];
+  else if (Number.isInteger(caret) && grew < 0 && caret - grew <= old.length && old.slice(0, caret) + old.slice(caret - grew) === now) [p, oe, ne] = [caret, caret - grew, caret];
+  const delta = ne - oe, to = (i) => (i < p ? i : i + delta), ops = [], added = oe === p ? now.slice(p, ne) : "";
+  let typing = null;
   const take = (at, del) => ops.push({ at, del, ins: "" }), put = (at) => ops.push({ at, del: 0, ins: "==" });
   for (const c of cues) {
     const marks = [c.start, c.end - 2];
@@ -198,15 +209,26 @@ export function settleMarks(old, now, caret = null) {
     const lead = inner.length - inner.trimStart().length, trail = inner.length - inner.trimEnd().length;
     let start = open;
     if (!lead) while (start > 0 && WORD_CHAR.test(now[start - 1])) start--;
-    if (!WORDY.test(words) || BAD_WORDS.test(words) || now[close + 2] === "=" || (!lead && /[=!<>]/.test(now[start - 1] ?? ""))) {
+    const shut = !lead && start === open && SHUTS.test(now[open - 1] ?? "") && WORD_CHAR.test(now[close + 2] ?? "");
+    if (!WORDY.test(words) || BAD_WORDS.test(words) || now[close + 2] === "=" || shut || (!lead && /[=!<>]/.test(now[start - 1] ?? ""))) {
       take(open, 2);
       take(close, 2);
       continue;
     }
-    if (lead || start < open) { take(open, 2); put(lead ? open + 2 + lead : start); }
+    // The word being typed in front of this cue: its space ends it and it stays plain; more letters or Backspace go on.
+    if (typedBefore != null && typedBefore > c.words.start && typedBefore < c.words.end) {
+      if (p === typedBefore && added && !added.trim()) { take(open, 2); put(p + added.length); continue; }
+      if (p === typedBefore && added.trim() && !/\s/.test(added)) typing = p + added.length;
+      else if (oe === typedBefore && ne === p && p > c.words.start) typing = p;
+    }
+    if (lead || start < open) {
+      take(open, 2);
+      put(lead ? open + 2 + lead : start);
+      if (!lead && added && p === c.start && !/\s/.test(added)) typing = ne + 2;
+    }
     if (trail) { put(close - trail); take(close, 2); }
   }
-  if (!ops.length) return null;
+  if (!ops.length) return typing == null ? null : { content: now, caret, typedBefore: typing };
   ops.sort((a, b) => a.at - b.at);
   let content = "", at = 0, moved = caret;
   for (const op of ops) {
@@ -214,7 +236,7 @@ export function settleMarks(old, now, caret = null) {
     at = op.at + op.del;
     if (caret != null && op.at < caret) moved += op.ins.length - Math.min(op.del, caret - op.at);
   }
-  return { content: content + now.slice(at), caret: moved };
+  return { content: content + now.slice(at), caret: moved, typedBefore: typing };
 }
 
 /* ---------- The agent's rewrites ---------- */
@@ -236,7 +258,9 @@ export function keepCues(removed, text) {
     let hit = null;
     for (let m = re.exec(out); m; re.lastIndex = m.index + 1, m = re.exec(out)) {
       const i = m.index, j = i + m[0].length;
-      if (wholeWords(out, i, j) && !overlaps(taken, i, j) && out[i - 1] !== "=" && out[j] !== "=" && !m[0].includes("\n")) { hit = [i, j]; break; }
+      if (!wholeWords(out, i, j) || overlaps(taken, i, j) || m[0].includes("\n")) continue;
+      // It must read back as a cue there (not right after a comparison sign, say).
+      if (textCues(`${out.slice(0, i)}==${m[0]}==${out.slice(j)}`).some((x) => x.start === i)) { hit = [i, j]; break; }
     }
     if (!hit) { dropped++; continue; }
     out = `${out.slice(0, hit[0])}==${out.slice(hit[0], hit[1])}==${out.slice(hit[1])}`;
