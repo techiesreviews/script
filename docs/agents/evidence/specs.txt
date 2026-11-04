@@ -56,6 +56,9 @@
 ✔ bigPictures (step K4): only pictures over the budget are made lighter on save
 ✔ bigPictures (step K4): code fences are examples, not sketches; the edges; worthLighter
 ✔ step L: an Over from a selection that starts after or inside a link finds its paragraph again
+✔ pendingImages: pictures waiting, pictures put in at once and suggested adds with a picture all count
+✔ pendingImages: the buttons show only from two pictures on
+✔ pendingImages: only what the person can act on counts
 ✔ straight in: replace puts the new text in place, as one change, and marks exactly it
 ✔ straight in: add goes after the quote with its spaces, and Undo takes exactly that out again
 ✔ straight in: replace undone gives back the exact text; refused when the quote changed
@@ -296,9 +299,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 298
+ℹ tests 301
 ℹ suites 0
-ℹ pass 298
+ℹ pass 301
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

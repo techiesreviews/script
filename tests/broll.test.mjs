@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList, moveTo, wholeParas, moveOver, snapPara, edgeSpeed, EDGE, stackPushes,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter, pendingImages,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -1074,4 +1074,46 @@ test("step L: an Over from a selection that starts after or inside a link finds 
   // A selection that ends inside the link's words takes the whole link.
   assert.equal(overFor(doc, [{ id: p.id, start: 0, end: c.indexOf("page") }]), '"First we open the settings page"');
   assert.equal(overFor(doc, [{ id: p.id, start: 0, end: c.indexOf("example") }]), '"First we open the settings page"');
+});
+
+/* Step Q: "Keep all" and "Undo all" for the agent's pictures show from two pictures on, and act on those still open. */
+test("pendingImages: pictures waiting, pictures put in at once and suggested adds with a picture all count", () => {
+  const add = (key, sketch) => ({ key, c: { op: "add", what: "A shot", sketch } });
+  const got = pendingImages({
+    shotIds: ["B1", "B2", "B3"],
+    waiting: { B1: "<svg/>" },
+    marked: ["B2"],
+    suggestions: [add("a1:0", "<svg/>")],
+  });
+  assert.deepEqual(got.waiting, ["B1"]);
+  assert.deepEqual(got.marked, ["B2"]);
+  assert.deepEqual(got.suggested, ["a1:0"]);
+  assert.equal(got.count, 3);
+  assert.equal(got.show, true, "three pictures open: the buttons show");
+});
+
+test("pendingImages: the buttons show only from two pictures on", () => {
+  const shotIds = ["B1", "B2"];
+  assert.equal(pendingImages({}).show, false, "nothing open");
+  assert.equal(pendingImages({ shotIds, waiting: { B1: "<svg/>" } }).show, false, "one picture: its own Keep and Undo are enough");
+  assert.equal(pendingImages({ shotIds, waiting: { B1: "<svg/>", B2: "<svg/>" } }).show, true, "two pictures");
+  assert.equal(pendingImages({ shotIds, waiting: { B1: "<svg/>" }, marked: ["B2"] }).show, true, "one of each kind counts as two");
+});
+
+test("pendingImages: only what the person can act on counts", () => {
+  const shotIds = ["B1", "B2"];
+  const text = { key: "a1:0", c: { op: "update", id: "B1", what: "New words" } };
+  const bare = { key: "a1:1", c: { op: "add", what: "No picture" } };
+  const gone = { key: "a1:2", c: { op: "remove", id: "B2" } };
+  assert.equal(pendingImages({ shotIds, suggestions: [text, bare, gone] }).count, 0, "suggestions without a picture stay out of it");
+  assert.equal(pendingImages({ shotIds, waiting: { B9: "<svg/>" }, marked: ["B8"] }).count, 0, "a shot no longer in the list has no frame to act on");
+  assert.equal(pendingImages({ shotIds, waiting: { B1: "" } }).count, 0, "an empty picture is not a picture");
+  const saving = pendingImages({ shotIds, waiting: { B1: "<svg/>", B2: "<svg/>" }, saving: { B1: true } });
+  assert.deepEqual(saving.waiting, ["B2"], "a picture being written is left alone");
+  assert.equal(saving.show, false);
+  const sug = { key: "a2:0", c: { op: "add", what: "A shot", sketch: "<svg/>" } };
+  assert.deepEqual(pendingImages({ suggestions: [sug], saving: { "a2:0": true } }).suggested, [], "so is a suggested add being written");
+  const both = pendingImages({ shotIds, waiting: { B1: "<svg/>" }, marked: ["B1"] });
+  assert.equal(both.count, 1, "a new picture waiting on a marked shot counts once");
+  assert.deepEqual(both.marked, []);
 });
