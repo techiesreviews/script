@@ -145,7 +145,7 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   // A replace over cues keeps each cue whose words survive (cues.js); the agent is told how many went.
   const kept = ask.answer.kind === "replace" ? Q.keepCues(content.slice(ask.start, ask.end), text) : { text, dropped: 0 };
   if (kept.text !== text && keepsType(D.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: kept.text } }).content, type)) text = kept.text;
-  else if (kept.text !== text) kept.dropped = Q.textCues(content.slice(ask.start, ask.end)).length;
+  else if (kept.text !== text) kept.dropped = Q.textCues(content.slice(ask.start, ask.end)).length - Q.textCues(text).length;
   ask.answer = { ...ask.answer, text };
   const res = D.applyAnswer(content, ask);
   // The whole changed stretch: for "add" that includes the spaces put around the text, so Undo removes them too.
