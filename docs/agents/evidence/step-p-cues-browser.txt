@@ -38,13 +38,13 @@ ok turning on Bold words in the prompter file: the link is ready at once, with t
 ok the words are back as they were
 ok a selection from inside a cue to past it joins into one cue
 ok two Ctrl+Z steps bring the text back as it was
-ok typing right after a bold word: the text is ==A blank==s pa…
-ok typing right after a bold word: still bold, the marks hidden
-ok typing right after a bold word: no marks in the prompter link
+ok typing right after two bold words: the text is ==A blanks== pa…
+ok typing right after two bold words: still bold, the marks hidden
+ok typing right after two bold words: no marks in the prompter link
 ok one Ctrl+Z takes the typed letter back
-ok deleting the space after a bold word: the text is ==A blank==pag…
-ok deleting the space after a bold word: still bold, the marks hidden
-ok deleting the space after a bold word: no marks in the prompter link
+ok deleting the space after two bold words: the text is ==A blankpage==…
+ok deleting the space after two bold words: still bold, the marks hidden
+ok deleting the space after two bold words: no marks in the prompter link
 ok one Ctrl+Z puts the space back
 ok typing right before a bold word: the text is ==xA …
 ok typing right before a bold word: still bold, the marks hidden
