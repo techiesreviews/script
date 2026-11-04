@@ -2947,10 +2947,11 @@ function unlinkBroll() {
 }
 
 /* ---------- Script | Storyboard: the switch in the top bar (remembered) ---------- */
+const sheetTop = () => $(".sheet").getBoundingClientRect().top + scrollY;
 function setView(v) {
   const board = v === "board";
   if (board === (ui.view === "board")) return;
-  if (board) ui.scriptY = scrollY;
+  if (board) { ui.scriptY = scrollY; ui.scriptTop = sheetTop(); }
   ui.view = board ? "board" : "script";
   store.set("view", ui.view);
   hideBar();
@@ -2959,7 +2960,8 @@ function setView(v) {
   endDrag();
   renderView();
   editorJump();
-  scrollTo({ top: board ? 0 : ui.scriptY });
+  // The Keep all row may have come or gone while away (step Q): the text comes back where it was all the same.
+  scrollTo({ top: board ? 0 : Math.max(0, ui.scriptY + sheetTop() - (ui.scriptTop ?? sheetTop())) });
 }
 function renderView() {
   const board = ui.view === "board" && !!state.doc;
