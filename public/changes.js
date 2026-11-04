@@ -145,7 +145,7 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   // A replace that cuts a cue in half takes the whole cue in (its outside words stay, plain), and an add inside a cue
   // goes after it, so no lone "==" is left (cues.js).
   if (ask.answer.kind === "replace") {
-    const w = Q.widenOverCues(content, ask.start, ask.end);
+    const w = Q.widenOverCues(content, ask.start, ask.end, text);
     if (w) { ask.start = w.start; ask.end = w.end; text = w.before + text + w.after; }
   } else {
     const c = Q.textCues(content).find((x) => ask.end > x.start && ask.end < x.end);
