@@ -374,8 +374,9 @@ test("Sounds like me: a quote read without the marks is found across a cue's edg
   const doc = D.parse("# T\n\n## A\n\nWe ==start here== now. Then on.\n");
   const p = paras(doc)[0], id = p.id;
   assert.deepEqual(D.findQuote(doc, "We start here now"), { blockId: id, start: 0, end: 21, quote: "We ==start here== now" });
-  assert.deepEqual(D.findQuote(doc, "We start"), { blockId: id, start: 0, end: 17, quote: "We ==start here==" });
-  assert.deepEqual(D.findQuote(doc, "here now"), { blockId: id, start: 3, end: 21, quote: "==start here== now" });
+  // Only what was quoted: the rewrite step keeps the cue's other words.
+  assert.deepEqual(D.findQuote(doc, "We start"), { blockId: id, start: 0, end: 10, quote: "We ==start" });
+  assert.deepEqual(D.findQuote(doc, "here now"), { blockId: id, start: 11, end: 21, quote: "here== now" });
   // Word for word in the text: as before, without a new quote.
   assert.deepEqual(D.findQuote(doc, "Then on"), { blockId: id, start: 23, end: 30 });
   assert.equal(D.findQuote(doc, "We begin"), null);
@@ -424,4 +425,21 @@ test("last round: set_cue_settings says where the change really goes", () => {
   assert.match(t.description, /Without forScript: the script's own settings if it has them, else the person's\./);
   assert.match(t.description, /forScript: false always sets the person's/);
   assert.doesNotMatch(t.description, /\(else for the person\)/);
+});
+
+test("Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words", () => {
+  const land = (quote, text) => {
+    const doc = D.parse("# T\n\n## A\n\nWe ==start here== now.\n");
+    const p = paras(doc)[0], f = D.findQuote(doc, quote);
+    const r = D.reanchor(f, D.contentOf(p));
+    assert.deepEqual([r.start, r.end], [f.start, f.end], "the mark finds its place again");
+    const ask = D.makeAsk(doc, { blockId: p.id, start: r.start, end: r.end, action: "voice", by: { id: "lex", name: "Lex" } });
+    Object.assign(ask, { status: "answered", answer: { kind: "replace", text }, answeredBy: { id: "agent:x", name: "X" } });
+    const res = C.land(doc, ask, 1);
+    return [D.contentOf(p), res.cuesDropped];
+  };
+  assert.deepEqual(land("We start", "We begin"), ["We begin here now.", 1]);
+  assert.deepEqual(land("here now", "there today"), ["We start there today.", 1]);
+  assert.deepEqual(land("We start here", "We start here today"), ["We ==start here== today now.", 0]);
+  assert.deepEqual(land("We start here now", "We go"), ["We go.", 1]);
 });
