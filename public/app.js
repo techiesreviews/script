@@ -2438,9 +2438,12 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
   const draft = store.get(draftKey(from));
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
   // A script's own bold settings go with it, so a new name changes nothing on the page and nothing is redrawn. The new
-  // name belongs to this script now: settings left there before go.
+  // name belongs to this script now: settings left there before go. If they can't be written (storage full) they stay
+  // under the old name, and the memo keeps them for this session, so the page stays as it is.
   const own = store.get(cueKey(from));
-  if (own != null) { store.set(cueKey(to), own); if (clear) store.del(cueKey(from)); } else store.del(cueKey(to));
+  store.del(cueKey(to));
+  if (own != null && store.set(cueKey(to), own) && clear) store.del(cueKey(from));
+  if (cueMemo?.name === from) cueMemo = { ...cueMemo, name: to };
   // The new name belongs to this script now: it takes this script's link, or none (never one left there before).
   await keyed(async () => {
     const stored = await idbGet(brollKey(from));
