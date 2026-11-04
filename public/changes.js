@@ -142,10 +142,19 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   Object.assign(ask, r);
   let text = fitText(content, ask, type);
   if (text === null) return null;
+  // A replace that cuts a cue in half takes the whole cue in (its outside words stay, plain), and an add inside a cue
+  // goes after it, so no lone "==" is left (cues.js).
+  if (ask.answer.kind === "replace") {
+    const w = Q.widenOverCues(content, ask.start, ask.end);
+    if (w) { ask.start = w.start; ask.end = w.end; text = w.before + text + w.after; }
+  } else {
+    const c = Q.textCues(content).find((x) => ask.end > x.start && ask.end < x.end);
+    if (c) ask.end = c.end;
+  }
   // A replace over cues keeps each cue whose words survive (cues.js); the agent is told how many went.
   const kept = ask.answer.kind === "replace" ? Q.keepCues(content.slice(ask.start, ask.end), text) : { text, dropped: 0 };
   if (kept.text !== text && keepsType(D.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: kept.text } }).content, type)) text = kept.text;
-  else if (kept.text !== text) kept.dropped = Q.textCues(content.slice(ask.start, ask.end)).length - Q.textCues(text).length;
+  else if (kept.text !== text) kept.dropped = Math.max(0, Q.textCues(content.slice(ask.start, ask.end)).length - Q.textCues(text).length);
   ask.answer = { ...ask.answer, text };
   const res = D.applyAnswer(content, ask);
   // The whole changed stretch: for "add" that includes the spaces put around the text, so Undo removes them too.
@@ -360,6 +369,10 @@ function spokenSegments(doc, asks) {
   const { segments, others } = scriptSegments(doc, busy);
   return { segments: segments.map(({ id, content, avoid }) => ({ id, content, avoid })), others };
 }
+/** Would a cue toggle over from…to (content offsets in the block) touch text other open work points at (open asks,
+ *  "Sounds like me" marks, the agent's marked changes)? Then the person's Ctrl/Cmd+B changes nothing, so that work
+ *  keeps its text. */
+export const cueBlocked = (asks, blockId, from, to) => L.overlaps(busyRanges(asks, null).get(blockId) || [], from, to);
 /** Every cue in the spoken text: [{ cueId, quote, section, before, after }] (before/after: up to 40 characters). */
 export function listCues(doc) {
   const out = [];
