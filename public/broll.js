@@ -167,7 +167,7 @@ export function parseOver(over) {
 export function spokenBlocks(doc) {
   return outline(doc).sections.filter((s) => s.spoken)
     .flatMap((s) => s.blocks.filter((b) => b.type === "para"))
-    .map((b) => ({ id: b.id, n: ` ${normalize(spokenText(contentOf(b)))} ` })); // a link counts as its words (step G)
+    .map((b) => ({ id: b.id, n: ` ${normalize(spokenWords(contentOf(b)))} ` })); // a link or a cue counts as its words (step G)
 }
 // Where the fragments occur in order (as whole words): the index of the first, or -1.
 function fragsAt(n, frags) {
