@@ -284,9 +284,9 @@ function decorationsFor(id) {
    address are hidden while the caret is outside the link; with the caret at or in it, or a selection touching it, the
    link is open (data-open) and shows all of its Markdown. The text nodes are still the block's exact content, so
    offsets, asks, carets and the room are unchanged. A link cut by a decoration's edge shows as plain Markdown. */
-/* Cues (fleet issue #14, Lex 2026-11-04): with cue marking on, a "==words==" in a para is drawn with the same trick:
-   the "==" marks are hidden while the caret is outside it, and the words get the cue look (.md-cue in app.css; the
-   prompter owns the final look). Off (the default), "==" shows as plain text, as before. */
+/* Cues (fleet issue #14, Lex 2026-11-04): with cue marking on, a "**words**" in a para is drawn with the same trick:
+   the "**" marks are hidden while the caret is outside it, and the words show bold (.md-cue in app.css). Off (the
+   default), "**" shows as plain text, as before. */
 const linksOf = (b) => {
   if (b.type !== "para") return [];
   const content = D.contentOf(b), links = L.textLinks(content);
@@ -820,14 +820,14 @@ function reanchorBlock(id) {
     if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) {
       const r = b && D.reanchor(a, D.contentOf(b));
       if (!r) { closeAsk(a, "cancelled"); moved = true; }
-      else if (r.start !== a.start || r.quote) { a.start = r.start; a.end = r.end; if (r.quote) a.quote = r.quote; moved = true; }
+      else if (r.start !== a.start) { a.start = r.start; a.end = r.end; moved = true; }
     }
     if (a.scope === "script" && a.status === "answered") {
       for (const m of a.answer.marks) {
         if (m.state !== "open" || m.blockId !== id) continue;
         const r = b && D.reanchor(m, D.contentOf(b));
         if (!r) { m.state = "gone"; moved = true; }
-        else if (r.start !== m.start || r.quote) { m.start = r.start; m.end = r.end; if (r.quote) m.quote = r.quote; moved = true; }
+        else if (r.start !== m.start) { m.start = r.start; m.end = r.end; moved = true; }
       }
       settleVoice(a);
     }
@@ -839,6 +839,19 @@ function reanchorAll() {
   for (const id of ids) reanchorBlock(id);
 }
 const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, fromId, toId, fromStart, shift);
+// Bold marks moved in a block: open asks and "Sounds like me" marks there follow by their offsets (`at(start, end)`, null
+// when an edit fell inside them), with their quote as it reads now, so they can't jump into another word by a search.
+function followAnchors(id, content, at) {
+  const move = (x) => {
+    const r = at(x.start, x.end);
+    if (r) Object.assign(x, r, { quote: content.slice(r.start, r.end) });
+  };
+  for (const a of state.asks) {
+    if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) move(a);
+    if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m);
+  }
+}
+const marksMoved = (from, to) => { const m = K.marksMap(from, to); return (start, end) => ({ start: m(start), end: m(end) }); };
 // The agent's marked changes (step F) follow every edit from the script as it was when they last followed
 // (changeBase); an edit inside one ends its mark. `ops`: the room's operations, when they are known.
 let changeBase = null;
@@ -886,7 +899,7 @@ function syncFromDom(el) {
   const typed = readContent(el);
   const before = linksBefore?.id === id && linksBefore.content === D.contentOf(b) ? linksBefore.closed : null;
   linksBefore = null;
-  let fix = before && L.keepHidden(D.contentOf(b), typed, before, getCaret()?.offset);
+  let fix = before && L.keepHidden(D.contentOf(b), typed, before, getCaret()?.offset), settledNow = null;
   // A bold stretch this edit broke is settled, so its marks never stay behind as literal text (K.settleMarks). A word
   // being typed in front of one is followed from edit to edit, until its space is typed.
   if (b.type === "para") {
@@ -894,6 +907,7 @@ function syncFromDom(el) {
     const settled = K.settleMarks(old, fix ? fix.content : typed, fix ? fix.caret : getCaret()?.offset, { typedBefore: going });
     fix = settled || fix;
     boldTyping = settled?.typedBefore != null ? { id, content: settled.content, end: settled.typedBefore } : null;
+    settledNow = settled;
   }
   const content = fix ? fix.content : typed;
   if (content === D.contentOf(b)) {
@@ -902,6 +916,7 @@ function syncFromDom(el) {
   }
   checkpoint("type", id);
   const caret = fix ? { id, offset: fix.caret } : getCaret();
+  if (settledNow) followAnchors(id, content, settledNow.follow);
   const r = D.setContent(state.doc, id, content);
   const moved = followPieces(id, r);
   if (r.changed || r.created.length) {
@@ -927,6 +942,10 @@ function splitAt(el, start, end, lineBreak) {
   if (settled?.content[settled.caret - 1] === "\n") {
     start = end = settled.caret - 1;
     content = settled.content.slice(0, start) + settled.content.slice(start + 1);
+    followAnchors(id, content, (from, to) => {
+      const r = settled.follow(from, to);
+      return r && { start: r.start > start ? r.start - 1 : r.start, end: r.end > start ? r.end - 1 : r.end };
+    });
     D.setContent(state.doc, id, content);
     reanchorBlock(id);
   }
@@ -982,7 +1001,10 @@ function mergeInto(prevId, id) {
   const m = D.mergeWithPrevious(state.doc, id);
   // The next paragraph's bold word right after a word: it is settled as if the line break between them was deleted.
   const settled = prev.type === "para" ? K.settleMarks(joining, D.contentOf(prev), m.offset) : null;
-  if (settled) D.setContent(state.doc, prevId, settled.content);
+  if (settled) {
+    followAnchors(prevId, settled.content, marksMoved(D.contentOf(prev), settled.content));
+    D.setContent(state.doc, prevId, settled.content);
+  }
   reanchorBlock(prevId);
   renderAll({ id: m.into, offset: settled ? settled.caret : m.offset });
   changed();
@@ -1018,6 +1040,7 @@ function pasteText(el, raw) {
   const content = D.contentOf(b);
   moveAsks(id, id, sel.end, text.length - (sel.end - sel.start));
   const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
+  if (settled) followAnchors(id, settled.content, marksMoved(pasted, settled.content));
   applyContent(id, settled ? settled.content : pasted, settled ? settled.caret : sel.start + text.length);
   changed();
 }
@@ -1169,7 +1192,6 @@ function cuesChanged() {
   cueMemo = null;
   renderCueMenu();
   if (state.doc) {
-    if (broll.status === "ok") B.refreshSigs(state.doc, broll.shots); // read anew, no word changed: no shot asks for a check
     renderAll(getCaret());
     renderDerived(); // the prompter link and its too-long check follow the export setting at once
   }
@@ -1252,6 +1274,7 @@ function toggleCueHere() {
   const res = cueTry(s);
   if (!C.canToggleCue(state.asks, b.id, b.type, res)) return;
   checkpoint("cue", b.id);
+  followAnchors(b.id, res.content, marksMoved(D.contentOf(b), res.content));
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   renderBlock(b.id);
@@ -1287,14 +1310,12 @@ $("#boldBtn").addEventListener("click", toggleCueHere);
 function landAgentCues(plan, mode, by) {
   together?.local();
   const before = D.cloneDoc(state.doc);
+  for (const seg of plan.segments) followAnchors(seg.id, seg.content, marksMoved(D.contentOf(byId(seg.id)), seg.content));
   const parts = C.landCues(state.doc, plan, mode, by, Date.now());
   if (!parts.length) return 0;
   checkpoint("agent", parts[0].blockId, before);
   if (!together?.active) state.undo.at(-1).land = { id: parts[0].ask.id, status: "undone", ...(parts.length > 1 ? { also: parts.slice(1).map((p) => p.ask.id) } : {}) };
-  for (const p of parts) {
-    moveAsks(p.blockId, p.blockId, p.at, p.delta);
-    followPieces(p.blockId, p.result);
-  }
+  for (const p of parts) followPieces(p.blockId, p.result);
   followMarks(); // the agent's earlier changes follow these
   const now = Date.now();
   for (const p of parts) {
@@ -4369,7 +4390,7 @@ function handleCall({ id, tool, args = {} }) {
     if (tool === "mark_cue" || tool === "unmark_cue") {
       const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
       if (busy) return send({ error: busy });
-      if (!cues().on) return send({ error: "Cue marking is off, so == is plain text. Turn it on with set_cue_settings only when the person asks for cues." });
+      if (!cues().on) return send({ error: "Cue marking is off, so ** is plain text. Turn it on with set_cue_settings only when the person asks for cues." });
       const mode = tool === "mark_cue" ? "mark" : "unmark";
       const plan = C.planCues(state.doc, mode, args.cues, { asks: state.asks });
       const n = plan.segments.length ? landAgentCues(plan, mode, agentBy()) : 0;
