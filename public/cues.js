@@ -111,7 +111,7 @@ export function quoteAcrossCues(content, quote) {
   return { start, end, quote: text.slice(start, end) };
 }
 /** What is spoken (links.js spokenText) without the cue marks: for word counts and the camera script. */
-export const spokenWords = (content) => stripCues(spokenText(content));
+export const spokenWords = (content) => spokenText(stripCues(content));
 
 /* ---------- Ctrl/Cmd+B on a selection ---------- */
 // The selection without the spaces at its ends.
