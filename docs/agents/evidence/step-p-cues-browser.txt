@@ -3,6 +3,9 @@ ok the demo script is open; its first spoken paragraph has no cue
 ok bold marking off (the default): Ctrl+B leaves the text as it was
 ok bold marking off: no browser bold and nothing drawn
 ok bold marking off (the default): no B button on the selection bar
+ok bold off: the page shows the comparison, ==bold== and ==== as plain text
+ok bold off: the prompter link keeps them byte for byte
+ok bold off: one Ctrl+Z takes it out again
 ok the script menu shows the Bold settings
 ok Bold marking is on after one click
 ok the prompter-file setting shows, off (strip) by default
@@ -41,7 +44,7 @@ ok deleting the space after a bold word: the text is ==A blank==pag…
 ok deleting the space after a bold word: still bold, the marks hidden
 ok deleting the space after a bold word: no marks in the prompter link
 ok one Ctrl+Z puts the space back
-ok typing right before a bold word: the text is x==A …
+ok typing right before a bold word: the text is ==xA …
 ok typing right before a bold word: still bold, the marks hidden
 ok typing right before a bold word: no marks in the prompter link
 ok one Ctrl+Z takes it back
@@ -50,6 +53,21 @@ ok typing inside a bold word: still bold, the marks hidden
 ok typing inside a bold word: no marks in the prompter link
 ok one Ctrl+Z takes it back
 ok and the Ctrl+Z before it takes the bold off
+ok bold on: the comparison is not drawn as bold
+ok bold on: the prompter link keeps the comparison
+ok bold on: one Ctrl+Z takes it out again
+ok deleting all the words of a bold stretch with real Backspace leaves no marks
+ok and no ==== reaches the prompter link
+ok one Ctrl+Z brings the bold word back
+ok the Ctrl+Z before it takes the bold off
+ok backspacing the first word of a bold stretch leaves the rest bold
+ok with no opening marks left before a space
+ok undo brings it all back
+ok typing right before a bold word joins it
+ok and the typing goes on inside it
+ok undo brings it all back
+ok Enter inside a bold stretch leaves no lone marks
+ok undo brings it all back
 ok Wait for MCP gives a connection token
 ok get_cue_settings: { "on": true, "action": "highlight", "export": "strip", "forScript": false }
 ok mark_cue: Done: 1 cue marked in the text now. The person can undo it. Skipped: "no such words here" (not found word for word in the spoken text).
