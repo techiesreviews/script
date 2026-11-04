@@ -1142,7 +1142,10 @@ function restoreCues({ key, prev }) {
 function cuesChanged() {
   cueMemo = null;
   renderCueMenu();
-  if (state.doc) renderAll(getCaret());
+  if (state.doc) {
+    renderAll(getCaret());
+    renderDerived(); // the prompter link and its too-long check follow the export setting at once
+  }
   if (!bar.hidden) showBar();
 }
 // Bold style: plain bold, or the person's own colours (K.boldStyle lets only "#rrggbb" through to the CSS).
@@ -2589,6 +2592,8 @@ document.addEventListener("keydown", (e) => {
   if (!mod || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === "s") { e.preventDefault(); save(); return; }
+  // Focus in the edit bar (the Ask input, the B button): Ctrl/Cmd+B works there too, on the bar's saved selection.
+  if (k === "b" && !e.shiftKey && state.doc && cues().on && bar.contains(e.target)) { e.preventDefault(); toggleCueHere(); return; }
   if (!state.doc || e.target.closest?.("input, textarea")) return;
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
