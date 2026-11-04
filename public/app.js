@@ -62,7 +62,7 @@ const ICONS = {
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${Object.hasOwn(ICONS, n) ? ICONS[n] : ""}</svg>`;
 const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest", links: "link" };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const actName = (ask) => (ask.action === "cue" ? ask.instruction : ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
+const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
 
 const LS = "script-editor:";
 const FILE_TYPES = [{ description: "Markdown script", accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] } }];
@@ -1204,11 +1204,14 @@ function agentCueSettings(args, by) {
 // Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
 function toggleCueHere() {
   if (!cues().on || state.locked || state.pendingDraft) return;
-  const s = currentSelection();
+  // Focus in the bar (the Ask input, or the B button by keyboard) takes the page's selection away: the bar's saved
+  // selection is what it acts on, as makeAsk does.
+  const inBar = bar.contains(document.activeElement);
+  const s = (inBar && barSel) || currentSelection();
   const b = s && byId(s.id);
-  if (!b || b.type !== "para" || !s.el.contains(s.range.startContainer) || !s.el.contains(s.range.endContainer)) return;
+  if (!b || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return;
   if (!B.spokenBlocks(state.doc).some((x) => x.id === b.id)) return;
-  const res = K.toggleCue(D.contentOf(b), s.start, s.end);
+  const res = cueTry(s);
   if (!C.canToggleCue(state.asks, b.id, b.type, res)) return;
   checkpoint("cue", b.id);
   const r = D.setContent(state.doc, b.id, res.content);
@@ -1216,11 +1219,27 @@ function toggleCueHere() {
   renderBlock(b.id);
   const el = blockNode(b.id);
   if (el) {
-    const sel = getSelection();
-    sel.removeAllRanges();
-    sel.addRange(rangeAt(el, res.start, res.end));
+    const range = rangeAt(el, res.start, res.end);
+    if (!inBar) {
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange() };
+    cueBtnState(barSel);
   }
   changed();
+}
+// What the toggle would do on this selection: null where it can't work (across paragraphs, a link or "=" in the way).
+function cueTry(s) {
+  const b = byId(s.id);
+  return b && s.el.contains(s.range.startContainer) && s.el.contains(s.range.endContainer) ? K.toggleCue(D.contentOf(b), s.start, s.end) : null;
+}
+// The B button: pressed when the selection is bold; disabled where the toggle can't work or is stopped.
+function cueBtnState(s) {
+  const b = byId(s.id), btn = $("#boldBtn"), res = !btn.hidden && cueTry(s);
+  btn.setAttribute("aria-pressed", String(!!b && K.cueSelected(D.contentOf(b), s.start, s.end)));
+  btn.disabled = !res || !C.canToggleCue(state.asks, b.id, b.type, res);
 }
 const cueKeys = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘B" : "Ctrl+B";
 $("#boldBtn").title = `Bold (${cueKeys})`;
@@ -1299,12 +1318,8 @@ function showBar() {
   // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
   $("#brollBtn").hidden = state.guest;
   $("#suggestBroll").hidden = !state.guest;
-  const cueBlock = byId(s.id), cueBtn = $("#boldBtn");
-  cueBtn.hidden = !cues().on || cueBlock?.type !== "para" || !spoken;
-  cueBtn.setAttribute("aria-pressed", String(!!cueBlock && K.cueSelected(D.contentOf(cueBlock), s.start, s.end)));
-  // Disabled where the toggle can't work: across paragraphs, a link or an "=" in the way, under an open ask.
-  const cueTry = cueBlock && !cueBtn.hidden && s.el.contains(s.range.endContainer) && K.toggleCue(D.contentOf(cueBlock), s.start, s.end);
-  cueBtn.disabled = !cueTry || !C.canToggleCue(state.asks, cueBlock.id, cueBlock.type, cueTry);
+  $("#boldBtn").hidden = !cues().on || byId(s.id)?.type !== "para" || !spoken;
+  cueBtnState(s);
   const n = D.countWords(K.spokenWords(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
