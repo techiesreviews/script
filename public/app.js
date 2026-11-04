@@ -1194,13 +1194,10 @@ function agentCueSettings(args, by) {
   // has them (they win), else to the person's.
   const { forScript = ownCues(), ...patch } = args;
   if (forScript && !state.name) return { error: "The open script has no file name yet, so it can't have its own settings. Leave out forScript to set them for the person." };
-  const was = cues(), undoTo = setCues(patch, forScript), now = cues();
-  const words = cueChangeWords(was, now);
+  const hadOwn = ownCues(), was = cues(), undoTo = setCues(patch, forScript), now = cues();
   const stored = JSON.stringify(undoTo.prev) !== JSON.stringify(store.get(undoTo.key));
-  const undoIt = [["Undo", () => { hideBanner(); restoreCues(undoTo); }]];
-  if (words) showBanner(`${by.name} ${words}${forScript ? " for this script" : ""}`, undoIt);
-  else if (stored) showBanner(`${by.name} changed your own bold settings; this script keeps its own`, undoIt);
-  const message = words ? "Done: the person sees the change, with Undo." : stored ? "Saved for the person, but this script has its own cue settings, which win; pass forScript: true to change them." : "Those settings were in force already: nothing changed.";
+  const { banner, message } = K.settingsOutcome({ words: cueChangeWords(was, now), forScript, hadOwn, stored });
+  if (banner) showBanner(`${by.name} ${banner}`, [["Undo", () => { hideBanner(); restoreCues(undoTo); }]]);
   return { result: { message, ...now, forScript: ownCues() } };
 }
 // Ctrl/Cmd+B and the B button: toggle a cue (the person sees it as bold words) on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
@@ -1212,7 +1209,7 @@ function toggleCueHere() {
   if (!b || b.type !== "para" || !s.el.contains(s.range.startContainer) || !s.el.contains(s.range.endContainer)) return;
   if (!B.spokenBlocks(state.doc).some((x) => x.id === b.id)) return;
   const res = K.toggleCue(D.contentOf(b), s.start, s.end);
-  if (!res || C.cueBlocked(state.asks, b.id, res.from, res.to)) return;
+  if (!C.canToggleCue(state.asks, b.id, b.type, res)) return;
   checkpoint("cue", b.id);
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
@@ -1307,7 +1304,7 @@ function showBar() {
   cueBtn.setAttribute("aria-pressed", String(!!cueBlock && K.cueSelected(D.contentOf(cueBlock), s.start, s.end)));
   // Disabled where the toggle can't work: across paragraphs, a link or an "=" in the way, under an open ask.
   const cueTry = cueBlock && !cueBtn.hidden && s.el.contains(s.range.endContainer) && K.toggleCue(D.contentOf(cueBlock), s.start, s.end);
-  cueBtn.disabled = !cueTry || C.cueBlocked(state.asks, cueBlock.id, cueTry.from, cueTry.to);
+  cueBtn.disabled = !cueTry || !C.canToggleCue(state.asks, cueBlock.id, cueBlock.type, cueTry);
   const n = D.countWords(K.spokenWords(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
