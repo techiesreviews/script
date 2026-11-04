@@ -378,7 +378,7 @@ export function listCues(doc) {
   const out = [];
   for (const s of spokenSegments(doc, []).segments) {
     Q.textCues(s.content).forEach((c, i) => out.push({
-      cueId: `${s.id}:${i + 1}`, quote: c.label, section: D.sectionOfBlock(doc, s.id),
+      cueId: `${s.id}:${i + 1}:${c.label}`, quote: c.label, section: D.sectionOfBlock(doc, s.id),
       before: s.content.slice(Math.max(0, c.start - 40), c.start), after: s.content.slice(c.end, c.end + 40),
     }));
   }

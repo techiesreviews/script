@@ -95,7 +95,10 @@ export function toggleCue(content, start, end) {
   if (overlaps(textLinks(text).map((l) => [l.start, l.end]), from, to)) return null;
   const words = stripCues(text.slice(from, to));
   if (!WORDY.test(words) || BAD_WORDS.test(words) || words !== words.trim()) return null;
-  return { content: `${text.slice(0, from)}==${words}==${text.slice(to)}`, start: from + 2, end: from + 2 + words.length, cue: true, from, to };
+  const next = `${text.slice(0, from)}==${words}==${text.slice(to)}`;
+  // The new marks must read back as one cue (not next to an "=" sign), with every other cue still there.
+  if (!textCues(next).some((c) => c.start === from && c.label === words) || textCues(next).length !== cues.length - touched.length + 1) return null;
+  return { content: next, start: from + 2, end: from + 2 + words.length, cue: true, from, to };
 }
 
 /* ---------- The agent's rewrites ---------- */
@@ -144,8 +147,8 @@ export function widenOverCues(content, start, end) {
  * Plan the agent's cue changes in the spoken paragraphs. segments: [{ id, content, avoid? }] in reading order
  * (`avoid`: [[start, end]] other open work points at, as for links). mode "mark": items [{ quote, occurrence? }]:
  * the quote's first free whole-word occurrence (or its `occurrence`-th one, counting every match in reading order)
- * becomes a cue. mode "unmark": items [{ quote } | { cueId }]: that cue's marks go (cueId "<blockId>:<n>", the n-th
- * cue in its block, as listCues gives it). others: the content of blocks where cues don't go, only to explain a skip.
+ * becomes a cue. mode "unmark": items [{ quote } | { cueId }]: that cue's marks go (cueId "<blockId>:<n>:<words>",
+ * the n-th cue in its block with those words, as listCues gives it). others: the content of blocks where cues don't go, only to explain a skip.
  * Returns { segments: [{ id, content, cues: [{ quote }], from, to, delta }] (only the ones that changed; from…to the
  * changed stretch in the old content), skipped: [{ quote, why }] }.
  */
@@ -159,11 +162,13 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
     if (mode === "unmark") {
       let found = null;
       if (cueId) {
-        const [id, n] = [cueId.slice(0, cueId.lastIndexOf(":")), Number(cueId.slice(cueId.lastIndexOf(":") + 1))];
-        const s = state.find((x) => x.id === id);
-        const c = s && Number.isInteger(n) && n >= 1 ? s.cues[n - 1] : null;
-        if (c) found = { s, c };
-        else { skip("no cue with this cueId"); continue; }
+        // "<blockId>:<n>:<words>": the n-th cue in its paragraph, which must still have those words.
+        const m = /^([^:]+):(\d+):(.*)$/s.exec(cueId);
+        const s = m && state.find((x) => x.id === m[1]);
+        const c = s ? s.cues[Number(m[2]) - 1] : null;
+        if (!s || (!c && !s.cues.some((x) => x.label === m[3]))) { skip("no cue with this cueId"); continue; }
+        if (!c || c.label !== m[3]) { skip("this cue has changed; call list_cues again"); continue; }
+        found = { s, c };
       } else {
         const key = quote.split(/\s+/).join(" ");
         for (const s of state) { const c = s.cues.find((x) => x.label.split(/\s+/).join(" ") === key && !s.picks.some((p) => p.start === x.start)); if (c) { found = { s, c }; break; } }
