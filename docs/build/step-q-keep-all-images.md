@@ -12,7 +12,7 @@ Lex (2026-11-04): when the AI updates several images (B-roll sketches, each with
 6. **It can never cover text** (lead's decision, 2026-11-04, after three review rounds on a bar that followed the scroll): the bar is a row of its own in the page's flow, not sticky and not floating. It scrolls away with the page, so someone scrolled down goes back up to press it; each picture's own Keep and Undo stay beside it. Nothing moves the page for it. The row moves the text or the storyboard down when it comes, and what floats over the text (the "/" menu, the selection bar, the cards) follows it.
 7. **Nothing jumps as the count falls:** the row stays when the count falls below two, until the view or the list changes. In the storyboard it lines up with the frames at any width. With large text or in a narrow window its parts wrap, so every one can be reached.
 
-8. **A new name never leaves the page half drawn** (lead's decision, 2026-11-04, from the release review): a script's own bold settings are kept under its name, so a new name can change them. When the demo is saved into the browser, a title changes a browser script's name, or Save as gives it a file's name, the page follows at once. It is redrawn only when the settings really changed, so a rename while typing doesn't disturb the caret.
+8. **A new name changes nothing on the page** (lead's decision, 2026-11-04, from the release review): a script's own bold settings go with it when the demo is saved into the browser, a title changes a browser script's name, or Save as gives it a file's name. Nothing is redrawn, so the caret, a selection, the scroll position and text being typed stay as they are. The earlier rule, that a new name starts without them, is gone (`docs/data-shape.md`).
 
 ## Checks
 
