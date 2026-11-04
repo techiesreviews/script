@@ -1117,7 +1117,7 @@ scriptEl.addEventListener("paste", (e) => {
 /* ---------- Cues (fleet issue #14, Lex 2026-11-04) ---------- */
 // Optional, off by default. Settings (K.cueSettings): the person's own, and the open script's own when one was set
 // for it (by the agent, or by the person once a script has its own); kept in this browser.
-const cueKey = () => `cues:${state.name || ""}`;
+const cueKey = (name = state.name) => `cues:${name || ""}`;
 let cueMemo = null;
 function cues() {
   if (cueMemo?.name !== state.name) cueMemo = { name: state.name, value: K.cueSettings(store.get("cues"), state.name ? store.get(cueKey()) : null) };
@@ -1138,13 +1138,6 @@ function restoreCues({ key, prev }) {
   if (prev == null) store.del(key);
   else store.set(key, prev);
   cuesChanged();
-}
-// A script's own bold settings are kept under its name, so a new name can change them: the page follows at once, never
-// half drawn. It is redrawn only when they really changed, so a rename while typing doesn't disturb the caret.
-function nameChange(change) {
-  const was = JSON.stringify(cues());
-  change();
-  if (JSON.stringify(cues()) !== was) cuesChanged();
 }
 function cuesChanged() {
   cueMemo = null;
@@ -2198,7 +2191,7 @@ async function saveAs() {
         // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees its
         // name there, so its old keys are cleared; a file on disk or the demo keeps its own.
         moveKeys(state.name, handle.name, { clear: !!was, link: broll.link });
-        nameChange(() => { state.name = handle.name; });
+        state.name = handle.name;
       }
       state.handle = handle;
       state.inBrowser = false;
@@ -2444,6 +2437,10 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   const draft = store.get(draftKey(from));
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
+  // A script's own bold settings go with it, so a new name changes nothing on the page and nothing is redrawn. The new
+  // name belongs to this script now: settings left there before go.
+  const own = store.get(cueKey(from));
+  if (own != null) { store.set(cueKey(to), own); if (clear) store.del(cueKey(from)); } else store.del(cueKey(to));
   // The new name belongs to this script now: it takes this script's link, or none (never one left there before).
   await keyed(async () => {
     const stored = await idbGet(brollKey(from));
@@ -2467,7 +2464,7 @@ async function followTitle(handle) {
   // The move is queued before the name changes: a link or unlink made before it went to the old name and moves with
   // it; one made after goes to the new name, after it.
   const moved = moveKeys(from, name, { clear: true });
-  if (handle === state.handle) { nameChange(() => { state.name = name; }); renderTop(); }
+  if (handle === state.handle) { state.name = name; renderTop(); }
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
@@ -2482,7 +2479,7 @@ async function saveInBrowser() {
     const { handle, modified } = await createBrowserScript(D.scriptFileName("", doc, await nameTaken(from)), text);
     if (state.doc === doc) {
       moveKeys(from, handle.name, { link: broll.link });
-      nameChange(() => Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false }));
+      Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false });
     }
     remember(handle, true);
   } catch (e) {
