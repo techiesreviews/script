@@ -375,7 +375,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .md-cue .md-link__words { text-decoration: none; background: var(--accent-soft); color: var(--text); border-radius: 0.2em; box-decoration-break: clone; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
-.menu-action__check { margin-inline-start: auto; color: var(--accent-ink); }
+.menu-action__check { margin-inline-start: auto; }
+.menu-action .menu-action__check svg { color: var(--accent-ink); }
 .menu-action[aria-pressed="false"] .menu-action__check { visibility: hidden; }
 @keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
 
