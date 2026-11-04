@@ -119,6 +119,7 @@
 ✔ edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps; off, as before
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
 ✔ last round: set_cue_settings says where the change really goes
+✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -330,9 +331,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 332
+ℹ tests 333
 ℹ suites 0
-ℹ pass 332
+ℹ pass 333
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
