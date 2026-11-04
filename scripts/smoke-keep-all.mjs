@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Browser check for step Q: "Keep all" and "Undo all" for the agent's pictures, at 1280 px and 390 px.
+// Browser check for step Q: "Keep all" and "Undo all" for the agent's pictures, at 1280 px and 390 px, and the storyboard at 1920 px.
 // Start the Worker and a headless Chrome first (docs/build/step-q-keep-all-images.md says how), then:
 // node scripts/smoke-keep-all.mjs <base URL> <Chrome debugging port> [folder for screenshots]
 // It plays the agent over fetch to /mcp and the person with real clicks over CDP. Only local traffic.
@@ -93,8 +93,8 @@ async function mcp(token, name, args) {
 }
 const drawing = (n) => `<svg viewBox="0 0 260 140"><circle cx="${40 + n * 20}" cy="70" r="30"/></svg>`;
 
-async function run(width, height) {
-  const tag = `${width} px`;
+// A fresh person with the demo open, and the agent connected to their tab.
+async function openDemo(width, height) {
   const { token } = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
   const page = await openPage(width, height);
   await page.send("Page.navigate", { url: `${BASE}/` });
@@ -109,10 +109,34 @@ async function run(width, height) {
   for (let i = 0; ; i++) {
     try { await agent("get_script", {}); break; } catch (e) { if (i > 40) throw e; await sleep(150); }
   }
+  return { page, agent };
+}
+const clickAt = async (page, { x, y }) => { for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 }); };
+const pressKey = async (page, key, code, vk, text) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, ...(type === "keyDown" && text ? { text } : {}) }); };
+
+// Very wide: the storyboard's bar lines up with the storyboard.
+async function runWide(width, height) {
+  const { page, agent } = await openDemo(width, height);
+  await page.click(`#viewSwitch [data-view="board"]`);
+  await page.until(`!document.querySelector("#board").hidden`, "the storyboard");
+  await agent("sketch_shot", { shotId: "B1", svg: drawing(1) });
+  await agent("sketch_shot", { shotId: "B2", svg: drawing(2) });
+  await page.until(`!!document.querySelector("#imagesAll .keep")`, "the bar");
+  await sleep(500); // the bar animates in, sideways
+  const r = await page.eval(`(() => { const a = document.querySelector("#imagesAll .change__bar").getBoundingClientRect(), g = document.querySelector("#board .board__grid").getBoundingClientRect(); return { bar: a.right, grid: g.right }; })()`);
+  check(Math.abs(r.bar - r.grid) <= 1, `${width} px: the storyboard's bar ends where the storyboard ends`, JSON.stringify(r));
+  await page.shot(`${width}-board`);
+  await page.close();
+}
+
+async function run(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
 
   const bar = `document.querySelector("#imagesAll")`;
-  const shown = () => page.eval(`${bar}.hidden ? "" : ${bar}.querySelector(".change__what").textContent`);
-  const barIs = (text, label) => page.until(`(${bar}.hidden ? "" : ${bar}.querySelector(".change__what").textContent) === ${JSON.stringify(text)}`, label);
+  const noBar = `!${bar}.firstChild`;
+  const shown = () => page.eval(`${noBar} ? "" : ${bar}.querySelector(".change__what").textContent`);
+  const barIs = (text, label) => page.until(`(${noBar} ? "" : ${bar}.querySelector(".change__what").textContent) === ${JSON.stringify(text)}`, label);
   const waitingCount = `document.querySelectorAll('#script .frame__bar .keep').length`;
   const pendingPic = (id) => `!!document.querySelector('#script .shot-frame__jump[data-b="${id}"] .frame__img[data-pending]')`;
   const picOf = (id) => page.eval(`document.querySelector('#script .shot-frame__jump[data-b="${id}"] .frame__img')?.innerHTML || ""`);
@@ -121,11 +145,9 @@ async function run(width, height) {
   await agent("sketch_shot", { shotId: "B1", svg: drawing(1) });
   await page.until(pendingPic("B1"), "the first drawing waits");
   check((await shown()) === "", `${tag}: one picture waiting, no Keep all`);
-  const firstLine = `document.querySelector("#script .line").getBoundingClientRect().top`;
-  const lineWas = await page.eval(firstLine);
   await agent("sketch_shot", { shotId: "B2", svg: drawing(2) });
   check(await barIs("2 images", "two pictures"), `${tag}: two pictures waiting, Keep all shows`);
-  check((await page.eval(firstLine)) === lineWas, `${tag}: the text doesn't move when the bar comes`);
+  check(await page.eval(`scrollY === 0 && ${bar}.querySelector(".change__bar").getBoundingClientRect().bottom <= document.querySelector("#script .line").getBoundingClientRect().top`), `${tag}: at the top of the page the bar has its own row, above the text`);
   check((await page.eval(`${bar}.querySelector(".keep").textContent`)) === "Keep all", `${tag}: the button says Keep all`);
   check((await page.eval(`${bar}.querySelector(".undo").textContent`)) === "Undo all", `${tag}: the button says Undo all`);
   await page.eval(`${bar}.querySelector(".keep").focus()`);
@@ -148,12 +170,58 @@ async function run(width, height) {
   const press = await page.eval(`(() => { const r = ${bar}.querySelector(".keep").getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("button")?.dataset.act || ""; })()`);
   check(press === "keep-all", `${tag}: nothing covers the button`, press);
 
+  // The bar never covers the words being edited.
+  const caretClear = `(() => { const b = ${bar}.querySelector(".change__bar").getBoundingClientRect(), r = getSelection().getRangeAt(0).getClientRects()[0]; return !!r && (r.bottom <= b.top || r.top >= b.bottom); })()`;
+  await page.eval(`scrollTo({ top: 700, behavior: "instant" })`);
+  const spot = `(() => { const b = ${bar}.querySelector(".change__bar").getBoundingClientRect(), s = document.querySelector("#script").getBoundingClientRect(), x = s.left + 6, y = (b.top + b.bottom) / 2, r = document.caretRangeFromPoint(x, y), n = r?.startContainer; return n?.nodeType === 3 && n.textContent.trim() && n.parentElement.closest("#script .line") && !n.parentElement.closest(".broll-tags") ? { x, y } : null; })()`;
+  let at0 = null;
+  for (let i = 0; i < 80 && !at0; i++) { at0 = await page.eval(spot); if (!at0) { await page.eval(`scrollBy({ top: 13, behavior: "instant" })`); await sleep(20); } }
+  check(!!at0, `${tag}: a line of text runs beside the bar`);
+  if (at0) {
+    await clickAt(page, at0);
+    await sleep(800); // on a phone Chrome moves a tapped line into view a moment later
+    check(await page.eval(caretClear), `${tag}: a click on a line beside the bar moves that line clear of it`);
+    // Scrolled back so the caret is behind the bar: typing brings it out, and the text is as it was afterwards.
+    await page.eval(`(() => { const b = ${bar}.querySelector(".change__bar").getBoundingClientRect(), r = getSelection().getRangeAt(0).getClientRects()[0]; scrollBy({ top: r.top - b.top, behavior: "instant" }); })()`);
+    await sleep(60);
+    const passed = await page.eval(`(() => { const b = ${bar}.querySelector(".change__bar").getBoundingClientRect(), r = getSelection().getRangeAt(0).getClientRects()[0]; return { bar: [b.top, b.bottom], caret: r && [r.top, r.bottom], y: scrollY, max: document.documentElement.scrollHeight - innerHeight }; })()`);
+    // On a phone width Chrome moves the line with the caret back into view by itself, so only the desktop gets here.
+    if (width > 500) check(passed.caret && passed.caret[0] < passed.bar[1] && passed.caret[1] > passed.bar[0], `${tag}: scrolling alone may pass a line under the bar`, JSON.stringify(passed));
+    await pressKey(page, "x", "KeyX", 88, "x");
+    await sleep(150);
+    check(await page.eval(caretClear), `${tag}: typing on a line behind the bar moves it clear`);
+    await pressKey(page, "Backspace", "Backspace", 8);
+    await sleep(100);
+    check(await page.eval(caretClear), `${tag}: deleting keeps it clear`);
+  }
+  await page.eval(`getSelection().removeAllRanges()`);
+  const sec = await page.eval(`document.querySelectorAll("#toc a[data-sec]")[3].dataset.sec`);
+  await page.click(`#toc a[data-sec="${sec}"]`);
+  await sleep(900);
+  const jump = await page.eval(`(() => { const b = ${bar}.querySelector(".change__bar").getBoundingClientRect(), s = document.getElementById("s-${sec}").getBoundingClientRect(); return { bar: b.bottom, sec: s.top }; })()`);
+  check(jump.sec + 1 >= jump.bar, `${tag}: a jump to a section stops below the bar`, JSON.stringify(jump));
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+
+  // Large text: the whole bar can still be reached.
+  await page.eval(`document.documentElement.style.fontSize = "200%"`);
+  await sleep(100);
+  const big = await page.eval(`(() => { const parts = [...${bar}.querySelectorAll(".change__what, button")].map((e) => e.getBoundingClientRect()); return { left: Math.min(...parts.map((r) => r.left)), right: Math.max(...parts.map((r) => r.right)), view: document.documentElement.clientWidth }; })()`);
+  check(big.left >= 0 && big.right <= big.view, `${tag}: with large text every part of the bar is on screen`, JSON.stringify(big));
+  await page.shot(`${width}-large-text`);
+  await page.eval(`document.documentElement.style.fontSize = ""`);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  await sleep(100);
+
   // Single Keep and Undo still work and count down.
   await page.click(`#script .frame__bar .keep[data-b="B1"]`);
   check(await barIs("2 images", "after one Keep"), `${tag}: one kept by itself, the count goes down`);
+  const lineAt = `document.querySelector("#script .line").getBoundingClientRect().top + scrollY`;
+  const lineWas = await page.eval(lineAt);
   await page.click(`#script .frame__bar .undo[data-b="B2"]`);
-  await page.until(`${bar}.hidden`, "after one Undo");
+  await page.until(`${noBar}`, "after one Undo");
   check((await shown()) === "", `${tag}: one picture left, Keep all goes`);
+  const lineNow = await page.eval(lineAt);
+  check(lineNow === lineWas, `${tag}: the text doesn't jump when the bar goes`, `${lineWas} ${lineNow}`);
   await page.click(`#script .frame__bar .undo[data-b="B3"]`);
   await page.until(`${waitingCount} === 0`, "the last one undone");
 
@@ -162,7 +230,7 @@ async function run(width, height) {
   for (const id of ["B4", "B5", "B6"]) await agent("sketch_shot", { shotId: id, svg: drawing(Number(id[1])) });
   await barIs("3 images", "three again");
   await page.click(`#imagesAll .undo`);
-  await page.until(`${waitingCount} === 0 && ${bar}.hidden`, "after Undo all");
+  await page.until(`${waitingCount} === 0 && ${noBar}`, "after Undo all");
   check(!(await page.eval(pendingPic("B4"))) && (await picOf("B4")) === before, `${tag}: Undo all takes the pictures away, the shot's earlier sketch stays`);
 
   // Keep all: every waiting picture is written; the caret stays; one Ctrl+Z does not take them out (like a single Keep).
@@ -172,7 +240,7 @@ async function run(width, height) {
   const caret = `(() => { const s = getSelection(); return s.anchorNode?.textContent?.slice(0, 20) + " @" + s.anchorOffset; })()`;
   const at = await page.eval(caret);
   await page.click(`#imagesAll .keep`);
-  await page.until(`${waitingCount} === 0 && ${bar}.hidden`, "after Keep all");
+  await page.until(`${waitingCount} === 0 && ${noBar}`, "after Keep all");
   check((await page.eval(caret)) === at, `${tag}: the caret stays where it was`);
   const kept = await Promise.all(["B4", "B5", "B6"].map(picOf));
   check(kept.every((p, i) => p.includes(`cx="${40 + (i + 7) * 20}"`)), `${tag}: Keep all puts all three in`, kept.join(" ").slice(0, 200));
@@ -188,10 +256,10 @@ async function run(width, height) {
   await barIs("2 images", "two to fail");
   await page.eval(`(() => { window.__put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = () => { throw new Error("no room"); }; })()`);
   await page.click(`#imagesAll .keep`);
-  check(await page.until(`document.querySelectorAll('#script .frame__problem').length === 2 && !${bar}.hidden`, "the failed writes"), `${tag}: a failed write shows Not saved on each picture and the bar comes back`);
+  check(await page.until(`document.querySelectorAll('#script .frame__problem').length === 2 && !!${bar}.firstChild`, "the failed writes"), `${tag}: a failed write shows Not saved on each picture and the bar comes back`);
   await page.eval(`IDBObjectStore.prototype.put = window.__put`);
   await page.click(`#imagesAll .keep`);
-  await page.until(`${waitingCount} === 0 && ${bar}.hidden`, "the second try");
+  await page.until(`${waitingCount} === 0 && ${noBar}`, "the second try");
   check((await picOf("B5")).includes(`cx="${40 + 10 * 20}"`) && (await page.eval(`document.querySelectorAll('#script .frame__problem').length`)) === 0, `${tag}: Keep all again puts them in`);
   await agent("sketch_shot", { shotId: "B5", svg: drawing(8) });
   await page.until(pendingPic("B5"), "B5 once more");
@@ -215,13 +283,13 @@ async function run(width, height) {
   check(await barIs("2 images", "two in at once"), `${tag}: two pictures in at once, Keep all shows`);
   await page.shot(`${width}-pictures`);
   await page.click(`#imagesAll .undo`);
-  await page.until(`${marks} === 0 && ${bar}.hidden`, "after Undo all of pictures");
+  await page.until(`${marks} === 0 && ${noBar}`, "after Undo all of pictures");
   check((await picOf("B7")) === b7 && (await picOf("B8")) === b8, `${tag}: Undo all puts back what those shots had`);
   await put("B7");
   await put("B8");
   await barIs("2 images", "two in at once again");
   await page.click(`#imagesAll .keep`);
-  await page.until(`${marks} === 0 && ${bar}.hidden`, "after Keep all of pictures");
+  await page.until(`${marks} === 0 && ${noBar}`, "after Keep all of pictures");
   const stays = await picOf("B7");
   check(stays.includes("<img") && !(await page.eval(pendingPic("B7"))), `${tag}: Keep all leaves the pictures in, without their mark and Undo`);
   check(await page.eval(`!!document.querySelector('#script .shot-frame__jump[data-b="B7"]').closest(".shot-frame[data-drag]")`), `${tag}: the shot can be dragged again`);
@@ -237,7 +305,7 @@ async function run(width, height) {
   await page.shot(`${width}-mix`);
   const sugg = `document.querySelectorAll('#script .shot-frame[data-suggested]').length`;
   await page.click(`#imagesAll .keep`);
-  await page.until(`${sugg} === 0 && ${waitingCount} === 0 && ${bar}.hidden`, "after Keep all of the mix");
+  await page.until(`${sugg} === 0 && ${waitingCount} === 0 && ${noBar}`, "after Keep all of the mix");
   check(await page.eval(`document.querySelector('#script .suggest[data-op="update"] .keep') !== null`), `${tag}: the suggestion without a picture still waits`);
   check((await picOf("S1")).includes(`cx="${40 + 9 * 20}"`), `${tag}: the mix's waiting picture is in`);
   const script = await listed();
@@ -261,10 +329,29 @@ async function run(width, height) {
   // By keyboard: the focus doesn't fall back to the top of the page when the bar goes.
   await page.eval(`${bar}.querySelector(".keep").focus()`);
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
-  await page.until(`${bar}.hidden && !document.querySelector('#board .frame__bar .keep')`, "after Keep all in the storyboard");
+  await page.until(`${noBar} && !document.querySelector('#board .frame__bar .keep')`, "after Keep all in the storyboard");
   check(await page.eval(`document.activeElement === document.querySelector('#viewSwitch [aria-pressed="true"]')`), `${tag}: Keep all by keyboard leaves the focus on the view switch`);
   check(await page.eval(`document.querySelector('#board .frame[data-b="B2"] .frame__img').innerHTML.includes('cx="100"')`), `${tag}: Keep all in the storyboard puts them in`);
   await page.click(`#viewSwitch [data-view="script"]`);
+
+  // The storyboard's frames stay put from two pictures to one and to none; the empty row goes with the view.
+  await page.click(`#viewSwitch [data-view="board"]`);
+  await page.until(`!document.querySelector("#board").hidden`, "the storyboard again");
+  await agent("sketch_shot", { shotId: "B1", svg: drawing(7) });
+  await agent("sketch_shot", { shotId: "B2", svg: drawing(8) });
+  await barIs("2 images", "two for the jump check");
+  const frameAt = `document.querySelector("#board .board__grid").getBoundingClientRect().top + scrollY`;
+  const frameWas = await page.eval(frameAt);
+  await page.click(`#board .frame__bar .undo[data-b="B1"]`);
+  await page.until(`${noBar}`, "two to one");
+  const frameNow = await page.eval(frameAt);
+  check(frameNow === frameWas, `${tag}: the frames don't jump when two pictures become one`, `${frameWas} ${frameNow}`);
+  await page.click(`#board .frame__bar .undo[data-b="B2"]`);
+  await page.until(`!document.querySelector('#board .frame__bar .keep')`, "one to none");
+  check((await page.eval(frameAt)) === frameWas, `${tag}: nor when the last one goes`);
+  await page.click(`#viewSwitch [data-view="script"]`);
+  await page.until(`document.querySelector("#board").hidden`, "back to the script");
+  check(await page.eval(`${bar}.hidden`), `${tag}: the empty row goes with the view`);
 
   // Only what is in sight counts: a shot whose line is gone over the script, a shot the filter hides in the storyboard.
   const text = JSON.parse(await listed()).markdown;
@@ -276,17 +363,17 @@ async function run(width, height) {
   await page.click(`#viewSwitch [data-view="board"]`);
   check(await barIs("3 images", "board count"), `${tag}: in the storyboard, where that shot is listed, it does`);
   await page.click(`#board [data-filter="screen"]`);
-  await page.until(`${bar}.hidden`, "a filter leaves one");
+  await page.until(`${noBar}`, "a filter leaves one");
   check((await shown()) === "", `${tag}: a filter that leaves one picture in sight takes the bar away`);
   await page.click(`#board [data-filter="all"]`);
   await barIs("3 images", "all again");
   await page.click(`#imagesAll .undo`);
-  await page.until(`${bar}.hidden && !document.querySelector('#board .frame__bar .keep')`, "after Undo all in the storyboard");
+  await page.until(`${noBar} && !document.querySelector('#board .frame__bar .keep')`, "after Undo all in the storyboard");
   await page.click(`#viewSwitch [data-view="script"]`);
   await agent("set_script", { markdown: text });
 
   // Kept means written: they are there when the demo is opened again after a reload (its list is kept in the browser).
-  await page.until(`${bar}.hidden`, "the last write");
+  await page.until(`${noBar}`, "the last write");
   await sleep(300);
   await page.send("Page.reload");
   await sleep(300);
@@ -321,6 +408,7 @@ async function run(width, height) {
 try {
   await run(1280, 800);
   await run(390, 760);
+  await runWide(1920, 1000);
 } catch (e) {
   check(false, `stopped: ${e.message}`);
 }

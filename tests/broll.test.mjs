@@ -7,7 +7,7 @@ import {
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList, moveTo, wholeParas, moveOver, snapPara, edgeSpeed, EDGE, stackPushes,
   quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
-  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter, pendingImages,
+  applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter, pendingImages, barScroll,
 } from "../public/broll.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -1116,4 +1116,15 @@ test("pendingImages: only what the person can act on counts", () => {
   const both = pendingImages({ shotIds, waiting: { B1: "<svg/>" }, marked: ["B1"] });
   assert.equal(both.count, 1, "a new picture waiting on a marked shot counts once");
   assert.deepEqual(both.marked, []);
+});
+
+/* Step Q2: the bar never covers the words being edited. */
+test("barScroll: a caret behind the bar is moved just below it; a caret clear of it stays", () => {
+  const bar = { top: 100, bottom: 127 };
+  assert.equal(barScroll({ top: 110, bottom: 130 }, bar), -25, "behind the bar: the page moves so the line starts 8 px under it");
+  assert.equal(barScroll({ top: 90, bottom: 105 }, bar), -45, "half behind its top edge too");
+  assert.equal(barScroll({ top: 127, bottom: 150 }, bar), 0, "just below the bar");
+  assert.equal(barScroll({ top: 70, bottom: 100 }, bar), 0, "just above the bar");
+  assert.equal(barScroll(null, bar), 0, "no caret");
+  assert.equal(barScroll({ top: 110, bottom: 130 }, null), 0, "no bar");
 });
