@@ -195,64 +195,65 @@ async function runBold(width, height) {
   await page.close();
 }
 
-// A script's own bold settings are kept under its name. When the name changes the page follows at once, never half drawn:
-// here the script's own setting is on and the person's is off, so the new name has bold off.
+// A script's own bold settings follow it to a new name: its name changes and nothing on the page is redrawn, so the caret,
+// a selection, the scroll position and any text being typed stay as they are. The person's own setting stays off.
 async function runRename(width, height) {
   const tag = `${width} px`;
   const { page, agent } = await openDemo(width, height);
   const name = `document.querySelector(".doc__name").textContent`;
   const drawn = `document.querySelectorAll("#script [data-cue]").length`;
-  const ownBoldOn = async (label) => {
-    await agent("set_cue_settings", { on: true, forScript: true });
-    await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, `the script's own bold on: ${label}`);
-    await page.until(`${drawn} >= 1 || true`, "settings drawn");
-  };
-  const markWord = async () => {
-    await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
-    await doubleClick(page, await page.eval(wordSpot));
-    await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button to mark a word");
-    await page.click("#boldBtn");
-    await page.until(`${drawn} === 1`, "the marked word");
-    await page.eval(`getSelection().removeAllRanges()`);
-  };
-  const followed = async (what, was) => {
+  const onInMenu = `document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`;
+  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: the person's own bold setting is off`);
+  await agent("set_cue_settings", { on: true, forScript: true });
+  await page.until(onInMenu, "the script's own bold on");
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  await doubleClick(page, await page.eval(wordSpot));
+  await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button to mark a word");
+  await page.click("#boldBtn");
+  await page.until(`${drawn} === 1`, "the marked word");
+  await page.eval(`getSelection().removeAllRanges()`);
+  // The same element before and after shows that nothing was redrawn.
+  const hold = () => page.eval(`(() => { window.__word = document.querySelector("#script [data-cue]"); window.__title = [...document.querySelectorAll("#script .block, #script [data-id]")].find((e) => e.textContent.includes("How to Write")); })()`);
+  const kept = async (what, was, extra = "") => {
     check(await page.until(`${name} !== ${JSON.stringify(was)}`, `${what}: the new name`, 10000), `${tag}: ${what}: the name changes`);
     await sleep(300);
-    check((await page.eval(drawn)) === 0, `${tag}: ${what}: bold is off everywhere on the page at once`, await page.eval(drawn));
-    check(await page.eval(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "false"`), `${tag}: ${what}: the menu says Bold marking is off`);
+    check((await page.eval(drawn)) === 1 && (await page.eval(onInMenu)), `${tag}: ${what}: the script keeps its own bold setting`);
+    check(await page.eval(`window.__word?.isConnected && window.__word === document.querySelector("#script [data-cue]") && !!window.__title?.isConnected`), `${tag}: ${what}: nothing on the page is redrawn`);
+    check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: ${what}: the person's own setting is untouched`);
+    if (extra) check(await page.eval(extra), `${tag}: ${what}: the selection and the place on the page stay`);
   };
-  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: the person's own bold setting is off`);
 
   // The demo saved into the browser takes the title's name.
-  await ownBoldOn("the demo");
-  await markWord();
   let was = await page.eval(name);
+  await hold();
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", modifiers: 2, windowsVirtualKeyCode: 83 });
-  await followed("saved into the browser", was);
+  await kept("saved into the browser", was);
 
-  // A script in the browser follows its title.
-  await ownBoldOn("the script in the browser");
-  check((await page.eval(drawn)) === 1, `${tag}: the script's own bold on draws the marked word`, await page.eval(drawn));
+  // A script in the browser follows its title, with a word selected and the page scrolled meanwhile.
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   was = await page.eval(name);
   const title = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
   await clickAt(page, title);
   await sleep(150);
   await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); })()`);
   await pressKey(page, "z", "KeyZ", 90, "z");
-  await followed("the title changed", was);
-  check(await page.eval(`(getSelection().anchorNode?.textContent || "").includes("How to Write")`), `${tag}: the caret stays in the title through the redraw`);
+  await sleep(100);
+  await hold();
   await doubleClick(page, await page.eval(wordSpot));
-  check(await page.until(`!document.querySelector("#editBar").hidden`, "the selection bar after the rename"), `${tag}: the selection bar works after the rename`);
-  check(await page.eval(`document.querySelector("#boldBtn").hidden`), `${tag}: no B button once bold is off`);
+  const chosen = await page.eval(`getSelection().toString().trim()`);
+  await kept("the title changed", was, `getSelection().toString().trim() === ${JSON.stringify(chosen)} && ${JSON.stringify(chosen)} !== ""`);
+  check(!(await page.eval(`document.querySelector("#boldBtn").hidden`)), `${tag}: the B button is still there after the rename`);
   await page.eval(`getSelection().removeAllRanges()`);
 
   // Save as: the file's name.
-  await ownBoldOn("before Save as");
-  check((await page.eval(drawn)) === 1, `${tag}: the marked word is drawn before Save as`, await page.eval(drawn));
   was = await page.eval(name);
+  await hold();
+  await page.eval(`scrollTo({ top: 120, behavior: "instant" })`);
+  await sleep(300); // on a phone the section chip's own scrollIntoView settles first
+  const yWas = await page.eval(`scrollY`);
   await page.eval(`window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("saved-as.md", { create: true })`);
   await page.eval(`document.querySelector("#saveAsAction").click()`);
-  await followed("Save as", was);
+  await kept("Save as", was, `scrollY === ${yWas}`);
   await page.close();
 }
 
@@ -596,6 +597,7 @@ try {
   await runBold(1280, 800);
   await runBold(390, 760);
   await runRename(1280, 800);
+  await runRename(390, 760);
 } catch (e) {
   check(false, `stopped: ${e.message}`);
 }
