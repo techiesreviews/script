@@ -3,7 +3,7 @@
 // stays off until it is switched on. It also runs against the live site after a deploy: it sends only test data, through this browser.
 // Start the Worker and a headless Chrome first (docs/build/step-q-keep-all-images.md says how), then:
 // node scripts/smoke-keep-all.mjs <base URL> <Chrome debugging port> [folder for screenshots]
-// It plays the agent over fetch to /mcp and the person with real clicks over CDP. Only local traffic.
+// It plays the agent over fetch to /mcp and the person with real clicks over CDP. Its traffic goes to the base URL and the debugging port.
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const BASE = (process.argv[2] || "http://127.0.0.1:8787").replace(/\/$/, "");
@@ -439,6 +439,26 @@ async function run(width, height) {
   await page.click(`#viewSwitch [data-view="script"]`);
   await page.until(`document.querySelector("#board").hidden`, "back to the script");
   check(await page.eval(`${bar}.hidden`), `${tag}: the empty row goes with the view`);
+
+  // Back from the storyboard the text is where it was, though the row went while the person was away.
+  await agent("sketch_shot", { shotId: "B1", svg: drawing(2) });
+  await agent("sketch_shot", { shotId: "B2", svg: drawing(3) });
+  await barIs("2 images", "two for the way back");
+  await page.eval(`scrollTo({ top: 300, behavior: "instant" })`);
+  await sleep(60);
+  const screenAt = `document.querySelector("#script .line").getBoundingClientRect().top`;
+  const screenWas = await page.eval(screenAt);
+  await page.eval(`document.querySelector('#viewSwitch [data-view="board"]').click()`); // no scrolling to the button first
+  await page.until(`!document.querySelector("#board").hidden`, "the storyboard for the way back");
+  await pressBar(page, "keep");
+  await page.until(`${noBar} && !document.querySelector('#board .frame__bar .keep')`, "Keep all for the way back");
+  await page.eval(`document.querySelector('#viewSwitch [data-view="script"]').click()`);
+  await page.until(`document.querySelector("#board").hidden`, "the script again");
+  await sleep(100);
+  const screenNow = await page.eval(screenAt);
+  // On a phone width the section chip's own scrollIntoView (renderToc, not this feature) nudges the page by about 8 px.
+  check(Math.abs(screenNow - screenWas) <= (width < 500 ? 9 : 1), `${tag}: back from the storyboard, the text is where it was`, `${screenWas} ${screenNow}`);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
 
   // Only what is in sight counts: a shot whose line is gone over the script, a shot the filter hides in the storyboard.
   const text = JSON.parse(await listed()).markdown;

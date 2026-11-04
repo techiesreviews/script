@@ -1,4 +1,4 @@
-# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px, and bold marking (step P) at 1280 px and 390 px; a fresh browser context per run and for the guest. 2026-11-04T21:55:06Z, run on the working tree on top of f27b485, itself on top of step P.
+# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px, and bold marking (step P) at 1280 px and 390 px; a fresh browser context per run and for the guest. 2026-11-04T22:01:22Z, run on the working tree on top of 9ff7813, itself on top of step P.
 ok 1280 px: one picture waiting, no Keep all
 ok 1280 px: a paragraph to open the menus on
 ok 1280 px: two pictures waiting, Keep all shows
@@ -51,6 +51,7 @@ ok 1280 px: Keep all in the storyboard puts them in
 ok 1280 px: the frames don't jump when two pictures become one
 ok 1280 px: nor when the last one goes
 ok 1280 px: the empty row goes with the view
+ok 1280 px: back from the storyboard, the text is where it was
 ok 1280 px: the line for B8 is in the script
 ok 1280 px: over the script, a picture for a shot without a line doesn't count
 ok 1280 px: in the storyboard, where that shot is listed, it does
@@ -112,6 +113,7 @@ ok 390 px: Keep all in the storyboard puts them in
 ok 390 px: the frames don't jump when two pictures become one
 ok 390 px: nor when the last one goes
 ok 390 px: the empty row goes with the view
+ok 390 px: back from the storyboard, the text is where it was
 ok 390 px: the line for B8 is in the script
 ok 390 px: over the script, a picture for a shot without a line doesn't count
 ok 390 px: in the storyboard, where that shot is listed, it does
