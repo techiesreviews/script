@@ -251,3 +251,9 @@ test("review 4: a rewrite of words inside one cue keeps the cue around the new w
   // New words that can't sit in a cue (an = sign) take the whole cue in instead.
   assert.deepEqual(Q.widenOverCues("We ==start here== now.", 11, 15, "a=b"), { start: 3, end: 17, before: "start ", after: "" });
 });
+
+test("review 5: with cue marking off, a dropped cue is reported without asking the agent to mark it again", () => {
+  assert.match(C.answerResult("replace", { cuesDropped: 1, cuesOn: true }), /mark_cue/);
+  assert.doesNotMatch(C.answerResult("replace", { cuesDropped: 1, cuesOn: false }), /mark_cue/);
+  assert.match(C.answerResult("replace", { cuesDropped: 1, cuesOn: false }), /removed 1 cue/);
+});
