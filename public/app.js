@@ -62,7 +62,7 @@ const ICONS = {
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${Object.hasOwn(ICONS, n) ? ICONS[n] : ""}</svg>`;
 const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest", links: "link" };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
+const actName = (ask) => (ask.action === "cue" ? ask.instruction : ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
 
 const LS = "script-editor:";
 const FILE_TYPES = [{ description: "Markdown script", accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] } }];
@@ -4264,7 +4264,10 @@ function handleCall({ id, tool, args = {} }) {
     }
     if (tool === "list_asks") return send({ result: { asks: state.asks.map(askForList) } });
     if (tool === "get_cue_settings") return send({ result: { ...cues(), forScript: ownCues() } });
-    if (tool === "set_cue_settings") return send(agentCueSettings(args, agentBy()));
+    if (tool === "set_cue_settings") {
+      const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
+      return send(busy ? { error: busy } : agentCueSettings(args, agentBy()));
+    }
     if (tool === "list_cues") return send({ result: { cues: C.listCues(state.doc), settings: cues() } });
     if (tool === "mark_cue" || tool === "unmark_cue") {
       const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
@@ -4291,7 +4294,7 @@ function handleCall({ id, tool, args = {} }) {
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
       const cuesDropped = cueDrops.get(ask.id) || 0;
       cueDrops.delete(ask.id);
-      return send({ result: C.answerResult(checked.answer.kind, { cuesDropped }) });
+      return send({ result: C.answerResult(checked.answer.kind, { cuesDropped, cuesOn: cues().on }) });
     }
     if (tool === "answer_broll") {
       if (args.askId == null) return send(ownBroll(args));
