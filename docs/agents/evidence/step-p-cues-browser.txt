@@ -41,4 +41,6 @@ ok the top line says it was for this script, with Undo
 ok then set_cue_settings without forScript turns it on where it counts (the script's own)
 ok 390 px: the B button shows on the selection bar, inside the screen
 ok 390 px: no sideways scroll
+ok 390 px: the text input is at least 200 px wide, the bar wraps inside the screen, B before it
+ok 1280 px: the text input is at least 200 px wide, inside the screen
 ok no page errors
