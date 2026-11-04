@@ -250,7 +250,7 @@ export const TOOLS = [
       properties: {
         cues: {
           type: "array", minItems: 1, maxItems: CUE_LIMITS.cues,
-          items: { type: "object", properties: { quote: str(LIMITS.quote, "The cue's words, exactly."), cueId: str(LIMITS.askId, "A cueId from list_cues.") }, additionalProperties: false },
+          items: { type: "object", properties: { quote: str(LIMITS.quote, "The cue's words, exactly."), cueId: str(LIMITS.quote + 60, "A cueId from list_cues.") }, additionalProperties: false },
         },
       },
       required: ["cues"],
@@ -391,7 +391,7 @@ export function checkArgs(name, args) {
         if (typeof c.quote !== "string" || !c.quote.trim()) return `${at} needs quote: words copied exactly from the spoken text.`;
         if (c.occurrence != null && !(Number.isInteger(c.occurrence) && c.occurrence >= 1 && c.occurrence <= 1000)) return `${at}: occurrence must be a whole number from 1 to 1000.`;
       } else {
-        if (c.cueId != null && (typeof c.cueId !== "string" || !c.cueId || c.cueId.length > LIMITS.askId)) return `${at}: cueId must be a cueId from list_cues.`;
+        if (c.cueId != null && (typeof c.cueId !== "string" || !c.cueId || c.cueId.length > LIMITS.quote + 60)) return `${at}: cueId must be a cueId from list_cues.`;
         const hasQuote = typeof c.quote === "string" && !!c.quote.trim();
         if (hasQuote && c.cueId != null) return `${at}: give quote or cueId, not both.`;
         if (!hasQuote && c.cueId == null) return `${at} needs quote or cueId.`;
