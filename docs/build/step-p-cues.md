@@ -2,11 +2,11 @@
 
 Lex (2026-11-04): cues are optional and off by default; the settings are chosen by the person and by the agent; with cues off the editor works as today. He wants to try cues on one real script before deciding. Spec and decisions: fleet `script-editor-cues-spec.md` (sections 3, 4 and 7), tracked as techiesreviews/fleet#14. This step is the editor part only; the prompter does not read cues yet, so its export strips them by default.
 
-Lex's design change (2026-11-04, spec section 8, folded into this step): the "Cue" button and word are gone. A bold **B** icon button sits before the text input on the edit bar (Ctrl+B / ⌘B, tooltip "Bold (Ctrl+B)"); while it shows, the text input stays at least 200 px wide and the bar wraps, as in the approved mock-up. Marked words show bold, and a "Bold style" setting adds the person's own background and font colour, off by default. Saved as `==words==`. Words the person sees say "bold"; the MCP tool names (`list_cues`, `mark_cue`, `unmark_cue`, `get_cue_settings`, `set_cue_settings`), the setting keys and the code keep "cue". The B button stays hidden until Bold marking is on (Lex's section 7: off by default, today's behaviour unchanged). The autocomplete and Tab hint are fleet issue #25, later.
+Lex's design change (2026-11-04, spec section 8, folded into this step): the "Cue" button and word are gone. A bold **B** icon button sits before the text input on the edit bar (Ctrl+B / ⌘B, tooltip "Bold (Ctrl+B)"); while it shows, the text input stays at least 200 px wide and the bar wraps, as in the approved mock-up. Marked words show bold, and a "Bold style" setting adds the person's own background and font colour, off by default. Saved as `**words**`. Words the person sees say "bold"; the MCP tool names (`list_cues`, `mark_cue`, `unmark_cue`, `get_cue_settings`, `set_cue_settings`), the setting keys and the code keep "cue". The B button stays hidden until Bold marking is on (Lex's section 7: off by default, today's behaviour unchanged). The autocomplete and Tab hint are fleet issue #25, later.
 
 ## What changes
 
-- `public/cues.js` (new): the cue format `==words==`, the settings, the Ctrl/Cmd+B toggle, the rewrite rule and the agent's cue plans. Pure; tests in `tests/cues.test.mjs`.
+- `public/cues.js` (new): the cue format `**words**`, the settings, the Ctrl/Cmd+B toggle, the rewrite rule and the agent's cue plans. Pure; tests in `tests/cues.test.mjs`.
 - `public/app.js`: cues drawn with the links' show/hide trick; Ctrl/Cmd+B and the B button; the Bold settings and Bold style in the file name's menu; the agent's `list_cues`, `mark_cue`, `unmark_cue`, `get_cue_settings`, `set_cue_settings`; `get_script` lists cues while on; the prompter export follows the export setting.
 - `public/app.css`: the look in two rules (`.md-cue .md-link__words`): plain bold, or the person's own colours.
 - `public/changes.js`: `listCues`, `planCues`, `landCues`; a replace keeps cues whose words survive and says how many went. `public/links.js`: links never land inside a cue. `public/doc.js`: exports and counts read cue words.
@@ -17,11 +17,11 @@ Lex's design change (2026-11-04, spec section 8, folded into this step): the "Cu
 
 Open a script, open the file name's menu, turn on Bold marking. Select a few words and press Ctrl+B (⌘B on a Mac) or B on the selection bar; press again to take it off; Ctrl+Z undoes either. Ask your agent to mark some words, then undo it from its name tag. Try "Use my own colours for bold". Export the prompter file: the words come out plain unless "Bold words in the prompter file" is on.
 
-## Off means off (2026-11-05, fleet lead for Lex)
+## Off means off, and `**` (2026-11-05, fleet lead for Lex)
 
-The release review of PR #14 found: with Bold marking off, `if name=="Lex" or id=="7"` exported as `if name"Lex" or id"7"`; and deleting all of a bold stretch's words left `====`. Decisions: off, nothing is read or stripped anywhere; on, an opening `==` right after a letter, digit, `=`, `!`, `<` or `>` is plain text; an edit that empties a bold stretch takes its marks away. Words marked bold earlier show their `==` while it is off.
+The release review of PR #14 found: with Bold marking off, `if name=="Lex" or id=="7"` exported as `if name"Lex" or id"7"`; and deleting all of a bold stretch's words left `====`. Reviews then kept finding more comparison shapes the `==` mark had to guess at, so the lead changed the mark: `**words**`, the standard Markdown bold. Bold was never released (not on `main`), so no stored script needs converting. Decisions: off, nothing is read or stripped anywhere; on, a `**` pair at word boundaries with no space inside its edges is bold, and there are no comparison rules left; an edit that empties a stretch takes its marks at edit time for everyone, read from the text alone, the one thing that happens while it is off; asks follow marks by offsets, never by a search; `mark_cue` checks each quote on its own; marks never flag a B-roll shot.
 
-The next review's fixes, by the same lead's guidance: `==` after a closing bracket or closing quote is plain too; a guest's edit is settled at edit time, without any setting travelling, when it empties a stretch (the one change that happens while bold is off: `====` from that edit goes, read from the text alone). An open ask follows a bold word when a letter is typed right before it; `mark_cue` checks each quote on its own.
+The prompter shows `**` as literal asterisks today (it reads only `### **…**` headings), so the export stays Lex's optional setting: stripped unless "Bold words in the prompter file" is on. Words marked bold earlier show their `**` while bold is off.
 
 ## Not in this step
 
