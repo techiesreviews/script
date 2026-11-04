@@ -87,7 +87,7 @@ const paras = (doc) => doc.blocks.filter((b) => b.type === "para");
 test("agent: list_cues lists each cue with its id, section and the words around it", () => {
   const doc = script();
   const [, p2] = paras(doc);
-  assert.deepEqual(C.listCues(doc), [{ cueId: `${p2.id}:1`, quote: "second", section: "1 · Hook", before: "A ", after: " line, we go." }]);
+  assert.deepEqual(C.listCues(doc), [{ cueId: `${p2.id}:1:second`, quote: "second", section: "1 · Hook", before: "A ", after: " line, we go." }]);
 });
 
 test("agent: mark_cue marks the first free whole-word occurrence; skips what it can't mark, with the reason", () => {
@@ -113,7 +113,7 @@ test("agent: mark_cue stays out of open asks; unmark_cue by quote or cueId keeps
   const ask = D.makeAsk(doc, { blockId: p1.id, start: 3, end: 13, action: "simpler", by: { id: "lex", name: "Lex" } });
   const busy = C.planCues(doc, "mark", [{ quote: "start here" }], { asks: [ask] });
   assert.deepEqual(busy, { segments: [], skipped: [{ quote: "start here", why: "under an open ask or change" }] });
-  const un = C.planCues(doc, "unmark", [{ cueId: `${p2.id}:1` }, { quote: "go" }, { cueId: "nope:1" }]);
+  const un = C.planCues(doc, "unmark", [{ cueId: `${p2.id}:1:second` }, { quote: "go" }, { cueId: "nope:1" }]);
   assert.deepEqual(un.segments.map((s) => s.content), ["A second line, we go."]);
   assert.deepEqual(un.skipped, [{ quote: "go", why: "no cue with these words" }, { quote: "nope:1", why: "no cue with this cueId" }]);
 });
@@ -226,4 +226,15 @@ test("review 2: a rewrite over half a cue takes the whole cue in, so no stray ==
   assert.equal(D.contentOf(p).replace(/==[^=]+==/g, "").includes("=="), false);
   assert.deepEqual(Q.keepCues("==go== and ==go==", "We go and go"), { text: "We ==go== and ==go==", dropped: 0 });
   assert.deepEqual(Q.keepCues("==go== and ==go==", "We ==go== now"), { text: "We ==go== now", dropped: 1 });
+});
+
+test("review 3: Ctrl+B next to an = sign changes nothing; a cueId names its words, so a moved cue is not removed by mistake", () => {
+  assert.equal(Q.toggleCue("==go==now", 6, 9), null);
+  assert.equal(Q.toggleCue("x=go", 2, 4), null);
+  const doc = script();
+  const [, p2] = paras(doc);
+  assert.equal(C.listCues(doc)[0].cueId, `${p2.id}:1:second`);
+  D.setContent(doc, p2.id, "A ==new== and ==second== line, we go.");
+  assert.deepEqual(C.planCues(doc, "unmark", [{ cueId: `${p2.id}:1:second` }]).skipped, [{ quote: `${p2.id}:1:second`, why: "this cue has changed; call list_cues again" }]);
+  assert.deepEqual(C.planCues(doc, "unmark", [{ cueId: `${p2.id}:2:second` }]).segments.map((s) => s.content), ["A ==new== and second line, we go."]);
 });
