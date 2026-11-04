@@ -88,6 +88,37 @@
 ✔ connection prompt: it names the prompt and the tools that answer asks
 ✔ top bar: no "Saved" time is shown (Lex, 2026-10-29); unsaved, saving and not saved still are
 ✔ top bar (Lex, 2026-10-29): Export last and primary with Export all first; Share icon-only; the MCP mark until connected
+✔ settings: off by default, highlight only, export strips; a script's own settings win over the person's
+✔ format: ==words== in a line; no brackets, = or line breaks inside; a letter or digit; not inside a link
+✔ toggle: marks the selected words, a second toggle takes the marks off, the words stay
+✔ toggle: half a cue or across two joins into one cue; refuses links, line breaks and no words
+✔ export: the prompter file strips cues unless the export setting says show
+✔ agent: list_cues lists each cue with its id, section and the words around it
+✔ agent: mark_cue marks the first free whole-word occurrence; skips what it can't mark, with the reason
+✔ agent: mark_cue stays out of open asks; unmark_cue by quote or cueId keeps the words
+✔ agent: landed cues are marked changes with Undo on the agent's name tag; Undo puts the text back
+✔ rewrite: a cue stays when its words survive the agent's new text; else it is dropped and the agent is told
+✔ MCP: list_cues, mark_cue, unmark_cue and the cue settings, with their checks
+✔ review: no stray == marks: a quote across a line break or next to an = sign is skipped, with the reason
+✔ review: links never land inside a cue; a rewrite whose cues would change the block keeps the text without them
+✔ review 2: Ctrl+B never cuts into an open ask; the toggle says which stretch it changes
+✔ review 2: a rewrite over half a cue takes the whole cue in, so no stray == is left; duplicates count
+✔ review 3: Ctrl+B next to an = sign changes nothing; a cueId names its words, so a moved cue is not removed by mistake
+✔ Lex's decision 6: a rewrite reaching into a cue keeps it only if its words survive, and the agent is told
+✔ review 5: with cue marking off, a dropped cue is reported without asking the agent to mark it again
+✔ lead fixes: Ctrl+B takes off a cue the agent just marked; a shown cue never splits across prompter lines
+✔ lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an open ask over the cue
+✔ PR 8 fixes: the cue tools don't treat the agent's highlighted changes as busy; open asks still count
+✔ PR 8 fixes: a letter or digit right outside == is not a cue, so ordinary text stays as it is
+✔ PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds the marks
+✔ PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion
+✔ bold style: plain bold by default, own colours only as a valid choice, kept per person
+✔ agent settings: what the person and the agent are told says where the setting went
+✔ Sounds like me: a quote read without the marks is found across a cue's edge, covering the whole cue
+✔ Ctrl+B changes nothing where taking the marks off would change the kind of block
+✔ edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps; off, as before
+✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
+✔ last round: set_cue_settings says where the change really goes
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -183,7 +214,7 @@
 ✔ initialize passes the client's name and version to the relay, cut short
 ✔ checkToken: a token lives 8 hours from its birth on the Worker's clock
 ✔ /mcp: a token past its time, or from the future, is refused without asking the relay
-✔ tools/list has the ten tools with input schemas and limits
+✔ tools/list has the fifteen tools with input schemas and limits
 ✔ prompts: watch_script sets up the loop
 ✔ ping, unknown methods and unknown tools
 ✔ 401 without a valid Bearer token, or when the relay does not know it
@@ -299,9 +330,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 301
+ℹ tests 332
 ℹ suites 0
-ℹ pass 301
+ℹ pass 332
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

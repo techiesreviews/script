@@ -268,14 +268,14 @@ export const TOOLS = [
   {
     name: "set_cue_settings",
     title: "Change cue settings",
-    description: "Changes cue settings, only when the person asks. Give any of on, action, export. forScript: true sets them for the open script only (else for the person). The person sees the change at once, with Undo. Turning cue marking off keeps the cues in the text.",
+    description: "Changes cue settings, only when the person asks. Give any of on, action, export. forScript: true sets them for the open script only. Without forScript: the script's own settings if it has them, else the person's. forScript: false always sets the person's. The person sees the change at once, with Undo. Turning cue marking off keeps the cues in the text.",
     inputSchema: {
       type: "object",
       properties: {
         on: { type: "boolean" },
         action: { type: "string", enum: ["highlight", "camera"] },
         export: { type: "string", enum: ["strip", "show"] },
-        forScript: { type: "boolean", description: "true: for the open script only." },
+        forScript: { type: "boolean", description: "true: the open script only; false: the person's; left out: the script's own settings if it has them, else the person's." },
       },
       additionalProperties: false,
     },
