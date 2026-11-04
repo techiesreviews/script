@@ -2785,6 +2785,7 @@ function renderView() {
   for (const b of $$("#viewSwitch button")) b.setAttribute("aria-pressed", String(b.dataset.view === (board ? "board" : "script")));
   renderBoard();
   if (!board) placeFrames();
+  renderImagesAll();
 }
 $("#viewSwitch").addEventListener("click", (e) => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
 
@@ -2795,6 +2796,11 @@ const FILTERS = [
   ["motion", "Motion plates", (s) => s.kind === "motion"],
   ["screen", "Screen", (s) => s.kind === "screen"],
 ];
+const filterCounts = (real) => FILTERS.map(([id, name, keep]) => [id, name, keep, real.filter(keep).length]).filter((f) => f[3] > 0);
+function boardFilter(real) {
+  const counts = filterCounts(real);
+  return counts.find((f) => f[0] === broll.filter) || counts[0] || ["all", "All", () => true, 0];
+}
 function boardHead() {
   if (state.guest) return broll.status === "ok" ? `<div class="board__file">${icon("film")}<span class="board__name">${esc(broll.link?.name || "B-roll list")}</span></div>` : "";
   const show = B.boardHeadState(broll.link, broll.status);
@@ -2833,8 +2839,8 @@ function renderBoard() {
   const adds = suggestedAdds();
   if (real.length || adds.length) {
     // Suggested adds count in no filter until they are kept; they show under "All".
-    const counts = FILTERS.map(([id, name, keep]) => [id, name, keep, real.filter(keep).length]).filter((f) => f[3] > 0);
-    const current = counts.find((f) => f[0] === broll.filter) || counts[0] || ["all", "All", () => true, 0];
+    const counts = filterCounts(real);
+    const current = boardFilter(real);
     const chips = counts.map(([id, name, , n]) => `<button class="chip" type="button" data-act="filter" data-filter="${id}" aria-pressed="${id === current[0]}">${name} · ${n}</button>`).join("");
     const order = B.scriptOrder(state.doc, [...real.filter(current[2]), ...(current[0] === "all" ? adds : [])]);
     const found = order.filter((s) => covered(s).length), lost = order.filter((s) => !covered(s).length);
@@ -2853,7 +2859,7 @@ $("#board").addEventListener("click", (e) => {
     if (a === "link") linkBroll();
     else if (a === "unlink") unlinkBroll();
     else if (a === "allow") { const t = ++broll.token; readBroll(t, true); }
-    else if (a === "filter") { broll.filter = act.dataset.filter; renderBoard(); }
+    else if (a === "filter") { broll.filter = act.dataset.filter; renderBoard(); renderImagesAll(); }
     else if (a === "save-list") saveListAs();
     else if (a === "plan") requestPlan();
     else if (a === "plan-cancel") cancelPlan();
@@ -3660,25 +3666,34 @@ function keepAllAction() {
    on. Each picture goes the way its own Keep or Undo goes; a kept picture has no Undo afterwards, like a single Keep. */
 function imagesOpen() {
   if (state.guest || !state.doc) return B.pendingImages(); // guests see the pictures; the host keeps or undoes them
+  // Only what is in sight: over the script the shots with a frame, over the storyboard the shots its filter shows.
+  const board = ui.view === "board";
+  const real = broll.status === "ok" ? broll.shots : [];
+  const filter = boardFilter(real);
+  const inScript = (s) => !!wrapOf(covered(s)[0]);
   return B.pendingImages({
-    shotIds: broll.status === "ok" ? broll.shots.map((s) => s.id) : [],
+    shotIds: real.filter((s) => (board ? filter[2](s) : inScript(s))).map((s) => s.id),
     waiting: sketchAsk()?.answer?.sketches,
     marked: Object.keys(broll.marked).filter(markedSketch),
-    suggestions: openSuggestions(),
+    suggestions: suggestedAdds().filter((x) => (board ? filter[0] === "all" : inScript(x))),
     saving: broll.saving,
   });
 }
-let imagesShown = 0;
 function renderImagesAll() {
   const open = imagesOpen();
-  const n = open.show ? open.count : 0;
-  if (n === imagesShown) return; // redrawn only when it changes, so the bar doesn't animate in again
-  imagesShown = n;
   const el = $("#imagesAll");
-  el.hidden = !n;
-  el.innerHTML = n ? `<span class="change__bar"><span class="change__what">${icon("sketch")}<span>${n} images</span></span>`
-    + `<button type="button" class="undo" data-act="undo-all" aria-label="Undo all ${n} images">${icon("undo")}Undo all</button>`
-    + `<button type="button" class="keep" data-act="keep-all" aria-label="Keep all ${n} images">${icon("check")}Keep all</button></span>` : "";
+  if (!open.show) { el.hidden = true; el.replaceChildren(); return; }
+  // Built once, then only its words change: focus and a press in progress stay, and it doesn't animate in again.
+  if (el.hidden) {
+    el.innerHTML = `<span class="change__bar"><span class="change__what">${icon("sketch")}<span></span></span>`
+      + `<button type="button" class="undo" data-act="undo-all">${icon("undo")}Undo all</button>`
+      + `<button type="button" class="keep" data-act="keep-all">${icon("check")}Keep all</button></span>`;
+    el.hidden = false;
+  }
+  const n = open.count;
+  $(".change__what > span", el).textContent = `${n} images`;
+  $(".undo", el).setAttribute("aria-label", `Undo all ${n} images`);
+  $(".keep", el).setAttribute("aria-label", `Keep all ${n} images`);
 }
 function keepAllImages() {
   const open = imagesOpen();
@@ -3694,7 +3709,7 @@ function undoAllImages() {
   for (const id of open.marked) undoMarked(id);
   if (open.suggested.length) undoSuggestions(open.suggested);
 }
-$("#imagesAll").addEventListener("pointerdown", (e) => { if (e.target.closest("button")) e.preventDefault(); }); // the caret stays in the script
+$("#imagesAll").addEventListener("pointerdown", (e) => { if (e.target.closest(".change__bar")) e.preventDefault(); }); // the caret stays in the script
 $("#imagesAll").addEventListener("click", (e) => {
   const act = e.target.closest("[data-act]")?.dataset.act;
   if (act === "keep-all") keepAllImages();
