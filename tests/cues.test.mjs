@@ -293,7 +293,7 @@ test("lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an
 
 test("PR 8 fixes: the cue tools don't treat the agent's highlighted changes as busy; open asks still count", () => {
   const doc = D.parse("# T\n\n## A\n\nWe ==start here== now. Then on.\n");
-  const p = paras(doc)[0], c = D.contentOf(p), q = "We ==start here== now.";
+  const p = paras(doc)[0], q = "We ==start here== now.";
   const ask = D.makeAsk(doc, { blockId: p.id, start: 0, end: q.length, action: "simpler", by: { id: "lex", name: "Lex" } });
   Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "We begin now." }, answeredBy: { id: "agent:x", name: "X" } });
   const res = C.land(doc, ask, 1);
@@ -306,7 +306,6 @@ test("PR 8 fixes: the cue tools don't treat the agent's highlighted changes as b
   // And it can take off a cue it just marked.
   const parts = C.landCues(doc, again, "mark", { id: "agent:x", name: "X" }, 2);
   assert.deepEqual(C.planCues(doc, "unmark", [{ quote: "begin" }], { asks: [ask, parts[0].ask] }).segments.map((s) => s.content), ["We begin now. Then on."]);
-  assert.ok(c);
 });
 
 test("PR 8 fixes: a letter or digit right outside == is not a cue, so ordinary text stays as it is", () => {
@@ -321,7 +320,7 @@ test("PR 8 fixes: a letter or digit right outside == is not a cue, so ordinary t
 
 test("PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds the marks", () => {
   const doc = D.parse("# T\n\n## A\n\nWe start here now and go on.\n");
-  const p = paras(doc)[0], c = D.contentOf(p);
+  const p = paras(doc)[0];
   const sig = B.coverText(doc, [p.id]);
   D.setContent(doc, p.id, "We ==start here== now and go on.");
   assert.equal(B.coverText(doc, [p.id]), sig);
@@ -332,7 +331,6 @@ test("PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds 
   assert.doesNotMatch(over(n.indexOf("==start"), n.indexOf("now") + 3), /=/);
   // A selection that starts inside the cue takes the whole cue, so no lone marks.
   assert.match(over(n.indexOf("here"), n.indexOf("now") + 3), /^"start here now/);
-  assert.ok(c);
 });
 
 test("PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion", () => {
@@ -404,4 +402,26 @@ test("edit bar: with the B button showing, the text input stays at least 200 px 
   const css = await readFile(new URL("../public/app.css", import.meta.url), "utf8");
   assert.match(css, /\.edit-bar__controls:has\(#boldBtn:not\(\[hidden\]\)\) \{ flex-wrap: wrap; \}/);
   assert.match(css, /\.edit-bar__controls:has\(#boldBtn:not\(\[hidden\]\)\) \.edit-bar__ask \{ flex: 1 1 200px; min-inline-size: 200px;/);
+});
+
+test("last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks", () => {
+  const doc = D.parse("# T\n\n## A\n\n==start here== now.\n");
+  const p = paras(doc)[0], [s, e] = sel(D.contentOf(p), "start");
+  const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "- first" }, answeredBy: { id: "agent:x", name: "X" } });
+  const res = C.land(doc, ask, 1);
+  assert.equal(p.type, "para");
+  assert.equal(D.contentOf(p), "first here now.");
+  assert.equal(res.cuesDropped, 1);
+  assert.ok(res.mark, "the change keeps its mark and Undo");
+  assert.equal(Q.spokenWords("==a==[b](https://x.example)"), "ab");
+  const two = D.parse("# T\n\n## A\n\n==a==[b](https://x.example) now.\n");
+  assert.equal(D.exportCamera(two).includes("="), false);
+});
+
+test("last round: set_cue_settings says where the change really goes", () => {
+  const t = TOOLS.find((x) => x.name === "set_cue_settings");
+  assert.match(t.description, /Without forScript: the script's own settings if it has them, else the person's\./);
+  assert.match(t.description, /forScript: false always sets the person's/);
+  assert.doesNotMatch(t.description, /\(else for the person\)/);
 });
