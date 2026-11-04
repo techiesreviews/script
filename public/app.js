@@ -2648,6 +2648,7 @@ function renderBrollMarks() {
   refocus(scriptEl, key);
   redrag();
   placeFrames();
+  renderImagesAll();
 }
 // Wide screens: frames sit in the right margin; one that would overlap the frame above moves down.
 let framesFrame = 0;
@@ -3654,6 +3655,51 @@ function keepAllAction() {
   if (!bulkKeys().length) return "";
   return `<span class="board__all"><button class="board__btn" type="button" data-act="s-keep-all">Keep all</button><span aria-hidden="true">·</span><button class="board__btn" type="button" data-act="s-undo-all">Undo all</button></span>`;
 }
+
+/* "Keep all" and "Undo all" for the agent's pictures (step Q): over the script and the storyboard, from two pictures
+   on. Each picture goes the way its own Keep or Undo goes; a kept picture has no Undo afterwards, like a single Keep. */
+function imagesOpen() {
+  if (state.guest || !state.doc) return B.pendingImages(); // guests see the pictures; the host keeps or undoes them
+  return B.pendingImages({
+    shotIds: broll.status === "ok" ? broll.shots.map((s) => s.id) : [],
+    waiting: sketchAsk()?.answer?.sketches,
+    marked: Object.keys(broll.marked).filter(markedSketch),
+    suggestions: openSuggestions(),
+    saving: broll.saving,
+  });
+}
+let imagesShown = 0;
+function renderImagesAll() {
+  const open = imagesOpen();
+  const n = open.show ? open.count : 0;
+  if (n === imagesShown) return; // redrawn only when it changes, so the bar doesn't animate in again
+  imagesShown = n;
+  const el = $("#imagesAll");
+  el.hidden = !n;
+  el.innerHTML = n ? `<span class="change__bar"><span class="change__what">${icon("sketch")}<span>${n} images</span></span>`
+    + `<button type="button" class="undo" data-act="undo-all" aria-label="Undo all ${n} images">${icon("undo")}Undo all</button>`
+    + `<button type="button" class="keep" data-act="keep-all" aria-label="Keep all ${n} images">${icon("check")}Keep all</button></span>` : "";
+}
+function keepAllImages() {
+  const open = imagesOpen();
+  // A picture put in at once is in the list already: keeping it only takes its mark and its Undo away.
+  for (const id of open.marked) { delete broll.marked[id]; delete broll.problem[id]; }
+  for (const id of open.waiting) keepSketch(id);
+  if (open.suggested.length) keepSuggestions(open.suggested);
+  renderBroll();
+}
+function undoAllImages() {
+  const open = imagesOpen();
+  for (const id of open.waiting) undoSketch(id);
+  for (const id of open.marked) undoMarked(id);
+  if (open.suggested.length) undoSuggestions(open.suggested);
+}
+$("#imagesAll").addEventListener("pointerdown", (e) => { if (e.target.closest("button")) e.preventDefault(); }); // the caret stays in the script
+$("#imagesAll").addEventListener("click", (e) => {
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "keep-all") keepAllImages();
+  else if (act === "undo-all") undoAllImages();
+});
 
 /* Keep writes through addShot / updateShot / removeShot and the one-write-at-a-time queue; Undo writes nothing. */
 function findSuggestion(key) {
