@@ -363,9 +363,11 @@ export const readPast = (box, view, seen) => !!seen && box.bottom < (view.top + 
 export const seenAsks = (asks, ended) => (ended?.size ? asks.map((a) => (isMarked(a) && ended.has(a.id) ? (({ change, ...rest }) => rest)(a) : a)) : asks);
 
 /* ---------- Cues (fleet issue #14): the agent's list_cues, mark_cue and unmark_cue ---------- */
-// The spoken paragraphs, each with the ranges other open work points at; the other blocks only explain a skip.
+// The spoken paragraphs, each with the ranges open asks and "Sounds like me" marks point at; the other blocks only
+// explain a skip. The agent's own highlighted changes don't count: a new cue there ends their mark, as an edit does,
+// so it can mark a rewrite's words again and take off a cue it just marked.
 function spokenSegments(doc, asks) {
-  const busy = busyRanges(asks, null);
+  const busy = busyRanges(asks, null, { marked: false });
   const { segments, others } = scriptSegments(doc, busy);
   return { segments: segments.map(({ id, content, avoid }) => ({ id, content, avoid })), others };
 }
@@ -406,7 +408,7 @@ export function landCues(doc, plan, mode, by, now = Date.now()) {
   for (const seg of plan.segments) {
     const res = landSegment(doc, seg, now);
     if (!res) continue;
-    const ask = D.makeAsk(doc, { blockId: seg.id, start: res.mark.start, end: res.mark.end, action: "cue", instruction: mode === "mark" ? "Mark cues" : "Remove cues", by, now: new Date(now) });
+    const ask = D.makeAsk(doc, { blockId: seg.id, start: res.mark.start, end: res.mark.end, action: "cue", instruction: mode === "mark" ? "Bold" : "Remove bold", by, now: new Date(now) });
     Object.assign(ask, { status: "kept", answer: { kind: "cue", cues: seg.cues }, answeredBy: by });
     setMark(ask, res.mark);
     parts.push({ ask, blockId: res.blockId, at: res.at, delta: res.delta, result: res.result });

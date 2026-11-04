@@ -5,10 +5,11 @@
 // With cue marking off, text that already holds "==words==" is still read as cues for word counts, the camera script,
 // the prompter export (stripped), links and rewrites, so the marks never reach the prompter by surprise.
 // Pure: no DOM. app.js draws cues with the links' show/hide trick; changes.js plans the agent's cue changes.
-import { textLinks, spokenText, quoteRe, overlaps } from "./links.js";
+import { textLinks, isLinkLine, spokenText, quoteRe, overlaps } from "./links.js";
 
 export const CUE_LIMITS = { cues: 30 };
-const CUE = /(?<!=)==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?!=)/g;
+// A letter, digit or "=" right outside the marks means this is ordinary text ("if a==3 and b==4"), not a cue.
+const CUE = /(?<![=\p{L}\p{N}\p{M}])==([^\s=[\]](?:[^=[\]\n]*[^\s=[\]])?)==(?![=\p{L}\p{N}\p{M}])/gu;
 const WORDY = /[\p{L}\p{N}]/u;
 const BAD_WORDS = /[=[\]\n]/;
 // Whole words for a cue: a letter, digit or combining mark on both sides of an edge means the edge cuts a word (or,
@@ -36,12 +37,32 @@ export function checkSettings(patch, extra = []) {
   return "";
 }
 
+/* ---------- How bold looks (Lex 2026-11-04): plain bold, or the person's own colours ----------
+   Kept per person, apart from the settings above. Only "#rrggbb" values reach the page's CSS. */
+export const BOLD_DEFAULTS = Object.freeze({ own: false, background: "#fff1b8", color: "#1f1f1f" });
+const HEX = /^#[0-9a-f]{6}$/i;
+export const boldStyle = (stored) => ({
+  own: stored?.own === true,
+  background: HEX.test(stored?.background) ? stored.background : BOLD_DEFAULTS.background,
+  color: HEX.test(stored?.color) ? stored.color : BOLD_DEFAULTS.color,
+});
+
 /* ---------- Reading cues ---------- */
+// Where cues may not be: text links and link lines ("- Label: https://…").
+function linkRanges(text) {
+  const out = textLinks(text).map((l) => [l.start, l.end]);
+  let at = 0;
+  for (const line of text.split("\n")) {
+    if (isLinkLine(line)) out.push([at, at + line.length]);
+    at += line.length + 1;
+  }
+  return out;
+}
 /** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
  *  same shape as textLinks() so the editor draws both alike). A "==…==" inside or across a link is not a cue. */
 export function textCues(content) {
   const text = String(content ?? "");
-  const links = textLinks(text).map((l) => [l.start, l.end]);
+  const links = linkRanges(text);
   const out = [];
   for (const m of text.matchAll(CUE)) {
     const start = m.index, end = start + m[0].length;
@@ -92,7 +113,7 @@ export function toggleCue(content, start, end) {
   }
   const touched = cues.filter((c) => s < c.end && e > c.start);
   const from = Math.min(s, ...touched.map((c) => c.start)), to = Math.max(e, ...touched.map((c) => c.end));
-  if (overlaps(textLinks(text).map((l) => [l.start, l.end]), from, to)) return null;
+  if (overlaps(linkRanges(text), from, to)) return null;
   const words = stripCues(text.slice(from, to));
   if (!WORDY.test(words) || BAD_WORDS.test(words) || words !== words.trim()) return null;
   const next = `${text.slice(0, from)}==${words}==${text.slice(to)}`;
@@ -115,7 +136,7 @@ export function keepCues(removed, text) {
   for (const x of textCues(out)) already.set(x.label, (already.get(x.label) || 0) + 1);
   for (const c of old) {
     if (already.get(c.label) > 0) { already.set(c.label, already.get(c.label) - 1); continue; }
-    const taken = [...textCues(out), ...textLinks(out)].map((x) => [x.start, x.end]);
+    const taken = [...textCues(out).map((x) => [x.start, x.end]), ...linkRanges(out)];
     const re = quoteRe(c.label);
     let hit = null;
     for (let m = re.exec(out); m; re.lastIndex = m.index + 1, m = re.exec(out)) {
@@ -157,7 +178,7 @@ export function widenOverCues(content, start, end, next = "") {
  * changed stretch in the old content), skipped: [{ quote, why }] }.
  */
 export function planCues(segments, items, mode, { others = [] } = {}) {
-  const state = segments.map((s) => ({ ...s, cues: textCues(s.content), links: textLinks(s.content).map((l) => [l.start, l.end]), avoid: s.avoid || [], picks: [] }));
+  const state = segments.map((s) => ({ ...s, cues: textCues(s.content), links: linkRanges(s.content), avoid: s.avoid || [], picks: [] }));
   const skipped = [], seen = new Set();
   const span = (s, i, e) => [Math.min(i, ...s.picks.map((p) => p.start)), Math.max(e, ...s.picks.map((p) => p.end))];
   for (const item of items || []) {
