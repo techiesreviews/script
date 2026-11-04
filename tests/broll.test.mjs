@@ -1125,3 +1125,15 @@ test("the Keep all bar is not sticky, not fixed and not lifted over the text", (
   for (const [rule, body] of rules) assert.doesNotMatch(body, /position\s*:|translate|inset|z-index/, rule);
   assert.doesNotMatch(read("../public/app.js"), /caretClearOfBar|barScroll/, "no code moves the page for the bar");
 });
+
+test("the stylesheet's braces balance, so no rule is lost", () => {
+  let depth = 0;
+  read("../public/app.css").replace(/\/\*[\s\S]*?\*\//g, "").split("\n").forEach((line, i) => {
+    for (const c of line) {
+      if (c === "{") depth++;
+      if (c === "}") depth--;
+      assert.ok(depth >= 0, `a stray } on line ${i + 1} of the stylesheet without its comments`);
+    }
+  });
+  assert.equal(depth, 0, "every { has its }");
+});
