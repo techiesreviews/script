@@ -16,7 +16,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const fine = matchMedia("(hover: hover) and (pointer: fine)");
 
 const ICONS = {
-  cue: '<path d="M4 21h16M8.5 14.5l7-9.5 4 3-7 9.5zM8.5 14.5 6 18.5h4.5l2-1.5"/>',
+  bold: '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/>',
   wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/>',
   simpler: '<path d="M4 7h16M4 12h10M4 17h6"/>',
   shorter: '<path d="M4 12h10M10 8l4 4-4 4M20 5v14"/>',
@@ -1145,8 +1145,26 @@ function cuesChanged() {
   if (state.doc) renderAll(getCaret());
   if (!bar.hidden) showBar();
 }
+// Bold style: plain bold, or the person's own colours (K.boldStyle lets only "#rrggbb" through to the CSS).
+function applyBoldStyle() {
+  const b = K.boldStyle(store.get("boldStyle"));
+  scriptEl.toggleAttribute("data-bold-own", b.own);
+  scriptEl.style.setProperty("--bold-bg", b.background);
+  scriptEl.style.setProperty("--bold-fg", b.color);
+  return b;
+}
+applyBoldStyle();
+const setBoldStyle = (patch) => { store.set("boldStyle", { ...K.boldStyle(store.get("boldStyle")), ...patch }); renderCueMenu(); };
+$("#boldOwn").addEventListener("click", () => setBoldStyle({ own: !K.boldStyle(store.get("boldStyle")).own }));
+$("#boldBg").addEventListener("input", (e) => setBoldStyle({ background: e.target.value }));
+$("#boldFg").addEventListener("input", (e) => setBoldStyle({ color: e.target.value }));
 function renderCueMenu() {
-  const c = cues(), g = $("#cueGroup");
+  const c = cues(), g = $("#cueGroup"), bold = applyBoldStyle();
+  $("#boldStyleHead").hidden = $("#boldOwn").hidden = !c.on;
+  $("#boldOwn").setAttribute("aria-pressed", String(bold.own));
+  $("#boldColours").hidden = !c.on || !bold.own;
+  $("#boldBg").value = bold.background;
+  $("#boldFg").value = bold.color;
   g.hidden = !state.doc;
   for (const b of $$("[data-cue-set]", g)) {
     const k = b.dataset.cueSet;
@@ -1156,7 +1174,7 @@ function renderCueMenu() {
 }
 $("#scriptMenu").addEventListener("toggle", renderCueMenu);
 // Settings changed in another tab of this browser.
-addEventListener("storage", (e) => { if (e.key == null || e.key.startsWith(`${LS}cues`)) cuesChanged(); });
+addEventListener("storage", (e) => { if (e.key == null || e.key.startsWith(`${LS}cues`)) cuesChanged(); else if (e.key === `${LS}boldStyle`) renderCueMenu(); });
 $("#cueGroup").addEventListener("click", (e) => {
   const b = e.target.closest("[data-cue-set]");
   if (!b) return;
@@ -1166,9 +1184,9 @@ $("#cueGroup").addEventListener("click", (e) => {
 // The agent's set_cue_settings: shown at once on a line at the top, with Undo, like its other changes.
 function cueChangeWords(was, now) {
   const out = [];
-  if (was.on !== now.on) out.push(`turned cue marking ${now.on ? "on" : "off"}`);
-  if (was.action !== now.action) out.push(now.action === "camera" ? "gave cues a camera action" : "made cues a highlight only");
-  if (was.export !== now.export) out.push(now.export === "show" ? "kept cues in the prompter file" : "took cues out of the prompter file");
+  if (was.on !== now.on) out.push(`turned bold marking ${now.on ? "on" : "off"}`);
+  if (was.action !== now.action) out.push(now.action === "camera" ? "gave bold words a camera action" : "took the camera action off bold words");
+  if (was.export !== now.export) out.push(now.export === "show" ? "kept bold words in the prompter file" : "took the bold marks out of the prompter file");
   return out.join(" and ");
 }
 function agentCueSettings(args, by) {
@@ -1181,11 +1199,11 @@ function agentCueSettings(args, by) {
   const stored = JSON.stringify(undoTo.prev) !== JSON.stringify(store.get(undoTo.key));
   const undoIt = [["Undo", () => { hideBanner(); restoreCues(undoTo); }]];
   if (words) showBanner(`${by.name} ${words}${forScript ? " for this script" : ""}`, undoIt);
-  else if (stored) showBanner(`${by.name} changed your own cue settings; this script keeps its own`, undoIt);
+  else if (stored) showBanner(`${by.name} changed your own bold settings; this script keeps its own`, undoIt);
   const message = words ? "Done: the person sees the change, with Undo." : stored ? "Saved for the person, but this script has its own cue settings, which win; pass forScript: true to change them." : "Those settings were in force already: nothing changed.";
   return { result: { message, ...now, forScript: ownCues() } };
 }
-// Ctrl/Cmd+B and the Cue button: toggle a cue on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
+// Ctrl/Cmd+B and the B button: toggle a cue (the person sees it as bold words) on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
 // Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
 function toggleCueHere() {
   if (!cues().on || state.locked || state.pendingDraft) return;
@@ -1208,8 +1226,8 @@ function toggleCueHere() {
   changed();
 }
 const cueKeys = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘B" : "Ctrl+B";
-$("#cueBtn").title = `Cue (${cueKeys})`;
-$("#cueBtn").addEventListener("click", toggleCueHere);
+$("#boldBtn").title = `Bold (${cueKeys})`;
+$("#boldBtn").addEventListener("click", toggleCueHere);
 // The agent's mark_cue and unmark_cue: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script),
 // a marked change with Undo on the agent's name tag per paragraph (C.landCues). Returns how many cues changed.
 function landAgentCues(plan, mode, by) {
@@ -1284,7 +1302,7 @@ function showBar() {
   // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
   $("#brollBtn").hidden = state.guest;
   $("#suggestBroll").hidden = !state.guest;
-  const cueBlock = byId(s.id), cueBtn = $("#cueBtn");
+  const cueBlock = byId(s.id), cueBtn = $("#boldBtn");
   cueBtn.hidden = !cues().on || cueBlock?.type !== "para" || !spoken;
   cueBtn.setAttribute("aria-pressed", String(!!cueBlock && K.cueSelected(D.contentOf(cueBlock), s.start, s.end)));
   // Disabled where the toggle can't work: across paragraphs, a link or an "=" in the way, under an open ask.
