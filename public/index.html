@@ -24,6 +24,13 @@
       <div class="menu__divider"></div>
       <button class="menu-action" id="menuOpen" type="button"><span data-icon="open"></span><span class="menu-action__text">Open a script…</span></button>
       <button class="menu-action" id="menuNew" type="button"><span data-icon="plus"></span><span class="menu-action__text">New script</span></button>
+      <div class="menu__group" role="group" aria-labelledby="cuesHead" id="cueGroup" hidden>
+        <div class="menu__divider"></div>
+        <p class="menu__head" id="cuesHead">Cues</p>
+        <button class="menu-action" type="button" data-cue-set="on" aria-pressed="false"><span data-icon="cue"></span><span class="menu-action__text">Cue marking</span><span class="menu-action__check" data-icon="check"></span></button>
+        <button class="menu-action" type="button" data-cue-set="action" aria-pressed="false" hidden><span data-icon="camera"></span><span class="menu-action__text">Camera action with each cue</span><span class="menu-action__check" data-icon="check"></span></button>
+        <button class="menu-action" type="button" data-cue-set="export" aria-pressed="false" hidden><span data-icon="prompter"></span><span class="menu-action__text">Cues in the prompter file</span><span class="menu-action__check" data-icon="check"></span></button>
+      </div>
     </div>
     <div class="view-switch" id="viewSwitch" role="group" aria-label="View" hidden>
       <button type="button" data-view="script" aria-pressed="true" aria-label="Script"><span data-icon="doc"></span><span class="lbl">Script</span></button>
@@ -105,6 +112,7 @@
     <button class="edit-bar__button" type="button" data-act="shorter"></button>
     <button class="edit-bar__button" type="button" data-act="simpler"></button>
     <button class="edit-bar__button edit-bar__button--voice" type="button" data-act="like"></button>
+    <button class="edit-bar__button" type="button" id="cueBtn" aria-pressed="false" aria-keyshortcuts="Control+B Meta+B" hidden><span data-icon="cue"></span><span class="edit-bar__text">Cue</span></button>
     <button class="edit-bar__button" type="button" id="moreBtn" popovertarget="moreMenu" aria-haspopup="menu" aria-expanded="false">More<span data-icon="chevron"></span></button>
     <div class="menu bar-menu" id="moreMenu" role="menu" aria-labelledby="moreBtn" popover>
       <button class="menu-action" type="button" role="menuitem" data-act="explain"></button>
