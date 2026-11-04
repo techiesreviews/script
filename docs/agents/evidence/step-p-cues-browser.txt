@@ -66,6 +66,9 @@ ok undo brings it all back
 ok typing right before a bold word joins it
 ok and the typing goes on inside it
 ok undo brings it all back
+ok typing a word and its space before a bold word leaves the word plain
+ok one Ctrl+Z takes the typing back
+ok the next takes the bold off
 ok Enter inside a bold stretch leaves no lone marks
 ok undo brings it all back
 ok Wait for MCP gives a connection token
