@@ -1139,6 +1139,13 @@ function restoreCues({ key, prev }) {
   else store.set(key, prev);
   cuesChanged();
 }
+// A script's own bold settings are kept under its name, so a new name can change them: the page follows at once, never
+// half drawn. It is redrawn only when they really changed, so a rename while typing doesn't disturb the caret.
+function nameChange(change) {
+  const was = JSON.stringify(cues());
+  change();
+  if (JSON.stringify(cues()) !== was) cuesChanged();
+}
 function cuesChanged() {
   cueMemo = null;
   renderCueMenu();
@@ -2191,7 +2198,7 @@ async function saveAs() {
         // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees its
         // name there, so its old keys are cleared; a file on disk or the demo keeps its own.
         moveKeys(state.name, handle.name, { clear: !!was, link: broll.link });
-        state.name = handle.name;
+        nameChange(() => { state.name = handle.name; });
       }
       state.handle = handle;
       state.inBrowser = false;
@@ -2460,7 +2467,7 @@ async function followTitle(handle) {
   // The move is queued before the name changes: a link or unlink made before it went to the old name and moves with
   // it; one made after goes to the new name, after it.
   const moved = moveKeys(from, name, { clear: true });
-  if (handle === state.handle) { state.name = name; renderTop(); }
+  if (handle === state.handle) { nameChange(() => { state.name = name; }); renderTop(); }
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
@@ -2475,7 +2482,7 @@ async function saveInBrowser() {
     const { handle, modified } = await createBrowserScript(D.scriptFileName("", doc, await nameTaken(from)), text);
     if (state.doc === doc) {
       moveKeys(from, handle.name, { link: broll.link });
-      Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false });
+      nameChange(() => Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false }));
     }
     remember(handle, true);
   } catch (e) {
@@ -2663,6 +2670,7 @@ function closeBroll() {
   endDrag();
   closeShotCard();
   ui.scriptY = 0;
+  ui.scriptTop = null;
   Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
   renderBroll();
 }
@@ -2961,7 +2969,7 @@ function setView(v) {
   renderView();
   editorJump();
   // The Keep all row may have come or gone while away (step Q): the text comes back where it was all the same.
-  scrollTo({ top: board ? 0 : Math.max(0, ui.scriptY + sheetTop() - (ui.scriptTop ?? sheetTop())) });
+  scrollTo({ top: board || !ui.scriptY ? 0 : Math.max(0, ui.scriptY + sheetTop() - (ui.scriptTop ?? sheetTop())) });
 }
 function renderView() {
   const board = ui.view === "board" && !!state.doc;
