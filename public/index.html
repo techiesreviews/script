@@ -26,10 +26,16 @@
       <button class="menu-action" id="menuNew" type="button"><span data-icon="plus"></span><span class="menu-action__text">New script</span></button>
       <div class="menu__group" role="group" aria-labelledby="cuesHead" id="cueGroup" hidden>
         <div class="menu__divider"></div>
-        <p class="menu__head" id="cuesHead">Cues</p>
-        <button class="menu-action" type="button" data-cue-set="on" aria-pressed="false"><span data-icon="cue"></span><span class="menu-action__text">Cue marking</span><span class="menu-action__check" data-icon="check"></span></button>
-        <button class="menu-action" type="button" data-cue-set="action" aria-pressed="false" hidden><span data-icon="camera"></span><span class="menu-action__text">Camera action with each cue</span><span class="menu-action__check" data-icon="check"></span></button>
-        <button class="menu-action" type="button" data-cue-set="export" aria-pressed="false" hidden><span data-icon="prompter"></span><span class="menu-action__text">Cues in the prompter file</span><span class="menu-action__check" data-icon="check"></span></button>
+        <p class="menu__head" id="cuesHead">Bold</p>
+        <button class="menu-action" type="button" data-cue-set="on" aria-pressed="false"><span data-icon="bold"></span><span class="menu-action__text">Bold marking</span><span class="menu-action__check" data-icon="check"></span></button>
+        <button class="menu-action" type="button" data-cue-set="action" aria-pressed="false" hidden><span data-icon="camera"></span><span class="menu-action__text">Camera action with bold words</span><span class="menu-action__check" data-icon="check"></span></button>
+        <button class="menu-action" type="button" data-cue-set="export" aria-pressed="false" hidden><span data-icon="prompter"></span><span class="menu-action__text">Bold words in the prompter file</span><span class="menu-action__check" data-icon="check"></span></button>
+        <p class="menu__head" id="boldStyleHead" hidden>Bold style</p>
+        <button class="menu-action" type="button" id="boldOwn" aria-pressed="false" hidden><span data-icon="bold"></span><span class="menu-action__text">Use my own colours for bold</span><span class="menu-action__check" data-icon="check"></span></button>
+        <div class="menu-row bold-colours" id="boldColours" hidden>
+          <label>Background <input type="color" id="boldBg"></label>
+          <label>Font colour <input type="color" id="boldFg"></label>
+        </div>
       </div>
     </div>
     <div class="view-switch" id="viewSwitch" role="group" aria-label="View" hidden>
@@ -112,7 +118,6 @@
     <button class="edit-bar__button" type="button" data-act="shorter"></button>
     <button class="edit-bar__button" type="button" data-act="simpler"></button>
     <button class="edit-bar__button edit-bar__button--voice" type="button" data-act="like"></button>
-    <button class="edit-bar__button" type="button" id="cueBtn" aria-pressed="false" aria-keyshortcuts="Control+B Meta+B" hidden><span data-icon="cue"></span><span class="edit-bar__text">Cue</span></button>
     <button class="edit-bar__button" type="button" id="moreBtn" popovertarget="moreMenu" aria-haspopup="menu" aria-expanded="false">More<span data-icon="chevron"></span></button>
     <div class="menu bar-menu" id="moreMenu" role="menu" aria-labelledby="moreBtn" popover>
       <button class="menu-action" type="button" role="menuitem" data-act="explain"></button>
@@ -125,6 +130,7 @@
       <button class="menu-action" type="button" role="menuitem" data-act="broll"></button>
     </div>
     <button class="edit-bar__button" type="button" data-act="broll" id="suggestBroll" hidden></button>
+    <button class="edit-bar__button edit-bar__button--bold" type="button" id="boldBtn" aria-label="Bold" aria-pressed="false" aria-keyshortcuts="Control+B Meta+B" hidden data-icon="bold"></button>
     <form class="edit-bar__ask" id="askForm"><input id="askInput" type="text" placeholder="Ask…" aria-label="Ask about this selection" autocomplete="off" maxlength="500"><button type="submit" aria-label="Send" data-icon="send"></button></form>
   </div>
 </div>
