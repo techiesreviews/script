@@ -370,9 +370,14 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .md-link:not(.md-cue) .md-link__words:hover { text-decoration-color: var(--accent); }
   .script[data-mod] .md-link:not(.md-cue) .md-link__words { cursor: pointer; }
 }
-/* Cues (fleet issue #14): the "==" marks hide and show like a link's Markdown. The cue look lives only in this rule,
-   from the theme's accent tokens, so the prompter's shared look can replace it later. */
-.md-cue .md-link__words { text-decoration: none; background: var(--accent-faint); box-shadow: inset 0 -2px 0 var(--accent-ink); color: var(--text); box-decoration-break: clone; }
+/* Cues, shown as bold (fleet issue #14; Lex 2026-11-04): the "==" marks hide and show like a link's Markdown. The look
+   lives only in these two rules: plain bold, or the person's own colours (Bold style). */
+.md-cue .md-link__words { text-decoration: none; font-weight: 700; }
+.script[data-bold-own] .md-cue .md-link__words { background: var(--bold-bg); color: var(--bold-fg); box-decoration-break: clone; }
+.edit-bar__button--bold svg { stroke-width: 2.8; }
+.bold-colours { flex-wrap: wrap; font-size: 0.8rem; }
+.bold-colours label { display: inline-flex; align-items: center; gap: 0.35rem; }
+.bold-colours input { inline-size: 1.75rem; block-size: 1.5rem; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: none; cursor: pointer; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
 .menu-action__check { margin-inline-start: auto; }

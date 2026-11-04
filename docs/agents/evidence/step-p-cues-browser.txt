@@ -1,19 +1,24 @@
 # Cue marking browser check: headless Chrome Chrome/157.0.8103.38 (CDP), wrangler dev, real key and mouse input, the agent over MCP fetch; 1280 × 900 and 390 × 844.
 ok the demo script is open; its first spoken paragraph has no cue
-ok cue marking off (the default): Ctrl+B leaves the text as it was
-ok cue marking off: no browser bold and no cue drawn
-ok cue marking off: no Cue button on the selection bar
-ok the script menu shows the Cues settings
-ok Cue marking is on after one click
+ok bold marking off (the default): Ctrl+B leaves the text as it was
+ok bold marking off: no browser bold and nothing drawn
+ok bold marking off (the default): no B button on the selection bar
+ok the script menu shows the Bold settings
+ok Bold marking is on after one click
 ok the prompter-file setting shows, off (strip) by default
-ok with cue marking on, the selection bar shows the Cue button
+ok with bold marking on, the selection bar shows the B button, before the text input, with no word on it
 ok Ctrl+B makes "A blank" a cue in the text (==A blank==)
 ok the cue is drawn with the cue look
 ok with the caret outside, the == marks are hidden
-ok the cue words have the tinted background
+ok the marked words show plain bold, no background
+ok Bold style shows Use my own colours, off, with the colours hidden
+ok turned on, the two colour inputs show
+ok bold words take the chosen background and font colour
+ok the colours are kept for the person
+ok turned off, back to plain bold
 ok one Ctrl+Z takes the cue off again
-ok a click on the Cue button marks the selected words
-ok the Cue button shows pressed while the selection is the cue
+ok a click on the B button marks the selected words
+ok the B button shows pressed while the selection is bold
 ok Ctrl+B on the cue's words takes the cue off, the words stay
 ok a selection from inside a cue to past it joins into one cue
 ok two Ctrl+Z steps bring the text back as it was
@@ -24,7 +29,9 @@ ok the agent's cue is in the text
 ok the agent's name tag shows Undo
 ok list_cues lists it
 ok Undo on the agent's name tag (its button, clicked from script; a real mouse click there hit the section under it in headless Chrome) takes the agent's cue back
-ok set_cue_settings shows: "Claude turned cue marking offUndo"
+ok mark_cue in two paragraphs: Done: 2 cues marked in the text now. The person can undo it.
+ok one Ctrl+Z takes both back
+ok set_cue_settings shows: "Claude turned bold marking offUndo"
 ok mark_cue is refused while cue marking is off
 ok Undo on that line turns cue marking back on
 ok Ctrl+B in a heading changes nothing
@@ -32,6 +39,6 @@ ok Ctrl+B across two paragraphs changes nothing
 ok set_cue_settings forScript: the script has its own settings, cue marking off for it
 ok the top line says it was for this script, with Undo
 ok then set_cue_settings without forScript turns it on where it counts (the script's own)
-ok 390 px: the Cue button shows on the selection bar, inside the screen
+ok 390 px: the B button shows on the selection bar, inside the screen
 ok 390 px: no sideways scroll
 ok no page errors
