@@ -73,13 +73,13 @@ export const noLinksError = (skipped) => `No link went in.${skippedText(skipped)
 // Where other open work points in a block: open asks on a selection (waiting, taken, answered; not B-roll
 // suggestions, which live beside the lines), open "Sounds like me" marks and the agent's marked changes. Links never
 // land there, so that work keeps its text (and its mark and Undo). `except`: the links ask itself.
-function busyRanges(asks, except) {
+function busyRanges(asks, except, { marked = true } = {}) {
   const out = new Map();
   const add = (id, start, end) => { if (!out.has(id)) out.set(id, []); out.get(id).push([start, end]); };
   for (const a of asks || []) {
     if (a.id === except) continue;
     if (a.scope === "selection" && D.OPEN_STATUSES.includes(a.status) && a.action !== "broll" && a.answer?.kind !== "broll") add(a.blockId, a.start, a.end); // kind "broll": a free Ask answered with B-roll
-    else if (isMarked(a)) add(a.blockId, a.start, a.end);
+    else if (marked && isMarked(a)) add(a.blockId, a.start, a.end);
     else if (a.scope === "script" && a.status === "answered" && Array.isArray(a.answer?.marks)) {
       for (const m of a.answer.marks) if (m.state === "open" && m.blockId) add(m.blockId, m.start, m.end);
     }
@@ -369,10 +369,10 @@ function spokenSegments(doc, asks) {
   const { segments, others } = scriptSegments(doc, busy);
   return { segments: segments.map(({ id, content, avoid }) => ({ id, content, avoid })), others };
 }
-/** Would a cue toggle over from…to (content offsets in the block) touch text other open work points at (open asks,
- *  "Sounds like me" marks, the agent's marked changes)? Then the person's Ctrl/Cmd+B changes nothing, so that work
- *  keeps its text. */
-export const cueBlocked = (asks, blockId, from, to) => L.overlaps(busyRanges(asks, null).get(blockId) || [], from, to);
+/** Would a cue toggle over from…to (content offsets in the block) touch text open asks or "Sounds like me" marks point
+ *  at? Then the person's Ctrl/Cmd+B changes nothing, so that work keeps its text. The agent's marked changes don't
+ *  stop it (like typing there, it ends their mark), so Ctrl/Cmd+B takes off a cue the agent just marked. */
+export const cueBlocked = (asks, blockId, from, to) => L.overlaps(busyRanges(asks, null, { marked: false }).get(blockId) || [], from, to);
 /** Every cue in the spoken text: [{ cueId, quote, section, before, after }] (before/after: up to 40 characters). */
 export function listCues(doc) {
   const out = [];
