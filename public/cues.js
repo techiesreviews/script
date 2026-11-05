@@ -235,17 +235,22 @@ const followEdit = (p, oe, delta, now, content) => {
     return null;
   };
 };
-// The last words of a stretch deleted: "****" from this edit goes, read by the text alone, as no setting travels to a
-// guest. Earlier deletions may have left a space at one inner edge, or only spaces ("**two **", "** **"). Both edges
-// spaced around words ("a ** b ** c") was never a stretch, and neither was a word or "*" outside the marks, or a link.
+// The last words of a stretch deleted: its marks go, read by the text alone, as no setting travels to a guest. Looks past
+// spaces, as earlier deletions may have left some inside the marks ("**two **", "** words**", "** **"). Both edges spaced
+// around words ("a ** b ** c") was never a stretch, and neither was a word or "*" outside the marks, or a link.
 // Anything else stays byte for byte.
 function emptied(old, now, p, oe, ne) {
-  if (ne !== p || oe <= p || p < 2 || old.slice(p - 2, p) !== "**" || old.slice(oe, oe + 2) !== "**") return null;
-  const inner = old.slice(p, oe), before = old[p - 3] ?? "", after = old[oe + 2] ?? "", blank = !inner.trim();
+  if (ne !== p || oe <= p) return null;
+  let open = p, close = oe;
+  while (open > 0 && /[^\S\n]/.test(old[open - 1])) open--;
+  while (close < old.length && /[^\S\n]/.test(old[close])) close++;
+  if (open < 2 || old.slice(open - 2, open) !== "**" || old.slice(close, close + 2) !== "**") return null;
+  const inner = old.slice(open, close), before = old[open - 3] ?? "", after = old[close + 2] ?? "", blank = !inner.trim();
   if (BAD_WORDS.test(inner) || (!blank && !WORDY.test(inner)) || (!blank && /\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
-  if (WORD_CHAR.test(before) || before === "*" || WORD_CHAR.test(after) || after === "*" || overlaps(linkRanges(old), p - 2, oe + 2)) return null;
-  const content = now.slice(0, p - 2) + now.slice(p + 2);
-  return { content, caret: p - 2, typedBefore: null, follow: followEdit(p, oe, ne - oe, now, content) };
+  if (WORD_CHAR.test(before) || before === "*" || WORD_CHAR.test(after) || after === "*" || overlaps(linkRanges(old), open - 2, close + 2)) return null;
+  const delta = ne - oe, end = close + delta;
+  const content = now.slice(0, open - 2) + now.slice(open, end) + now.slice(end + 2);
+  return { content, caret: p - 2, typedBefore: null, follow: followEdit(p, oe, delta, now, content) };
 }
 /**
  * After one edit of a block (`old` → `now`; caret: its offset in `now`): every cue the edit broke is settled, so its
