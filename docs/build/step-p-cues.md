@@ -27,6 +27,8 @@ The follow-up to PR #15, for what landed with a waiver: emptying a stretch looks
 
 The release review of dev `63c7de3`, with real keys: bold on, `Say **big word** now okay.`, Ctrl+Backspace after the space before "now" gave `Say big **now okay.`. Marks a deletion put back are no longer counted as hit, so it gives `Say **big** now okay.`. `scripts/smoke-keep-all.mjs` checks this and its neighbours with real keys, on and off: Backspace, Delete, Ctrl+Backspace, Ctrl+Delete, selections across the marks, and one Ctrl+Z each. `set_cue_settings` says when the browser could not store the change.
 
+The release review of dev `fbb9618`, with real keys: bold on, a line that is entirely `**- item two**`, one Backspace at the start of its words gave `- item two`, a list, and the words left the camera script, the prompter file and the word count. Such an edit is now refused quietly and the marks stay, for typing, paste and Enter alike; `scripts/smoke-keep-all.mjs` checks list, heading, quote and numbered lines with real keys. An AI rewrite in a bold heading leaves its `**` alone: cues live only in paragraphs.
+
 ## Not in this step
 
 The prompter reading cues, a camera action that does something, the shared cue look and reader from the prompter (`public/shared/`).

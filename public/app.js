@@ -912,10 +912,18 @@ function syncFromDom(el) {
   // being typed in front of one is followed from edit to edit, until its space is typed.
   if (b.type === "para") {
     const old = D.contentOf(b), going = boldTyping?.id === id && boldTyping.content === old ? boldTyping.end : null;
-    const settled = K.settleMarks(old, fix ? fix.content : typed, fix ? fix.caret : getCaret()?.offset, { typedBefore: going, deleted: fix?.gone });
-    fix = settled || fix;
-    boldTyping = settled?.typedBefore != null ? { id, content: settled.content, end: settled.typedBefore } : null;
-    settledNow = settled;
+    const now = fix ? fix.content : typed, caret = fix ? fix.caret : getCaret()?.offset;
+    const settled = K.settleMarks(old, now, caret, { typedBefore: going, deleted: fix?.gone });
+    if (settled && !C.keepsType(settled.content, b.type)) {
+      // Without its marks this line would read as another kind of block ("- item", "# Plan"), and its words would leave
+      // the spoken text: the edit is refused, quietly, and it keeps them.
+      fix = { content: old, caret: Math.max(0, Math.min(old.length, (caret ?? 0) + old.length - now.length)) };
+      boldTyping = null;
+    } else {
+      fix = settled || fix;
+      boldTyping = settled?.typedBefore != null ? { id, content: settled.content, end: settled.typedBefore } : null;
+      settledNow = settled;
+    }
   }
   const content = fix ? fix.content : typed;
   if (content === D.contentOf(b)) {
@@ -944,10 +952,17 @@ function splitAt(el, start, end, lineBreak) {
     placeCaret(after.id, 0);
     return;
   }
-  checkpoint("enter", id);
-  // Enter inside a bold stretch: it is settled as if the line broke there, so no lone marks are left in either part.
+  // Enter inside a bold stretch: it is settled as if the line broke there, so no lone marks are left in either part. If a
+  // part would then read as another kind of block, its words would leave the spoken text: nothing changes.
   const settled = b.type === "para" ? K.settleMarks(content, `${content.slice(0, start)}\n${content.slice(end)}`, start + 1) : null;
-  if (settled?.content[settled.caret - 1] === "\n") {
+  const broke = settled?.content[settled.caret - 1] === "\n";
+  if (broke) {
+    const at = settled.caret - 1, left = settled.content.slice(0, at), right = settled.content.slice(at + 1);
+    // The left part is tried with a letter after it: "1. " alone reads as text, but as a list once anything follows.
+    if (lineBreak ? !C.keepsType(settled.content, b.type) : !(C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type))) return;
+  }
+  checkpoint("enter", id);
+  if (broke) {
     start = end = settled.caret - 1;
     content = settled.content.slice(0, start) + settled.content.slice(start + 1);
     followAnchors(id, content, (from, to) => {
@@ -1008,7 +1023,8 @@ function mergeInto(prevId, id) {
   const joining = `${D.contentOf(prev)}\n${D.contentOf(byId(id))}`;
   const m = D.mergeWithPrevious(state.doc, id);
   // The next paragraph's bold word right after a word: it is settled as if the line break between them was deleted.
-  const settled = prev.type === "para" ? K.settleMarks(joining, D.contentOf(prev), m.offset) : null;
+  const found = prev.type === "para" ? K.settleMarks(joining, D.contentOf(prev), m.offset) : null;
+  const settled = found && C.keepsType(found.content, prev.type) ? found : null;
   if (settled) {
     followAnchors(prevId, settled.content, marksMoved(D.contentOf(prev), settled.content));
     D.setContent(state.doc, prevId, settled.content);
@@ -1044,9 +1060,11 @@ function pasteText(el, raw) {
   if (b.type === "title" || b.type === "heading") text = text.replace(/\s*\n\s*/g, " ");
   if (!text) return;
   const sel = selectionIn(el) || { start: 0, end: 0 };
-  checkpoint("paste", id);
   const content = D.contentOf(b);
   const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
+  // Without its marks this line would read as another kind of block: the paste is refused, quietly.
+  if (settled && !C.keepsType(settled.content, b.type)) return;
+  checkpoint("paste", id);
   // Bold settled: asks follow by their offsets from the text before the paste; one it fell inside isn't moved at all.
   if (settled) followAnchors(id, settled.content, settled.follow, { insideGoes: true });
   else moveAsks(id, id, sel.end, text.length - (sel.end - sel.start));
