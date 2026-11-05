@@ -493,7 +493,7 @@ export function findQuote(doc, quote, near = null) {
   }
   // The agent reads the spoken text without cue marks: a quote across a cue's edge is found here, with the text as it is.
   for (const b of order) {
-    const r = quoteAcrossCues(contentOf(b), quote);
+    const r = b.type === "para" ? quoteAcrossCues(contentOf(b), quote) : null;
     if (r) return { blockId: b.id, ...r };
   }
   return null;
