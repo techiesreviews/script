@@ -912,7 +912,7 @@ function syncFromDom(el) {
   // being typed in front of one is followed from edit to edit, until its space is typed.
   if (b.type === "para") {
     const old = D.contentOf(b), going = boldTyping?.id === id && boldTyping.content === old ? boldTyping.end : null;
-    const settled = K.settleMarks(old, fix ? fix.content : typed, fix ? fix.caret : getCaret()?.offset, { typedBefore: going });
+    const settled = K.settleMarks(old, fix ? fix.content : typed, fix ? fix.caret : getCaret()?.offset, { typedBefore: going, deleted: fix?.gone });
     fix = settled || fix;
     boldTyping = settled?.typedBefore != null ? { id, content: settled.content, end: settled.typedBefore } : null;
     settledNow = settled;
@@ -1185,9 +1185,9 @@ const prompterOpts = () => ({ cues: cues().on ? cues().export : "strip" });
 // replaced, for Undo.
 function setCues(patch, forScript) {
   const key = forScript ? cueKey() : "cues", prev = store.get(key);
-  store.set(key, { ...(prev || {}), ...patch });
+  const saved = store.set(key, { ...(prev || {}), ...patch });
   cuesChanged();
-  return { forScript: !!forScript, key, prev };
+  return { forScript: !!forScript, key, prev, saved };
 }
 // The script may have a new name by now and its settings went with it, so the key is worked out here. The Undo line
 // closes when another script opens, so this is still the same script.
@@ -1265,7 +1265,7 @@ function agentCueSettings(args, by) {
   if (forScript && !state.name) return { error: "The open script has no file name yet, so it can't have its own settings. Leave out forScript to set them for the person." };
   const hadOwn = ownCues(), was = cues(), undoTo = setCues(patch, forScript), now = cues();
   const stored = JSON.stringify(undoTo.prev) !== JSON.stringify(store.get(undoTo.key));
-  const { banner, message } = K.settingsOutcome({ words: cueChangeWords(was, now), forScript, hadOwn, stored });
+  const { banner, message } = K.settingsOutcome({ words: cueChangeWords(was, now), forScript, hadOwn, stored, saved: undoTo.saved });
   if (banner) showBanner(`${by.name} ${banner}`, [["Undo", () => { hideBanner(); restoreCues(undoTo); }]]);
   return { result: { message, ...now, forScript: ownCues() } };
 }
