@@ -194,6 +194,18 @@ async function runBold(width, height) {
   await sleep(150);
   const weight = await page.eval(`(() => { const c = [...document.querySelectorAll("#script [data-cue], #script [data-cue] *")].map((e) => Number(getComputedStyle(e).fontWeight)); return c.length ? Math.max(...c) : 0; })()`);
   check(weight >= 600, `${tag}: the marked word shows bold`, weight);
+  // A paste that breaks the bold stretch inside an open ask's range cancels the ask: it doesn't move onto other words.
+  const paraOf = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("page."))`;
+  const pick = (from, to) => `(() => { const el = ${paraOf}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+  const line = () => page.eval(`[...document.querySelectorAll('#script .block[data-type="para"]')].map((x) => x.dataset.id)[0] && ${paraOf}.textContent`);
+  const opening = (await line()).indexOf("**");
+  await page.eval(pick(opening, opening + word.length + 10));
+  await sleep(300);
+  await page.click(`#editBar [data-act="shorter"]`);
+  check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "an ask over the bold word"), `${tag}: an ask sits over the bold word`);
+  await page.eval(pick(opening + 3, opening + 4));
+  await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "=*"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
+  check(await page.until(`!${paraOf}.querySelector("[data-ask]")`, "the ask cancelled"), `${tag}: a paste that breaks the bold stretch inside the ask cancels it`);
   await page.close();
 }
 
