@@ -244,7 +244,7 @@ export const TOOLS = [
   {
     name: "unmark_cue",
     title: "Remove cues",
-    description: `Removes cues: their ** marks go, the words stay. Give each cue's cueId (from list_cues) or its quote (its words exactly). Goes in at once as one change the person can undo. At most ${CUE_LIMITS.cues} per call.`,
+    description: `Removes cues: their ** marks go, the words stay. Only while cue marking is on. Give each cue's cueId (from list_cues) or its quote (its words exactly). Goes in at once as one change the person can undo. At most ${CUE_LIMITS.cues} per call.`,
     inputSchema: {
       type: "object",
       properties: {

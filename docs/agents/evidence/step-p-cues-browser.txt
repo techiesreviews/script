@@ -74,6 +74,13 @@ ok the next takes the bold off
 ok an ask sits on the bold word
 ok typing a letter right before the bold word keeps the ask open
 ok the words are back as they were
+ok the ask sits on the second no
+ok bold on the first no: the ask follows its own word
+ok Ctrl+Z: the ask is back on the second no, not the third
+ok the words are back as they were
+ok paste right before a bold word joins it, no literal marks
+ok joining the next paragraph onto this one leaves its bold word readable
+ok undo brings it all back
 ok Enter inside a bold stretch leaves no lone marks
 ok undo brings it all back
 ok Wait for MCP gives a connection token

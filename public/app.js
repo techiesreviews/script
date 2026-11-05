@@ -788,7 +788,13 @@ function restore(snap, from, to) {
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
   const { back, closed } = C.landStep(state.asks, snap.land);
   to.push({ doc: D.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
+  const was = state.doc;
   state.doc = D.cloneDoc(snap.doc);
+  // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
+  for (const b of state.doc.blocks) {
+    const from = D.blockById(was, b.id), a = from && D.contentOf(from), z = D.contentOf(b);
+    if (from && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, marksMoved(a, z));
+  }
   state.lastStep = null;
   if (closed) emit(closed.status, closed);
   reanchorAll();
@@ -1291,7 +1297,7 @@ function toggleCueHere() {
   }
   changed();
 }
-// What the toggle would do on this selection: null where it can't work (across paragraphs, a link or "=" in the way).
+// What the toggle would do on this selection: null where it can't work (across paragraphs, a link or "*" in the way).
 function cueTry(s) {
   const b = byId(s.id);
   return b && s.el.contains(s.range.startContainer) && s.el.contains(s.range.endContainer) ? K.toggleCue(D.contentOf(b), s.start, s.end) : null;
