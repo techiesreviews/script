@@ -136,6 +136,8 @@
 ✔ emptying a stretch looks past spaces at one inner edge, on a line of its own too, with Bold marking off; outer words first is the written limit
 ✔ a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: it is cancelled
 ✔ looking past spaces never takes a mark that belongs to a real stretch the edit didn't touch
+✔ marks the deletion put back aren't hit: Ctrl+Backspace next to a bold stretch leaves no stray marks
+✔ set_cue_settings says so when the browser couldn't store the change
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -347,9 +349,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 349
+ℹ tests 351
 ℹ suites 0
-ℹ pass 349
+ℹ pass 351
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
