@@ -841,3 +841,41 @@ test("set_cue_settings says so when the browser couldn't store the change", () =
   assert.match(Q.settingsOutcome({ saved: true, words: "", forScript: false, hadOwn: false, stored: false }).message, /in force already/);
   assert.match(Q.settingsOutcome({ words: "", forScript: false, hadOwn: false, stored: false }).message, /in force already/);
 });
+
+test("a line whose bold words would read as another kind of block without their marks: settleMarks shows it, keepsType refuses", () => {
+  for (const [line, caret] of [["**- item two**", 2], ["**# Plan**", 2], ["**> x y**", 2], ["**1. x y**", 2], ["**- item two** more", 2]]) {
+    const now = line.slice(0, caret - 1) + line.slice(caret);
+    const r = Q.settleMarks(line, now, caret - 1);
+    assert.ok(r, line);
+    assert.equal(C.keepsType(r.content, "para"), false, `${line} -> ${r.content}`);
+    assert.equal(C.keepsType(line, "para"), true, line);
+  }
+  // Ordinary bold words: the same edit is fine.
+  const r = Q.settleMarks("**big word** now", "*big word** now", 1);
+  assert.equal(C.keepsType(r.content, "para"), true);
+});
+
+test("an AI rewrite in a heading treats ** as plain text: it stays, and no cue is reported removed", () => {
+  const land = (md, quote, text, kind = "replace") => {
+    const doc = D.parse(md), b = doc.blocks.find((x) => x.type === "heading"), c = D.contentOf(b), [s, e] = sel(c, quote);
+    const ask = D.makeAsk(doc, { blockId: b.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+    Object.assign(ask, { status: "answered", answer: { kind, text }, answeredBy: { id: "agent:x", name: "X" } });
+    const res = C.land(doc, ask, 1);
+    return [D.contentOf(b), res.cuesDropped];
+  };
+  assert.deepEqual(land("# T\n\n## **Plan** now\n\nWords.\n", "Plan", "Goal"), ["**Goal** now", 0]);
+  assert.deepEqual(land("# T\n\n## **Plan** now\n\nWords.\n", "**Plan** now", "Goal now"), ["Goal now", 0]);
+  assert.deepEqual(land("# T\n\n## **Plan** now\n\nWords.\n", "**Plan**", "more", "add")[1], 0);
+  assert.doesNotMatch(C.answerResult("replace", { cuesDropped: 0 }), /cue/);
+  // Paragraphs keep the rule.
+  const doc = D.parse("# T\n\n## A\n\nWe **start here** now.\n"), p = paras(doc)[0], [s, e] = sel(D.contentOf(p), "**start here**");
+  const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "begin" }, answeredBy: { id: "agent:x", name: "X" } });
+  assert.equal(C.land(doc, ask, 1).cuesDropped, 1);
+});
+
+test("a quote read without the marks is only looked for across bold in paragraphs", () => {
+  const doc = D.parse("# T\n\n## **Plan** now\n\nWords.\n");
+  assert.equal(D.findQuote(doc, "Plan now"), null);
+  assert.equal(D.findQuote(D.parse("# T\n\n## A\n\n**Plan** now\n"), "Plan now").quote, "Plan** now");
+});

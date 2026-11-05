@@ -303,6 +303,86 @@ async function runBoldKeys(width, height) {
   await page.close();
 }
 
+// A line that would read as another kind of block without its marks keeps them: no words may leave the saved script or the
+// exports. With real keys, on a list, heading, quote and numbered line, and with words after the marks.
+async function runBoldKinds(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const script = async () => JSON.parse(await agent("get_script", {}));
+  const press = async (key, code, vk, modifiers = 0, text) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers, ...(text && type === "keyDown" ? { text } : {}) }); await sleep(250); };
+  const CTRL = 2, SHIFT = 8;
+  await page.eval(`getSelection().removeAllRanges()`);
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(400);
+  await page.click(`#cueGroup [data-cue-set="on"]`);
+  await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on");
+  await pressKey(page, "Escape", "Escape", 27);
+  await sleep(200);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
+  for (const line of ["**- item two**", "**# Plan**", "**> x y**", "**1. x y**", "**- item two** more"]) {
+    // A line of its own under the demo's first line.
+    await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+    await sleep(150);
+    await press("Enter", "Enter", 13, 0, "\r");
+    await page.send("Input.insertText", { text: line });
+    await sleep(350);
+    const para = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith(${JSON.stringify(line)}))`;
+    const pick = (from, to = from) => `(() => { const el = ${para}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+    const has = async () => (await script()).markdown.split("\n").includes(line);
+    const start = await script();
+    check(start.markdown.split("\n").includes(line), `${tag}: ${line}: a paragraph holding it`);
+    check(await page.eval(`!!${para}?.querySelector(".md-cue")`), `${tag}: ${line}: it shows bold`);
+    const plain = line.replace(/\*\*/g, "");
+    const same = async (what) => {
+      const now = await script();
+      check(!now.markdown.split("\n").includes(plain), `${tag}: ${line}: ${what}: it doesn't turn into ${plain}`, now.markdown.split("\n").find((l) => l.includes(plain.slice(0, 4))));
+      check(now.words === start.words, `${tag}: ${line}: ${what}: no spoken word leaves the counts`, now.words);
+      // At the very start of a line, Backspace may join it to the line above, as it always does; Ctrl+Z takes that back.
+      if (now.markdown !== start.markdown) {
+        await page.eval(`${first}.focus()`);
+        await press("z", "KeyZ", 90, CTRL);
+        check(await has(), `${tag}: ${line}: ${what}: one Ctrl+Z brings it back`);
+      }
+      check(await page.eval(`!!${para}`), `${tag}: ${line}: ${what}: it is still a paragraph`);
+    };
+    for (const [what, from, keys] of [
+      ["Backspace at the start of its words", 2, ["Backspace", "Backspace", 8]],
+      ["Delete at the start of the line", 0, ["Delete", "Delete", 46]],
+      ["Ctrl+Backspace at the start of its words", 2, ["Backspace", "Backspace", 8, CTRL]],
+      ["Enter inside its last word", line.indexOf("**", 2) - 1, ["Enter", "Enter", 13, 0, "\r"]],
+      ["Shift+Enter inside its last word", line.indexOf("**", 2) - 1, ["Enter", "Enter", 13, SHIFT, "\r"]],
+    ]) {
+      await page.eval(pick(from));
+      await sleep(250);
+      await press(...keys);
+      await same(what);
+    }
+    // Ordinary typing in it still works, and one Ctrl+Z takes it back.
+    await page.eval(pick(line.indexOf("**", 2)));
+    await sleep(250);
+    await page.send("Input.insertText", { text: "z" });
+    await sleep(300);
+    check((await script()).words >= start.words && !(await has()), `${tag}: ${line}: typing in its words works`);
+    await page.eval(`${para.replace(JSON.stringify(line), JSON.stringify(line.slice(0, 4)))}?.focus()`);
+    await press("z", "KeyZ", 90, CTRL);
+    check(await has(), `${tag}: ${line}: one Ctrl+Z takes the typing back`);
+    // Enter right after the line's mark: neither part reads as a list or a heading, so it splits, and no word leaves.
+    await page.eval(pick(line.indexOf(" ") + 1));
+    await sleep(250);
+    await press("Enter", "Enter", 13, 0, "\r");
+    const split = await script();
+    check(split.words === start.words, `${tag}: ${line}: Enter right after its mark: no spoken word leaves the counts`, split.words);
+    if (split.markdown !== start.markdown) {
+      await page.eval(`${first}.focus()`);
+      await press("z", "KeyZ", 90, CTRL);
+    }
+    check(await has(), `${tag}: ${line}: that Enter is refused, or one Ctrl+Z takes it back`);
+  }
+  await page.close();
+}
+
 // A script's own bold settings follow it to a new name: its name changes and nothing on the page is redrawn, so the caret,
 // a selection, the scroll position and any text being typed stay as they are. The person's own setting stays off.
 async function runRename(width, height) {
@@ -802,6 +882,7 @@ try {
   await runBold(1280, 800);
   await runBold(390, 760);
   await runBoldKeys(1280, 800);
+  await runBoldKinds(1280, 800);
   await runRename(1280, 800);
   await runRename(390, 760);
   await runUndoAndTabs(1280, 800);
