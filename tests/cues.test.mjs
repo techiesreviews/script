@@ -16,6 +16,7 @@ Q.readCuesWhen(() => true);
 const whileOff = (fn) => { Q.readCuesWhen(() => false); try { return fn(); } finally { Q.readCuesWhen(() => true); } };
 const sel = (content, words) => { const s = content.indexOf(words); return [s, s + words.length]; };
 
+const keptText = (...args) => { const r = L.keepHidden(...args); return r && { content: r.content, caret: r.caret }; };
 test("settings: off by default, highlight only, export strips; a script's own settings win over the person's", () => {
   assert.deepEqual(Q.CUE_DEFAULTS, { on: false, action: "highlight", export: "strip" });
   assert.deepEqual(Q.cueSettings(null, null), Q.CUE_DEFAULTS);
@@ -309,8 +310,8 @@ test("PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cu
   assert.deepEqual(Q.textCues("Read.\n- Docs: https://example.com/**guide**"), []);
   // Backspace next to a closed cue: Chromium takes the hidden "**" with the character; it is put back.
   const old = "Say **go** now", closed = Q.textCues(old);
-  assert.deepEqual(L.keepHidden(old, "Say **go now", closed, 8), { content: "Say **go** now", caret: 10 });
-  assert.deepEqual(L.keepHidden("Say **go**", "Say ", Q.textCues("Say **go**"), 4), null);
+  assert.deepEqual(keptText(old, "Say **go now", closed, 8), { content: "Say **go** now", caret: 10 });
+  assert.deepEqual(keptText("Say **go**", "Say ", Q.textCues("Say **go**"), 4), null);
 });
 
 test("bold style: plain bold by default, own colours only as a valid choice, kept per person", () => {
@@ -799,4 +800,44 @@ test("looking past spaces never takes a mark that belongs to a real stretch the 
   // The stretch being emptied still loses its own marks, beside a real one.
   assert.equal(Q.settleMarks("**a!** **two ** x", "**a!** **** x", 9)?.content, "**a!**  x");
   whileOff(() => assert.equal(Q.settleMarks("**a!** **two ** x", "**a!** **** x", 9)?.content, "**a!**  x"));
+});
+
+test("marks the deletion put back aren't hit: Ctrl+Backspace next to a bold stretch leaves no stray marks", () => {
+  // keepHidden puts back the hidden marks, then settleMarks is told what was really deleted.
+  const chain = (old, typed, caret) => {
+    const f = L.keepHidden(old, typed, Q.textCues(old), caret);
+    assert.ok(f, "hidden marks were lost");
+    const r = Q.settleMarks(old, f.content, f.caret, { deleted: f.gone });
+    return r ? [r.content, r.caret] : [f.content, f.caret];
+  };
+  const old = "Say **big word** now okay.";
+  assert.deepEqual(L.keepHidden(old, "Say **big now okay.", Q.textCues(old), 10).gone, [[10, 14], [16, 17]]);
+  // Ctrl+Backspace after the space before "now": it takes "word", the hidden marks and the space.
+  assert.deepEqual(chain(old, "Say **big now okay.", 10), ["Say **big** now okay.", 12]);
+  // Right after the closing marks: "word" and the hidden marks.
+  assert.deepEqual(chain(old, "Say **big  now okay.", 10)[0], "Say **big**  now okay.");
+  // Ctrl+Delete from before the opening marks: the hidden marks and "big".
+  assert.equal(chain(old, "Say  word** now okay.", 4)[0], "Say  **word** now okay.");
+  // A one-word stretch deleted whole goes as a whole, as it was seen.
+  assert.equal(L.keepHidden("Say **big** now", "Say now", Q.textCues("Say **big** now"), 4), null);
+  assert.equal(Q.settleMarks("Say **big** now", "Say now", 4)?.content ?? "Say now", "Say now");
+  // Two stretches, with a space left between them: only the one reached changes.
+  assert.equal(chain("**a b**  **c d** x", "**a  **c d** x", 4)[0], "**a**  **c d** x");
+  // The only space between them deleted, so they touch: both lose their marks, no stray marks and no other word lost.
+  assert.equal(chain("**a b** **c d** x", "**a **c d** x", 4)[0], "a c d x");
+  // Whatever it leaves, every mark still reads as bold and no word is lost.
+  const ask = Q.settleMarks(old, "Say **big **now okay.", 10, { deleted: [[10, 14], [16, 17]] });
+  const after = ask.follow(old.indexOf("now"), old.indexOf("now") + 3);
+  assert.equal(ask.content.slice(after.start, after.end), "now");
+  assert.equal(ask.follow(6, 12), null, "the deletion fell inside this ask");
+  assert.equal(Q.settleMarks(old, "Say **big **now okay.", 10, { deleted: [[10, 14], [16, 17]], typedBefore: 3 }).typedBefore ?? null, null);
+});
+
+test("set_cue_settings says so when the browser couldn't store the change", () => {
+  const out = Q.settingsOutcome({ saved: false, words: "", forScript: false, hadOwn: false, stored: false });
+  assert.equal(out.banner, null);
+  assert.match(out.message, /could not be saved/i);
+  assert.doesNotMatch(out.message, /in force already/);
+  assert.match(Q.settingsOutcome({ saved: true, words: "", forScript: false, hadOwn: false, stored: false }).message, /in force already/);
+  assert.match(Q.settingsOutcome({ words: "", forScript: false, hadOwn: false, stored: false }).message, /in force already/);
 });

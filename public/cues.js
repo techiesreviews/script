@@ -56,8 +56,9 @@ export const boldStyle = (stored) => ({
 
 /** What the person (the banner, after the agent's name; null for none) and the agent are told after set_cue_settings.
  *  words: what changed in force (empty when nothing did); forScript: where it was saved; hadOwn: the open script had
- *  its own settings before; stored: whether what is saved changed. */
-export function settingsOutcome({ words, forScript, hadOwn, stored }) {
+ *  its own settings before; stored: whether what is saved changed; saved: false when the browser refused to store it. */
+export function settingsOutcome({ words, forScript, hadOwn, stored, saved = true }) {
+  if (!saved) return { banner: null, message: "The change could not be saved: this browser's storage is full or turned off. Nothing changed." };
   const same = { banner: null, message: "Those settings were in force already: nothing changed." };
   if (words) return { banner: `${words}${forScript ? " for this script" : ""}`, message: "Done: the person sees the change, with Undo." };
   if (!stored) return same;
@@ -225,14 +226,15 @@ function editSpan(old, now, caret) {
   if (Number.isInteger(caret) && grew < 0 && caret - grew <= old.length && old.slice(0, caret) + old.slice(caret - grew) === now) return [caret, caret - grew, caret];
   return [p, oe, ne];
 }
-// The offsets of a range through one edit (null when the edit fell inside the range), then through the marks' moves: an
+// Where an offset of the old text is after the edit's spans ([from, to, length put in]), for a character the edit left.
+const throughSpans = (spans, i) => spans.reduce((at, [a, b, put]) => (i >= b ? at + put - (b - a) : at), i);
+// The offsets of a range through the edit (null when the edit fell inside the range), then through the marks' moves: an
 // ask anchors by these, never by a search through the text.
-const followEdit = (p, oe, delta, now, content) => {
+const followEdit = (spans, now, content) => {
   const range = marksRange(now, content);
   return (start, end) => {
-    if (end <= p) return range(start, end);
-    if (start >= oe) return range(start + delta, end + delta);
-    return null;
+    if (spans.some(([a, b]) => (a < b ? a < end && b > start : a > start && a < end))) return null;
+    return range(throughSpans(spans, start), end > start ? throughSpans(spans, end - 1) + 1 : throughSpans(spans, start));
   };
 };
 // The last words of a stretch deleted: its marks go, read by the text alone, as no setting travels to a guest. Looks past
@@ -252,7 +254,7 @@ function emptied(old, now, p, oe, ne) {
   if (readCues(old).some((c) => c.end === open || c.start === close)) return null;
   const delta = ne - oe, end = close + delta;
   const content = now.slice(0, open - 2) + now.slice(open, end) + now.slice(end + 2);
-  return { content, caret: p - 2, typedBefore: null, follow: followEdit(p, oe, delta, now, content) };
+  return { content, caret: p - 2, typedBefore: null, follow: followEdit([[p, oe, 0]], now, content) };
 }
 /**
  * After one edit of a block (`old` → `now`; caret: its offset in `now`): every cue the edit broke is settled, so its
@@ -262,21 +264,26 @@ function emptied(old, now, p, oe, ne) {
  * A word being typed in front of a cue joins it only until its space is typed, then stays plain: `typedBefore` says where
  * that word ends in `old`, and the result's `typedBefore` where it ends now (null once the person is doing anything else).
  * Whatever the settings say (a guest's are their own), an edit that empties a stretch takes its marks with it: `emptied`.
+ * `deleted`: the [start, end] ranges of `old` that really went, when hidden marks were put back (L.keepHidden), so several
+ * stretches of text went while the marks stayed: marks put back aren't hit.
  * Returns { content, caret, typedBefore, follow }, or null when no cue needs settling (no cue was there, or the edit broke
  * none). follow(start, end): where a range of `old` goes, or null when the edit fell inside it.
  */
-export function settleMarks(old, now, caret = null, { typedBefore = null } = {}) {
+export function settleMarks(old, now, caret = null, { typedBefore = null, deleted = null } = {}) {
   if (old === now) return null;
   const [p, oe, ne] = editSpan(old, now, caret);
   const cues = textCues(old);
   if (!cues.length) return emptied(old, now, p, oe, ne);
-  const delta = ne - oe, to = (i) => (i < p ? i : i + delta), ops = [], added = oe === p ? now.slice(p, ne) : "";
+  const spans = deleted?.length ? deleted.map(([a, b]) => [a, b, 0]) : [[p, oe, ne - p]];
+  const inSpan = (i) => spans.some(([a, b]) => i >= a && i < b);
+  const to = (i) => throughSpans(spans, i), ops = [], added = !deleted?.length && oe === p ? now.slice(p, ne) : "";
+  if (deleted?.length) typedBefore = null;
   let typing = null;
   const take = (at, del) => ops.push({ at, del, ins: "" }), put = (at) => ops.push({ at, del: 0, ins: "**" });
   for (const c of cues) {
     const marks = [c.start, c.end - 2];
-    if (marks.some((m) => (p < m + 2 && oe > m) || (p === oe && p > m && p < m + 2))) {
-      for (const m of marks) for (const i of [m, m + 1]) if (i < p || i >= oe) take(to(i), 1);
+    if (marks.some((m) => spans.some(([a, b]) => (a < m + 2 && b > m) || (a === b && a > m && a < m + 2)))) {
+      for (const m of marks) for (const i of [m, m + 1]) if (!inSpan(i)) take(to(i), 1);
       continue;
     }
     const open = to(c.start), close = to(c.end - 2), inner = now.slice(open + 2, close), words = inner.trim();
@@ -303,7 +310,7 @@ export function settleMarks(old, now, caret = null, { typedBefore = null } = {})
     if (trail) { put(close - trail); take(close, 2); }
     else if (finish > close + 2) { take(close, 2); put(finish); }
   }
-  if (!ops.length) return typing == null ? emptied(old, now, p, oe, ne) : { content: now, caret, typedBefore: typing, follow: followEdit(p, oe, delta, now, now) };
+  if (!ops.length) return typing != null ? { content: now, caret, typedBefore: typing, follow: followEdit(spans, now, now) } : deleted?.length ? null : emptied(old, now, p, oe, ne);
   ops.sort((a, b) => a.at - b.at);
   let content = "", at = 0, moved = caret;
   for (const op of ops) {
@@ -312,7 +319,7 @@ export function settleMarks(old, now, caret = null, { typedBefore = null } = {})
     if (caret != null && op.at < caret) moved += op.ins.length - Math.min(op.del, caret - op.at);
   }
   content += now.slice(at);
-  return { content, caret: moved, typedBefore: typing, follow: followEdit(p, oe, delta, now, content) };
+  return { content, caret: moved, typedBefore: typing, follow: followEdit(spans, now, content) };
 }
 
 /* ---------- The agent's rewrites ---------- */
