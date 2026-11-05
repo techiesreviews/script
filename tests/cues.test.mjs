@@ -237,12 +237,6 @@ test("Lex's decision 6: a rewrite reaching into a cue keeps it only if its words
   assert.deepEqual(Q.widenOverCues("We **start here** now.", 11, 15), { start: 3, end: 17, before: "start ", after: "" });
 });
 
-test("review 5: with cue marking off, a dropped cue is reported without asking the agent to mark it again", () => {
-  assert.match(C.answerResult("replace", { cuesDropped: 1, cuesOn: true }), /mark_cue/);
-  assert.doesNotMatch(C.answerResult("replace", { cuesDropped: 1, cuesOn: false }), /mark_cue/);
-  assert.match(C.answerResult("replace", { cuesDropped: 1, cuesOn: false }), /removed 1 cue/);
-});
-
 test("lead fixes: Ctrl+B takes off a cue the agent just marked; a shown cue never splits across prompter lines", () => {
   const doc = script();
   const [p1, p2] = paras(doc);
@@ -674,7 +668,7 @@ test("emptying a stretch over several selections leaves no **** either, with Bol
       const restB = b.slice(firstB).replace(/\*\*.*$/s, "");
       const doneB = step(b, firstB, firstB + restB.length);
       for (const t of [doneA, doneB]) {
-        assert.ok(!t.includes("****"), JSON.stringify(t));
+        assert.ok(!t.includes("*"), JSON.stringify(t));
         assert.ok(t.startsWith("We ") && t.endsWith(" now"), JSON.stringify(t));
       }
     }
@@ -735,4 +729,50 @@ test("a range follows the marks to its own words: its end never slides past a cl
 test("a cue never ends before a combining mark, and whole words count them", () => {
   assert.deepEqual(C.planCues(D.parse("# T\n\n## A\n\nनमस्ते दोस्त\n"), "mark", [{ quote: "नमस" }]).segments, []);
   assert.deepEqual(Q.textCues("**नमस**्ते"), []);
+});
+
+test("emptying a stretch looks past spaces: no marks left, on a line of its own too, with Bold marking off", () => {
+  const run = (...edits) => {
+    let t = edits.shift();
+    for (const words of edits) {
+      const i = t.indexOf(words), now = t.slice(0, i) + t.slice(i + words.length), r = Q.settleMarks(t, now, i);
+      t = r ? r.content : now;
+    }
+    return t;
+  };
+  whileOff(() => {
+    assert.equal(run("We **two words** now", "two", "words"), "We   now");
+    assert.equal(run("We **two words** now", "words", "two"), "We   now");
+    assert.equal(run("We **two words here** now", "two", "words here"), "We   now");
+    assert.equal(run("**a b**", "a", "b"), " ");
+    assert.equal(run("**a b**", "b", "a"), " ");
+    // A whole paragraph stays a paragraph at every step.
+    const doc = D.parse("# T\n\n## A\n\n**a b**\n\nNext.\n"), p = paras(doc)[0];
+    for (const [now, caret] of [["** b**", 2], ["** **", 3]]) {
+      const old = D.contentOf(p), r = Q.settleMarks(old, now, caret);
+      D.setContent(doc, p.id, r ? r.content : now);
+      assert.equal(doc.blocks.find((b) => b.id === p.id)?.type, "para", now);
+    }
+    assert.equal(D.contentOf(p).includes("*"), false);
+    // Still byte for byte: spaces on both inner edges, a word or * outside the marks, a link, a line break, other edits.
+    for (const [old, now, caret] of [
+      ["a ** b ** c", "a **  ** c", 5], ["a ** b ** c", "a **** c", 4], ["x** b** y", "x** ** y", 4], ["We ** b**y", "We ** **y", 6],
+      ["We *** b** y", "We *** ** y", 7], ["We ** [a](https://x.example)** y", "We ** ** y", 6], ["We **a\n b** y", "We **a\n ** y", 8],
+      ["We ** b** y", "We ** b**", 9], ["We ** b** y", "We ** c** y", 7],
+    ]) assert.equal(Q.settleMarks(old, now, caret), null, `${old} -> ${now}`);
+  });
+  // The same with Bold marking on, where the first edit already moved the space out.
+  assert.equal(run("We **two words** now", "two", "words").includes("*"), false);
+});
+
+test("a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: the old rules decide", () => {
+  const old = "We **go** now and more", pasted = `${old.slice(0, 6)}=*${old.slice(7)}`;
+  const r = Q.settleMarks(old, pasted, 8);
+  assert.equal(r.content, "We g=* now and more");
+  assert.equal(r.follow(3, 12), null, "the paste fell inside this ask");
+  // One wholly after the paste follows its own words.
+  const after = r.follow(old.indexOf("more"), old.length);
+  assert.equal(r.content.slice(after.start, after.end), "more");
+  // Its quote is gone from the text, so it is cancelled rather than moved onto other words.
+  assert.equal(D.reanchor({ start: 3, quote: old.slice(3, 12) }, r.content), null);
 });

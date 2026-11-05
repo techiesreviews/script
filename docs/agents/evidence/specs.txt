@@ -105,7 +105,6 @@
 ✔ review 2: Ctrl+B never cuts into an open ask; the toggle says which stretch it changes
 ✔ review 2: a rewrite over half a cue takes the whole cue in, so no stray ** is left; duplicates count
 ✔ Lex's decision 6: a rewrite reaching into a cue keeps it only if its words survive, and the agent is told
-✔ review 5: with cue marking off, a dropped cue is reported without asking the agent to mark it again
 ✔ lead fixes: Ctrl+B takes off a cue the agent just marked; a shown cue never splits across prompter lines
 ✔ lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an open ask over the cue
 ✔ PR 8 fixes: the cue tools don't treat the agent's highlighted changes as busy; open asks still count
@@ -134,6 +133,8 @@
 ✔ a host's asks follow a guest's marks by offsets: each room edit moves them, and they stay on their own word
 ✔ a range follows the marks to its own words: its end never slides past a closing mark
 ✔ a cue never ends before a combining mark, and whole words count them
+✔ emptying a stretch looks past spaces: no marks left, on a line of its own too, with Bold marking off
+✔ a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: the old rules decide
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -345,9 +346,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 347
+ℹ tests 348
 ℹ suites 0
-ℹ pass 347
+ℹ pass 348
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
