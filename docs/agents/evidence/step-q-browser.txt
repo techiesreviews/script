@@ -1,4 +1,4 @@
-# Step Q browser check: headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px, and bold marking (step P) at 1280 px and 390 px; a fresh browser context per run and for the guest. 2026-11-04T22:01:22Z, run on the working tree on top of 9ff7813, itself on top of step P.
+# Step Q and bold browser check on the release commit: main f3aedb3, whose whole tree is identical to dev a8b1a14. Headless Chrome, local Worker (wrangler dev), MCP over fetch, real clicks and keys over CDP; 1280 px, 390 px and 1920 px; a fresh browser context per run and for the guest; exports compared byte for byte with public/doc.js from b9a072a, before bold (SMOKE_BASELINE). Script: scripts/smoke-keep-all.mjs. 2026-11-05T03:45:18Z.
 ok 1280 px: one picture waiting, no Keep all
 ok 1280 px: a paragraph to open the menus on
 ok 1280 px: two pictures waiting, Keep all shows
@@ -52,6 +52,7 @@ ok 1280 px: the frames don't jump when two pictures become one
 ok 1280 px: nor when the last one goes
 ok 1280 px: the empty row goes with the view
 ok 1280 px: back from the storyboard, the text is where it was
+ok 1280 px: back to the very top, the whole bar is in sight
 ok 1280 px: the line for B8 is in the script
 ok 1280 px: over the script, a picture for a shot without a line doesn't count
 ok 1280 px: in the storyboard, where that shot is listed, it does
@@ -61,6 +62,12 @@ ok 1280 px: nothing waits after a reload
 ok 1280 px: the host has the bar
 ok 1280 px: the guest sees the pictures
 ok 1280 px: the guest has no bar
+ok 1280 px: the guest gets the words
+ok 1280 px: the host has an ask on the second word
+ok 1280 px: the host's ask reaches the guest
+ok 1280 px: the guest with Bold marking on has the B button
+ok 1280 px: the guest's bold reaches the host as text
+ok 1280 px: the host's ask stays on its own word
 ok 390 px: one picture waiting, no Keep all
 ok 390 px: a paragraph to open the menus on
 ok 390 px: two pictures waiting, Keep all shows
@@ -114,6 +121,7 @@ ok 390 px: the frames don't jump when two pictures become one
 ok 390 px: nor when the last one goes
 ok 390 px: the empty row goes with the view
 ok 390 px: back from the storyboard, the text is where it was
+ok 390 px: back to the very top, the whole bar is in sight
 ok 390 px: the line for B8 is in the script
 ok 390 px: over the script, a picture for a shot without a line doesn't count
 ok 390 px: in the storyboard, where that shot is listed, it does
@@ -140,16 +148,388 @@ ok 1280 px: a word to select
 ok 1280 px: selecting a word shows the selection bar
 ok 1280 px: Bold marking off (the default): no B button
 ok 1280 px: Bold marking off: Ctrl+B changes nothing
+ok 1280 px: the menu says Bold marking (experimental)
 ok 1280 px: Bold marking can be switched on in the file-name menu
 ok 1280 px: Bold marking on: the B button shows
 ok 1280 px: B marks the word in the text
 ok 1280 px: the marked word shows bold
+ok 1280 px: an ask sits over the bold word
+ok 1280 px: a paste that breaks the bold stretch inside the ask cancels it
+ok 1280 px: an ask sits on the first of two repeated phrases
+ok 1280 px: that paste cancels it, it doesn't jump to the later copy
+ok 1280 px: an answered ask closes as cancelled
 ok 390 px: a word to select
 ok 390 px: selecting a word shows the selection bar
 ok 390 px: Bold marking off (the default): no B button
 ok 390 px: Bold marking off: Ctrl+B changes nothing
+ok 390 px: the menu says Bold marking (experimental)
 ok 390 px: Bold marking can be switched on in the file-name menu
 ok 390 px: Bold marking on: the B button shows
 ok 390 px: B marks the word in the text
 ok 390 px: the marked word shows bold
+ok 390 px: an ask sits over the bold word
+ok 390 px: a paste that breaks the bold stretch inside the ask cancels it
+ok 390 px: an ask sits on the first of two repeated phrases
+ok 390 px: that paste cancels it, it doesn't jump to the later copy
+ok 390 px: an answered ask closes as cancelled
+ok 1280 px: bold off: Ctrl+Backspace after the space before now
+ok 1280 px: bold off: Ctrl+Backspace after the space before now: the deletion happened
+ok 1280 px: bold off: Ctrl+Backspace after the space before now: one Ctrl+Z brings it back
+ok 1280 px: bold off: Backspace after that space: the deletion happened
+ok 1280 px: bold off: Backspace after that space: one Ctrl+Z brings it back
+ok 1280 px: bold off: Ctrl+Backspace right after the closing marks: the deletion happened
+ok 1280 px: bold off: Ctrl+Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold off: Backspace right after the closing marks: the deletion happened
+ok 1280 px: bold off: Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold off: Backspace inside the bold words: the deletion happened
+ok 1280 px: bold off: Backspace inside the bold words: one Ctrl+Z brings it back
+ok 1280 px: bold off: Ctrl+Backspace inside the bold words: the deletion happened
+ok 1280 px: bold off: Ctrl+Backspace inside the bold words: one Ctrl+Z brings it back
+ok 1280 px: bold off: Delete right before the opening marks: the deletion happened
+ok 1280 px: bold off: Delete right before the opening marks: one Ctrl+Z brings it back
+ok 1280 px: bold off: Ctrl+Delete right before the opening marks: the deletion happened
+ok 1280 px: bold off: Ctrl+Delete right before the opening marks: one Ctrl+Z brings it back
+ok 1280 px: bold off: Delete right after the closing marks: the deletion happened
+ok 1280 px: bold off: Delete right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold off: Ctrl+Delete right after the closing marks: the deletion happened
+ok 1280 px: bold off: Ctrl+Delete right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold off: Ctrl+Delete inside the bold words: the deletion happened
+ok 1280 px: bold off: Ctrl+Delete inside the bold words: one Ctrl+Z brings it back
+ok 1280 px: bold off: a selection across the closing marks, deleted: the deletion happened
+ok 1280 px: bold off: a selection across the closing marks, deleted: one Ctrl+Z brings it back
+ok 1280 px: bold off: a selection across the opening marks, deleted: the deletion happened
+ok 1280 px: bold off: a selection across the opening marks, deleted: one Ctrl+Z brings it back
+ok 1280 px: bold off: a selection over the whole stretch, deleted: the deletion happened
+ok 1280 px: bold off: a selection over the whole stretch, deleted: one Ctrl+Z brings it back
+ok 1280 px: Bold marking can be switched on
+ok 1280 px: bold on: Ctrl+Backspace after the space before now
+ok 1280 px: bold on: Ctrl+Backspace after the space before now: no stray marks
+ok 1280 px: bold on: Ctrl+Backspace after the space before now: the deletion happened
+ok 1280 px: bold on: Ctrl+Backspace after the space before now: one Ctrl+Z brings it back
+ok 1280 px: bold on: Backspace after that space: no stray marks
+ok 1280 px: bold on: Backspace after that space: the deletion happened
+ok 1280 px: bold on: Backspace after that space: one Ctrl+Z brings it back
+ok 1280 px: bold on: Ctrl+Backspace right after the closing marks: no stray marks
+ok 1280 px: bold on: Ctrl+Backspace right after the closing marks: the deletion happened
+ok 1280 px: bold on: Ctrl+Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold on: Backspace right after the closing marks: no stray marks
+ok 1280 px: bold on: Backspace right after the closing marks: the deletion happened
+ok 1280 px: bold on: Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold on: Backspace inside the bold words: no stray marks
+ok 1280 px: bold on: Backspace inside the bold words: the deletion happened
+ok 1280 px: bold on: Backspace inside the bold words: one Ctrl+Z brings it back
+ok 1280 px: bold on: Ctrl+Backspace inside the bold words: no stray marks
+ok 1280 px: bold on: Ctrl+Backspace inside the bold words: the deletion happened
+ok 1280 px: bold on: Ctrl+Backspace inside the bold words: one Ctrl+Z brings it back
+ok 1280 px: bold on: Delete right before the opening marks: no stray marks
+ok 1280 px: bold on: Delete right before the opening marks: the deletion happened
+ok 1280 px: bold on: Delete right before the opening marks: one Ctrl+Z brings it back
+ok 1280 px: bold on: Ctrl+Delete right before the opening marks: no stray marks
+ok 1280 px: bold on: Ctrl+Delete right before the opening marks: the deletion happened
+ok 1280 px: bold on: Ctrl+Delete right before the opening marks: one Ctrl+Z brings it back
+ok 1280 px: bold on: Delete right after the closing marks: no stray marks
+ok 1280 px: bold on: Delete right after the closing marks: the deletion happened
+ok 1280 px: bold on: Delete right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold on: Ctrl+Delete right after the closing marks: no stray marks
+ok 1280 px: bold on: Ctrl+Delete right after the closing marks: the deletion happened
+ok 1280 px: bold on: Ctrl+Delete right after the closing marks: one Ctrl+Z brings it back
+ok 1280 px: bold on: Ctrl+Delete inside the bold words: no stray marks
+ok 1280 px: bold on: Ctrl+Delete inside the bold words: the deletion happened
+ok 1280 px: bold on: Ctrl+Delete inside the bold words: one Ctrl+Z brings it back
+ok 1280 px: bold on: a selection across the closing marks, deleted: no stray marks
+ok 1280 px: bold on: a selection across the closing marks, deleted: the deletion happened
+ok 1280 px: bold on: a selection across the closing marks, deleted: one Ctrl+Z brings it back
+ok 1280 px: bold on: a selection across the opening marks, deleted: no stray marks
+ok 1280 px: bold on: a selection across the opening marks, deleted: the deletion happened
+ok 1280 px: bold on: a selection across the opening marks, deleted: one Ctrl+Z brings it back
+ok 1280 px: bold on: a selection over the whole stretch, deleted: no stray marks
+ok 1280 px: bold on: a selection over the whole stretch, deleted: the deletion happened
+ok 1280 px: bold on: a selection over the whole stretch, deleted: one Ctrl+Z brings it back
+ok 1280 px: set_cue_settings says the change could not be saved
+ok 390 px: bold off: Ctrl+Backspace after the space before now
+ok 390 px: bold off: Ctrl+Backspace after the space before now: the deletion happened
+ok 390 px: bold off: Ctrl+Backspace after the space before now: one Ctrl+Z brings it back
+ok 390 px: bold off: Backspace after that space: the deletion happened
+ok 390 px: bold off: Backspace after that space: one Ctrl+Z brings it back
+ok 390 px: bold off: Ctrl+Backspace right after the closing marks: the deletion happened
+ok 390 px: bold off: Ctrl+Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold off: Backspace right after the closing marks: the deletion happened
+ok 390 px: bold off: Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold off: Backspace inside the bold words: the deletion happened
+ok 390 px: bold off: Backspace inside the bold words: one Ctrl+Z brings it back
+ok 390 px: bold off: Ctrl+Backspace inside the bold words: the deletion happened
+ok 390 px: bold off: Ctrl+Backspace inside the bold words: one Ctrl+Z brings it back
+ok 390 px: bold off: Delete right before the opening marks: the deletion happened
+ok 390 px: bold off: Delete right before the opening marks: one Ctrl+Z brings it back
+ok 390 px: bold off: Ctrl+Delete right before the opening marks: the deletion happened
+ok 390 px: bold off: Ctrl+Delete right before the opening marks: one Ctrl+Z brings it back
+ok 390 px: bold off: Delete right after the closing marks: the deletion happened
+ok 390 px: bold off: Delete right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold off: Ctrl+Delete right after the closing marks: the deletion happened
+ok 390 px: bold off: Ctrl+Delete right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold off: Ctrl+Delete inside the bold words: the deletion happened
+ok 390 px: bold off: Ctrl+Delete inside the bold words: one Ctrl+Z brings it back
+ok 390 px: bold off: a selection across the closing marks, deleted: the deletion happened
+ok 390 px: bold off: a selection across the closing marks, deleted: one Ctrl+Z brings it back
+ok 390 px: bold off: a selection across the opening marks, deleted: the deletion happened
+ok 390 px: bold off: a selection across the opening marks, deleted: one Ctrl+Z brings it back
+ok 390 px: bold off: a selection over the whole stretch, deleted: the deletion happened
+ok 390 px: bold off: a selection over the whole stretch, deleted: one Ctrl+Z brings it back
+ok 390 px: Bold marking can be switched on
+ok 390 px: bold on: Ctrl+Backspace after the space before now
+ok 390 px: bold on: Ctrl+Backspace after the space before now: no stray marks
+ok 390 px: bold on: Ctrl+Backspace after the space before now: the deletion happened
+ok 390 px: bold on: Ctrl+Backspace after the space before now: one Ctrl+Z brings it back
+ok 390 px: bold on: Backspace after that space: no stray marks
+ok 390 px: bold on: Backspace after that space: the deletion happened
+ok 390 px: bold on: Backspace after that space: one Ctrl+Z brings it back
+ok 390 px: bold on: Ctrl+Backspace right after the closing marks: no stray marks
+ok 390 px: bold on: Ctrl+Backspace right after the closing marks: the deletion happened
+ok 390 px: bold on: Ctrl+Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold on: Backspace right after the closing marks: no stray marks
+ok 390 px: bold on: Backspace right after the closing marks: the deletion happened
+ok 390 px: bold on: Backspace right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold on: Backspace inside the bold words: no stray marks
+ok 390 px: bold on: Backspace inside the bold words: the deletion happened
+ok 390 px: bold on: Backspace inside the bold words: one Ctrl+Z brings it back
+ok 390 px: bold on: Ctrl+Backspace inside the bold words: no stray marks
+ok 390 px: bold on: Ctrl+Backspace inside the bold words: the deletion happened
+ok 390 px: bold on: Ctrl+Backspace inside the bold words: one Ctrl+Z brings it back
+ok 390 px: bold on: Delete right before the opening marks: no stray marks
+ok 390 px: bold on: Delete right before the opening marks: the deletion happened
+ok 390 px: bold on: Delete right before the opening marks: one Ctrl+Z brings it back
+ok 390 px: bold on: Ctrl+Delete right before the opening marks: no stray marks
+ok 390 px: bold on: Ctrl+Delete right before the opening marks: the deletion happened
+ok 390 px: bold on: Ctrl+Delete right before the opening marks: one Ctrl+Z brings it back
+ok 390 px: bold on: Delete right after the closing marks: no stray marks
+ok 390 px: bold on: Delete right after the closing marks: the deletion happened
+ok 390 px: bold on: Delete right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold on: Ctrl+Delete right after the closing marks: no stray marks
+ok 390 px: bold on: Ctrl+Delete right after the closing marks: the deletion happened
+ok 390 px: bold on: Ctrl+Delete right after the closing marks: one Ctrl+Z brings it back
+ok 390 px: bold on: Ctrl+Delete inside the bold words: no stray marks
+ok 390 px: bold on: Ctrl+Delete inside the bold words: the deletion happened
+ok 390 px: bold on: Ctrl+Delete inside the bold words: one Ctrl+Z brings it back
+ok 390 px: bold on: a selection across the closing marks, deleted: no stray marks
+ok 390 px: bold on: a selection across the closing marks, deleted: the deletion happened
+ok 390 px: bold on: a selection across the closing marks, deleted: one Ctrl+Z brings it back
+ok 390 px: bold on: a selection across the opening marks, deleted: no stray marks
+ok 390 px: bold on: a selection across the opening marks, deleted: the deletion happened
+ok 390 px: bold on: a selection across the opening marks, deleted: one Ctrl+Z brings it back
+ok 390 px: bold on: a selection over the whole stretch, deleted: no stray marks
+ok 390 px: bold on: a selection over the whole stretch, deleted: the deletion happened
+ok 390 px: bold on: a selection over the whole stretch, deleted: one Ctrl+Z brings it back
+ok 390 px: set_cue_settings says the change could not be saved
+ok 1280 px: the Bold marking row shows no tick while it is off
+ok 1280 px: the Bold marking row shows a tick once it is on
+ok 1280 px: the rows that are off show no tick
+ok 1280 px: **- item two**: a paragraph holding it
+ok 1280 px: **- item two**: it shows bold
+ok 1280 px: **- item two**: Backspace at the start of its words: it doesn't turn into - item two
+ok 1280 px: **- item two**: Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **- item two**: Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **- item two**: Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **- item two**: Delete at the start of the line: it doesn't turn into - item two
+ok 1280 px: **- item two**: Delete at the start of the line: no spoken word leaves the counts
+ok 1280 px: **- item two**: Delete at the start of the line: it is still a paragraph
+ok 1280 px: **- item two**: Delete at the start of the line: the caret stays
+ok 1280 px: **- item two**: Ctrl+Backspace at the start of its words: it doesn't turn into - item two
+ok 1280 px: **- item two**: Ctrl+Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **- item two**: Ctrl+Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **- item two**: Ctrl+Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **- item two**: Enter inside its last word: it doesn't turn into - item two
+ok 1280 px: **- item two**: Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **- item two**: Enter inside its last word: it is still a paragraph
+ok 1280 px: **- item two**: Shift+Enter inside its last word: it doesn't turn into - item two
+ok 1280 px: **- item two**: Shift+Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **- item two**: Shift+Enter inside its last word: it is still a paragraph
+ok 1280 px: **- item two**: typing in its words works
+ok 1280 px: **- item two**: one Ctrl+Z takes the typing back
+ok 1280 px: **- item two**: Enter right after its mark: no spoken word leaves the counts
+ok 1280 px: **- item two**: that Enter is refused, or one Ctrl+Z takes it back
+ok 1280 px: **# Plan**: a paragraph holding it
+ok 1280 px: **# Plan**: it shows bold
+ok 1280 px: **# Plan**: Backspace at the start of its words: it doesn't turn into # Plan
+ok 1280 px: **# Plan**: Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **# Plan**: Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **# Plan**: Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **# Plan**: Delete at the start of the line: it doesn't turn into # Plan
+ok 1280 px: **# Plan**: Delete at the start of the line: no spoken word leaves the counts
+ok 1280 px: **# Plan**: Delete at the start of the line: it is still a paragraph
+ok 1280 px: **# Plan**: Delete at the start of the line: the caret stays
+ok 1280 px: **# Plan**: Ctrl+Backspace at the start of its words: it doesn't turn into # Plan
+ok 1280 px: **# Plan**: Ctrl+Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **# Plan**: Ctrl+Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **# Plan**: Ctrl+Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **# Plan**: Enter inside its last word: it doesn't turn into # Plan
+ok 1280 px: **# Plan**: Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **# Plan**: Enter inside its last word: it is still a paragraph
+ok 1280 px: **# Plan**: Shift+Enter inside its last word: it doesn't turn into # Plan
+ok 1280 px: **# Plan**: Shift+Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **# Plan**: Shift+Enter inside its last word: it is still a paragraph
+ok 1280 px: **# Plan**: typing in its words works
+ok 1280 px: **# Plan**: one Ctrl+Z takes the typing back
+ok 1280 px: **# Plan**: Enter right after its mark: no spoken word leaves the counts
+ok 1280 px: **# Plan**: that Enter is refused, or one Ctrl+Z takes it back
+ok 1280 px: **> x y**: a paragraph holding it
+ok 1280 px: **> x y**: it shows bold
+ok 1280 px: **> x y**: Backspace at the start of its words: it doesn't turn into > x y
+ok 1280 px: **> x y**: Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **> x y**: Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **> x y**: Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **> x y**: Delete at the start of the line: it doesn't turn into > x y
+ok 1280 px: **> x y**: Delete at the start of the line: no spoken word leaves the counts
+ok 1280 px: **> x y**: Delete at the start of the line: it is still a paragraph
+ok 1280 px: **> x y**: Delete at the start of the line: the caret stays
+ok 1280 px: **> x y**: Ctrl+Backspace at the start of its words: it doesn't turn into > x y
+ok 1280 px: **> x y**: Ctrl+Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **> x y**: Ctrl+Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **> x y**: Ctrl+Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **> x y**: Enter inside its last word: it doesn't turn into > x y
+ok 1280 px: **> x y**: Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **> x y**: Enter inside its last word: it is still a paragraph
+ok 1280 px: **> x y**: Shift+Enter inside its last word: it doesn't turn into > x y
+ok 1280 px: **> x y**: Shift+Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **> x y**: Shift+Enter inside its last word: it is still a paragraph
+ok 1280 px: **> x y**: typing in its words works
+ok 1280 px: **> x y**: one Ctrl+Z takes the typing back
+ok 1280 px: **> x y**: Enter right after its mark: no spoken word leaves the counts
+ok 1280 px: **> x y**: that Enter is refused, or one Ctrl+Z takes it back
+ok 1280 px: **1. x y**: a paragraph holding it
+ok 1280 px: **1. x y**: it shows bold
+ok 1280 px: **1. x y**: Backspace at the start of its words: it doesn't turn into 1. x y
+ok 1280 px: **1. x y**: Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **1. x y**: Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **1. x y**: Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **1. x y**: Delete at the start of the line: it doesn't turn into 1. x y
+ok 1280 px: **1. x y**: Delete at the start of the line: no spoken word leaves the counts
+ok 1280 px: **1. x y**: Delete at the start of the line: it is still a paragraph
+ok 1280 px: **1. x y**: Delete at the start of the line: the caret stays
+ok 1280 px: **1. x y**: Ctrl+Backspace at the start of its words: it doesn't turn into 1. x y
+ok 1280 px: **1. x y**: Ctrl+Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **1. x y**: Ctrl+Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **1. x y**: Ctrl+Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **1. x y**: Enter inside its last word: it doesn't turn into 1. x y
+ok 1280 px: **1. x y**: Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **1. x y**: Enter inside its last word: it is still a paragraph
+ok 1280 px: **1. x y**: Shift+Enter inside its last word: it doesn't turn into 1. x y
+ok 1280 px: **1. x y**: Shift+Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **1. x y**: Shift+Enter inside its last word: it is still a paragraph
+ok 1280 px: **1. x y**: typing in its words works
+ok 1280 px: **1. x y**: one Ctrl+Z takes the typing back
+ok 1280 px: **1. x y**: Enter right after its mark: no spoken word leaves the counts
+ok 1280 px: **1. x y**: that Enter is refused, or one Ctrl+Z takes it back
+ok 1280 px: **- item two** more: a paragraph holding it
+ok 1280 px: **- item two** more: it shows bold
+ok 1280 px: **- item two** more: Backspace at the start of its words: it doesn't turn into - item two more
+ok 1280 px: **- item two** more: Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **- item two** more: Backspace at the start of its words: one Ctrl+Z brings it back
+ok 1280 px: **- item two** more: Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **- item two** more: Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **- item two** more: Delete at the start of the line: it doesn't turn into - item two more
+ok 1280 px: **- item two** more: Delete at the start of the line: no spoken word leaves the counts
+ok 1280 px: **- item two** more: Delete at the start of the line: it is still a paragraph
+ok 1280 px: **- item two** more: Delete at the start of the line: the caret stays
+ok 1280 px: **- item two** more: Ctrl+Backspace at the start of its words: it doesn't turn into - item two more
+ok 1280 px: **- item two** more: Ctrl+Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **- item two** more: Ctrl+Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **- item two** more: Ctrl+Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **- item two** more: Enter inside its last word: it doesn't turn into - item two more
+ok 1280 px: **- item two** more: Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **- item two** more: Enter inside its last word: it is still a paragraph
+ok 1280 px: **- item two** more: Shift+Enter inside its last word: it doesn't turn into - item two more
+ok 1280 px: **- item two** more: Shift+Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **- item two** more: Shift+Enter inside its last word: it is still a paragraph
+ok 1280 px: **- item two** more: typing in its words works
+ok 1280 px: **- item two** more: one Ctrl+Z takes the typing back
+ok 1280 px: **- item two** more: Enter right after its mark: no spoken word leaves the counts
+ok 1280 px: **- item two** more: that Enter is refused, or one Ctrl+Z takes it back
+ok 1280 px: a paste with a blank line over a bold word goes in as two paragraphs
+ok 1280 px: one Ctrl+Z takes that paste back
+ok 1280 px: a list pasted on purpose goes in
+ok 1280 px: one Ctrl+Z takes it back
+ok 1280 px: joining onto a bold list-like line is refused
+ok 1280 px: no literal marks from that join
+ok 1280 px: both lines stay bold
+ok 1280 px: an ordinary join still works
+ok 1280 px: one Ctrl+Z takes the join back
+ok 1280 px: typing 1. and a space in front of a bold word
+ok 1280 px: one Ctrl+Z takes that typing back
+ok 1280 px: the person's own bold setting is off
+ok 1280 px: saved into the browser: the name changes
+ok 1280 px: saved into the browser: the script keeps its own bold setting
+ok 1280 px: saved into the browser: nothing on the page is redrawn
+ok 1280 px: saved into the browser: the person's own setting is untouched
+ok 1280 px: the title changed: the name changes
+ok 1280 px: the title changed: the script keeps its own bold setting
+ok 1280 px: the title changed: nothing on the page is redrawn
+ok 1280 px: the title changed: the person's own setting is untouched
+ok 1280 px: the title changed: the selected word stays selected
+ok 1280 px: the B button is still there after the rename
+ok 1280 px: the title changed with storage full: the name changes
+ok 1280 px: the title changed with storage full: the script keeps its own bold setting
+ok 1280 px: the title changed with storage full: nothing on the page is redrawn
+ok 1280 px: the title changed with storage full: the person's own setting is untouched
+ok 1280 px: storage full: the settings stay under the old name
+ok 1280 px: storage full: bold is still on for this script, the B button shows
+ok 1280 px: Save as: the name changes
+ok 1280 px: Save as: the script keeps its own bold setting
+ok 1280 px: Save as: nothing on the page is redrawn
+ok 1280 px: Save as: the person's own setting is untouched
+ok 1280 px: Save as: the page stays where it was scrolled to
+ok 390 px: the person's own bold setting is off
+ok 390 px: saved into the browser: the name changes
+ok 390 px: saved into the browser: the script keeps its own bold setting
+ok 390 px: saved into the browser: nothing on the page is redrawn
+ok 390 px: saved into the browser: the person's own setting is untouched
+ok 390 px: the title changed: the name changes
+ok 390 px: the title changed: the script keeps its own bold setting
+ok 390 px: the title changed: nothing on the page is redrawn
+ok 390 px: the title changed: the person's own setting is untouched
+ok 390 px: the title changed: the selected word stays selected
+ok 390 px: the B button is still there after the rename
+ok 390 px: the title changed with storage full: the name changes
+ok 390 px: the title changed with storage full: the script keeps its own bold setting
+ok 390 px: the title changed with storage full: nothing on the page is redrawn
+ok 390 px: the title changed with storage full: the person's own setting is untouched
+ok 390 px: storage full: the settings stay under the old name
+ok 390 px: storage full: bold is still on for this script, the B button shows
+ok 390 px: Save as: the name changes
+ok 390 px: Save as: the script keeps its own bold setting
+ok 390 px: Save as: nothing on the page is redrawn
+ok 390 px: Save as: the person's own setting is untouched
+ok 390 px: Save as: the page stays where it was scrolled to
+ok 1280 px: Undo after a rename turns the script's bold off again
+ok 1280 px: Undo after a rename leaves no settings under the new name
+ok 1280 px: Undo after a rename brings back the settings the script had
+ok 1280 px: Undo writes nothing under the old name
+ok 1280 px: a rename with own settings in one tab doesn't redraw another tab
+ok 1280 px: a line to add the comparison to
+ok 1280 px: Bold marking off: nothing on the page is read as bold
+ok 1280 px: Bold marking off: the saved text keeps the comparison and the stars
+ok 1280 px: Bold marking off: the camera export keeps if name=="Lex" or id=="7"
+ok 1280 px: Bold marking off: the camera export keeps marks as plain text
+ok 1280 px: Bold marking off: the camera export is byte for byte what it was before bold
+ok 1280 px: Bold marking off: the prompter export keeps if name=="Lex" or id=="7"
+ok 1280 px: Bold marking off: the prompter export keeps marks as plain text
+ok 1280 px: Bold marking off: the prompter export is byte for byte what it was before bold
+ok 1280 px: Bold marking on: B marks the word
+ok 1280 px: Bold marking on: Ctrl+B takes it off
+ok 1280 px: Bold marking on: Ctrl+B puts it back, and it shows
+ok 1280 px: Bold marking on: the camera export strips the stars by default
+ok 1280 px: Bold marking on: the prompter export strips the stars by default
+ok 390 px: a line to add the comparison to
+ok 390 px: Bold marking off: nothing on the page is read as bold
+ok 390 px: Bold marking off: the saved text keeps the comparison and the stars
+ok 390 px: Bold marking off: the camera export keeps if name=="Lex" or id=="7"
+ok 390 px: Bold marking off: the camera export keeps marks as plain text
+ok 390 px: Bold marking off: the camera export is byte for byte what it was before bold
+ok 390 px: Bold marking off: the prompter export keeps if name=="Lex" or id=="7"
+ok 390 px: Bold marking off: the prompter export keeps marks as plain text
+ok 390 px: Bold marking off: the prompter export is byte for byte what it was before bold
+ok 390 px: Bold marking on: B marks the word
+ok 390 px: Bold marking on: Ctrl+B takes it off
+ok 390 px: Bold marking on: Ctrl+B puts it back, and it shows
+ok 390 px: Bold marking on: the camera export strips the stars by default
+ok 390 px: Bold marking on: the prompter export strips the stars by default
 RESULT: ok
