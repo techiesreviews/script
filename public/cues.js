@@ -1,5 +1,6 @@
 // Cues in the script (fleet issue #14, Lex 2026-11-04), shown as bold: "**words**" in a spoken line, the standard Markdown
-// bold (Lex 2026-11-05; first built as "==words==", never released, so no script holds that). Optional and off by default
+// bold (the fleet lead's decision after the release review; first built as "==words==", never released, so no script
+// holds that). Optional and off by default
 // (settings below). The prompter shows "**" as literal asterisks today, so its export strips them unless the setting
 // `export` says show. Rules like links (links.js): words on one line, no brackets or "*" inside, at least one letter or
 // digit, never inside a link. A pair starts and ends at word boundaries: no letter, digit or "*" outside it, no space
@@ -123,19 +124,34 @@ export function withoutMarks(text) {
   for (const c of readCues(t)) { out += t.slice(at, c.start) + c.label; at = c.end; }
   return out + t.slice(at);
 }
-/** Where each offset of `from` is in `to`, when only "*" marks differ between them: an anchor follows its own characters,
- *  never a search through the text. An offset on a mark goes to the next character that stays. */
-export function marksMap(from, to) {
-  const at = new Array(from.length + 1);
+// Where each character of `from` is in `to` (when only "*" marks differ), and which ones stayed.
+function marksAlign(from, to) {
+  const at = new Array(from.length + 1), stayed = new Array(from.length).fill(false);
   let i = 0, j = 0;
   while (i < from.length) {
-    if (j < to.length && from[i] === to[j]) { at[i++] = j++; continue; }
+    if (j < to.length && from[i] === to[j]) { stayed[i] = true; at[i++] = j++; continue; }
     if (from[i] === "*") { at[i++] = j; continue; }
     if (j < to.length && to[j] === "*") { j++; continue; }
     at[i++] = j;
   }
   at[from.length] = to.length;
+  return { at, stayed };
+}
+/** Where each offset of `from` is in `to`, when only "*" marks differ between them: an anchor follows its own characters,
+ *  never a search through the text. An offset on a mark goes to the next character that stays. */
+export function marksMap(from, to) {
+  const { at } = marksAlign(from, to);
   return (x) => at[x];
+}
+/** Where a range of `from` goes in `to`: from its first character to just after its last one that stays, so its end never
+ *  slides past a closing mark. */
+export function marksRange(from, to) {
+  const { at, stayed } = marksAlign(from, to);
+  return (start, end) => {
+    let last = end - 1;
+    while (last >= start && !stayed[last]) last--;
+    return { start: at[start], end: last >= start ? at[last] + 1 : at[start] };
+  };
 }
 /** A quote read without the marks (the agent gets the spoken text that way), found across a cue's edge: its range, only
  *  as far as was quoted, and the text there as it is now. A rewrite of it takes in the whole cue and keeps the cue's other
@@ -212,10 +228,10 @@ function editSpan(old, now, caret) {
 // The offsets of a range through one edit (null when the edit fell inside the range), then through the marks' moves: an
 // ask anchors by these, never by a search through the text.
 const followEdit = (p, oe, delta, now, content) => {
-  const marks = marksMap(now, content);
+  const range = marksRange(now, content);
   return (start, end) => {
-    if (end <= p) return { start: marks(start), end: marks(end) };
-    if (start >= oe) return { start: marks(start + delta), end: marks(end + delta) };
+    if (end <= p) return range(start, end);
+    if (start >= oe) return range(start + delta, end + delta);
     return null;
   };
 };
