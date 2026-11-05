@@ -58,10 +58,10 @@ export function fits(doc, ask, answer) {
   return !r || fitText(D.contentOf(b), { ...ask, ...r, answer }, b.type) !== null;
 }
 /** What the tab tells the agent after answer_ask, per kind. For links: how many went in, and the quotes skipped. */
-export function answerResult(kind, { linked = 0, skipped = [], cuesDropped = 0, cuesOn = true } = {}) {
+export function answerResult(kind, { linked = 0, skipped = [], cuesDropped = 0 } = {}) {
   if (kind === "note") return "Shown to the person.";
   // A rewrite kept the cues whose words survived (cues.js keepCues); the others went, and the agent may mark again.
-  if (cuesDropped) return `${answerResult(kind, { linked, skipped })} It removed ${cuesDropped} ${cuesDropped === 1 ? "cue" : "cues"} whose words are gone${cuesOn ? "; mark again with mark_cue if they still matter" : ""}.`;
+  if (cuesDropped) return `${answerResult(kind, { linked, skipped })} It removed ${cuesDropped} ${cuesDropped === 1 ? "cue" : "cues"} whose words are gone; mark again with mark_cue if they still matter.`;
   if (kind === "marks") return "Shown to the person. They choose Keep or Undo.";
   if (kind === "links") return `Done: ${linked} ${linked === 1 ? "link is" : "links are"} in the text now. The person can undo them.${skippedText(skipped)}`;
   return "Done: the change is in the text now. The person can undo it.";
