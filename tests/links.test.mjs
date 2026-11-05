@@ -52,6 +52,7 @@ const SCRIPT = [
   "",
 ].join("\n");
 
+const keptText = (...args) => { const r = L.keepHidden(...args); return r && { content: r.content, caret: r.caret }; };
 test("links: found with their words and address; link lines; spoken text without them", () => {
   const c = "Use [the docs](https://x.com/a) and [Wiki](https://w.org/A_(b)) now.";
   const links = L.textLinks(c);
@@ -372,15 +373,15 @@ test("closed links: a deletion that took a link's hidden Markdown gets it back; 
   const old = "Try [Claude](https://claude.ai)Y now.";
   const closed = L.textLinks(old);
   // Chromium and WebKit: Backspace on the "Y" also takes "](https://claude.ai)"; the caret is left at the words' end.
-  assert.deepEqual(L.keepHidden(old, "Try [Claude now.", closed, 11), { content: "Try [Claude](https://claude.ai) now.", caret: 31 });
+  assert.deepEqual(keptText(old, "Try [Claude now.", closed, 11), { content: "Try [Claude](https://claude.ai) now.", caret: 31 });
   // The same read without a caret (by the text alone).
-  assert.deepEqual(L.keepHidden(old, "Try [Claude now.", closed, null), { content: "Try [Claude](https://claude.ai) now.", caret: 31 });
+  assert.deepEqual(keptText(old, "Try [Claude now.", closed, null), { content: "Try [Claude](https://claude.ai) now.", caret: 31 });
   // A head "[" taken with the letter before the link.
   const head = "XA[Claude](https://claude.ai) now.";
-  assert.deepEqual(L.keepHidden(head, "XClaude](https://claude.ai) now.", L.textLinks(head), 1), { content: "X[Claude](https://claude.ai) now.", caret: 1 });
+  assert.deepEqual(keptText(head, "XClaude](https://claude.ai) now.", L.textLinks(head), 1), { content: "X[Claude](https://claude.ai) now.", caret: 1 });
   // A word deletion that took all of the words and the tail: the whole link goes, as it was seen.
   const word = "Try [Claude](https://claude.ai) now.";
-  assert.deepEqual(L.keepHidden(word, "Try [now.", L.textLinks(word), 5), { content: "Try now.", caret: 4 });
+  assert.deepEqual(keptText(word, "Try [now.", L.textLinks(word), 5), { content: "Try now.", caret: 4 });
   // Edits that lose no hidden Markdown are left alone: a letter of the words, a whole link, text elsewhere, typing.
   assert.equal(L.keepHidden(word, "Try [Claud](https://claude.ai) now.", L.textLinks(word), 10), null);
   assert.equal(L.keepHidden(word, "Try  now.", L.textLinks(word), 4), null);

@@ -141,7 +141,8 @@ export function shownOffset(links, offset) {
  * closed link, Chromium and WebKit delete its hidden "](address)" (or "[") along with the character the person
  * deleted. That hidden Markdown is put back; a link whose words were all deleted goes as a whole, as it was seen.
  * `closed`: the links that were closed before the edit (textLinks() shape, offsets in `old`).
- * Returns { content, caret } (the caret where the deleted text was), or null when no hidden Markdown was lost.
+ * Returns { content, caret, gone } (the caret where the deleted text was; gone: the [start, end] ranges of `old` that really
+ * went), or null when no hidden Markdown was lost.
  */
 export function keepHidden(old, now, closed, caret) {
   const del = old.length - now.length;
@@ -164,9 +165,12 @@ export function keepHidden(old, now, closed, caret) {
   }
   if (!lost) return null;
   let content = "", to = -1;
+  const ranges = [];
   for (let i = 0; i < old.length; i++) {
-    if (!gone[i]) content += old[i];
-    else if (to < 0) to = content.length;
+    if (!gone[i]) { content += old[i]; continue; }
+    if (to < 0) to = content.length;
+    if (ranges.at(-1)?.[1] === i) ranges.at(-1)[1] = i + 1;
+    else ranges.push([i, i + 1]);
   }
-  return { content, caret: to < 0 ? content.length - (old.length - end) : to };
+  return { content, caret: to < 0 ? content.length - (old.length - end) : to, gone: ranges };
 }

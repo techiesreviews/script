@@ -25,6 +25,8 @@ The prompter shows `**` as literal asterisks today (it reads only `### **…**` 
 
 The follow-up to PR #15, for what landed with a waiver: emptying a stretch looks past spaces earlier deletions left inside its marks, so two separate selections leave no `** **`, on a line of its own too. Deleting the outer words first spaces both edges, which reads like `a ** b ** c`, so those marks stay as text. An edit that breaks a bold stretch inside an open ask's range cancels the ask, so it can't move onto other words.
 
+The release review of dev `63c7de3`, with real keys: bold on, `Say **big word** now okay.`, Ctrl+Backspace after the space before "now" gave `Say big **now okay.`. Marks a deletion put back are no longer counted as hit, so it gives `Say **big** now okay.`. `scripts/smoke-keep-all.mjs` checks this and its neighbours with real keys, on and off: Backspace, Delete, Ctrl+Backspace, Ctrl+Delete, selections across the marks, and one Ctrl+Z each. `set_cue_settings` says when the browser could not store the change.
+
 ## Not in this step
 
 The prompter reading cues, a camera action that does something, the shared cue look and reader from the prompter (`public/shared/`).
