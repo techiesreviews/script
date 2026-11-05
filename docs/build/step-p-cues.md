@@ -23,6 +23,8 @@ The release review of PR #14 found: with Bold marking off, `if name=="Lex" or id
 
 The prompter shows `**` as literal asterisks today (it reads only `### **…**` headings), so the export stays Lex's optional setting: stripped unless "Bold words in the prompter file" is on. Words marked bold earlier show their `**` while bold is off.
 
+The follow-up to PR #15, for what landed with a waiver: emptying a stretch looks past spaces earlier deletions left inside its marks, so two separate selections leave no `** **`, on a line of its own too. A paste that breaks a bold stretch inside an open ask's range no longer moves the ask onto other words.
+
 ## Not in this step
 
 The prompter reading cues, a camera action that does something, the shared cue look and reader from the prompter (`public/shared/`).
@@ -31,3 +33,4 @@ The prompter reading cues, a camera action that does something, the shared cue l
 
 - `kit specs`: see `docs/agents/evidence/specs.txt`. Browser: `docs/agents/evidence/step-p-cues-browser.txt` (headless Chrome, real Ctrl+B and clicks, 1280 px and 390 px, the agent over MCP; the name tag's Undo is clicked from script, because a real mouse click there hit the section under it, noted on the PR).
 - Ctrl+B in Chrome: the page gets it first and nothing else takes it (Chrome has no Ctrl+B shortcut of its own; with cue marking off it does nothing, as before). Firefox (Ctrl+B opens the bookmarks sidebar unless a page takes it) and Safari (⌘B) are not checked: scripted key input goes to the page and never through the browser's own shortcuts, so this needs a hand check. Due 2026-11-10: Lex (or the lead) presses Ctrl+B in Firefox and ⌘B in Safari on a selection with bold marking on; if a browser takes it, the shortcut becomes Ctrl+Alt+B there (Lex's decision 9).
+- Feature list: no change (the follow-up to PR #15 makes the editor keep what docs/features.md already promises)

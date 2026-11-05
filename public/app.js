@@ -1045,9 +1045,10 @@ function pasteText(el, raw) {
   const sel = selectionIn(el) || { start: 0, end: 0 };
   checkpoint("paste", id);
   const content = D.contentOf(b);
-  moveAsks(id, id, sel.end, text.length - (sel.end - sel.start));
   const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
-  if (settled) followAnchors(id, settled.content, marksMoved(pasted, settled.content));
+  // Bold settled: asks follow by their offsets from the text before the paste; one it fell inside isn't moved at all.
+  if (settled) followAnchors(id, settled.content, settled.follow);
+  else moveAsks(id, id, sel.end, text.length - (sel.end - sel.start));
   applyContent(id, settled ? settled.content : pasted, settled ? settled.caret : sel.start + text.length);
   changed();
 }
@@ -4419,7 +4420,7 @@ function handleCall({ id, tool, args = {} }) {
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
       const cuesDropped = cueDrops.get(ask.id) || 0;
       cueDrops.delete(ask.id);
-      return send({ result: C.answerResult(checked.answer.kind, { cuesDropped, cuesOn: cues().on }) });
+      return send({ result: C.answerResult(checked.answer.kind, { cuesDropped }) });
     }
     if (tool === "answer_broll") {
       if (args.askId == null) return send(ownBroll(args));
