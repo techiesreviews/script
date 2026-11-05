@@ -879,3 +879,26 @@ test("a quote read without the marks is only looked for across bold in paragraph
   assert.equal(D.findQuote(doc, "Plan now"), null);
   assert.equal(D.findQuote(D.parse("# T\n\n## A\n\n**Plan** now\n"), "Plan now").quote, "Plan** now");
 });
+
+test("only settling that changes how the text reads is refused: a paste or edit that does it on purpose goes in", () => {
+  const changes = C.settlingChangesKind;
+  // Losing the marks would turn the line into something else.
+  for (const [now, settled] of [["*- item two**", "- item two"], ["*# Plan**", "# Plan"], ["*> x y**", "> x y"], ["*1. x y**", "1. x y"], ["*- item two** more", "- item two more"], ["**- a****b**", "- ab"]]) {
+    assert.equal(changes(now, settled), true, settled);
+  }
+  // A paste with a blank line reads as two paragraphs with or without marks; a list pasted on purpose is a list either way.
+  for (const [now, settled] of [["**big a\n\nb** now", "big a\n\nb now"], ["**big worder\n\nnext**", "**big worder**\n\nnext"], ["- item** now", "- item now"], ["****", ""], ["We **** now", "We  now"], ["**big word** now", "big word now"]]) {
+    assert.equal(changes(now, settled), false, settled);
+  }
+});
+
+test("the setting says it is experimental, with its known limits in one plain line", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
+  const features = await readFile(new URL("../docs/features.md", import.meta.url), "utf8");
+  const limits = "Rare edits next to bold lines can leave marks as text; shared scripts have edge cases; the prompter doesn't show inline ** yet.";
+  assert.ok(html.includes("Bold marking (experimental)"));
+  assert.ok(html.includes(limits));
+  assert.ok(features.includes("Bold marking (experimental)"));
+  assert.ok(features.includes(limits));
+});

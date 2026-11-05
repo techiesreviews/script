@@ -914,10 +914,14 @@ function syncFromDom(el) {
     const old = D.contentOf(b), going = boldTyping?.id === id && boldTyping.content === old ? boldTyping.end : null;
     const now = fix ? fix.content : typed, caret = fix ? fix.caret : getCaret()?.offset;
     const settled = K.settleMarks(old, now, caret, { typedBefore: going, deleted: fix?.gone });
-    if (settled && !C.keepsType(settled.content, b.type)) {
+    // The space that ends a word typed in front of a bold word: the person is writing, say a numbered list, and asked for it.
+    const endsTyped = going != null && now.length === old.length + 1 && /\s/.test(now[caret - 1] ?? "");
+    // A deletion is judged against the text before it, as it can take the marks itself; text put in, against what was put in.
+    if (settled && !endsTyped && C.settlingChangesKind(now.length < old.length ? old : now, settled.content)) {
       // Without its marks this line would read as another kind of block ("- item", "# Plan"), and its words would leave
-      // the spoken text: the edit is refused, quietly, and it keeps them.
-      fix = { content: old, caret: Math.max(0, Math.min(old.length, (caret ?? 0) + old.length - now.length)) };
+      // the spoken text: the edit is refused, quietly, and it keeps them, with the caret where it was.
+      const was = state.preCaret?.id === id ? state.preCaret.offset : (caret ?? 0) + old.length - now.length;
+      fix = { content: old, caret: Math.max(0, Math.min(old.length, was)) };
       boldTyping = null;
     } else {
       fix = settled || fix;
@@ -1018,15 +1022,16 @@ function removeEmpty(el, dir) {
 function mergeInto(prevId, id) {
   const prev = byId(prevId);
   const offset = D.contentOf(prev).length;
+  // The next paragraph's bold word right after a word: it is settled as if the line break between them was deleted. If
+  // that would turn the line into another kind of block, the join is refused, quietly, and both lines stay as they are.
+  const joined = D.contentOf(prev) + D.contentOf(byId(id));
+  const settled = prev.type === "para" ? K.settleMarks(`${D.contentOf(prev)}\n${D.contentOf(byId(id))}`, joined, offset) : null;
+  if (settled && C.settlingChangesKind(joined, settled.content)) return;
   checkpoint("merge", id);
   moveAsks(id, prevId, 0, offset);
-  const joining = `${D.contentOf(prev)}\n${D.contentOf(byId(id))}`;
   const m = D.mergeWithPrevious(state.doc, id);
-  // The next paragraph's bold word right after a word: it is settled as if the line break between them was deleted.
-  const found = prev.type === "para" ? K.settleMarks(joining, D.contentOf(prev), m.offset) : null;
-  const settled = found && C.keepsType(found.content, prev.type) ? found : null;
   if (settled) {
-    followAnchors(prevId, settled.content, marksMoved(D.contentOf(prev), settled.content));
+    followAnchors(prevId, settled.content, marksMoved(joined, settled.content));
     D.setContent(state.doc, prevId, settled.content);
   }
   reanchorBlock(prevId);
@@ -1062,8 +1067,9 @@ function pasteText(el, raw) {
   const sel = selectionIn(el) || { start: 0, end: 0 };
   const content = D.contentOf(b);
   const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
-  // Without its marks this line would read as another kind of block: the paste is refused, quietly.
-  if (settled && !C.keepsType(settled.content, b.type)) return;
+  // Without its marks this line would read as another kind of block: the paste is refused, quietly. A paste that makes
+  // paragraphs or a list itself reads the same with or without them, and goes in.
+  if (settled && C.settlingChangesKind(pasted, settled.content)) return;
   checkpoint("paste", id);
   // Bold settled: asks follow by their offsets from the text before the paste; one it fell inside isn't moved at all.
   if (settled) followAnchors(id, settled.content, settled.follow, { insideGoes: true });

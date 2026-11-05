@@ -315,12 +315,17 @@ async function runBoldKinds(width, height) {
   await page.click("#docInfo");
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await sleep(400);
+  const ticked = (row) => page.eval(`getComputedStyle(document.querySelector('${row}').querySelector("svg:last-child")).visibility === "visible"`);
+  check(!(await ticked('#cueGroup [data-cue-set="on"]')), `${tag}: the Bold marking row shows no tick while it is off`);
   await page.click(`#cueGroup [data-cue-set="on"]`);
   await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on");
+  check(await ticked('#cueGroup [data-cue-set="on"]'), `${tag}: the Bold marking row shows a tick once it is on`);
+  check(!(await ticked('#cueGroup [data-cue-set="action"]')) && !(await ticked('#cueGroup [data-cue-set="export"]')) && !(await ticked("#boldOwn")), `${tag}: the rows that are off show no tick`);
   await pressKey(page, "Escape", "Escape", 27);
   await sleep(200);
   await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
+  const caretIn = (para) => page.eval(`(() => { const el = ${para}, sel = getSelection(), r = document.createRange(); if (!el || !sel.focusNode || !el.contains(sel.focusNode)) return -1; r.setStart(el, 0); r.setEnd(sel.focusNode, sel.focusOffset); return r.toString().length; })()`);
   for (const line of ["**- item two**", "**# Plan**", "**> x y**", "**1. x y**", "**- item two** more"]) {
     // A line of its own under the demo's first line.
     await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
@@ -358,6 +363,9 @@ async function runBoldKinds(width, height) {
       await sleep(250);
       await press(...keys);
       await same(what);
+      // A refused edit leaves the caret where it was, never between the two asterisks.
+      if (keys[0] === "Delete" && !keys[3]) check((await caretIn(para)) === 0, `${tag}: ${line}: ${what}: the caret stays`, await caretIn(para));
+      if (keys[0] === "Backspace" && (await page.eval(`!!${para}`))) check((await caretIn(para)) !== 1, `${tag}: ${line}: ${what}: the caret isn't between the asterisks`, await caretIn(para));
     }
     // Ordinary typing in it still works, and one Ctrl+Z takes it back.
     await page.eval(pick(line.indexOf("**", 2)));
@@ -380,6 +388,71 @@ async function runBoldKinds(width, height) {
     }
     check(await has(), `${tag}: ${line}: that Enter is refused, or one Ctrl+Z takes it back`);
   }
+  // The other edits: each new line goes under the demo's first line.
+  const addLine = async (line, under = first) => {
+    await page.eval(`(() => { const el = ${under}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+    await sleep(150);
+    await press("Enter", "Enter", 13, 0, "\r");
+    await page.send("Input.insertText", { text: line });
+    await sleep(350);
+    return `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith(${JSON.stringify(line)}))`;
+  };
+  const placeIn = (para, from, to = from) => page.eval(`(() => { const el = ${para}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  const undoOnce = async () => { await page.eval(`${first}.focus()`); await press("z", "KeyZ", 90, CTRL); };
+  const lines = async () => (await script()).markdown.split("\n");
+
+  // A paste with a blank line over a bold word: it splits into paragraphs, nothing is dropped.
+  const paste1 = await addLine("**big word** now");
+  const before1 = await script();
+  await placeIn(paste1, 6, 10);
+  await sleep(250);
+  await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "a\\n\\nb"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
+  await sleep(350);
+  const after1 = await lines();
+  check(after1.includes("big a") && after1.includes("b now"), `${tag}: a paste with a blank line over a bold word goes in as two paragraphs`, after1.filter((l) => l.includes("big") || l.includes(" now")).join(" | "));
+  await undoOnce();
+  check((await script()).markdown === before1.markdown, `${tag}: one Ctrl+Z takes that paste back`);
+
+  // Pasting a list on purpose over the start of a bold stretch: it goes in.
+  await placeIn(paste1, 0, 7);
+  await sleep(250);
+  await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "- item"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
+  await sleep(350);
+  check((await lines()).some((l) => l.startsWith("- item")), `${tag}: a list pasted on purpose goes in`, (await lines()).find((l) => l.includes("item")));
+  await undoOnce();
+  check((await script()).markdown === before1.markdown, `${tag}: one Ctrl+Z takes it back`);
+
+  // Joining a line onto a bold list-like line would make it a list: refused, both stay bold, no literal marks.
+  const upper = await addLine("**- a**");
+  const lower = await addLine("**b**", upper);
+  const before2 = await script();
+  await placeIn(lower, 0);
+  await sleep(250);
+  await press("Backspace", "Backspace", 8);
+  const after2 = await script();
+  check(after2.markdown === before2.markdown, `${tag}: joining onto a bold list-like line is refused`, after2.markdown.split("\n").find((l) => l.includes("- a")));
+  check(!after2.markdown.includes("****"), `${tag}: no literal marks from that join`);
+  check(await page.eval(`!!${upper}?.querySelector(".md-cue") && !!${lower}?.querySelector(".md-cue")`), `${tag}: both lines stay bold`);
+  // An ordinary join still works, and a word against the bold joins it.
+  const upper3 = await addLine("**big** x");
+  const lower3 = await addLine("**y** z", upper3);
+  await placeIn(lower3, 0);
+  await sleep(250);
+  await press("Backspace", "Backspace", 8);
+  check((await lines()).includes("**big** **xy** z"), `${tag}: an ordinary join still works`, (await lines()).find((l) => l.includes("big")));
+  await undoOnce();
+  check((await lines()).includes("**big** x") && (await lines()).includes("**y** z"), `${tag}: one Ctrl+Z takes the join back`);
+
+  // Typing "1. " in front of a bold word: the person asked for a list, and the space isn't swallowed.
+  const typed = await addLine("**word** x");
+  const before4 = await script();
+  await placeIn(typed, 0);
+  await sleep(250);
+  for (const [k, c, v] of [["1", "Digit1", 49], [".", "Period", 190], [" ", "Space", 32]]) await press(k, c, v, 0, k);
+  check((await lines()).includes("1. **word** x"), `${tag}: typing 1. and a space in front of a bold word`, (await lines()).find((l) => l.includes("word** x")));
+  await undoOnce();
+  check((await script()).markdown === before4.markdown, `${tag}: one Ctrl+Z takes that typing back`);
+
   await page.close();
 }
 
