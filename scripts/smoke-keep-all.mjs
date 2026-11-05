@@ -237,6 +237,72 @@ async function runBold(width, height) {
   await page.close();
 }
 
+// Real word-deleting keys next to a bold stretch: marks the deletion put back aren't hit, so no stray "**" stays. With Bold
+// marking off it is plain text. One Ctrl+Z brings each back. `S` goes at the end of the demo's first line.
+async function runBoldKeys(width, height) {
+  const tag = `${width} px`, S = "Say **big word** now okay.";
+  const { page, agent } = await openDemo(width, height);
+  const marked = (t) => t.replace(/(?<![\p{L}\p{N}*])\*\*[^\s*](?:[^*\n]*[^\s*])?\*\*(?![\p{L}\p{N}*])/gu, "");
+  const lineOf = async () => JSON.parse(await agent("get_script", {})).markdown.split("\n").find((l) => l.includes("A blank page."));
+  const paraOf = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
+  const pick = (from, to = from) => `(() => { const el = ${paraOf}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+  const press = async (key, code, vk, modifiers = 0) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers }); await sleep(250); };
+  const CTRL = 2, back = ["Backspace", "Backspace", 8], del = ["Delete", "Delete", 46];
+  await page.eval(`(() => { const el = ${paraOf}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: ` ${S}` });
+  await sleep(400);
+  const whole = await lineOf(), base = whole.length - S.length, at = (i) => base + i;
+  const tail = async () => (await lineOf()).slice(base);
+  const cases = (on) => [
+    { name: "Ctrl+Backspace after the space before now", from: 17, keys: [...back, CTRL], want: on ? "Say **big** now okay." : "Say **big wordnow okay." },
+    { name: "Backspace after that space", from: 17, keys: back },
+    { name: "Ctrl+Backspace right after the closing marks", from: 16, keys: [...back, CTRL] },
+    { name: "Backspace right after the closing marks", from: 16, keys: back },
+    { name: "Backspace inside the bold words", from: 12, keys: back },
+    { name: "Ctrl+Backspace inside the bold words", from: 12, keys: [...back, CTRL] },
+    { name: "Delete right before the opening marks", from: 4, keys: del },
+    { name: "Ctrl+Delete right before the opening marks", from: 4, keys: [...del, CTRL] },
+    { name: "Delete right after the closing marks", from: 16, keys: del },
+    { name: "Ctrl+Delete right after the closing marks", from: 16, keys: [...del, CTRL] },
+    { name: "Ctrl+Delete inside the bold words", from: 10, keys: [...del, CTRL] },
+    { name: "a selection across the closing marks, deleted", from: 10, to: 19, keys: back },
+    { name: "a selection across the opening marks, deleted", from: 0, to: 8, keys: back },
+    { name: "a selection over the whole stretch, deleted", from: 4, to: 16, keys: back },
+  ];
+  const runCases = async (on) => {
+    const label = on ? "on" : "off";
+    for (const c of cases(on)) {
+      const before = await lineOf();
+      await page.eval(pick(at(c.from), at(c.to ?? c.from)));
+      await sleep(250);
+      await press(...c.keys);
+      const got = await tail();
+      if (c.want) check(got === c.want, `${tag}: bold ${label}: ${c.name}`, got);
+      if (on) check(!marked(got).includes("*"), `${tag}: bold ${label}: ${c.name}: no stray marks`, got);
+      check(got.replace(/\*/g, "").length <= S.replace(/\*/g, "").length && got !== S, `${tag}: bold ${label}: ${c.name}: the deletion happened`, got);
+      await page.eval(`${paraOf}.focus()`);
+      await press("z", "KeyZ", 90, CTRL);
+      check((await lineOf()) === before, `${tag}: bold ${label}: ${c.name}: one Ctrl+Z brings it back`, await tail());
+    }
+  };
+  await runCases(false);
+  await page.eval(`getSelection().removeAllRanges()`);
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(400);
+  await page.click(`#cueGroup [data-cue-set="on"]`);
+  check(await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on"), `${tag}: Bold marking can be switched on`);
+  await pressKey(page, "Escape", "Escape", 27);
+  await sleep(200);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  await runCases(true);
+  // The agent is told the truth when the browser can't store a setting.
+  await page.eval(`Storage.prototype.setItem = () => { throw new DOMException("full", "QuotaExceededError"); }`);
+  const said = await agent("set_cue_settings", { export: "show" });
+  check(/could not be saved/i.test(said), `${tag}: set_cue_settings says the change could not be saved`, said);
+  await page.close();
+}
+
 // A script's own bold settings follow it to a new name: its name changes and nothing on the page is redrawn, so the caret,
 // a selection, the scroll position and any text being typed stay as they are. The person's own setting stays off.
 async function runRename(width, height) {
@@ -735,6 +801,7 @@ try {
   await runWide(1920, 1000);
   await runBold(1280, 800);
   await runBold(390, 760);
+  await runBoldKeys(1280, 800);
   await runRename(1280, 800);
   await runRename(390, 760);
   await runUndoAndTabs(1280, 800);
