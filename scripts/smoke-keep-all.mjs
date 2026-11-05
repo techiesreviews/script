@@ -659,6 +659,7 @@ async function run(width, height) {
     const guest = await openPage(width, height);
     await guest.send("Page.navigate", { url: link });
     await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+    await guest.eval(`localStorage.setItem("script-editor:cues", JSON.stringify({ on: true }))`); // this guest has Bold marking on
     await guest.eval(`document.querySelector("#joinName").value = "Guest"`);
     await guest.click("#joinForm button");
     await guest.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the guest's script", 12000);
@@ -667,6 +668,22 @@ async function run(width, height) {
     check(await barIs("2 images", "the host"), `${tag}: the host has the bar`);
     check(await guest.until(`document.querySelectorAll("#script .frame__img[data-pending]").length >= 2`, "the guest sees the pictures", 12000), `${tag}: the guest sees the pictures`);
     check(await guest.eval(`document.querySelector("#imagesAll").hidden`), `${tag}: the guest has no bar`);
+    // The guest marks a repeated word: the host's open ask stays on its own word, by offsets, not the nearest copy.
+    const paraOf = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
+    await page.eval(`(() => { const el = ${paraOf}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+    await page.send("Input.insertText", { text: " no no no" });
+    check(await guest.until(`${paraOf}.textContent.endsWith("no no no")`, "the guest gets the words"), `${tag}: the guest gets the words`);
+    // The words from the end of the line, across the text pieces an ask's mark cuts it into.
+    const pick = (fromEnd, len = 2) => `(() => { const el = ${paraOf}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n, total = 0; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) { nodes.push(n); total += n.data.length; } const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const from = total - ${fromEnd}, r = document.createRange(); r.setStart(...point(from)); r.setEnd(...point(from + ${len})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+    await page.eval(pick(5));
+    await sleep(300);
+    await page.click(`#editBar [data-act="shorter"]`);
+    check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's ask"), `${tag}: the host has an ask on the second word`);
+    await guest.eval(pick(8));
+    check(await guest.until(`!document.querySelector("#boldBtn").hidden && !document.querySelector("#boldBtn").disabled`, "the guest's B button"), `${tag}: the guest with Bold marking on has the B button`);
+    await guest.click("#boldBtn");
+    check(await page.until(`${paraOf}.textContent.includes("**no** ")`, "the guest's bold reaches the host"), `${tag}: the guest's bold reaches the host as text`);
+    check(await page.eval(`(() => { const el = ${paraOf}, d = el.querySelector("[data-ask]"), r = document.createRange(); r.setStart(el, 0); r.setEndBefore(d); return r.toString().endsWith("**no** ") && d.textContent.startsWith("no"); })()`), `${tag}: the host's ask stays on its own word`);
     await guest.close();
   }
   await page.close();
