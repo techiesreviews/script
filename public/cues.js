@@ -248,6 +248,8 @@ function emptied(old, now, p, oe, ne) {
   const inner = old.slice(open, close), before = old[open - 3] ?? "", after = old[close + 2] ?? "";
   if (BAD_WORDS.test(inner) || !WORDY.test(inner) || (/\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
   if (WORD_CHAR.test(before) || before === "*" || WORD_CHAR.test(after) || after === "*" || overlaps(linkRanges(old), open - 2, close + 2)) return null;
+  // A mark that belongs to a real stretch the edit didn't touch isn't this one's to take.
+  if (readCues(old).some((c) => c.end === open || c.start === close)) return null;
   const delta = ne - oe, end = close + delta;
   const content = now.slice(0, open - 2) + now.slice(open, end) + now.slice(end + 2);
   return { content, caret: p - 2, typedBefore: null, follow: followEdit(p, oe, delta, now, content) };
