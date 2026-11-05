@@ -28,7 +28,7 @@ export const goesStraightIn = (ask, answer) => ask?.scope === "selection" && STR
 export const blocksOf = (doc) => doc.blocks.map((b) => ({ id: b.id, text: D.contentOf(b), attrs: { type: b.type } }));
 
 // Does this content still read as one block of this type (as parse() would read it)?
-function keepsType(content, type) {
+export function keepsType(content, type) {
   if (type === "title" || type === "heading") return !content.includes("\n");
   const p = D.parse(content);
   return p.blocks.length <= 1 && (p.blocks[0]?.type ?? "para") === type;
@@ -142,12 +142,14 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   Object.assign(ask, r);
   let text = fitText(content, ask, type);
   if (text === null) return null;
+  // Cues live only in paragraphs: in a heading or the title "**" is plain text, and a rewrite leaves it alone.
+  const cuesHere = type === "para" ? K.textCues(content) : [];
   // The agent reads the asked text with its "**" marks and may send one back alone: it goes (cues.js). Only when the ask
   // reaches a real bold stretch: "**kwargs" in ordinary text stays.
-  if (K.textCues(content).some((c) => ask.start < c.end && ask.end > c.start)) text = K.dropLoneMarks(text);
+  if (cuesHere.some((c) => ask.start < c.end && ask.end > c.start)) text = K.dropLoneMarks(text);
   // A replace that reaches into a cue takes the whole cue in (its outside words stay, plain), and an add inside a cue
   // goes after it, so no lone "**" is left (cues.js).
-  if (ask.answer.kind === "replace") {
+  if (type === "para" && ask.answer.kind === "replace") {
     const w = K.widenOverCues(content, ask.start, ask.end);
     if (w) {
       // The cue's outside words join the new text, so its fit is checked again on the wider range.
@@ -156,12 +158,12 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
       text = fitText(content, { ...ask, answer: { ...ask.answer, text: w.before + text + w.after } }, type);
       if (text === null) return null;
     }
-  } else {
-    const c = K.textCues(content).find((x) => ask.end > x.start && ask.end < x.end);
+  } else if (type === "para") {
+    const c = cuesHere.find((x) => ask.end > x.start && ask.end < x.end);
     if (c) ask.end = c.end;
   }
   // A replace over cues keeps each cue whose words survive (cues.js); the agent is told how many went.
-  const kept = ask.answer.kind === "replace" ? K.keepCues(content.slice(ask.start, ask.end), text) : { text, dropped: 0 };
+  const kept = type === "para" && ask.answer.kind === "replace" ? K.keepCues(content.slice(ask.start, ask.end), text) : { text, dropped: 0 };
   if (kept.text !== text && keepsType(D.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: kept.text } }).content, type)) text = kept.text;
   else if (kept.text !== text) kept.dropped = Math.max(0, K.textCues(content.slice(ask.start, ask.end)).length - K.textCues(text).length);
   ask.answer = { ...ask.answer, text };
