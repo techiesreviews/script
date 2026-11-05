@@ -179,6 +179,7 @@ async function runBold(width, height) {
   await page.click("#docInfo");
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await sleep(400); // it animates open
+  check((await page.eval(`document.querySelector('#cueGroup [data-cue-set="on"]').textContent.trim()`)).startsWith("Bold marking (experimental)"), `${tag}: the menu says Bold marking (experimental)`);
   await page.click(`#cueGroup [data-cue-set="on"]`);
   check(await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on"), `${tag}: Bold marking can be switched on in the file-name menu`);
   await pressKey(page, "Escape", "Escape", 27);
@@ -586,7 +587,8 @@ async function runUndoAndTabs(width, height) {
   await other.send("Page.navigate", { url: `${BASE}/` });
   await other.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the second tab");
   await other.click("#emptySample");
-  await other.until(`document.querySelectorAll("#script .line").length >= 8`, "the second tab's script");
+  const otherOpen = await other.until(`document.querySelectorAll("#script .line").length >= 8`, "the second tab's script", 15000);
+  if (!otherOpen) console.log("DBG second tab", JSON.stringify(await other.eval(`({ lines: document.querySelectorAll("#script .line").length, script: document.querySelector("#script")?.children.length, layoutHidden: document.querySelector("#layout").hidden, banner: document.querySelector("#banner")?.textContent, body: document.body.innerText.slice(0, 200), name: document.querySelector(".doc__name")?.textContent })`)));
   await other.eval(`window.__line = document.querySelector("#script .line")`);
   const third = await page.eval(name);
   await page.eval(`window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("saved-tabs.md", { create: true })`);
@@ -595,6 +597,71 @@ async function runUndoAndTabs(width, height) {
   await sleep(400);
   check(moved && (await page.eval(`localStorage.getItem("script-editor:cues:saved-tabs.md")`)) !== null && (await other.eval(`window.__line.isConnected`)), `${tag}: a rename with own settings in one tab doesn't redraw another tab`);
   await send("Target.closeTarget", { targetId: other.targetId });
+  await page.close();
+}
+
+// What leaves the editor. Bold off (the default): nothing is parsed, so the exports hold the words byte for byte, also
+// next to text that looks like marks. Bold on: B and Ctrl+B mark and unmark, and the exports strip the "**" by default.
+// SMOKE_BASELINE names a folder holding public/doc.js from before bold, to compare the exports with.
+async function runExports(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const text = async () => JSON.parse(await agent("get_script", {})).markdown;
+  const compare = 'if name=="Lex" or id=="7"';
+  await page.eval(`(() => { const make = URL.createObjectURL.bind(URL); window.__blobs = []; URL.createObjectURL = (b) => { window.__blobs.push(b); return make(b); }; })()`);
+  const exported = async (kind) => {
+    await page.eval(`window.__blobs.length = 0; document.querySelector('[data-export="${kind}"]').click()`);
+    await page.until(`window.__blobs.length === 1`, `the ${kind} export`);
+    return page.eval(`window.__blobs[0].text()`);
+  };
+  const original = await text();
+  check(original.includes("So, three things."), `${tag}: a line to add the comparison to`);
+  await agent("set_script", { markdown: original.replace("So, three things.", `So, three things. Then ${compare} and a ==mark== and **two stars** stay.`) });
+  await page.until(`document.querySelector("#script").textContent.includes('name=="Lex"')`, "the comparison on the page");
+  check((await page.eval(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed")`)) === "false" && (await page.eval(`document.querySelectorAll("#script [data-cue]").length`)) === 0, `${tag}: Bold marking off: nothing on the page is read as bold`);
+  const md = await text();
+  check(md.includes(compare) && md.includes("**two stars**"), `${tag}: Bold marking off: the saved text keeps the comparison and the stars`);
+  for (const kind of ["camera", "prompter"]) {
+    const out = await exported(kind);
+    check(out.includes(compare), `${tag}: Bold marking off: the ${kind} export keeps ${compare}`);
+    check(out.includes("**two stars**") && out.includes("==mark=="), `${tag}: Bold marking off: the ${kind} export keeps marks as plain text`);
+    if (process.env.SMOKE_BASELINE) {
+      const D = await import(`${process.env.SMOKE_BASELINE}/public/doc.js`);
+      const was = kind === "camera" ? D.exportCamera(D.parse(md)) : D.exportPrompter(D.parse(md));
+      check(out === was, `${tag}: Bold marking off: the ${kind} export is byte for byte what it was before bold`, `${out.length} ${was.length}`);
+    }
+  }
+  // Bold on.
+  await agent("set_script", { markdown: original });
+  await page.until(`!document.querySelector("#script").textContent.includes('name=="Lex"')`, "the demo's words back");
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(400);
+  await page.click(`#cueGroup [data-cue-set="on"]`);
+  await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on");
+  await pressKey(page, "Escape", "Escape", 27);
+  await sleep(150);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  await doubleClick(page, await page.eval(wordSpot));
+  const word = await page.eval(`getSelection().toString().trim()`);
+  await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button");
+  await page.click("#boldBtn");
+  await sleep(250);
+  check((await text()).includes(`**${word}**`), `${tag}: Bold marking on: B marks the word`, word);
+  const ctrlB = async () => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "b", code: "KeyB", modifiers: 2, windowsVirtualKeyCode: 66 }); await sleep(250); };
+  await page.eval(`getSelection().removeAllRanges()`);
+  await doubleClick(page, await page.eval(wordSpot));
+  await ctrlB();
+  check(!(await text()).includes(`**${word}**`), `${tag}: Bold marking on: Ctrl+B takes it off`);
+  await page.eval(`getSelection().removeAllRanges()`);
+  await doubleClick(page, await page.eval(wordSpot));
+  await ctrlB();
+  check((await text()).includes(`**${word}**`) && (await page.eval(`document.querySelectorAll("#script [data-cue]").length`)) === 1, `${tag}: Bold marking on: Ctrl+B puts it back, and it shows`);
+  await page.eval(`getSelection().removeAllRanges()`);
+  for (const kind of ["camera", "prompter"]) {
+    const out = await exported(kind);
+    check(out.includes(word) && !out.includes(`**${word}**`), `${tag}: Bold marking on: the ${kind} export strips the stars by default`);
+  }
   await page.close();
 }
 
@@ -938,6 +1005,9 @@ async function run(width, height) {
     await sleep(300);
     await page.click(`#editBar [data-act="shorter"]`);
     check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's ask"), `${tag}: the host has an ask on the second word`);
+    // The ask reaches the guest over the network and redraws the line, so the guest selects once it has arrived.
+    check(await guest.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's ask reaches the guest"), `${tag}: the host's ask reaches the guest`);
+    await sleep(300);
     await guest.eval(pick(8));
     check(await guest.until(`!document.querySelector("#boldBtn").hidden && !document.querySelector("#boldBtn").disabled`, "the guest's B button"), `${tag}: the guest with Bold marking on has the B button`);
     await guest.click("#boldBtn");
@@ -948,17 +1018,28 @@ async function run(width, height) {
   await page.close();
 }
 
+const only = process.env.SMOKE_ONLY;
 try {
-  await run(1280, 800);
-  await run(390, 760);
-  await runWide(1920, 1000);
-  await runBold(1280, 800);
-  await runBold(390, 760);
-  await runBoldKeys(1280, 800);
-  await runBoldKinds(1280, 800);
-  await runRename(1280, 800);
-  await runRename(390, 760);
-  await runUndoAndTabs(1280, 800);
+  if (only === "guest") {
+    await run(1280, 800);
+  } else if (only === "exports") {
+    await runExports(1280, 800);
+    await runExports(390, 760);
+  } else {
+    await run(1280, 800);
+    await run(390, 760);
+    await runWide(1920, 1000);
+    await runBold(1280, 800);
+    await runBold(390, 760);
+    await runBoldKeys(1280, 800);
+    await runBoldKeys(390, 760);
+    await runBoldKinds(1280, 800);
+    await runRename(1280, 800);
+    await runRename(390, 760);
+    await runUndoAndTabs(1280, 800);
+    await runExports(1280, 800);
+    await runExports(390, 760);
+  }
 } catch (e) {
   check(false, `stopped: ${e.message}`);
 }
