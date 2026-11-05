@@ -141,6 +141,8 @@
 ✔ a line whose bold words would read as another kind of block without their marks: settleMarks shows it, keepsType refuses
 ✔ an AI rewrite in a heading treats ** as plain text: it stays, and no cue is reported removed
 ✔ a quote read without the marks is only looked for across bold in paragraphs
+✔ only settling that changes how the text reads is refused: a paste or edit that does it on purpose goes in
+✔ the setting says it is experimental, with its known limits in one plain line
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -352,9 +354,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 354
+ℹ tests 356
 ℹ suites 0
-ℹ pass 354
+ℹ pass 356
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
