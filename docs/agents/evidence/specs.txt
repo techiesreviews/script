@@ -119,7 +119,7 @@
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
 ✔ last round: set_cue_settings says where the change really goes
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
-✔ typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed
+✔ typing a word in front of a bold word, a typo in it, and a word typed mid-line
 ✔ Bold marking off: nothing reads ** anywhere; the exports and counts are byte for byte as before bold
 ✔ Bold marking on: a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read
 ✔ an edit that breaks a bold stretch settles it, with no stray marks and no spoken word lost
