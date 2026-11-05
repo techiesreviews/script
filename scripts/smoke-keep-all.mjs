@@ -587,8 +587,7 @@ async function runUndoAndTabs(width, height) {
   await other.send("Page.navigate", { url: `${BASE}/` });
   await other.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the second tab");
   await other.click("#emptySample");
-  const otherOpen = await other.until(`document.querySelectorAll("#script .line").length >= 8`, "the second tab's script", 15000);
-  if (!otherOpen) console.log("DBG second tab", JSON.stringify(await other.eval(`({ lines: document.querySelectorAll("#script .line").length, script: document.querySelector("#script")?.children.length, layoutHidden: document.querySelector("#layout").hidden, banner: document.querySelector("#banner")?.textContent, body: document.body.innerText.slice(0, 200), name: document.querySelector(".doc__name")?.textContent })`)));
+  await other.until(`document.querySelectorAll("#script .line").length >= 8`, "the second tab's script", 15000);
   await other.eval(`window.__line = document.querySelector("#script .line")`);
   const third = await page.eval(name);
   await page.eval(`window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("saved-tabs.md", { create: true })`);
