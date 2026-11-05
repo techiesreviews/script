@@ -792,8 +792,8 @@ function restore(snap, from, to) {
   state.doc = D.cloneDoc(snap.doc);
   // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
   for (const b of state.doc.blocks) {
-    const from = D.blockById(was, b.id), a = from && D.contentOf(from), z = D.contentOf(b);
-    if (from && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, marksMoved(a, z));
+    const old = D.blockById(was, b.id), a = old && D.contentOf(old), z = D.contentOf(b);
+    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, marksMoved(a, z));
   }
   state.lastStep = null;
   if (closed) emit(closed.status, closed);
@@ -858,7 +858,7 @@ function followAnchors(id, content, at) {
     if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m);
   }
 }
-const marksMoved = (from, to) => { const m = K.marksMap(from, to); return (start, end) => ({ start: m(start), end: m(end) }); };
+const marksMoved = (from, to) => K.marksRange(from, to);
 // The agent's marked changes (step F) follow every edit from the script as it was when they last followed
 // (changeBase); an edit inside one ends its mark. `ops`: the room's operations, when they are known.
 let changeBase = null;
