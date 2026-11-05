@@ -23,7 +23,7 @@ The release review of PR #14 found: with Bold marking off, `if name=="Lex" or id
 
 The prompter shows `**` as literal asterisks today (it reads only `### **…**` headings), so the export stays Lex's optional setting: stripped unless "Bold words in the prompter file" is on. Words marked bold earlier show their `**` while bold is off.
 
-The follow-up to PR #15, for what landed with a waiver: emptying a stretch looks past spaces earlier deletions left inside its marks, so two separate selections leave no `** **`, on a line of its own too. A paste that breaks a bold stretch inside an open ask's range no longer moves the ask onto other words.
+The follow-up to PR #15, for what landed with a waiver: emptying a stretch looks past spaces earlier deletions left inside its marks, so two separate selections leave no `** **`, on a line of its own too. Deleting the outer words first spaces both edges, which reads like `a ** b ** c`, so those marks stay as text. An edit that breaks a bold stretch inside an open ask's range cancels the ask, so it can't move onto other words.
 
 ## Not in this step
 

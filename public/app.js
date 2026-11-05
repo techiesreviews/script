@@ -847,15 +847,16 @@ function reanchorAll() {
 const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, fromId, toId, fromStart, shift);
 // Bold marks moved in a block: open asks and "Sounds like me" marks there follow by their offsets (`at(start, end)`, null
 // when an edit fell inside them), with their quote as it reads now (`content`; null when it stays), so they can't jump into
-// another word by a search.
-function followAnchors(id, content, at) {
-  const move = (x) => {
+// another word by a search. `insideGoes`: one the edit fell inside is cancelled, for the same reason.
+function followAnchors(id, content, at, { insideGoes = false } = {}) {
+  const move = (x, gone) => {
     const r = at(x.start, x.end);
     if (r) Object.assign(x, r, content == null ? {} : { quote: content.slice(r.start, r.end) });
+    else if (insideGoes) gone();
   };
   for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) move(a);
-    if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m);
+    if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) move(a, () => closeAsk(a, a.status === "answered" ? "undone" : "cancelled"));
+    if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m, () => { m.state = "gone"; });
   }
 }
 const marksMoved = (from, to) => K.marksRange(from, to);
@@ -923,7 +924,7 @@ function syncFromDom(el) {
   }
   checkpoint("type", id);
   const caret = fix ? { id, offset: fix.caret } : getCaret();
-  if (settledNow) followAnchors(id, content, settledNow.follow);
+  if (settledNow) followAnchors(id, content, settledNow.follow, { insideGoes: true });
   const r = D.setContent(state.doc, id, content);
   const moved = followPieces(id, r);
   if (r.changed || r.created.length) {
@@ -952,7 +953,7 @@ function splitAt(el, start, end, lineBreak) {
     followAnchors(id, content, (from, to) => {
       const r = settled.follow(from, to);
       return r && { start: r.start > start ? r.start - 1 : r.start, end: r.end > start ? r.end - 1 : r.end };
-    });
+    }, { insideGoes: true });
     D.setContent(state.doc, id, content);
     reanchorBlock(id);
   }
@@ -1047,7 +1048,7 @@ function pasteText(el, raw) {
   const content = D.contentOf(b);
   const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
   // Bold settled: asks follow by their offsets from the text before the paste; one it fell inside isn't moved at all.
-  if (settled) followAnchors(id, settled.content, settled.follow);
+  if (settled) followAnchors(id, settled.content, settled.follow, { insideGoes: true });
   else moveAsks(id, id, sel.end, text.length - (sel.end - sel.start));
   applyContent(id, settled ? settled.content : pasted, settled ? settled.caret : sel.start + text.length);
   changed();
