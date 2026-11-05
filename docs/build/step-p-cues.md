@@ -29,6 +29,8 @@ The release review of dev `63c7de3`, with real keys: bold on, `Say **big word** 
 
 The release review of dev `fbb9618`, with real keys: bold on, a line that is entirely `**- item two**`, one Backspace at the start of its words gave `- item two`, a list, and the words left the camera script, the prompter file and the word count. Such an edit is now refused quietly and the marks stay, for typing, paste and Enter alike; `scripts/smoke-keep-all.mjs` checks list, heading, quote and numbered lines with real keys. An AI rewrite in a bold heading leaves its `**` alone: cues live only in paragraphs.
 
+The last round: only settling that changes how the text reads is refused (`settlingChangesKind`), so a paste with a blank line goes in as paragraphs, a join onto `**- a**` is refused with both lines still bold, typing `1. ` in front of a bold word makes the list asked for, and a refused forward Delete leaves the caret where it was. The setting is labelled "Bold marking (experimental)", with its known limits in one plain line beside it, so Lex tests it knowing. What is left is in fleet issue #29.
+
 ## Not in this step
 
 The prompter reading cues, a camera action that does something, the shared cue look and reader from the prompter (`public/shared/`).
