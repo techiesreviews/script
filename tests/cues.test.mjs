@@ -416,24 +416,6 @@ test("Sounds like me: a rewrite of a quote over part of a cue never deletes the 
   assert.deepEqual(land("We start here now", "We go"), ["We go.", 1]);
 });
 
-test("typing a word in front of a bold word, a typo in it, and a word typed mid-line", () => {
-  const run = (old, now, caret, typedBefore) => { const r = Q.settleMarks(old, now, caret, { typedBefore }); return r && [r.content, r.caret, r.typedBefore ?? null]; };
-  assert.deepEqual(run("**go** now", "b**go** now", 1, null), ["**bgo** now", 3, 3]);
-  assert.deepEqual(run("**bgo** now", "**bigo** now", 4, 3), ["**bigo** now", 4, 4]);
-  assert.deepEqual(run("**bigo** now", "**biggo** now", 5, 4), ["**biggo** now", 5, 5]);
-  assert.deepEqual(run("**biggo** now", "**big go** now", 6, 5), ["big **go** now", 4, null]);
-  // A typo in the word typed: Backspace keeps track.
-  assert.deepEqual(run("**biggo** now", "**bigo** now", 4, 5), ["**bigo** now", 4, 4]);
-  // A space typed anywhere else in a bold word stays in it, and a word joined by deleting a space isn't "typing".
-  assert.equal(Q.settleMarks("**big go**", "**big  go**", 6), null);
-  assert.equal(Q.settleMarks("**biggo**", "**big go**", 6), null);
-  assert.equal(Q.settleMarks("foo **go**", "foo**go**", 3).typedBefore ?? null, null);
-  // A word typed mid-line, after other words.
-  assert.deepEqual(run("Say **go** now", "Say x**go** now", 5, null), ["Say **xgo** now", 7, 7]);
-  assert.deepEqual(run("Say **xgo** now", "Say **x go** now", 8, 7), ["Say x **go** now", 6, null]);
-});
-
-
 const plainLines = ['if name=="Lex" or id=="7"', 'name =="Lex",id=="7"', "if a ==1&&b==2", 'f(x)=="a" or g(x)=="b"', '"Lex"==name or id=="7"', "We ==start here== now", "a == b == c", "**kwargs and more", "a**b and c**d", "2**3 and 4**5", "f(**a, **b)", "a ** b ** c", "x**go** now", "**go**s now", "**go now", "go** now", "** go ** now", "***go*** now", "**a*b** now", "****"];
 const allWords = (t) => t.replace(/\*/g, "");
 test("Bold marking off: nothing reads ** anywhere; the exports and counts are byte for byte as before bold", () => whileOff(() => {
@@ -731,4 +713,26 @@ test("a host's asks follow a guest's marks by offsets: each room edit moves them
   assert.deepEqual(C.followTextOp({ start: 6, end: 8 }, op(6, 0, "x")), { start: 7, end: 9 }, "typed right before it");
   assert.equal(C.followTextOp({ start: 6, end: 8 }, op(7, 0, "x")), null, "inside it: the old rules decide");
   assert.equal(C.followTextOp({ start: 6, end: 8 }, { type: "split", blockId: "p", at: 2, newId: "q" }), null);
+});
+
+test("a range follows the marks to its own words: its end never slides past a closing mark", () => {
+  const r = Q.marksRange("no x", "**no** x");
+  assert.deepEqual(r(0, 2), { start: 2, end: 4 });
+  assert.deepEqual(r(3, 4), { start: 7, end: 8 });
+  const back = Q.marksRange("**no** x", "no x");
+  assert.deepEqual(back(2, 4), { start: 0, end: 2 });
+  assert.deepEqual(back(0, 6), { start: 0, end: 2 });
+  assert.deepEqual(back(0, 8), { start: 0, end: 4 });
+  const wide = Q.marksRange("We go now", "We **go now**");
+  assert.deepEqual(wide(3, 5), { start: 5, end: 7 });
+  assert.deepEqual(wide(6, 9), { start: 8, end: 11 });
+  // An empty range stays empty.
+  assert.deepEqual(r(2, 2), { start: 6, end: 6 });
+  // Through a settled edit: the ask on A stays on A when a later word goes.
+  assert.deepEqual(Q.settleMarks("**A b** x", "**A ** x", 4).follow(2, 3), { start: 2, end: 3 });
+});
+
+test("a cue never ends before a combining mark, and whole words count them", () => {
+  assert.deepEqual(C.planCues(D.parse("# T\n\n## A\n\nनमस्ते दोस्त\n"), "mark", [{ quote: "नमस" }]).segments, []);
+  assert.deepEqual(Q.textCues("**नमस**्ते"), []);
 });

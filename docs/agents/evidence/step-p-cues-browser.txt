@@ -94,6 +94,7 @@ ok mark_cue in two paragraphs: Done: 2 cues marked in the text now. The person c
 ok one Ctrl+Z takes both back
 ok set_cue_settings shows: "Claude turned bold marking offUndo"
 ok mark_cue is refused while cue marking is off
+ok unmark_cue says it is off too
 ok Undo on that line turns cue marking back on
 ok Ctrl+B in a heading changes nothing
 ok Ctrl+B across two paragraphs changes nothing
