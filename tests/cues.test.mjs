@@ -8,6 +8,7 @@ import * as C from "../public/changes.js";
 import * as Q from "../public/cues.js";
 import * as L from "../public/links.js";
 import * as B from "../public/broll.js";
+import { diff } from "../public/together/ops.js";
 import { checkArgs, TOOLS, INSTRUCTIONS } from "../worker/mcp.js";
 
 // Bold marking on for this file, unless a test says otherwise (Bold marking off: `whileOff`).
@@ -655,4 +656,79 @@ test("an AI answer: a lone ** it copied from the asked text goes; ordinary text 
   const m = Q.marksMap("**no**, no", "no, no"), back = Q.marksMap("no, no", "**no**, no");
   assert.deepEqual([m(8), m(10)], [4, 6]);
   assert.deepEqual([back(4), back(6)], [8, 10]);
+});
+
+test("an AI rewrite keeps ** in ordinary text: only an ask that reaches a real bold stretch loses a lone mark", () => {
+  const land = (text, quote, answer) => {
+    const doc = D.parse(`# T\n\n## A\n\n${text}\n`), p = paras(doc)[0], [s, e] = sel(text, quote);
+    const ask = D.makeAsk(doc, { blockId: p.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
+    Object.assign(ask, { status: "answered", answer: { kind: "replace", text: answer }, answeredBy: { id: "agent:x", name: "X" } });
+    C.land(doc, ask, 1);
+    return D.contentOf(p);
+  };
+  assert.equal(land("Pass **kwargs here and go.", "**kwargs here", "**kwargs now"), "Pass **kwargs now and go.");
+  assert.equal(land("Use a**b here.", "a**b here", "a**b now"), "Use a**b now.");
+  assert.equal(land("Use **go here and **on there.", "**go here", "**go now"), "Use **go now and **on there.");
+  // An ask that does reach bold words still loses what it copied alone, also over half of them.
+  assert.equal(land("We **start here** now.", "here** now", "here** today"), "We **start here** today.");
+  assert.equal(land("Pass **kwargs and **go** now.", "**go** now", "go** later"), "Pass **kwargs and **go** later.");
+});
+
+test("emptying a stretch over several selections leaves no **** either, with Bold marking off too", () => {
+  const inner = "two words here", start = "We **", end = "** now", full = start + inner + end;
+  const step = (text, from, to) => {
+    const now = text.slice(0, from) + text.slice(to), r = Q.settleMarks(text, now, from);
+    return r ? r.content : now;
+  };
+  const run = () => {
+    for (let k = 1; k < inner.length; k++) {
+      // The first part, then the rest; the last part, then the rest.
+      const a = step(full, start.length, start.length + k);
+      const fromA = a.indexOf(inner.slice(k).trim(), 3);
+      const restA = a.slice(fromA).replace(/\*\*.*$/s, "");
+      const doneA = step(a, fromA, fromA + restA.length);
+      const b = step(full, start.length + k, start.length + inner.length);
+      const firstB = b.indexOf(inner.slice(0, k).trim(), 3);
+      const restB = b.slice(firstB).replace(/\*\*.*$/s, "");
+      const doneB = step(b, firstB, firstB + restB.length);
+      for (const t of [doneA, doneB]) {
+        assert.ok(!t.includes("****"), JSON.stringify(t));
+        assert.ok(t.startsWith("We ") && t.endsWith(" now"), JSON.stringify(t));
+      }
+    }
+  };
+  run();
+  whileOff(run);
+  whileOff(() => {
+    assert.equal(Q.settleMarks("We **two ** now", "We **** now", 5)?.content, "We  now");
+    assert.equal(Q.settleMarks("We ** words** now", "We **** now", 5)?.content, "We  now");
+    assert.equal(Q.settleMarks("We ** ** now", "We **** now", 5)?.content, "We  now");
+    // Text that was never one: no words at an edge on either side, or a word or * outside the marks, or a link.
+    for (const [old, now, caret] of [["a ** b ** c", "a **** c", 4], ["x**two ** y", "x**** y", 3], ["We **two **y", "We ****y", 5], ["We ***two ** y", "We ***** y", 6], ["We **[a](https://x.example)** y", "We **** y", 5]]) {
+      assert.equal(Q.settleMarks(old, now, caret), null, old);
+    }
+  });
+  // With other bold words in the paragraph, it reads the same.
+  assert.equal(Q.settleMarks("**x** and **two ** now", "**x** and **** now", 12)?.content, "**x** and  now");
+});
+
+test("a host's asks follow a guest's marks by offsets: each room edit moves them, and they stay on their own word", () => {
+  const before = "We no no no", after = "We **no** no no", ask = { start: 6, end: 8 };
+  const ops = diff([{ id: "p", text: before, attrs: { type: "para" } }], [{ id: "p", text: after, attrs: { type: "para" } }]);
+  let at = ask;
+  for (const op of ops) at = C.followTextOp(at, op) ?? at;
+  assert.deepEqual(at, { start: 10, end: 12 });
+  assert.equal(after.slice(at.start, at.end), "no");
+  assert.equal(after.slice(at.start - 7, at.start), "**no** ", "the second no, not the first");
+  assert.deepEqual(D.reanchor({ ...at, quote: "no" }, after), at);
+  // Taking the bold off again, the same way back.
+  let back = at;
+  for (const op of diff([{ id: "p", text: after, attrs: { type: "para" } }], [{ id: "p", text: before, attrs: { type: "para" } }])) back = C.followTextOp(back, op) ?? back;
+  assert.deepEqual(back, ask);
+  // Before it, typed right at its edges, or inside it: nothing moves by offsets here.
+  const op = (a, del, ins) => ({ type: "text", blockId: "p", at: a, del, ins });
+  assert.equal(C.followTextOp({ start: 6, end: 8 }, op(8, 0, "x")), null, "typed right after it");
+  assert.deepEqual(C.followTextOp({ start: 6, end: 8 }, op(6, 0, "x")), { start: 7, end: 9 }, "typed right before it");
+  assert.equal(C.followTextOp({ start: 6, end: 8 }, op(7, 0, "x")), null, "inside it: the old rules decide");
+  assert.equal(C.followTextOp({ start: 6, end: 8 }, { type: "split", blockId: "p", at: 2, newId: "q" }), null);
 });

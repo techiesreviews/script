@@ -130,6 +130,9 @@
 ✔ marks never change a B-roll shot's check, whatever anyone's setting says; a changed word does
 ✔ mark_cue checks each quote on its own; a quote across a line break, or with * in it, is skipped with the reason
 ✔ an AI answer: a lone ** it copied from the asked text goes; ordinary text and whole bold words stay
+✔ an AI rewrite keeps ** in ordinary text: only an ask that reaches a real bold stretch loses a lone mark
+✔ emptying a stretch over several selections leaves no **** either, with Bold marking off too
+✔ a host's asks follow a guest's marks by offsets: each room edit moves them, and they stay on their own word
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -341,9 +344,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 343
+ℹ tests 346
 ℹ suites 0
-ℹ pass 343
+ℹ pass 346
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

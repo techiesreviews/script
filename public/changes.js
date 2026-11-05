@@ -142,8 +142,9 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
   Object.assign(ask, r);
   let text = fitText(content, ask, type);
   if (text === null) return null;
-  // The agent reads the asked text with its "**" marks and may send one back alone: it goes (cues.js).
-  if (content.slice(ask.start, ask.end).includes("**")) text = K.dropLoneMarks(text);
+  // The agent reads the asked text with its "**" marks and may send one back alone: it goes (cues.js). Only when the ask
+  // reaches a real bold stretch: "**kwargs" in ordinary text stays.
+  if (K.textCues(content).some((c) => ask.start < c.end && ask.end > c.start)) text = K.dropLoneMarks(text);
   // A replace that reaches into a cue takes the whole cue in (its outside words stay, plain), and an add inside a cue
   // goes after it, so no lone "**" is left (cues.js).
   if (ask.answer.kind === "replace") {
@@ -383,6 +384,14 @@ function spokenSegments(doc, asks) {
  *  at? Then the person's Ctrl/Cmd+B changes nothing, so that work keeps its text. The agent's marked changes don't
  *  stop it (like typing there, it ends their mark), so Ctrl/Cmd+B takes off a cue the agent just marked. */
 export const cueBlocked = (asks, blockId, from, to) => L.overlaps(busyRanges(asks, null, { marked: false }).get(blockId) || [], from, to);
+/** Where a range goes through one room edit, by offsets: it moves when the edit lies wholly before it (typed right before
+ *  it too), and stays when the edit lies after it. null when nothing moves it or the edit fell inside it: then the old
+ *  rules decide, as for any edit there. So a host's ask stays on its own word when a guest marks an earlier copy of it. */
+export function followTextOp({ start, end }, op) {
+  if (op.type !== "text" || start < op.at + op.del || (start === op.at && op.del)) return null;
+  const by = op.ins.length - op.del;
+  return { start: start + by, end: end + by };
+}
 /** May the person's Ctrl/Cmd+B do this toggle (K.toggleCue's result) in this block? Not over open work, and not when
  *  the new text would read as another kind of block ("**- item**" without its marks is a list line). */
 export const canToggleCue = (asks, blockId, type, res) => !!res && !cueBlocked(asks, blockId, res.from, res.to) && keepsType(res.content, type);
