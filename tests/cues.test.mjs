@@ -299,7 +299,7 @@ test("PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds 
   assert.deepEqual(B.touchShots(doc, shots), []);
   const n = D.contentOf(p);
   const over = (s, e) => B.overFor(doc, [{ id: p.id, start: s, end: e }]);
-  assert.doesNotMatch(over(n.indexOf("**start"), n.indexOf("now") + 3), /=/);
+  assert.doesNotMatch(over(n.indexOf("**start"), n.indexOf("now") + 3), /\*/);
   // A selection that starts inside the cue takes the whole cue, so no lone marks.
   assert.match(over(n.indexOf("here"), n.indexOf("now") + 3), /^"start here now/);
 });
@@ -388,7 +388,7 @@ test("last round: a rewrite widened over a cue never turns the paragraph into a 
   assert.ok(res.mark, "the change keeps its mark and Undo");
   assert.equal(Q.spokenWords("**a**[b](https://x.example)"), "ab");
   const two = D.parse("# T\n\n## A\n\n**a**[b](https://x.example) now.\n");
-  assert.equal(D.exportCamera(two).includes("="), false);
+  assert.equal(D.exportCamera(two).includes("*"), false);
 });
 
 test("last round: set_cue_settings says where the change really goes", () => {
@@ -415,7 +415,7 @@ test("Sounds like me: a rewrite of a quote over part of a cue never deletes the 
   assert.deepEqual(land("We start here now", "We go"), ["We go.", 1]);
 });
 
-test("typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed", () => {
+test("typing a word in front of a bold word, a typo in it, and a word typed mid-line", () => {
   const run = (old, now, caret, typedBefore) => { const r = Q.settleMarks(old, now, caret, { typedBefore }); return r && [r.content, r.caret, r.typedBefore ?? null]; };
   assert.deepEqual(run("**go** now", "b**go** now", 1, null), ["**bgo** now", 3, 3]);
   assert.deepEqual(run("**bgo** now", "**bigo** now", 4, 3), ["**bigo** now", 4, 4]);
@@ -577,7 +577,7 @@ test("asks are anchored by offsets through mark changes: they follow, and never 
   assert.deepEqual(r.follow(0, 3), { start: 0, end: 3 });
   assert.equal(r.follow(0, 8), null, "the edit fell inside this ask");
   // Toggling marks: the second of two repeated words stays the second.
-  const c = "We no no go.", doc = D.parse(`# T\n\n## A\n\n${c}\n`), p = paras(doc)[0];
+  const c = "We no no go.";
   const t = Q.toggleCue(c, 0, 2), m = Q.marksMap(c, t.content), i = c.lastIndexOf("no");
   assert.equal(t.content.slice(m(i), m(i + 2)), "no");
   assert.equal(m(i), t.content.lastIndexOf("no"));
@@ -592,7 +592,6 @@ test("asks are anchored by offsets through mark changes: they follow, and never 
   Object.assign(ask, a2, { quote: r2.content.slice(a2.start, a2.end), status: "answered", answer: { kind: "replace", text: "go later" }, answeredBy: { id: "agent:x", name: "X" } });
   assert.ok(C.land(doc2, ask, 1));
   assert.equal(D.contentOf(p2), "Say **xgo** later.");
-  assert.ok(p);
 });
 
 test("marks never change a B-roll shot's check, whatever anyone's setting says; a changed word does", () => {
@@ -611,6 +610,9 @@ test("marks never change a B-roll shot's check, whatever anyone's setting says; 
   assert.deepEqual(B.touchShots(doc, shots), ["B1"]);
   const b = D.parse("# T\n\n## A\n\nSay **go** now.\n");
   assert.deepEqual(B.matchOver(B.spokenBlocks(b), '"Say go now."'), [paras(b)[0].id]);
+  // With bold on, the Over text never holds marks; with it off it reads the line byte for byte, like every export.
+  assert.match(B.overFor(b, [{ id: paras(b)[0].id, start: 0, end: D.contentOf(paras(b)[0]).length }]), /^"Say go now/);
+  whileOff(() => assert.match(B.overFor(b, [{ id: paras(b)[0].id, start: 0, end: D.contentOf(paras(b)[0]).length }]), /^"Say \*\*go\*\* now/));
 });
 
 test("mark_cue checks each quote on its own; a quote across a line break, or with * in it, is skipped with the reason", () => {
@@ -647,4 +649,10 @@ test("an AI answer: a lone ** it copied from the asked text goes; ordinary text 
   // A rewrite that would put a cue where it can't read back drops it and says so.
   assert.deepEqual(Q.keepCues("**go**", "Stop*go now"), { text: "Stop*go now", dropped: 1 });
   assert.deepEqual(Q.keepCues("**go**", "We go now"), { text: "We **go** now", dropped: 0 });
+  // Words split over two lines can't be one cue: it goes, no broken marks.
+  assert.deepEqual(Q.keepCues("We **start here** now", "So we start\nhere today"), { text: "So we start\nhere today", dropped: 1 });
+  // Going back and forth, a mark moves its ask no further than its own characters.
+  const m = Q.marksMap("**no**, no", "no, no"), back = Q.marksMap("no, no", "**no**, no");
+  assert.deepEqual([m(8), m(10)], [4, 6]);
+  assert.deepEqual([back(4), back(6)], [8, 10]);
 });

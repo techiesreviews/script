@@ -10,7 +10,7 @@ Lex's design change (2026-11-04, spec section 8, folded into this step): the "Cu
 - `public/app.js`: cues drawn with the links' show/hide trick; Ctrl/Cmd+B and the B button; the Bold settings and Bold style in the file name's menu; the agent's `list_cues`, `mark_cue`, `unmark_cue`, `get_cue_settings`, `set_cue_settings`; `get_script` lists cues while on; the prompter export follows the export setting.
 - `public/app.css`: the look in two rules (`.md-cue .md-link__words`): plain bold, or the person's own colours.
 - `public/changes.js`: `listCues`, `planCues`, `landCues`; a replace keeps cues whose words survive and says how many went. `public/links.js`: links never land inside a cue. `public/doc.js`: exports and counts read cue words.
-- `public/broll.js`: bold marks never change a shot's check or its Over text.
+- `public/broll.js`: bold marks never change a shot's check, whatever anyone's setting says, and with bold on they stay out of its Over text. With bold off the Over text is byte for byte as the line reads, like every other export.
 - `worker/mcp.js`: the five tools, their checks, a line in the agent instructions and version 0.9.0.
 
 ## Try it (Lex)
