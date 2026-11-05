@@ -134,7 +134,7 @@
 ✔ a range follows the marks to its own words: its end never slides past a closing mark
 ✔ a cue never ends before a combining mark, and whole words count them
 ✔ emptying a stretch looks past spaces: no marks left, on a line of its own too, with Bold marking off
-✔ a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: the old rules decide
+✔ a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: it is cancelled
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator

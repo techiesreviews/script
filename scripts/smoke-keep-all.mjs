@@ -218,6 +218,22 @@ async function runBold(width, height) {
   await page.eval(pick(copy + 4, copy + 5));
   await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "=*"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
   check(await page.until(`!${paraOf}.querySelector("[data-ask]")`, "the repeated ask cancelled"), `${tag}: that paste cancels it, it doesn't jump to the later copy`);
+  // An ask already answered with a note closes the same way: the agent is told it was cancelled.
+  await page.eval(`(() => { const el = ${paraOf}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: " **note this**" });
+  await sleep(300);
+  const reached = (await line()).lastIndexOf("**note this**");
+  await page.eval(pick(reached, reached + 13));
+  await sleep(300);
+  await page.click(`#editBar [data-act="shorter"]`);
+  await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "an ask to answer");
+  const taken = JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks.at(-1);
+  await agent("answer_ask", { askId: taken.id, kind: "note", text: "A note." });
+  await page.eval(pick(reached + 3, reached + 4));
+  await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "=*"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
+  await sleep(300);
+  const closed = JSON.parse(await agent("list_asks", {})).asks.find((x) => x.id === taken.id)?.status;
+  check(closed === "cancelled", `${tag}: an answered ask closes as cancelled`, closed);
   await page.close();
 }
 
