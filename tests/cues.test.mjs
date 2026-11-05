@@ -678,7 +678,8 @@ test("emptying a stretch over several selections leaves no **** either, with Bol
   whileOff(() => {
     assert.equal(Q.settleMarks("We **two ** now", "We **** now", 5)?.content, "We  now");
     assert.equal(Q.settleMarks("We ** words** now", "We **** now", 5)?.content, "We  now");
-    assert.equal(Q.settleMarks("We ** ** now", "We **** now", 5)?.content, "We  now");
+    // Only spaces left between the marks: nothing to empty, so it stays as it is.
+    assert.equal(Q.settleMarks("We ** ** now", "We **** now", 5), null);
     // Text that was never one: no words at an edge on either side, or a word or * outside the marks, or a link.
     for (const [old, now, caret] of [["a ** b ** c", "a **** c", 4], ["x**two ** y", "x**** y", 3], ["We **two **y", "We ****y", 5], ["We ***two ** y", "We ***** y", 6], ["We **[a](https://x.example)** y", "We **** y", 5]]) {
       assert.equal(Q.settleMarks(old, now, caret), null, old);
@@ -732,6 +733,7 @@ test("a cue never ends before a combining mark, and whole words count them", () 
 });
 
 test("emptying a stretch looks past spaces: no marks left, on a line of its own too, with Bold marking off", () => {
+  const old2 = "We ** words** more";
   const run = (...edits) => {
     let t = edits.shift();
     for (const words of edits) {
@@ -759,7 +761,18 @@ test("emptying a stretch looks past spaces: no marks left, on a line of its own 
       ["a ** b ** c", "a **  ** c", 5], ["a ** b ** c", "a **** c", 4], ["x** b** y", "x** ** y", 4], ["We ** b**y", "We ** **y", 6],
       ["We *** b** y", "We *** ** y", 7], ["We ** [a](https://x.example)** y", "We ** ** y", 6], ["We **a\n b** y", "We **a\n ** y", 8],
       ["We ** b** y", "We ** b**", 9], ["We ** b** y", "We ** c** y", 7],
+      // A space deleted between marks that hold only spaces: never a stretch, so a comparison's signs stay.
+      ["a **  ** c", "a ** ** c", 5], ["a ** ** c", "a **** c", 4],
     ]) assert.equal(Q.settleMarks(old, now, caret), null, `${old} -> ${now}`);
+    // The limit: deleting the outer words first spaces both edges, which reads like "a ** b ** c", so the marks stay.
+    assert.equal(run("We **one two three** now", "one", "three", "two"), "We **  ** now");
+    // The caret lands where the words were, and a range after them follows.
+    const gone = Q.settleMarks("We ** words more", "We ** more", 6);
+    assert.equal(gone, null, "no closing marks: nothing to take");
+    const empt = Q.settleMarks("We ** words** more", "We ** ** more", 6);
+    assert.equal(empt.content, "We   more");
+    assert.equal(empt.caret, 4);
+    assert.deepEqual(empt.follow(old2.indexOf("more"), old2.length), { start: 5, end: 9 });
   });
   // The same with Bold marking on, where the first edit already moved the space out.
   assert.equal(run("We **two words** now", "two", "words").includes("*"), false);

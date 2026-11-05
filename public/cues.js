@@ -236,17 +236,17 @@ const followEdit = (p, oe, delta, now, content) => {
   };
 };
 // The last words of a stretch deleted: its marks go, read by the text alone, as no setting travels to a guest. Looks past
-// spaces, as earlier deletions may have left some inside the marks ("**two **", "** words**", "** **"). Both edges spaced
-// around words ("a ** b ** c") was never a stretch, and neither was a word or "*" outside the marks, or a link.
-// Anything else stays byte for byte.
+// spaces, as an earlier deletion may have left them at one inner edge ("**two **", "** words**"). Both edges spaced around
+// words ("a ** b ** c") was never a stretch, and neither was a word or "*" outside the marks, or a link, and marks with only
+// spaces between them hold no words to delete. Anything else stays byte for byte.
 function emptied(old, now, p, oe, ne) {
   if (ne !== p || oe <= p) return null;
   let open = p, close = oe;
   while (open > 0 && /[^\S\n]/.test(old[open - 1])) open--;
   while (close < old.length && /[^\S\n]/.test(old[close])) close++;
   if (open < 2 || old.slice(open - 2, open) !== "**" || old.slice(close, close + 2) !== "**") return null;
-  const inner = old.slice(open, close), before = old[open - 3] ?? "", after = old[close + 2] ?? "", blank = !inner.trim();
-  if (BAD_WORDS.test(inner) || (!blank && !WORDY.test(inner)) || (!blank && /\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
+  const inner = old.slice(open, close), before = old[open - 3] ?? "", after = old[close + 2] ?? "";
+  if (BAD_WORDS.test(inner) || !WORDY.test(inner) || (/\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
   if (WORD_CHAR.test(before) || before === "*" || WORD_CHAR.test(after) || after === "*" || overlaps(linkRanges(old), open - 2, close + 2)) return null;
   const delta = ne - oe, end = close + delta;
   const content = now.slice(0, open - 2) + now.slice(open, end) + now.slice(end + 2);
