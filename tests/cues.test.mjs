@@ -732,7 +732,7 @@ test("a cue never ends before a combining mark, and whole words count them", () 
   assert.deepEqual(Q.textCues("**नमस**्ते"), []);
 });
 
-test("emptying a stretch looks past spaces: no marks left, on a line of its own too, with Bold marking off", () => {
+test("emptying a stretch looks past spaces at one inner edge, on a line of its own too, with Bold marking off; outer words first is the written limit", () => {
   const old2 = "We ** words** more";
   const run = (...edits) => {
     let t = edits.shift();
@@ -788,4 +788,15 @@ test("a paste that breaks a bold stretch inside an open ask's range doesn't move
   assert.equal(r.content.slice(after.start, after.end), "more");
   // Its quote is gone from the text, so it is cancelled rather than moved onto other words.
   assert.equal(D.reanchor({ start: 3, quote: old.slice(3, 12) }, r.content), null);
+});
+
+test("looking past spaces never takes a mark that belongs to a real stretch the edit didn't touch", () => {
+  const cases = [["**a!** b** x", "**a!** ** x", 7], ["a **b **(c)** d", "a ** **(c)** d", 4]];
+  for (const [old, now, caret] of cases) {
+    assert.equal(Q.settleMarks(old, now, caret), null, `on: ${old}`);
+    whileOff(() => assert.equal(Q.settleMarks(old, now, caret), null, `off: ${old}`));
+  }
+  // The stretch being emptied still loses its own marks, beside a real one.
+  assert.equal(Q.settleMarks("**a!** **two ** x", "**a!** **** x", 9)?.content, "**a!**  x");
+  whileOff(() => assert.equal(Q.settleMarks("**a!** **two ** x", "**a!** **** x", 9)?.content, "**a!**  x"));
 });
