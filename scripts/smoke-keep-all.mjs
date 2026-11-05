@@ -189,7 +189,7 @@ async function runBold(width, height) {
   check(await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button"), `${tag}: Bold marking on: the B button shows`);
   await page.click("#boldBtn");
   await sleep(250);
-  check((await text()).includes(`==${word}==`), `${tag}: B marks the word in the text`, word);
+  check((await text()).includes(`**${word}**`), `${tag}: B marks the word in the text`, word);
   await page.eval(`getSelection().removeAllRanges()`);
   await sleep(150);
   const weight = await page.eval(`(() => { const c = [...document.querySelectorAll("#script [data-cue], #script [data-cue] *")].map((e) => Number(getComputedStyle(e).fontWeight)); return c.length ? Math.max(...c) : 0; })()`);
