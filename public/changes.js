@@ -33,6 +33,13 @@ export function keepsType(content, type) {
   const p = D.parse(content);
   return p.blocks.length <= 1 && (p.blocks[0]?.type ?? "para") === type;
 }
+/** Would settling bold marks change how this text reads, beyond what the edit itself made? `now`: the text as edited,
+ *  `settled`: with its marks settled. Plain paragraphs are always fine; so is a list pasted on purpose, a list either way. */
+export function settlingChangesKind(now, settled) {
+  const kinds = (text) => D.parse(text).blocks.map((b) => b.type);
+  const after = kinds(settled);
+  return !after.every((t) => t === "para") && kinds(now).join() !== after.join();
+}
 // Marks at the start of a text that make a block a heading, the title, a list, a quote, a table, a fence, a rule, a
 // note or HTML: "# ", "- ", "1. ", ">", "|", "`", "~", "[", "<", "* ", "+ ", "_". Numbers and "#" only with a space after
 // them, so "2.5 million" and "#1 tip" stay.
