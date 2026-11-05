@@ -846,11 +846,12 @@ function reanchorAll() {
 }
 const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, fromId, toId, fromStart, shift);
 // Bold marks moved in a block: open asks and "Sounds like me" marks there follow by their offsets (`at(start, end)`, null
-// when an edit fell inside them), with their quote as it reads now, so they can't jump into another word by a search.
+// when an edit fell inside them), with their quote as it reads now (`content`; null when it stays), so they can't jump into
+// another word by a search.
 function followAnchors(id, content, at) {
   const move = (x) => {
     const r = at(x.start, x.end);
-    if (r) Object.assign(x, r, { quote: content.slice(r.start, r.end) });
+    if (r) Object.assign(x, r, content == null ? {} : { quote: content.slice(r.start, r.end) });
   };
   for (const a of state.asks) {
     if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) move(a);
@@ -4891,7 +4892,10 @@ function afterRoomOps(ops, sel) {
   const touched = new Set();
   let structure = false;
   for (const op of ops) {
-    if (op.type === "text") touched.add(op.blockId);
+    if (op.type === "text") {
+      touched.add(op.blockId);
+      followAnchors(op.blockId, null, (start, end) => C.followTextOp({ start, end }, op));
+    }
     else if (op.type === "split") { moveAsks(op.blockId, op.newId, op.at, -op.at); touched.add(op.blockId).add(op.newId); structure = true; }
     else if (op.type === "merge") { moveAsks(op.blockId, op.into, 0, op.at); touched.add(op.into).add(op.blockId); structure = true; }
     else { touched.add(op.blockId ?? op.block.id); structure = true; }
