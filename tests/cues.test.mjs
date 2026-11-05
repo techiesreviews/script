@@ -778,7 +778,7 @@ test("emptying a stretch looks past spaces: no marks left, on a line of its own 
   assert.equal(run("We **two words** now", "two", "words").includes("*"), false);
 });
 
-test("a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: the old rules decide", () => {
+test("a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: it is cancelled", () => {
   const old = "We **go** now and more", pasted = `${old.slice(0, 6)}=*${old.slice(7)}`;
   const r = Q.settleMarks(old, pasted, 8);
   assert.equal(r.content, "We g=* now and more");
