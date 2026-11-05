@@ -17,7 +17,7 @@ Lex's design change (2026-11-04, spec section 8, folded into this step): the "Cu
 
 Open a script, open the file name's menu, turn on Bold marking. Select a few words and press Ctrl+B (⌘B on a Mac) or B on the selection bar; press again to take it off; Ctrl+Z undoes either. Ask your agent to mark some words, then undo it from its name tag. Try "Use my own colours for bold". Export the prompter file: the words come out plain unless "Bold words in the prompter file" is on.
 
-## Off means off, and `**` (2026-11-05, fleet lead for Lex)
+## Off means off, and `**` (fleet lead's decision, after the release review)
 
 The release review of PR #14 found: with Bold marking off, `if name=="Lex" or id=="7"` exported as `if name"Lex" or id"7"`; and deleting all of a bold stretch's words left `====`. Reviews then kept finding more comparison shapes the `==` mark had to guess at, so the lead changed the mark: `**words**`, the standard Markdown bold. Bold was never released (not on `main`), so no stored script needs converting. Decisions: off, nothing is read or stripped anywhere; on, a `**` pair at word boundaries with no space inside its edges is bold, and there are no comparison rules left; an edit that empties a stretch takes its marks at edit time for everyone, read from the text alone, the one thing that happens while it is off; asks follow marks by offsets, never by a search; `mark_cue` checks each quote on its own; marks never flag a B-roll shot.
 

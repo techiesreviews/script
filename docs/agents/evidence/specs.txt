@@ -119,7 +119,6 @@
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
 ✔ last round: set_cue_settings says where the change really goes
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
-✔ typing a word in front of a bold word, a typo in it, and a word typed mid-line
 ✔ Bold marking off: nothing reads ** anywhere; the exports and counts are byte for byte as before bold
 ✔ Bold marking on: a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read
 ✔ an edit that breaks a bold stretch settles it, with no stray marks and no spoken word lost
@@ -133,6 +132,8 @@
 ✔ an AI rewrite keeps ** in ordinary text: only an ask that reaches a real bold stretch loses a lone mark
 ✔ emptying a stretch over several selections leaves no **** either, with Bold marking off too
 ✔ a host's asks follow a guest's marks by offsets: each room edit moves them, and they stay on their own word
+✔ a range follows the marks to its own words: its end never slides past a closing mark
+✔ a cue never ends before a combining mark, and whole words count them
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -344,9 +345,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 346
+ℹ tests 347
 ℹ suites 0
-ℹ pass 346
+ℹ pass 347
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
