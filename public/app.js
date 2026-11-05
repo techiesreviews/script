@@ -855,7 +855,7 @@ function followAnchors(id, content, at, { insideGoes = false } = {}) {
     else if (insideGoes) gone();
   };
   for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) move(a, () => closeAsk(a, a.status === "answered" ? "undone" : "cancelled"));
+    if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) move(a, () => closeAsk(a, "cancelled"));
     if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m, () => { m.state = "gone"; });
   }
 }
