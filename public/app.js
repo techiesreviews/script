@@ -1390,15 +1390,11 @@ function keepBarSel(id) {
   const b = byId(id), el = blockNode(id);
   if (!b || !el) return;
   const content = D.contentOf(b);
-  let { start, end } = barSel;
-  if (content.slice(start, end) !== barSel.quote) {
-    const r = findWords(content, barSel.quote, barSel.plainAt ?? start);
-    if (!r) return;
-    ({ start, end } = r);
-    barSel.quote = r.quote;
-    barSel.plainAt = plainOffset(content, start);
-  }
-  Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end) });
+  // Always searched: the same text at the old offset can be another copy, moved there by a mark before it.
+  const r = findWords(content, barSel.quote, barSel.plainAt ?? barSel.start);
+  if (!r) return;
+  const { start, end } = r;
+  Object.assign(barSel, { el, start, end, quote: r.quote, plainAt: plainOffset(content, start), range: rangeAt(el, start, end) });
   cueBtnState(barSel);
   paintBarSel();
   placeBar(barSel.range);
@@ -1572,12 +1568,10 @@ function makeAsk(action, typed = "") {
   const b = byId(s.id);
   if (!b) return hideBar();
   const content = D.contentOf(b);
-  let { start, end } = s;
-  if (content.slice(start, end) !== s.quote) {
-    const r = findWords(content, s.quote, s.plainAt ?? start);
-    if (!r) return hideBar();
-    ({ start, end } = r);
-  }
+  // Always searched: the same text at the old offset can be another copy, moved there by a mark before it.
+  const r = findWords(content, s.quote, s.plainAt ?? s.start);
+  if (!r) return hideBar();
+  const { start, end } = r;
   if (bar.hidden) hideBar();
   else showSending();
   getSelection().removeAllRanges();
