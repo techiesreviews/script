@@ -304,6 +304,39 @@ async function runBoldKeys(width, height) {
   await page.close();
 }
 
+// With Bold marking off an edit is never refused (Lex, 2026-11-06): deleting the bold word in "**Note** - more" or "**y**- z" goes
+// through, however the text left reads, and one Ctrl+Z brings it back.
+async function runBoldOffEdits(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const script = async () => JSON.parse(await agent("get_script", {}));
+  const press = async (key, code, vk, modifiers = 0, text) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers, ...(text && type === "keyDown" ? { text } : {}) }); await sleep(250); };
+  const CTRL = 2;
+  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: Bold marking is off`);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
+  for (const [line, word] of [["**Note** - more", "Note"], ["**y**- z", "y"]]) {
+    await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+    await sleep(150);
+    await press("Enter", "Enter", 13, 0, "\r");
+    await page.send("Input.insertText", { text: line });
+    await sleep(350);
+    const has = async () => (await script()).markdown.split("\n").includes(line);
+    check(await has(), `${tag}: ${line}: it is in the script`);
+    const para = `[...document.querySelectorAll('#script .block')].find((x) => x.textContent.startsWith(${JSON.stringify(line)}))`;
+    const from = line.indexOf(word);
+    await page.eval(`(() => { const el = ${para}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${from + word.length})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+    await sleep(250);
+    await press("Backspace", "Backspace", 8);
+    const now = (await script()).markdown;
+    check(!now.includes(line), `${tag}: ${line}: deleting ${word} goes through (Bold marking off never refuses)`, now.split("\n").find((l) => l.includes("more") || l.includes("- z")));
+    await page.eval(`${first}.focus()`);
+    await press("z", "KeyZ", 90, CTRL);
+    check(await has(), `${tag}: ${line}: one Ctrl+Z brings it back`);
+  }
+  await page.close();
+}
+
 // A line that would read as another kind of block without its marks keeps them: no words may leave the saved script or the
 // exports. With real keys, on a list, heading, quote and numbered line, and with words after the marks.
 async function runBoldKinds(width, height) {
@@ -377,17 +410,21 @@ async function runBoldKinds(width, height) {
     await page.eval(`${para.replace(JSON.stringify(line), JSON.stringify(line.slice(0, 4)))}?.focus()`);
     await press("z", "KeyZ", 90, CTRL);
     check(await has(), `${tag}: ${line}: one Ctrl+Z takes the typing back`);
-    // Enter right after the line's mark: neither part reads as a list or a heading, so it splits, and no word leaves.
-    await page.eval(pick(line.indexOf(" ") + 1));
-    await sleep(250);
-    await press("Enter", "Enter", 13, 0, "\r");
-    const split = await script();
-    check(split.words === start.words, `${tag}: ${line}: Enter right after its mark: no spoken word leaves the counts`, split.words);
-    if (split.markdown !== start.markdown) {
-      await page.eval(`${first}.focus()`);
-      await press("z", "KeyZ", 90, CTRL);
+    // Enter right after the line's mark, and just before the space after it ("**1.| x y**"): the parts joined without their
+    // marks would read as a list or a heading, so it is refused (nothing changes); otherwise it splits. No word leaves either way.
+    for (const [what, at] of [["right after its mark", line.indexOf(" ") + 1], ["just before the space", line.indexOf(" ")]]) {
+      await page.eval(pick(at));
+      await sleep(250);
+      await press("Enter", "Enter", 13, 0, "\r");
+      const split = await script();
+      check(split.words === start.words, `${tag}: ${line}: Enter ${what}: no spoken word leaves the counts`, split.words);
+      if (what.startsWith("just")) check(split.markdown === start.markdown, `${tag}: ${line}: Enter ${what}: refused, nothing changes`, split.markdown.split("\n").filter((l) => l.includes("item") || l.includes("Plan") || l.includes("x y")).join(" | "));
+      if (split.markdown !== start.markdown) {
+        await page.eval(`${first}.focus()`);
+        await press("z", "KeyZ", 90, CTRL);
+      }
+      check(await has(), `${tag}: ${line}: Enter ${what}: refused, or one Ctrl+Z takes it back`);
     }
-    check(await has(), `${tag}: ${line}: that Enter is refused, or one Ctrl+Z takes it back`);
   }
   // The other edits: each new line goes under the demo's first line.
   const addLine = async (line, under = first) => {
@@ -1021,6 +1058,9 @@ const only = process.env.SMOKE_ONLY;
 try {
   if (only === "guest") {
     await run(1280, 800);
+  } else if (only === "refusals") {
+    await runBoldOffEdits(1280, 800);
+    await runBoldKinds(1280, 800);
   } else if (only === "exports") {
     await runExports(1280, 800);
     await runExports(390, 760);
@@ -1032,6 +1072,7 @@ try {
     await runBold(390, 760);
     await runBoldKeys(1280, 800);
     await runBoldKeys(390, 760);
+    await runBoldOffEdits(1280, 800);
     await runBoldKinds(1280, 800);
     await runRename(1280, 800);
     await runRename(390, 760);
