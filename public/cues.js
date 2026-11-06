@@ -36,8 +36,9 @@ function linkRanges(text) {
   }
   return out;
 }
-// The stretches in the text.
-function readCues(content) {
+/** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
+ *  same shape as textLinks() so the editor draws both alike). A "**…**" inside or across a link is not a cue. */
+export function textCues(content) {
   const text = String(content ?? "");
   const links = linkRanges(text);
   const out = [];
@@ -48,9 +49,6 @@ function readCues(content) {
   }
   return out;
 }
-/** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
- *  same shape as textLinks() so the editor draws both alike). A "**…**" inside or across a link is not a cue. */
-export const textCues = (content) => readCues(content);
 /** An AI's new text, when the text it was asked about held marks: a "**" it copied that makes no cue goes. Ordinary text
  *  stays: a letter or digit on both sides (a**b), or spaces on both sides (a ** b). */
 export function dropLoneMarks(text) {
@@ -210,7 +208,7 @@ function emptied(old, now, p, oe, ne) {
   if (BAD_WORDS.test(inner) || !WORDY.test(inner) || (!alone && /\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
   if (WORD_CHAR.test(before) || before === "*" || WORD_CHAR.test(after) || after === "*" || overlaps(linkRanges(old), open - 2, close + 2)) return null;
   // A mark that belongs to a real stretch the edit didn't touch isn't this one's to take.
-  if (readCues(old).some((c) => c.end === open || c.start === close)) return null;
+  if (textCues(old).some((c) => c.end === open || c.start === close)) return null;
   const delta = ne - oe, end = close + delta;
   const content = now.slice(0, open - 2) + now.slice(open, end) + now.slice(end + 2);
   return { content, caret: p - 2, typedBefore: null, follow: followEdit([[p, oe, 0]], now, content) };

@@ -254,7 +254,8 @@ ok 390 px: a selection across the opening marks, deleted: one Ctrl+Z brings it b
 ok 390 px: a selection over the whole stretch, deleted: no stray marks
 ok 390 px: a selection over the whole stretch, deleted: the deletion happened
 ok 390 px: a selection over the whole stretch, deleted: one Ctrl+Z brings it back
-ok 1280 px look: the old switch left in the browser is gone
+ok 1280 px look: the old switches left in the browser are gone
+ok 1280 px look: another key with a like name stays
 ok 1280 px look: the word is bold
 ok 1280 px look: dark mode: the word has the prompter's orange
 ok 1280 px look: no background by default
@@ -265,6 +266,15 @@ ok 1280 px look: Reset shows once a colour is chosen
 ok 1280 px look: Reset brings the orange back
 ok 1280 px look: light mode: a darker orange that reads on white
 ok 1280 px look: the agent sees the bold word
+ok 1280 px look: an older colour choice stays when "own" was on
+ok 1280 px: **Note** - more: it is in the script
+ok 1280 px: **Note** - more: Backspace over Note is refused, the line stays as it was
+ok 1280 px: **y**- z: it is in the script
+ok 1280 px: **y**- z: Backspace over y is refused, the line stays as it was
+ok 1280 px: **Memo** - less: it is in the script
+ok 1280 px: **Memo** - less: paste over Memo is refused, the line stays as it was
+ok 1280 px: a stretch alone on its line, outer words deleted first: no marks left
+ok 1280 px: only those three words went
 ok 1280 px: **- item two**: a paragraph holding it
 ok 1280 px: **- item two**: it shows bold
 ok 1280 px: **- item two**: Backspace at the start of its words: it doesn't turn into - item two
@@ -463,6 +473,11 @@ ok 1280x420: it never scrolls sideways
 ok 1280x420: it scrolls inside itself when it is taller than the window
 ok 1280x420: the wheel over the recent list reaches the colours below it
 ok 1280x420: scrolled down, the font colour input is in view
+ok 390x480: the menu stays inside the window
+ok 390x480: it never scrolls sideways
+ok 390x480: it scrolls inside itself when it is taller than the window
+ok 390x480: the wheel over the recent list reaches the colours below it
+ok 390x480: scrolled down, the font colour input is in view
 ok 1280 px: B marks the word
 ok 1280 px: Ctrl+B takes it off
 ok 1280 px: Ctrl+B puts it back, and it shows
@@ -473,9 +488,4 @@ ok 390 px: Ctrl+B takes it off
 ok 390 px: Ctrl+B puts it back, and it shows
 ok 390 px: the camera export strips the stars
 ok 390 px: the prompter export strips the stars
-ok 390x480: the menu stays inside the window
-ok 390x480: it never scrolls sideways
-ok 390x480: it scrolls inside itself when it is taller than the window
-ok 390x480: the wheel over the recent list reaches the colours below it
-ok 390x480: scrolled down, the font colour input is in view
 RESULT: ok

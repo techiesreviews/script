@@ -8,7 +8,7 @@ Lex (2026-11-06), with a screenshot of the Bold menu: "remove the bold settings.
 - The file name's menu keeps only **Bold style**: a font colour, a background, and Reset once one is chosen. "Bold marking (experimental)", "Camera action with bold words" and "Bold words in the prompter file" are gone.
 - By default the words are orange and weight 800: `--bold-ink` in `public/app.css`, the prompter's own `--accent` (`oklch(65% 0.227 32.3)`) on the night blue, and the existing darker orange of `--accent-ink` in light mode, where the bright one is too faint on white.
 - The prompter file always holds plain words, as it did by default: the prompter shows `**` as literal asterisks today. Showing bold in the prompter is its own job, in its own repository.
-- The agent loses `get_cue_settings` and `set_cue_settings`: a hidden setting the person can't see or change would break the menu's promise. `list_cues`, `mark_cue` and `unmark_cue` stay and always work.
+- The agent loses `get_cue_settings` and `set_cue_settings`: a hidden setting the person can't see or change would break the menu's promise. `list_cues`, `mark_cue` and `unmark_cue` stay and always work. The server's version goes to 0.10.0.
 - The saved settings go from the browser when the page loads (`script-editor:cues`, `script-editor:cues:<file name>`). An older colour choice stays only if `own` was on.
 
 ## What to watch

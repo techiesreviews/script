@@ -1212,8 +1212,8 @@ const setBoldStyle = (patch) => { store.set("boldStyle", { ...K.boldStyle(store.
 $("#boldBg").addEventListener("input", (e) => setBoldStyle({ background: e.target.value }));
 $("#boldFg").addEventListener("input", (e) => setBoldStyle({ color: e.target.value }));
 $("#boldReset").addEventListener("click", () => { store.del("boldStyle"); renderCueMenu(); $("#boldFg").focus(); });
-// What the colour fields show while nothing is chosen: the default orange (as sRGB) and the page's own colour.
-const BOLD_SHOWN = { light: { color: "#b53707", background: "#ffffff" }, dark: { color: "#fb401e", background: "#14122a" } };
+// What the colour fields show while nothing is chosen: the default orange (as sRGB) and the page's own colour (--bg).
+const BOLD_SHOWN = { light: { color: "#b53707", background: "#fafafa" }, dark: { color: "#fb401e", background: "#080721" } };
 function renderCueMenu() {
   const bold = applyBoldStyle(), shown = BOLD_SHOWN[matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"];
   $("#boldFg").value = bold.color || shown.color;

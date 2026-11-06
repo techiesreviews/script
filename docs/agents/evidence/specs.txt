@@ -117,7 +117,7 @@
 ✔ PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion
 ✔ Sounds like me: a quote read without the marks is found across a cue's edge, covering the whole cue
 ✔ Ctrl+B changes nothing where taking the marks off would change the kind of block
-✔ edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps; off, as before
+✔ edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
 ✔ a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read
@@ -145,7 +145,7 @@
 ✔ quoteSelection (B-roll): a quote across a bold edge is found, mapped back to the text with its marks
 ✔ a stretch alone on its line, emptied: the last words going take the marks, no ** ** rule line is left (fleet #29)
 ✔ a room edit inside a range, by offsets (textOpInside): inside or across it, not before, after or at its edges
-✔ followRoomEdit: a host's ask goes through a guest's edit with bold on: closed when the edit fell inside, kept when it only spans its words
+✔ followRoomEdit: a host's ask goes through a guest's edit: closed when the edit fell inside, kept when it only spans its words
 ✔ alignChars: where each character of the old text is in the new, by the longest run kept in order
 ✔ a lone stretch with spaces around it on its line also loses its marks with its last words (no rule line)
 ✔ round-trips both fixtures exactly
