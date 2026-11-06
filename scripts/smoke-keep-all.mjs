@@ -739,6 +739,7 @@ async function runSlimBar(width, height) {
   await type("warmer");
   await agent("mark_cue", { cues: [{ quote: "Most" }] });
   await sleep(300);
+  check((await script()).includes("**Most** of us"), `${tag}: bold on part of the words: the agent's bold is there`);
   check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: bold on part of the words: they aren't gone`, await page.eval(ghost));
   // The bold comes off again: still there.
   await agent("unmark_cue", { cues: [{ quote: "Most" }] });
@@ -747,6 +748,7 @@ async function runSlimBar(width, height) {
   // Bold again, part of the words: the ask goes while they cross its edge.
   await agent("mark_cue", { cues: [{ quote: "Most" }] });
   await sleep(300);
+  check((await script()).includes("**Most** of us"), `${tag}: bold again: the agent's bold is there`);
   await pressKey(page, "Enter", "Enter", 13, "\r");
   const parted = await newAsks();
   check(parted[0]?.instruction === "warmer" && parted[0]?.quote.includes("Most") && parted[0]?.quote.includes("of"), `${tag}: and the ask goes on them`, JSON.stringify(parted.map((x) => x.quote)));
@@ -793,7 +795,7 @@ async function runSlimBar(width, height) {
   await pressKey(page, "Enter", "Enter", 13, "\r");
   await newAsks();
   const after = await page.eval(`(() => { const d = [...document.querySelectorAll("#script [data-ask]")].at(-1), r = document.createRange(); r.setStart(d.closest(".block"), 0); r.setEndBefore(d); return r.toString(); })()`);
-  check(after.endsWith("the the "), `${tag}: a mark before the words: the ask stays on the last copy`, after.slice(-30));
+  check(after.endsWith("the the the"), `${tag}: a mark before the words: the ask stays on the last copy`, after.slice(-30));
   await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
   await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
   await sleep(150);
