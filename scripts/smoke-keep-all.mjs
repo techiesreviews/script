@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Browser check for step Q: "Keep all" and "Undo all" for the agent's pictures, at 1280, 390 and 1920 px; and that bold marking (step P)
-// stays off until it is switched on. It also runs against the live site after a deploy: it sends only test data, through this browser.
+// Browser check for step Q: "Keep all" and "Undo all" for the agent's pictures, at 1280, 390 and 1920 px; and how bold words (steps P and S)
+// work and look. It also runs against the live site after a deploy: it sends only test data, through this browser.
 // Start the Worker and a headless Chrome first (docs/build/step-q-keep-all-images.md says how), then:
 // node scripts/smoke-keep-all.mjs <base URL> <Chrome debugging port> [folder for screenshots]
 // It plays the agent over fetch to /mcp and the person with real clicks over CDP. Its traffic goes to the base URL and the debugging port.
@@ -161,33 +161,20 @@ async function noCover(page, tag) {
 const wordSpot = `(() => { const l = [...document.querySelectorAll("#script .line__text, #script .line")].find((x) => x.textContent.includes("A blank page.")), w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { const at = n.textContent.indexOf("deadline"); if (at < 0) continue; const r = document.createRange(); r.setStart(n, at); r.setEnd(n, at + 8); const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; } return null; })()`;
 const doubleClick = async (page, at) => { for (const clickCount of [1, 2]) for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount }); await sleep(250); };
 
-// Bold marking (step P) is off by default: no B button and Ctrl+B does nothing; switched on, B marks and shows bold.
+// Bold is always on (step S): the B button shows, it marks the word and the word shows bold.
 async function runBold(width, height) {
   const tag = `${width} px`;
   const { page, agent } = await openDemo(width, height);
   const text = async () => JSON.parse(await agent("get_script", {})).markdown;
-  const before = await text();
   const at = await page.eval(wordSpot);
   check(!!at, `${tag}: a word to select`);
   await doubleClick(page, at);
   check(await page.until(`!document.querySelector("#editBar").hidden`, "the selection bar"), `${tag}: selecting a word shows the selection bar`);
-  check(await page.eval(`document.querySelector("#boldBtn").hidden`), `${tag}: Bold marking off (the default): no B button`);
-  const ctrlB = async () => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "b", code: "KeyB", modifiers: 2, windowsVirtualKeyCode: 66 }); await sleep(200); };
-  await ctrlB();
-  check((await text()) === before && (await page.eval(`document.querySelectorAll("#script [data-cue]").length`)) === 0, `${tag}: Bold marking off: Ctrl+B changes nothing`);
   await page.eval(`getSelection().removeAllRanges()`);
-  await page.click("#docInfo");
-  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await sleep(400); // it animates open
-  check((await page.eval(`document.querySelector('#cueGroup [data-cue-set="on"]').textContent.trim()`)).startsWith("Bold marking (experimental)"), `${tag}: the menu says Bold marking (experimental)`);
-  await page.click(`#cueGroup [data-cue-set="on"]`);
-  check(await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on"), `${tag}: Bold marking can be switched on in the file-name menu`);
-  await pressKey(page, "Escape", "Escape", 27);
   await sleep(150);
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   await doubleClick(page, await page.eval(wordSpot));
   const word = await page.eval(`getSelection().toString().trim()`);
-  check(await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button"), `${tag}: Bold marking on: the B button shows`);
+  check(await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button"), `${tag}: the B button shows`);
   await page.click("#boldBtn");
   await sleep(250);
   check((await text()).includes(`**${word}**`), `${tag}: B marks the word in the text`, word);
@@ -238,8 +225,8 @@ async function runBold(width, height) {
   await page.close();
 }
 
-// Real word-deleting keys next to a bold stretch: marks the deletion put back aren't hit, so no stray "**" stays. With Bold
-// marking off it is plain text. One Ctrl+Z brings each back. `S` goes at the end of the demo's first line.
+// Real word-deleting keys next to a bold stretch: marks the deletion put back aren't hit, so no stray "**" stays. One Ctrl+Z
+// brings each back. `S` goes at the end of the demo's first line.
 async function runBoldKeys(width, height) {
   const tag = `${width} px`, S = "Say **big word** now okay.";
   const { page, agent } = await openDemo(width, height);
@@ -254,8 +241,8 @@ async function runBoldKeys(width, height) {
   await sleep(400);
   const whole = await lineOf(), base = whole.length - S.length, at = (i) => base + i;
   const tail = async () => (await lineOf()).slice(base);
-  const cases = (on) => [
-    { name: "Ctrl+Backspace after the space before now", from: 17, keys: [...back, CTRL], want: on ? "Say **big** now okay." : "Say **big wordnow okay." },
+  const cases = [
+    { name: "Ctrl+Backspace after the space before now", from: 17, keys: [...back, CTRL], want: "Say **big** now okay." },
     { name: "Backspace after that space", from: 17, keys: back },
     { name: "Ctrl+Backspace right after the closing marks", from: 16, keys: [...back, CTRL] },
     { name: "Backspace right after the closing marks", from: 16, keys: back },
@@ -270,47 +257,27 @@ async function runBoldKeys(width, height) {
     { name: "a selection across the opening marks, deleted", from: 0, to: 8, keys: back },
     { name: "a selection over the whole stretch, deleted", from: 4, to: 16, keys: back },
   ];
-  const runCases = async (on) => {
-    const label = on ? "on" : "off";
-    for (const c of cases(on)) {
-      const before = await lineOf();
-      await page.eval(pick(at(c.from), at(c.to ?? c.from)));
-      await sleep(250);
-      await press(...c.keys);
-      const got = await tail();
-      if (c.want) check(got === c.want, `${tag}: bold ${label}: ${c.name}`, got);
-      if (on) check(!marked(got).includes("*"), `${tag}: bold ${label}: ${c.name}: no stray marks`, got);
-      check(got.replace(/\*/g, "").length <= S.replace(/\*/g, "").length && got !== S, `${tag}: bold ${label}: ${c.name}: the deletion happened`, got);
-      await page.eval(`${paraOf}.focus()`);
-      await press("z", "KeyZ", 90, CTRL);
-      check((await lineOf()) === before, `${tag}: bold ${label}: ${c.name}: one Ctrl+Z brings it back`, await tail());
-    }
-  };
-  await runCases(false);
-  await page.eval(`getSelection().removeAllRanges()`);
-  await page.click("#docInfo");
-  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await sleep(400);
-  await page.click(`#cueGroup [data-cue-set="on"]`);
-  check(await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on"), `${tag}: Bold marking can be switched on`);
-  await pressKey(page, "Escape", "Escape", 27);
-  await sleep(200);
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
-  await runCases(true);
-  // The agent is told the truth when the browser can't store a setting.
-  await page.eval(`Storage.prototype.setItem = () => { throw new DOMException("full", "QuotaExceededError"); }`);
-  const said = await agent("set_cue_settings", { export: "show" });
-  check(/could not be saved/i.test(said), `${tag}: set_cue_settings says the change could not be saved`, said);
+  for (const c of cases) {
+    const before = await lineOf();
+    await page.eval(pick(at(c.from), at(c.to ?? c.from)));
+    await sleep(250);
+    await press(...c.keys);
+    const got = await tail();
+    if (c.want) check(got === c.want, `${tag}: ${c.name}`, got);
+    check(!marked(got).includes("*"), `${tag}: ${c.name}: no stray marks`, got);
+    check(got.replace(/\*/g, "").length <= S.replace(/\*/g, "").length && got !== S, `${tag}: ${c.name}: the deletion happened`, got);
+    await page.eval(`${paraOf}.focus()`);
+    await press("z", "KeyZ", 90, CTRL);
+    check((await lineOf()) === before, `${tag}: ${c.name}: one Ctrl+Z brings it back`, await tail());
+  }
   await page.close();
 }
 
-// The file name's menu on a short window (fleet #31 item 2): with Bold marking and the own colours on, it is taller than the
+// The file name's menu on a short window (fleet #31 item 2): with a long recent list it is taller than the
 // window, so it scrolls inside itself and its last row (the colours) can be reached; it never runs off the bottom.
 async function runMenuHeight(width, height) {
   const tag = `${width}x${height}`;
-  const { page, agent } = await openDemo(width, height);
-  await agent("set_cue_settings", { on: true });
-  await page.until(`!!document.querySelector('#cueGroup [data-cue-set="on"]')`, "the bold menu");
+  const { page } = await openDemo(width, height);
   // A full recent list: scripts kept in the browser are listed by name, so a dozen files make a long one.
   await page.eval(`(async () => { const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts", { create: true }); for (let i = 1; i <= 12; i++) { const w = await (await dir.getFileHandle("Recent script " + i + ".md", { create: true })).createWritable(); await w.write("# Recent " + i + "\\n\\nWords.\\n"); await w.close(); } })()`);
   await page.eval(`getSelection().removeAllRanges()`);
@@ -318,9 +285,6 @@ async function runMenuHeight(width, height) {
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await page.until(`document.querySelectorAll("#scriptList .scripts__row").length >= 12`, "a long recent list");
   await sleep(400);
-  await page.click("#boldOwn");
-  await page.until(`document.querySelector("#boldColours") && !document.querySelector("#boldColours").hidden`, "the colour row");
-  await sleep(300);
   const menu = `document.querySelector("#scriptMenu")`;
   const box = () => page.eval(`(() => { const m = ${menu}, r = m.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight, scrolls: m.scrollHeight > m.clientHeight + 1, overflowY: getComputedStyle(m).overflowY }; })()`);
   const b = await box();
@@ -342,105 +306,6 @@ async function runMenuHeight(width, height) {
   await page.close();
 }
 
-// Storage full (fleet #31 item 4): set_cue_settings says the change could not be saved, and nothing changes; Undo on the agent's
-// settings line, when its write is refused, keeps the line and changes nothing, and works once storage is back.
-async function runCuesStorageFull(width, height) {
-  const tag = `${width} px`;
-  const { page, agent } = await openDemo(width, height);
-  const settings = async () => JSON.parse(await agent("get_cue_settings", {}));
-  const pressUndo = () => page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent.includes("Undo"))?.click()`);
-  const hasUndo = `[...document.querySelectorAll("#banner button")].some((b) => b.textContent.includes("Undo"))`;
-  await agent("set_cue_settings", { on: true });
-  const full = `window.__setItem = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (String(k).startsWith("script-editor:cues")) throw new Error("full"); return window.__setItem.call(this, k, v); }`;
-  await page.eval(full);
-  const said = await agent("set_cue_settings", { export: "show" });
-  check(/could not be saved/i.test(said), `${tag}: storage full: set_cue_settings (the person's) says the change could not be saved`, said);
-  const now = await settings();
-  check(now.on === true && now.export === "strip", `${tag}: storage full: the settings in force did not change`, JSON.stringify(now));
-  await page.eval(`Storage.prototype.setItem = window.__setItem`);
-  await agent("set_cue_settings", { action: "camera" });
-  check(await page.until(hasUndo, "the Undo line"), `${tag}: a saved agent change shows Undo`);
-  await page.eval(full);
-  await pressUndo();
-  await sleep(300);
-  check(await page.eval(hasUndo), `${tag}: storage full: Undo that could not be saved keeps its line`);
-  check((await settings()).action === "camera", `${tag}: storage full: that Undo changes nothing`);
-  await page.eval(`Storage.prototype.setItem = window.__setItem`);
-  await pressUndo();
-  check(await page.until(`!(${hasUndo})`, "the Undo line closes"), `${tag}: with storage back, Undo works and its line closes`);
-  check((await settings()).action === "highlight", `${tag}: with storage back, Undo brings the setting back`);
-  // The same on a script's own settings.
-  await agent("set_cue_settings", { on: true, forScript: true });
-  await agent("set_cue_settings", { export: "show", forScript: true });
-  check(await page.until(hasUndo, "the Undo line for the script's own"), `${tag}: a saved change to the script's own settings shows Undo`);
-  await page.eval(full);
-  await pressUndo();
-  await sleep(300);
-  check(await page.eval(hasUndo) && (await settings()).export === "show", `${tag}: storage full: Undo on the script's own settings keeps its line and changes nothing`);
-  await page.eval(`Storage.prototype.setItem = window.__setItem`);
-  await pressUndo();
-  check(await page.until(`!(${hasUndo})`, "the Undo line closes"), `${tag}: with storage back, Undo on the script's own settings works`);
-  check((await settings()).export === "strip", `${tag}: with storage back, Undo brings the script's own setting back`);
-  await page.close();
-}
-
-// With Bold marking off an edit is never refused (Lex, 2026-11-06): deleting the bold word in "**Note** - more" or "**y**- z" goes
-// through, however the text left reads, and one Ctrl+Z brings it back.
-async function runBoldOffEdits(width, height) {
-  const tag = `${width} px`;
-  const { page, agent } = await openDemo(width, height);
-  const script = async () => JSON.parse(await agent("get_script", {}));
-  const press = async (key, code, vk, modifiers = 0, text) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers, ...(text && type === "keyDown" ? { text } : {}) }); await sleep(250); };
-  const CTRL = 2;
-  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: Bold marking is off`);
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
-  const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
-  // Deleting the bold word (Backspace) or pasting over the opening marks and the word: the marks go with the word, whatever the text left reads like.
-  for (const [line, word, left, how] of [["**Note** - more", "Note", "- more", "Backspace"], ["**y**- z", "y", "- z", "Backspace"], ["**Memo** - less", "Memo", "- less", "paste"]]) {
-    await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
-    await sleep(150);
-    await press("Enter", "Enter", 13, 0, "\r");
-    await page.send("Input.insertText", { text: line });
-    await sleep(350);
-    const has = async () => (await script()).markdown.split("\n").includes(line);
-    check(await has(), `${tag}: ${line}: it is in the script`);
-    const para = `[...document.querySelectorAll('#script .block')].find((x) => x.textContent.startsWith(${JSON.stringify(line)}))`;
-    const from = how === "paste" ? 0 : line.indexOf(word), to = line.indexOf(word) + word.length;
-    await page.eval(`(() => { const el = ${para}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
-    await sleep(250);
-    if (how === "paste") {
-      await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "**"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
-      await sleep(300);
-    } else await press("Backspace", "Backspace", 8);
-    const now = (await script()).markdown.split("\n");
-    const got = now.find((l) => l.trim() === left);
-    check(!now.includes(line) && !!got && !got.includes("*"), `${tag}: ${line}: ${how} over ${word} goes through (Bold marking off never refuses), no marks left`, now.filter((l) => l.includes("less") || l.includes("more") || l.includes("- z") || l.includes("*")).map((l) => JSON.stringify(l)).join(" | "));
-    await page.eval(`${first}.focus()`);
-    await press("z", "KeyZ", 90, CTRL);
-    check(await has(), `${tag}: ${line}: ${how}: one Ctrl+Z brings it back`);
-  }
-  // A stretch alone on its line, its words deleted outer ones first (fleet #29): the last deletion takes the marks, so no "**  **" rule line is left.
-  const alone = "**one two three**";
-  await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
-  await sleep(150);
-  await press("Enter", "Enter", 13, 0, "\r");
-  await page.send("Input.insertText", { text: alone });
-  await sleep(350);
-  const wordsAfterTyping = (await script()).words;
-  let text = alone;
-  for (const word of ["one", "three", "two"]) {
-    const from = text.indexOf(word);
-    await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block')].find((x) => x.textContent === ${JSON.stringify(text)}); if (!el) throw new Error("the line is not there: ${text}"); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${from + word.length})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
-    await sleep(250);
-    await press("Backspace", "Backspace", 8);
-    text = text.slice(0, from) + text.slice(from + word.length);
-  }
-  const md = (await script()).markdown;
-  check(!md.includes("**  **") && !md.includes("** two") && !md.includes("**one"), `${tag}: a stretch alone on its line, outer words deleted first, the middle one last: no ** ** rule line is left`, md.split("\n").filter((l) => l.includes("**")).join(" | "));
-  check((await script()).words === wordsAfterTyping - 3, `${tag}: only those three words went`, `${(await script()).words} ${wordsAfterTyping}`);
-  await page.close();
-}
-
 // A line that would read as another kind of block without its marks keeps them: no words may leave the saved script or the
 // exports. With real keys, on a list, heading, quote and numbered line, and with words after the marks.
 async function runBoldKinds(width, height) {
@@ -449,18 +314,6 @@ async function runBoldKinds(width, height) {
   const script = async () => JSON.parse(await agent("get_script", {}));
   const press = async (key, code, vk, modifiers = 0, text) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers, ...(text && type === "keyDown" ? { text } : {}) }); await sleep(250); };
   const CTRL = 2, SHIFT = 8;
-  await page.eval(`getSelection().removeAllRanges()`);
-  await page.click("#docInfo");
-  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await sleep(400);
-  const ticked = (row) => page.eval(`getComputedStyle(document.querySelector('${row}').querySelector("svg:last-child")).visibility === "visible"`);
-  check(!(await ticked('#cueGroup [data-cue-set="on"]')), `${tag}: the Bold marking row shows no tick while it is off`);
-  await page.click(`#cueGroup [data-cue-set="on"]`);
-  await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on");
-  check(await ticked('#cueGroup [data-cue-set="on"]'), `${tag}: the Bold marking row shows a tick once it is on`);
-  check(!(await ticked('#cueGroup [data-cue-set="action"]')) && !(await ticked('#cueGroup [data-cue-set="export"]')) && !(await ticked("#boldOwn")), `${tag}: the rows that are off show no tick`);
-  await pressKey(page, "Escape", "Escape", 27);
-  await sleep(200);
   await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
   const caretIn = (para) => page.eval(`(() => { const el = ${para}, sel = getSelection(), r = document.createRange(); if (!el || !sel.focusNode || !el.contains(sel.focusNode)) return -1; r.setStart(el, 0); r.setEnd(sel.focusNode, sel.focusOffset); return r.toString().length; })()`);
@@ -612,232 +465,89 @@ async function runBoldKinds(width, height) {
   await page.close();
 }
 
-// A script's own bold settings follow it to a new name: its name changes and nothing on the page is redrawn, so the caret,
-// a selection, the scroll position and any text being typed stay as they are. The person's own setting stays off.
-async function runRename(width, height) {
-  const tag = `${width} px`;
-  const { page, agent } = await openDemo(width, height);
-  const name = `document.querySelector(".doc__name").textContent`;
-  const drawn = `document.querySelectorAll("#script [data-cue]").length`;
-  const onInMenu = `document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`;
-  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: the person's own bold setting is off`);
-  await agent("set_cue_settings", { on: true, forScript: true });
-  await page.until(onInMenu, "the script's own bold on");
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
-  await doubleClick(page, await page.eval(wordSpot));
-  await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button to mark a word");
-  await page.click("#boldBtn");
-  await page.until(`${drawn} === 1`, "the marked word");
-  await page.eval(`getSelection().removeAllRanges()`);
-  // The same element before and after shows that nothing was redrawn.
-  const hold = () => page.eval(`(() => { window.__word = document.querySelector("#script [data-cue]"); window.__title = [...document.querySelectorAll("#script .block, #script [data-id]")].find((e) => e.textContent.includes("How to Write")); })()`);
-  const kept = async (what, was, extra = "") => {
-    check(await page.until(`${name} !== ${JSON.stringify(was)}`, `${what}: the new name`, 10000), `${tag}: ${what}: the name changes`);
-    await sleep(300);
-    check((await page.eval(drawn)) === 1 && (await page.eval(onInMenu)), `${tag}: ${what}: the script keeps its own bold setting`);
-    check(await page.eval(`window.__word?.isConnected && window.__word === document.querySelector("#script [data-cue]") && !!window.__title?.isConnected`), `${tag}: ${what}: nothing on the page is redrawn`);
-    check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: ${what}: the person's own setting is untouched`);
-    if (extra) check(await page.eval(extra.test), `${tag}: ${what}: ${extra.label}`);
-  };
-
-  // The demo saved into the browser takes the title's name.
-  let was = await page.eval(name);
-  await hold();
-  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", modifiers: 2, windowsVirtualKeyCode: 83 });
-  await kept("saved into the browser", was);
-
-  // A script in the browser follows its title, with a word selected meanwhile.
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
-  was = await page.eval(name);
-  const title = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
-  await clickAt(page, title);
-  await sleep(150);
-  await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); })()`);
-  await pressKey(page, "z", "KeyZ", 90, "z");
-  await sleep(100);
-  await hold();
-  await doubleClick(page, await page.eval(wordSpot));
-  const chosen = await page.eval(`getSelection().toString().trim()`);
-  await kept("the title changed", was, { label: "the selected word stays selected", test: `getSelection().toString().trim() === ${JSON.stringify(chosen)} && ${JSON.stringify(chosen)} !== ""` });
-  check(!(await page.eval(`document.querySelector("#boldBtn").hidden`)), `${tag}: the B button is still there after the rename`);
-  await page.eval(`getSelection().removeAllRanges()`);
-
-  // Storage full during a rename: the page stays as it is, and the settings aren't lost from the old name.
-  was = await page.eval(name);
-  await page.eval(`(() => { window.__setItem = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (String(k).startsWith("script-editor:cues:")) throw new Error("full"); return window.__setItem.call(this, k, v); }; })()`);
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
-  const titleAgain = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
-  await clickAt(page, titleAgain);
-  await sleep(150);
-  await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); })()`);
-  await pressKey(page, "y", "KeyY", 89, "y");
-  await sleep(100);
-  await hold();
-  await kept("the title changed with storage full", was);
-  check((await page.eval(`localStorage.getItem(${JSON.stringify(`script-editor:cues:${was}`)})`)) !== null, `${tag}: storage full: the settings stay under the old name`);
-  await doubleClick(page, await page.eval(wordSpot));
-  check(await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button with storage full"), `${tag}: storage full: bold is still on for this script, the B button shows`);
-  // Storage still full: the agent is told the write failed, and the script keeps the settings it holds in memory.
-  const said = await agent("set_cue_settings", { export: "show", forScript: true });
-  check(/could not be saved/i.test(said), `${tag}: storage full right after a rename: set_cue_settings says the change could not be saved`, said);
-  await sleep(300);
-  check(await page.eval(onInMenu) && (await page.eval(drawn)) === 1, `${tag}: storage full right after a rename: the script keeps its own bold setting after the refused write`);
-  // The same from the person's own menu: a click on a row whose write is refused changes nothing.
-  await page.click("#docInfo");
-  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await sleep(300);
-  // (the person's own key is refused too: it would be written otherwise, as the script has no stored settings under its new name)
-  await page.eval(`Storage.prototype.setItem = function (k, v) { if (String(k).startsWith("script-editor:cues")) throw new Error("full"); return window.__setItem.call(this, k, v); }`);
-  const exportRow = `document.querySelector('#cueGroup [data-cue-set="export"]').getAttribute("aria-pressed")`;
-  const exportWas = await page.eval(exportRow);
-  await page.click(`#cueGroup [data-cue-set="export"]`);
-  await sleep(300);
-  check((await page.eval(exportRow)) === exportWas && (await page.eval(onInMenu)) && (await page.eval(drawn)) === 1, `${tag}: storage full: a click on a bold setting in the menu changes nothing`, await page.eval(exportRow));
-  await pressKey(page, "Escape", "Escape", 27);
-  await sleep(200);
-  const kept2Text = await agent("get_cue_settings", {});
-  let kept2 = {};
-  try { kept2 = JSON.parse(kept2Text); } catch { /* the check below fails and shows the text */ }
-  check(kept2.on === true && kept2.export !== "show", `${tag}: storage full right after a rename: the settings in force are what they were`, kept2Text);
-  await page.eval(`Storage.prototype.setItem = window.__setItem`);
-  await page.eval(`getSelection().removeAllRanges()`);
-
-  // Save as: the file's name.
-  was = await page.eval(name);
-  await hold();
-  await page.eval(`scrollTo({ top: 120, behavior: "instant" })`);
-  await sleep(300); // on a phone the section chip's own scrollIntoView settles first
-  const yWas = await page.eval(`scrollY`);
-  await page.eval(`window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("saved-as.md", { create: true })`);
-  await page.eval(`document.querySelector("#saveAsAction").click()`);
-  await kept("Save as", was, { label: "the page stays where it was scrolled to", test: `scrollY === ${yWas}` });
-
-  await page.close();
-}
-
-// Undo on the agent's settings line still works once the script has a new name, and another tab isn't redrawn by the rename.
-async function runUndoAndTabs(width, height) {
-  const tag = `${width} px`;
-  const { page, agent } = await openDemo(width, height);
-  const name = `document.querySelector(".doc__name").textContent`;
-  const onInMenu = `document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`;
-  const pressUndo = () => page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent.includes("Undo")).click()`);
-  const key = (n) => `script-editor:cues:${n}`;
-  const saveKeys = async () => { await page.send("Page.bringToFront"); for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", modifiers: 2, windowsVirtualKeyCode: 83 }); };
-
-  await agent("set_cue_settings", { on: true, forScript: true });
-  await page.until(onInMenu, "the script's own bold on");
-  const was = await page.eval(name);
-  await saveKeys();
-  await page.until(`${name} !== ${JSON.stringify(was)}`, "the name after saving", 10000);
-  await sleep(300);
-
-  // Undo after the rename: the settings go back under the script's new name.
-  const named = await page.eval(name);
-  await page.until(`[...document.querySelectorAll("#banner button")].some((b) => b.textContent.includes("Undo"))`, "the Undo line after saving");
-  await pressUndo();
-  check(await page.until(`!(${onInMenu})`, "bold off after Undo"), `${tag}: Undo after a rename turns the script's bold off again`);
-  check((await page.eval(`localStorage.getItem(${JSON.stringify(key(named))})`)) === null, `${tag}: Undo after a rename leaves no settings under the new name`);
-
-  // A change on top of settings the script already had: Undo brings those back, under the newest name.
-  await agent("set_cue_settings", { on: true, forScript: true });
-  await page.until(onInMenu, "bold on again");
-  await agent("set_cue_settings", { action: "camera", forScript: true });
-  const before = await page.eval(name);
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
-  const titleAt = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
-  await page.send("Page.bringToFront");
-  await clickAt(page, titleAt);
-  await sleep(150);
-  await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); })()`);
-  await pressKey(page, "q", "KeyQ", 81, "q");
-  await page.until(`${name} !== ${JSON.stringify(before)}`, "the name after the title change", 10000);
-  const after = await page.eval(name);
-  await pressUndo();
-  await sleep(200);
-  const stored = JSON.parse((await page.eval(`localStorage.getItem(${JSON.stringify(key(after))})`)) || "{}");
-  check(stored.on === true && stored.action !== "camera", `${tag}: Undo after a rename brings back the settings the script had`, JSON.stringify(stored));
-  check((await page.eval(`localStorage.getItem(${JSON.stringify(key(before))})`)) === null, `${tag}: Undo writes nothing under the old name`);
-
-  // Last, as a second tab takes over the agent's connection: it stays as it is when the first tab renames.
-  const other = await openPage(width, height, page);
-  await other.send("Page.navigate", { url: `${BASE}/` });
-  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the second tab");
-  await other.click("#emptySample");
-  await other.until(`document.querySelectorAll("#script .line").length >= 8`, "the second tab's script", 15000);
-  await other.eval(`window.__line = document.querySelector("#script .line")`);
-  const third = await page.eval(name);
-  await page.eval(`window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle("saved-tabs.md", { create: true })`);
-  await page.eval(`document.querySelector("#saveAsAction").click()`);
-  const moved = await page.until(`${name} !== ${JSON.stringify(third)}`, "the name in the first tab", 10000);
-  await sleep(400);
-  check(moved && (await page.eval(`localStorage.getItem("script-editor:cues:saved-tabs.md")`)) !== null && (await other.eval(`window.__line.isConnected`)), `${tag}: a rename with own settings in one tab doesn't redraw another tab`);
-  await send("Target.closeTarget", { targetId: other.targetId });
-  await page.close();
-}
-
-// What leaves the editor. Bold off (the default): nothing is parsed, so the exports hold the words byte for byte, also
-// next to text that looks like marks. Bold on: B and Ctrl+B mark and unmark, and the exports strip the "**" by default.
-// SMOKE_BASELINE names a folder holding public/doc.js from before bold, to compare the exports with.
+// What leaves the editor: B and Ctrl+B mark and unmark, and the exports strip the "**".
 async function runExports(width, height) {
   const tag = `${width} px`;
   const { page, agent } = await openDemo(width, height);
   const text = async () => JSON.parse(await agent("get_script", {})).markdown;
-  const compare = 'if name=="Lex" or id=="7"';
   await page.eval(`(() => { const make = URL.createObjectURL.bind(URL); window.__blobs = []; URL.createObjectURL = (b) => { window.__blobs.push(b); return make(b); }; })()`);
   const exported = async (kind) => {
     await page.eval(`window.__blobs.length = 0; document.querySelector('[data-export="${kind}"]').click()`);
     await page.until(`window.__blobs.length === 1`, `the ${kind} export`);
     return page.eval(`window.__blobs[0].text()`);
   };
-  const original = await text();
-  check(original.includes("So, three things."), `${tag}: a line to add the comparison to`);
-  await agent("set_script", { markdown: original.replace("So, three things.", `So, three things. Then ${compare} and a ==mark== and **two stars** stay.`) });
-  await page.until(`document.querySelector("#script").textContent.includes('name=="Lex"')`, "the comparison on the page");
-  check((await page.eval(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed")`)) === "false" && (await page.eval(`document.querySelectorAll("#script [data-cue]").length`)) === 0, `${tag}: Bold marking off: nothing on the page is read as bold`);
-  const md = await text();
-  check(md.includes(compare) && md.includes("**two stars**"), `${tag}: Bold marking off: the saved text keeps the comparison and the stars`);
-  for (const kind of ["camera", "prompter"]) {
-    const out = await exported(kind);
-    check(out.includes(compare), `${tag}: Bold marking off: the ${kind} export keeps ${compare}`);
-    check(out.includes("**two stars**") && out.includes("==mark=="), `${tag}: Bold marking off: the ${kind} export keeps marks as plain text`);
-    if (process.env.SMOKE_BASELINE) {
-      const D = await import(`${process.env.SMOKE_BASELINE}/public/doc.js`);
-      const was = kind === "camera" ? D.exportCamera(D.parse(md)) : D.exportPrompter(D.parse(md));
-      check(out === was, `${tag}: Bold marking off: the ${kind} export is byte for byte what it was before bold`, `${out.length} ${was.length}`);
-    }
-  }
-  // Bold on.
-  await agent("set_script", { markdown: original });
-  await page.until(`!document.querySelector("#script").textContent.includes('name=="Lex"')`, "the demo's words back");
-  await page.click("#docInfo");
-  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await sleep(400);
-  await page.click(`#cueGroup [data-cue-set="on"]`);
-  await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]').getAttribute("aria-pressed") === "true"`, "Bold marking on");
-  await pressKey(page, "Escape", "Escape", 27);
-  await sleep(150);
-  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   await doubleClick(page, await page.eval(wordSpot));
   const word = await page.eval(`getSelection().toString().trim()`);
   await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button");
   await page.click("#boldBtn");
   await sleep(250);
-  check((await text()).includes(`**${word}**`), `${tag}: Bold marking on: B marks the word`, word);
+  check((await text()).includes(`**${word}**`), `${tag}: B marks the word`, word);
   const ctrlB = async () => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "b", code: "KeyB", modifiers: 2, windowsVirtualKeyCode: 66 }); await sleep(250); };
   await page.eval(`getSelection().removeAllRanges()`);
   await doubleClick(page, await page.eval(wordSpot));
   await ctrlB();
-  check(!(await text()).includes(`**${word}**`), `${tag}: Bold marking on: Ctrl+B takes it off`);
+  check(!(await text()).includes(`**${word}**`), `${tag}: Ctrl+B takes it off`);
   await page.eval(`getSelection().removeAllRanges()`);
   await doubleClick(page, await page.eval(wordSpot));
   await ctrlB();
-  check((await text()).includes(`**${word}**`) && (await page.eval(`document.querySelectorAll("#script [data-cue]").length`)) === 1, `${tag}: Bold marking on: Ctrl+B puts it back, and it shows`);
+  check((await text()).includes(`**${word}**`) && (await page.eval(`document.querySelectorAll("#script [data-cue]").length`)) === 1, `${tag}: Ctrl+B puts it back, and it shows`);
   await page.eval(`getSelection().removeAllRanges()`);
   for (const kind of ["camera", "prompter"]) {
     const out = await exported(kind);
-    check(out.includes(word) && !out.includes(`**${word}**`), `${tag}: Bold marking on: the ${kind} export strips the stars by default`);
+    check(out.includes(word) && !out.includes(`**${word}**`), `${tag}: the ${kind} export strips the stars`);
   }
+  await page.close();
+}
+
+// How bold looks (step S): orange and bold by default, in the prompter's orange in dark mode; the menu holds only the colours,
+// and they can be chosen and reset. An older "off" switch left in the browser means nothing and goes away.
+async function runBoldLook(width, height) {
+  const tag = `${width} px look`;
+  const { page, agent } = await openDemo(width, height);
+  await page.eval(`localStorage.setItem("script-editor:cues", JSON.stringify({ on: false, export: "show" }))`);
+  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+  await page.send("Page.reload");
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen again");
+  await page.click("#emptySample");
+  await page.until(`!!document.querySelector("#script .block")`, "the script again");
+  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: the old switch left in the browser is gone`);
+  for (let i = 0; ; i++) { try { await agent("get_script", {}); break; } catch (e) { if (i > 40) throw e; await sleep(150); } }
+  const words = `document.querySelector("#script [data-cue] .md-link__words")`;
+  const look = () => page.eval(`(() => { const c = getComputedStyle(${words}); return { color: c.color, weight: Number(c.fontWeight), background: c.backgroundColor }; })()`);
+  await doubleClick(page, await page.eval(wordSpot));
+  const word = await page.eval(`getSelection().toString().trim()`);
+  await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button");
+  await page.click("#boldBtn");
+  await page.until(`!!${words}`, "the bold word");
+  await page.eval(`getSelection().removeAllRanges()`);
+  await sleep(250);
+  const dark = await look();
+  check(dark.weight >= 700, `${tag}: the word is bold`, JSON.stringify(dark));
+  const orange = await page.eval(`(() => { const a = document.createElement("span"); a.style.color = "oklch(65% 0.227 32.3)"; document.body.append(a); const c = getComputedStyle(a).color; a.remove(); return c; })()`);
+  check(dark.color === orange, `${tag}: dark mode: the word has the prompter's orange`, `${dark.color} ${orange}`);
+  check(dark.background === "rgba(0, 0, 0, 0)", `${tag}: no background by default`, dark.background);
+  check((await page.eval(`document.querySelectorAll("#cueGroup .menu-action").length`)) === 0, `${tag}: the menu has no bold switches`);
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(400);
+  await page.shot("bold-menu");
+  check(await page.eval(`!!document.querySelector("#boldFg").offsetParent && !!document.querySelector("#boldBg").offsetParent && document.querySelector("#boldReset").hidden`), `${tag}: the menu shows the two colours, no Reset yet`);
+  await page.eval(`(() => { const set = (id, v) => { const e = document.querySelector(id); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); }; set("#boldFg", "#112233"); set("#boldBg", "#ddeeff"); })()`);
+  const own = await look();
+  check(own.color === "rgb(17, 34, 51)" && own.background === "rgb(221, 238, 255)", `${tag}: the person's own colours show at once`, JSON.stringify(own));
+  check(!(await page.eval(`document.querySelector("#boldReset").hidden`)), `${tag}: Reset shows once a colour is chosen`);
+  await page.click("#boldReset");
+  await sleep(100);
+  const back = await look();
+  check(back.color === dark.color && back.background === dark.background, `${tag}: Reset brings the orange back`, JSON.stringify(back));
+  await pressKey(page, "Escape", "Escape", 27);
+  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+  await sleep(150);
+  const light = await look();
+  check(light.color !== dark.color && light.weight >= 700, `${tag}: light mode: a darker orange that reads on white`, JSON.stringify(light));
+  const said = await agent("get_script", {});
+  check(JSON.parse(said).cues?.some((c) => c.quote === word), `${tag}: the agent sees the bold word`, word);
   await page.close();
 }
 
@@ -1161,7 +871,6 @@ async function run(width, height) {
     const guest = await openPage(width, height);
     await guest.send("Page.navigate", { url: link });
     await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
-    await guest.eval(`localStorage.setItem("script-editor:cues", JSON.stringify({ on: true }))`); // this guest has Bold marking on
     await guest.eval(`document.querySelector("#joinName").value = "Guest"`);
     await guest.click("#joinForm button");
     await guest.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the guest's script", 12000);
@@ -1185,13 +894,11 @@ async function run(width, height) {
     check(await guest.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's ask reaches the guest"), `${tag}: the host's ask reaches the guest`);
     await sleep(300);
     await guest.eval(pick(8));
-    check(await guest.until(`!document.querySelector("#boldBtn").hidden && !document.querySelector("#boldBtn").disabled`, "the guest's B button"), `${tag}: the guest with Bold marking on has the B button`);
+    check(await guest.until(`!document.querySelector("#boldBtn").hidden && !document.querySelector("#boldBtn").disabled`, "the guest's B button"), `${tag}: the guest has the B button`);
     await guest.click("#boldBtn");
     check(await page.until(`${paraOf}.textContent.includes("**no** ")`, "the guest's bold reaches the host"), `${tag}: the guest's bold reaches the host as text`);
     check(await page.eval(`(() => { const el = ${paraOf}, d = el.querySelector("[data-ask]"), r = document.createRange(); r.setStart(el, 0); r.setEndBefore(d); return r.toString().endsWith("**no** ") && d.textContent.startsWith("no"); })()`), `${tag}: the host's ask stays on its own word`);
-    // Bold marking on at the host: a guest typing inside the host's ask closes it; the ask does not jump to a later copy of its words (fleet #29).
-    await agent("set_cue_settings", { on: true });
-    await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]')?.getAttribute("aria-pressed") === "true"`, "the host's bold on");
+    // A guest typing inside the host's ask closes it; the ask does not jump to a later copy of its words (fleet #29).
     await sleep(300);
     await guest.eval(`(() => { const el = ${paraOf}, t = el.querySelector("[data-ask]")?.firstChild; if (!t) throw new Error("no ask text on the guest's page"); el.focus(); getSelection().setBaseAndExtent(t, 1, t, 1); })()`);
     await sleep(200);
@@ -1222,15 +929,11 @@ try {
     await run(1280, 800);
   } else if (only === "menu") {
     await runMenuHeight(1280, 420);
-    await runMenuHeight(390, 650);
-  } else if (only === "storage") {
-    await runCuesStorageFull(1280, 800);
-  } else if (only === "rename") {
-    await runRename(1280, 800);
-    await runRename(390, 760);
+    await runMenuHeight(390, 480);
   } else if (only === "refusals") {
-    await runBoldOffEdits(1280, 800);
     await runBoldKinds(1280, 800);
+  } else if (only === "look") {
+    await runBoldLook(1280, 800);
   } else if (only === "exports") {
     await runExports(1280, 800);
     await runExports(390, 760);
@@ -1242,14 +945,10 @@ try {
     await runBold(390, 760);
     await runBoldKeys(1280, 800);
     await runBoldKeys(390, 760);
-    await runBoldOffEdits(1280, 800);
+    await runBoldLook(1280, 800);
     await runBoldKinds(1280, 800);
     await runMenuHeight(1280, 420);
-    await runMenuHeight(390, 650);
-    await runCuesStorageFull(1280, 800);
-    await runRename(1280, 800);
-    await runRename(390, 760);
-    await runUndoAndTabs(1280, 800);
+    await runMenuHeight(390, 480);
     await runExports(1280, 800);
     await runExports(390, 760);
   }

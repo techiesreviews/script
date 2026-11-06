@@ -11,27 +11,9 @@ import * as B from "../public/broll.js";
 import { diff } from "../public/together/ops.js";
 import { checkArgs, TOOLS, INSTRUCTIONS } from "../worker/mcp.js";
 
-// Bold marking on for this file, unless a test says otherwise (Bold marking off: `whileOff`).
-Q.readCuesWhen(() => true);
-const whileOff = (fn) => { Q.readCuesWhen(() => false); try { return fn(); } finally { Q.readCuesWhen(() => true); } };
 const sel = (content, words) => { const s = content.indexOf(words); return [s, s + words.length]; };
 
 const keptText = (...args) => { const r = L.keepHidden(...args); return r && { content: r.content, caret: r.caret }; };
-test("settings: off by default, highlight only, export strips; a script's own settings win over the person's", () => {
-  assert.deepEqual(Q.CUE_DEFAULTS, { on: false, action: "highlight", export: "strip" });
-  assert.deepEqual(Q.cueSettings(null, null), Q.CUE_DEFAULTS);
-  assert.deepEqual(Q.cueSettings({ on: true }, null), { on: true, action: "highlight", export: "strip" });
-  assert.deepEqual(Q.cueSettings({ on: true, export: "show" }, { on: false }), { on: false, action: "highlight", export: "show" });
-  // Stored values that are not one of the choices are ignored.
-  assert.deepEqual(Q.cueSettings({ on: "yes", action: "fly", export: 3 }, { bogus: 1 }), Q.CUE_DEFAULTS);
-  assert.equal(Q.checkSettings({ on: true }), "");
-  assert.match(Q.checkSettings({}), /at least one/);
-  assert.match(Q.checkSettings({ on: "yes" }), /on must be true or false/);
-  assert.match(Q.checkSettings({ action: "zoom" }), /action must be highlight or camera/);
-  assert.match(Q.checkSettings({ export: "maybe" }), /export must be strip or show/);
-  assert.match(Q.checkSettings({ on: true, colour: "red" }), /Unknown setting: colour/);
-});
-
 test("format: **words** in a line; no brackets, * or line breaks inside; a letter or digit; not inside a link", () => {
   const c = "We **start here** and [**go**](https://example.com) a ** b ** c, ===x=== and ** **.";
   const cues = Q.textCues(c);
@@ -79,12 +61,10 @@ test("toggle: half a cue or across two joins into one cue; refuses links, line b
   assert.equal(Q.cueSelected(c, c.indexOf("here"), c.indexOf("here") + 4), false);
 });
 
-test("export: the prompter file strips cues unless the export setting says show", () => {
+test("export: the prompter file strips cues", () => {
   const doc = D.parse("# T\n\n## Intro\n\nWe **start here**. Then we go on.\n");
   assert.equal(D.exportPrompter(doc).replace(/^### \*\*.*\*\*$/m, "").includes("**"), false);
   assert.match(D.exportPrompter(doc), /We start here\./);
-  assert.match(D.exportPrompter(doc, { cues: "show" }), /We \*\*start here\*\*\./);
-  assert.equal(D.exportPrompter(doc, { cues: "strip" }), D.exportPrompter(doc));
 });
 
 const script = () => D.parse("# Title\n\n## 1 · Hook\n\nWe start here. Then we go on and on.\n\nA **second** line, we go.\n\n[ON SCREEN: start here]\n");
@@ -157,11 +137,10 @@ test("rewrite: a cue stays when its words survive the agent's new text; else it 
   assert.doesNotMatch(C.answerResult("replace"), /cue/);
 });
 
-test("MCP: list_cues, mark_cue, unmark_cue and the cue settings, with their checks", () => {
+test("MCP: list_cues, mark_cue and unmark_cue, with their checks", () => {
   const names = TOOLS.map((t) => t.name);
-  for (const n of ["list_cues", "mark_cue", "unmark_cue", "get_cue_settings", "set_cue_settings"]) assert.ok(names.includes(n), n);
+  for (const n of ["list_cues", "mark_cue", "unmark_cue"]) assert.ok(names.includes(n), n);
   assert.equal(TOOLS.find((t) => t.name === "list_cues").annotations.readOnlyHint, true);
-  assert.equal(TOOLS.find((t) => t.name === "get_cue_settings").annotations.readOnlyHint, true);
   assert.equal(checkArgs("mark_cue", { cues: [{ quote: "start here" }] }), "");
   assert.equal(checkArgs("mark_cue", { cues: [{ quote: "go", occurrence: 2 }] }), "");
   assert.match(checkArgs("mark_cue", { cues: [] }), /cues must be a list/);
@@ -172,11 +151,7 @@ test("MCP: list_cues, mark_cue, unmark_cue and the cue settings, with their chec
   assert.equal(checkArgs("unmark_cue", { cues: [{ cueId: "abc:1" }] }), "");
   assert.match(checkArgs("unmark_cue", { cues: [{}] }), /quote or cueId/);
   assert.match(checkArgs("unmark_cue", { cues: [{ quote: "a", cueId: "b:1" }] }), /not both/);
-  assert.equal(checkArgs("set_cue_settings", { on: true, forScript: true }), "");
-  assert.match(checkArgs("set_cue_settings", { action: "zoom" }), /action must be/);
-  assert.match(checkArgs("set_cue_settings", { forScript: true }), /at least one/);
   assert.match(INSTRUCTIONS, /\*\*words\*\*/);
-  assert.match(INSTRUCTIONS, /off by default/);
 });
 
 test("review: links never land inside a cue; a rewrite whose cues would change the block keeps the text without them", () => {
@@ -251,9 +226,6 @@ test("lead fixes: Ctrl+B takes off a cue the agent just marked; a shown cue neve
   // Open asks still block the person's toggle.
   const open = D.makeAsk(doc, { blockId: p2.id, start: 4, end: 10, action: "simpler", by: { id: "lex", name: "Lex" } });
   assert.equal(C.cueBlocked([open], p2.id, 2, 12), true);
-  const md = D.exportPrompter(D.parse("# T\n\n## A\n\nWe **stop. Then go** on. Next one.\n"), { cues: "show" });
-  assert.match(md, /^We \*\*stop\. Then go\*\* on\.$/m);
-  assert.match(md, /^Next one\.$/m);
 });
 
 test("lead fixes: mark_cue in two paragraphs at once; unmark_cue stays out of an open ask over the cue", () => {
@@ -314,29 +286,6 @@ test("PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cu
   assert.deepEqual(keptText("Say **go**", "Say ", Q.textCues("Say **go**"), 4), null);
 });
 
-test("bold style: plain bold by default, own colours only as a valid choice, kept per person", () => {
-  assert.deepEqual(Q.boldStyle(null), Q.BOLD_DEFAULTS);
-  assert.equal(Q.BOLD_DEFAULTS.own, false);
-  assert.deepEqual(Q.boldStyle({ own: true, background: "#112233", color: "#ABCDEF" }), { own: true, background: "#112233", color: "#ABCDEF" });
-  // Anything else falls back, so nothing odd reaches the page's CSS.
-  assert.deepEqual(Q.boldStyle({ own: "yes", background: "red;}", color: "url(x)" }), Q.BOLD_DEFAULTS);
-});
-
-test("agent settings: what the person and the agent are told says where the setting went", () => {
-  const say = (o) => Q.settingsOutcome({ words: "", forScript: false, hadOwn: false, stored: true, ...o });
-  assert.deepEqual(say({ words: "turned bold marking on" }), { banner: "turned bold marking on", message: "Done: the person sees the change, with Undo." });
-  assert.equal(say({ words: "turned bold marking on", forScript: true }).banner, "turned bold marking on for this script");
-  // A fresh browser, { on: false }: nothing the person sees changed, and no script has settings of its own.
-  assert.deepEqual(say({}), { banner: null, message: "Those settings were in force already: nothing changed." });
-  assert.deepEqual(say({ stored: false, hadOwn: true }), { banner: null, message: "Those settings were in force already: nothing changed." });
-  // { on: true, forScript: true } while the person's is on already: the script now has its own.
-  assert.match(say({ forScript: true }).banner, /gave this script its own bold settings/);
-  assert.match(say({ forScript: true }).message, /now has its own settings/);
-  assert.match(say({ forScript: true, hadOwn: true }).banner, /changed this script's bold settings/);
-  assert.match(say({ hadOwn: true }).banner, /your own bold settings; this script keeps its own/);
-  assert.match(say({ hadOwn: true }).message, /pass forScript: true/);
-});
-
 test("Sounds like me: a quote read without the marks is found across a cue's edge, covering the whole cue", () => {
   const doc = D.parse("# T\n\n## A\n\nWe **start here** now. Then on.\n");
   const p = paras(doc)[0], id = p.id;
@@ -387,13 +336,6 @@ test("last round: a rewrite widened over a cue never turns the paragraph into a 
   assert.equal(D.exportCamera(two).includes("*"), false);
 });
 
-test("last round: set_cue_settings says where the change really goes", () => {
-  const t = TOOLS.find((x) => x.name === "set_cue_settings");
-  assert.match(t.description, /Without forScript: the script's own settings if it has them, else the person's\./);
-  assert.match(t.description, /forScript: false always sets the person's/);
-  assert.doesNotMatch(t.description, /\(else for the person\)/);
-});
-
 test("Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words", () => {
   const land = (quote, text) => {
     const doc = D.parse("# T\n\n## A\n\nWe **start here** now.\n");
@@ -413,41 +355,7 @@ test("Sounds like me: a rewrite of a quote over part of a cue never deletes the 
 
 const plainLines = ['if name=="Lex" or id=="7"', 'name =="Lex",id=="7"', "if a ==1&&b==2", 'f(x)=="a" or g(x)=="b"', '"Lex"==name or id=="7"', "We ==start here== now", "a == b == c", "**kwargs and more", "a**b and c**d", "2**3 and 4**5", "f(**a, **b)", "a ** b ** c", "x**go** now", "**go**s now", "**go now", "go** now", "** go ** now", "***go*** now", "**a*b** now", "****"];
 const allWords = (t) => t.replace(/\*/g, "");
-test("Bold marking off: nothing reads ** anywhere; the exports and counts are byte for byte as before bold", () => whileOff(() => {
-  const bold = "Say **bold** here and **two words** there.";
-  const doc = D.parse(`# T\n\n## A\n\nif name=="Lex" or id=="7"\n\na**b and **kwargs\n\nWe **go. Then on** ok.\n\n${bold}\n`);
-  const [p1, p2, p3, p4] = paras(doc);
-  const pro = D.exportPrompter(doc), cam = D.exportCamera(doc);
-  for (const t of ['if name=="Lex" or id=="7"', "a**b and **kwargs", bold]) {
-    assert.ok(pro.includes(`\n${t}\n`), t);
-    assert.ok(cam.includes(t), t);
-  }
-  // Sentences split where they did before bold, even inside **…**.
-  assert.ok(pro.includes("\nWe **go.\nThen on** ok.\n"));
-  assert.ok(pro.includes("### **A**"), "the prompter's own heading marks stay");
-  assert.equal(D.exportPrompter(doc, { cues: "show" }), pro);
-  assert.equal(D.exportPrompter(doc, { cues: "strip" }), pro);
-  for (const t of plainLines) { assert.deepEqual(Q.textCues(t), [], t); assert.equal(Q.stripCues(t), t); }
-  assert.deepEqual(Q.textCues(bold), []);
-  assert.equal(Q.spokenWords(D.contentOf(p4)), bold);
-  assert.match(B.overFor(doc, [{ id: p4.id, start: 0, end: bold.length }]), /\*\*bold\*\*/);
-  assert.equal(D.stats(doc).words, [p1, p2, p3, p4].reduce((n, b) => n + D.countWords(D.contentOf(b)), 0));
-  assert.deepEqual(C.listCues(doc), []);
-  assert.deepEqual(C.planCues(doc, "unmark", [{ quote: "bold" }]).segments, []);
-  assert.equal(D.findQuote(doc, "Say bold here"), null);
-  assert.equal(Q.dropLoneMarks("here** today"), "here** today");
-  // A rewrite and a link go in as they did before bold.
-  const [s, e] = sel(bold, "**bold");
-  const ask = D.makeAsk(doc, { blockId: p4.id, start: s, end: e, action: "simpler", by: { id: "lex", name: "Lex" } });
-  Object.assign(ask, { status: "answered", answer: { kind: "replace", text: "big** x" }, answeredBy: { id: "agent:x", name: "X" } });
-  const res = C.land(doc, ask, 1);
-  assert.equal(D.contentOf(p4), "Say big** x** here and **two words** there.");
-  assert.equal(res.cuesDropped, 0);
-  const links = C.planFor(D.parse("# T\n\n## A\n\nUse **go** now.\n"), { id: "x", scope: "script" }, { links: [{ quote: "go", url: "https://example.com" }] });
-  assert.equal(links.segments[0].content, "Use **[go](https://example.com)** now.");
-}));
-
-test("Bold marking on: a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read", () => {
+test("a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read", () => {
   for (const t of plainLines) {
     assert.deepEqual(Q.textCues(t), [], t);
     const doc = D.parse(`# T\n\n## A\n\n${t} end\n`);
@@ -459,7 +367,6 @@ test("Bold marking on: a ** pair is bold only at word boundaries with no space i
   assert.ok(D.exportPrompter(doc).includes('\nif name=="Lex" or id=="7"\n'));
   assert.ok(D.exportPrompter(doc).includes("\nSay go now.\n"));
   assert.ok(D.exportPrompter(doc).includes("### **A**"), "the prompter's own heading marks stay");
-  assert.ok(D.exportPrompter(doc, { cues: "show" }).includes("\nSay **go** now.\n"));
   assert.ok(D.exportCamera(doc).includes("Say go now."));
 });
 
@@ -522,15 +429,14 @@ test("typing a word in front of a bold word: it joins while typed, and stays pla
   assert.deepEqual(run("Say **xgo** now", "Say **x go** now", 8, 7), ["Say x **go** now", 6, null]);
 });
 
-test("emptying a bold stretch takes its marks at edit time for everyone, even with Bold marking off (a guest's default)", () => {
+test("emptying a bold stretch takes its marks at edit time", () => {
   const both = (old, now, caret, want) => {
     assert.deepEqual(Q.settleMarks(old, now, caret)?.content, want, `on: ${now}`);
-    whileOff(() => assert.deepEqual(Q.settleMarks(old, now, caret)?.content, want, `off: ${now}`));
   };
   both("We **a** now", "We **** now", 5, "We  now");
   both("**a**", "****", 2, "");
   both("We **a b** now", "We **** now", 5, "We  now");
-  whileOff(() => {
+  {
     assert.equal(Q.settleMarks("We **a** now", "We **** now", 5).caret, 3);
     // Anything that was never a stretch, and any other edit, stays byte for byte.
     assert.equal(Q.settleMarks("a**b**c", "a****c", 3), null);
@@ -539,10 +445,9 @@ test("emptying a bold stretch takes its marks at edit time for everyone, even wi
     assert.equal(Q.settleMarks("We **a\nb** now", "We **** now", 5), null);
     assert.equal(Q.settleMarks("We **** now", "We ***** now", 6), null);
     assert.equal(Q.settleMarks("We **a** now", "We **b** now", 6), null);
-    assert.equal(Q.settleMarks("We **a** now", "We **a* now", 6), null);
+    assert.equal(Q.settleMarks("We **a** now", "We **a* now", 6).content, "We a now");
     assert.equal(Q.settleMarks("We **a** now", "We **a** nowx", 13), null);
-    assert.deepEqual(Q.textCues("We **a** now"), []);
-  });
+  }
 });
 
 test("asks are anchored by offsets through mark changes: they follow, and never jump into another word", () => {
@@ -572,25 +477,22 @@ test("asks are anchored by offsets through mark changes: they follow, and never 
   assert.equal(D.contentOf(p2), "Say **xgo** later.");
 });
 
-test("marks never change a B-roll shot's check, whatever anyone's setting says; a changed word does", () => {
+test("marks never change a B-roll shot's check; a changed word does", () => {
   const doc = D.parse("# T\n\n## A\n\nSay go now.\n");
   const p = paras(doc)[0], shots = [{ id: "B1", blockIds: [p.id] }];
   B.touchShots(doc, shots);
-  // A guest with bold on marks a word in a host with it off, and the other way round.
-  whileOff(() => {
+  {
     D.setContent(doc, p.id, "Say **go** now.");
     assert.deepEqual(B.touchShots(doc, shots), []);
-  });
-  assert.deepEqual(B.touchShots(doc, shots), [], "turning it on flags nothing");
+  }
   D.setContent(doc, p.id, "Say go now.");
   assert.deepEqual(B.touchShots(doc, shots), []);
   D.setContent(doc, p.id, "Say go later.");
   assert.deepEqual(B.touchShots(doc, shots), ["B1"]);
   const b = D.parse("# T\n\n## A\n\nSay **go** now.\n");
   assert.deepEqual(B.matchOver(B.spokenBlocks(b), '"Say go now."'), [paras(b)[0].id]);
-  // With bold on, the Over text never holds marks; with it off it reads the line byte for byte, like every export.
+  // The Over text never holds marks.
   assert.match(B.overFor(b, [{ id: paras(b)[0].id, start: 0, end: D.contentOf(paras(b)[0]).length }]), /^"Say go now/);
-  whileOff(() => assert.match(B.overFor(b, [{ id: paras(b)[0].id, start: 0, end: D.contentOf(paras(b)[0]).length }]), /^"Say \*\*go\*\* now/));
 });
 
 test("mark_cue checks each quote on its own; a quote across a line break, or with * in it, is skipped with the reason", () => {
@@ -651,7 +553,7 @@ test("an AI rewrite keeps ** in ordinary text: only an ask that reaches a real b
   assert.equal(land("Pass **kwargs and **go** now.", "**go** now", "go** later"), "Pass **kwargs and **go** later.");
 });
 
-test("emptying a stretch over several selections leaves no **** either, with Bold marking off too", () => {
+test("emptying a stretch over several selections leaves no **** either", () => {
   const inner = "two words here", start = "We **", end = "** now", full = start + inner + end;
   const step = (text, from, to) => {
     const now = text.slice(0, from) + text.slice(to), r = Q.settleMarks(text, now, from);
@@ -675,8 +577,7 @@ test("emptying a stretch over several selections leaves no **** either, with Bol
     }
   };
   run();
-  whileOff(run);
-  whileOff(() => {
+  {
     assert.equal(Q.settleMarks("We **two ** now", "We **** now", 5)?.content, "We  now");
     assert.equal(Q.settleMarks("We ** words** now", "We **** now", 5)?.content, "We  now");
     // Only spaces left between the marks: nothing to empty, so it stays as it is.
@@ -685,7 +586,7 @@ test("emptying a stretch over several selections leaves no **** either, with Bol
     for (const [old, now, caret] of [["a ** b ** c", "a **** c", 4], ["x**two ** y", "x**** y", 3], ["We **two **y", "We ****y", 5], ["We ***two ** y", "We ***** y", 6], ["We **[a](https://x.example)** y", "We **** y", 5]]) {
       assert.equal(Q.settleMarks(old, now, caret), null, old);
     }
-  });
+  }
   // With other bold words in the paragraph, it reads the same.
   assert.equal(Q.settleMarks("**x** and **two ** now", "**x** and **** now", 12)?.content, "**x** and  now");
 });
@@ -733,7 +634,7 @@ test("a cue never ends before a combining mark, and whole words count them", () 
   assert.deepEqual(Q.textCues("**नमस**्ते"), []);
 });
 
-test("emptying a stretch looks past spaces at one inner edge, on a line of its own too, with Bold marking off; outer words first is the written limit", () => {
+test("emptying a stretch looks past spaces at one inner edge, on a line of its own too", () => {
   const old2 = "We ** words** more";
   const run = (...edits) => {
     let t = edits.shift();
@@ -743,7 +644,7 @@ test("emptying a stretch looks past spaces at one inner edge, on a line of its o
     }
     return t;
   };
-  whileOff(() => {
+  {
     assert.equal(run("We **two words** now", "two", "words"), "We   now");
     assert.equal(run("We **two words** now", "words", "two"), "We   now");
     assert.equal(run("We **two words here** now", "two", "words here"), "We   now");
@@ -751,8 +652,8 @@ test("emptying a stretch looks past spaces at one inner edge, on a line of its o
     assert.equal(run("**a b**", "b", "a"), " ");
     // A whole paragraph stays a paragraph at every step.
     const doc = D.parse("# T\n\n## A\n\n**a b**\n\nNext.\n"), p = paras(doc)[0];
-    for (const [now, caret] of [["** b**", 2], ["** **", 3]]) {
-      const old = D.contentOf(p), r = Q.settleMarks(old, now, caret);
+    for (const word of ["a", "b"]) {
+      const old = D.contentOf(p), i = old.indexOf(word), now = old.slice(0, i) + old.slice(i + 1), r = Q.settleMarks(old, now, i);
       D.setContent(doc, p.id, r ? r.content : now);
       assert.equal(doc.blocks.find((b) => b.id === p.id)?.type, "para", now);
     }
@@ -765,8 +666,8 @@ test("emptying a stretch looks past spaces at one inner edge, on a line of its o
       // A space deleted between marks that hold only spaces: never a stretch, so a comparison's signs stay.
       ["a **  ** c", "a ** ** c", 5], ["a ** ** c", "a **** c", 4],
     ]) assert.equal(Q.settleMarks(old, now, caret), null, `${old} -> ${now}`);
-    // The limit: deleting the outer words first spaces both edges, which reads like "a ** b ** c", so the marks stay.
-    assert.equal(run("We **one two three** now", "one", "three", "two"), "We **  ** now");
+    // Deleting the outer words first: the spaces move outside the marks each time, so no marks stay at the end.
+    assert.equal(run("We **one two three** now", "one", "three", "two").includes("*"), false);
     // The caret lands where the words were, and a range after them follows.
     const gone = Q.settleMarks("We ** words more", "We ** more", 6);
     assert.equal(gone, null, "no closing marks: nothing to take");
@@ -774,9 +675,7 @@ test("emptying a stretch looks past spaces at one inner edge, on a line of its o
     assert.equal(empt.content, "We   more");
     assert.equal(empt.caret, 4);
     assert.deepEqual(empt.follow(old2.indexOf("more"), old2.length), { start: 5, end: 9 });
-  });
-  // The same with Bold marking on, where the first edit already moved the space out.
-  assert.equal(run("We **two words** now", "two", "words").includes("*"), false);
+  }
 });
 
 test("a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: it is cancelled", () => {
@@ -795,11 +694,11 @@ test("looking past spaces never takes a mark that belongs to a real stretch the 
   const cases = [["**a!** b** x", "**a!** ** x", 7], ["a **b **(c)** d", "a ** **(c)** d", 4]];
   for (const [old, now, caret] of cases) {
     assert.equal(Q.settleMarks(old, now, caret), null, `on: ${old}`);
-    whileOff(() => assert.equal(Q.settleMarks(old, now, caret), null, `off: ${old}`));
+    assert.equal(Q.settleMarks(old, now, caret), null, `off: ${old}`);
   }
   // The stretch being emptied still loses its own marks, beside a real one.
   assert.equal(Q.settleMarks("**a!** **two ** x", "**a!** **** x", 9)?.content, "**a!**  x");
-  whileOff(() => assert.equal(Q.settleMarks("**a!** **two ** x", "**a!** **** x", 9)?.content, "**a!**  x"));
+  assert.equal(Q.settleMarks("**a!** **two ** x", "**a!** **** x", 9)?.content, "**a!**  x");
 });
 
 test("marks the deletion put back aren't hit: Ctrl+Backspace next to a bold stretch leaves no stray marks", () => {
@@ -831,15 +730,6 @@ test("marks the deletion put back aren't hit: Ctrl+Backspace next to a bold stre
   assert.equal(ask.content.slice(after.start, after.end), "now");
   assert.equal(ask.follow(6, 12), null, "the deletion fell inside this ask");
   assert.equal(Q.settleMarks(old, "Say **big **now okay.", 10, { deleted: [[10, 14], [16, 17]], typedBefore: 3 }).typedBefore ?? null, null);
-});
-
-test("set_cue_settings says so when the browser couldn't store the change", () => {
-  const out = Q.settingsOutcome({ saved: false, words: "", forScript: false, hadOwn: false, stored: false });
-  assert.equal(out.banner, null);
-  assert.match(out.message, /could not be saved/i);
-  assert.doesNotMatch(out.message, /in force already/);
-  assert.match(Q.settingsOutcome({ saved: true, words: "", forScript: false, hadOwn: false, stored: false }).message, /in force already/);
-  assert.match(Q.settingsOutcome({ words: "", forScript: false, hadOwn: false, stored: false }).message, /in force already/);
 });
 
 test("a line whose bold words would read as another kind of block without their marks: settleMarks shows it, keepsType refuses", () => {
@@ -892,17 +782,6 @@ test("only settling that changes how the text reads is refused: a paste or edit 
   }
 });
 
-test("the setting says it is experimental, with its known limits in one plain line", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  const features = await readFile(new URL("../docs/features.md", import.meta.url), "utf8");
-  const limits = "Rare edits next to bold lines can leave marks as text; shared scripts have edge cases; the prompter doesn't show inline ** yet.";
-  assert.ok(html.includes("Bold marking (experimental)"));
-  assert.ok(html.includes(limits));
-  assert.ok(features.includes("Bold marking (experimental)"));
-  assert.ok(features.includes(limits));
-});
-
 test("quoteSelection (B-roll): a quote across a bold edge is found, mapped back to the text with its marks", () => {
   const doc = D.parse("# Title\n\n## Part\n\nSay **big word** now okay.\n\nA **second** line here.\n");
   const para = (i) => D.contentOf(D.outline(doc).sections.flatMap((s) => s.blocks).filter((b) => b.type === "para")[i]);
@@ -927,8 +806,6 @@ test("quoteSelection (B-roll): a quote across a bold edge is found, mapped back 
   // A whole word only, as before; an exact match on the marks is still found first.
   assert.deepEqual(B.quoteSelection(doc, "ig word"), []);
   assert.equal(B.quoteSelection(doc, "**big word**").length, 1);
-  // Bold off: the marks are plain text, so the spoken-text quote is not found (nothing changes from before bold).
-  whileOff(() => assert.deepEqual(B.quoteSelection(doc, "Say big"), []));
   // Bold in one paragraph only, and a quote across two bold stretches.
   const mixed = D.parse("# Title\n\n## Part\n\nPlain line here.\n\nA **second** line\n\n**one** and **two** end\n");
   const paras = D.outline(mixed).sections.flatMap((s) => s.blocks).filter((b) => b.type === "para");
@@ -947,34 +824,27 @@ test("quoteSelection (B-roll): a quote across a bold edge is found, mapped back 
   assert.equal(D.contentOf(D.blockById(twin, hit[0].id)), "Later now okay again.");
 });
 
-test("a stretch alone on its line, emptied outer words first: the last words going take the marks, no ** ** rule line is left (fleet #29)", () => {
-  for (const on of [false, true]) {
-    Q.readCuesWhen(() => on);
-    // "one two three" -> delete "one" -> delete "three" -> delete "two"; each step is one edit. (With bold on, the first
-    // deletion moves the space outside the marks, so it never gets here.)
-    let text = on ? "** two **" : "**one two three**";
-    for (const word of on ? ["two"] : ["one", "three", "two"]) {
-      const i = text.indexOf(word), now = text.slice(0, i) + text.slice(i + word.length);
-      const settled = Q.settleMarks(text, now, i);
-      if (word === "two") {
-        assert.equal(settled?.content, "  ", `bold ${on}: the marks go with the last words`);
-        assert.equal(D.parse(settled.content).blocks.some((b) => b.type === "raw"), false);
-      } else assert.equal(settled, null, `bold ${on}: ${word} leaves the marks as they were (documented limit)`);
-      text = settled?.content ?? now;
-    }
-    assert.equal(text, "  ");
-    // Not alone on its line: "a ** b ** c" is still not a stretch, the edit keeps every byte.
-    assert.equal(Q.settleMarks("a ** two ** c", "a **  ** c", 5), null);
-    // On a later line no rule can read, and a spaces-only line would split the block: the edit keeps every byte.
-    assert.equal(Q.settleMarks("x\n** two **\ny", "x\n**  **\ny", 6), null, "alone on a later line");
-    assert.equal(Q.settleMarks("x\n** two **\n- y", "x\n**  **\n- y", 6), null);
-    // With more lines in the block the edit keeps every byte: a spaces-only first line could turn the next line into a list or heading.
-    assert.equal(Q.settleMarks("** two **\ny", "**  **\ny", 3), null);
-    assert.equal(Q.settleMarks("** two **\n- y", "**  **\n- y", 3), null);
-    assert.equal(Q.settleMarks("** two **\n# y", "**  **\n# y", 3), null);
-
+test("a stretch alone on its line, emptied: the last words going take the marks, no ** ** rule line is left (fleet #29)", () => {
+  const settled = Q.settleMarks("** two **", "**  **", 3);
+  assert.equal(settled?.content, "  ");
+  assert.equal(D.parse(settled.content).blocks.some((b) => b.type === "raw"), false);
+  // Word by word from the outside: the spaces move out at each step, so nothing is left to read as a rule.
+  let text = "**one two three**";
+  for (const word of ["one", "three", "two"]) {
+    const i = text.indexOf(word), now = text.slice(0, i) + text.slice(i + word.length);
+    text = Q.settleMarks(text, now, i)?.content ?? now;
   }
-  Q.readCuesWhen(() => true);
+  assert.equal(text.includes("*"), false);
+  assert.equal(D.parse(text).blocks.some((b) => b.type === "raw"), false);
+  // Not alone on its line: "a ** b ** c" is still not a stretch, the edit keeps every byte.
+  assert.equal(Q.settleMarks("a ** two ** c", "a **  ** c", 5), null);
+  // On a later line no rule can read, and a spaces-only line would split the block: the edit keeps every byte.
+  assert.equal(Q.settleMarks("x\n** two **\ny", "x\n**  **\ny", 6), null, "alone on a later line");
+  assert.equal(Q.settleMarks("x\n** two **\n- y", "x\n**  **\n- y", 6), null);
+  // With more lines in the block the edit keeps every byte: a spaces-only first line could turn the next line into a list or heading.
+  assert.equal(Q.settleMarks("** two **\ny", "**  **\ny", 3), null);
+  assert.equal(Q.settleMarks("** two **\n- y", "**  **\n- y", 3), null);
+  assert.equal(Q.settleMarks("** two **\n# y", "**  **\n# y", 3), null);
 });
 
 test("a room edit inside a range, by offsets (textOpInside): inside or across it, not before, after or at its edges", () => {
@@ -1038,7 +908,6 @@ test("alignChars: where each character of the old text is in the new, by the lon
 });
 
 test("a lone stretch with spaces around it on its line also loses its marks with its last words (no rule line)", () => {
-  Q.readCuesWhen(() => false);
   for (const [old, now, at, want] of [["** two ** ", "**  ** ", 3, "   "], [" ** two **", " **  **", 4, "   "], ["\t** two **  ", "\t**  **  ", 4, "\t    "]]) {
     const s = Q.settleMarks(old, now, at);
     assert.equal(s?.content, want, JSON.stringify(old));
@@ -1046,5 +915,4 @@ test("a lone stretch with spaces around it on its line also loses its marks with
   }
   // Text on the line around it: still not a stretch to settle.
   assert.equal(Q.settleMarks("x ** two ** y", "x **  ** y", 5), null);
-  Q.readCuesWhen(() => true);
 });
