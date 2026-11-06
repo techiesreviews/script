@@ -1,0 +1,7 @@
+# Step R, PRs A and B, the live site, https://script.techies.tools, Worker version 14b344bd-1732-4758-9154-e15cb7dee055, deployed from main 8a6986c on 2026-11-06 with `kit deploy` (RESULT: ok deploy). The version before it, for rollback: 934ed341-5729-493c-8ed4-b7011804ddb6.
+# The live app.js holds both changes (a grep for the bold-on refusal guard and for the Undo that keeps its line finds one line each); the page answers 200.
+# The browser checks of this step ran against the live site with `SMOKE_ONLY=<group> node scripts/smoke-keep-all.mjs https://script.techies.tools <Chrome port>`, one group at a time. Each group ended with RESULT: ok (no FAIL line):
+refusals: RESULT: ok  (bold off never refuses; Enter and Shift+Enter just before the space refused with bold on)
+menu: RESULT: ok  (the file name's menu on 1280x420 and 390x650 with twelve recent scripts: inside the window, scrolls, the wheel reaches the colours)
+storage: RESULT: ok  (storage full: set_cue_settings says it could not be saved; Undo that cannot be saved keeps its line)
+rename: RESULT: ok  (a script's own settings after a rename, also with storage full)
