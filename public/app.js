@@ -1222,11 +1222,13 @@ function setCues(patch, forScript) {
 }
 // The script may have a new name by now and its settings went with it, so the key is worked out here. The Undo line
 // closes when another script opens, so this is still the same script.
+// Returns false when the browser refused the write: then nothing is redrawn and the settings in force stay as they are.
 function restoreCues({ forScript, prev }) {
   const key = forScript ? cueKey() : "cues";
   if (prev == null) store.del(key);
-  else store.set(key, prev);
+  else if (!store.set(key, prev)) return false;
   cuesChanged();
+  return true;
 }
 function cuesChanged() {
   cueMemo = null;
@@ -1297,7 +1299,7 @@ function agentCueSettings(args, by) {
   const hadOwn = ownCues(), was = cues(), undoTo = setCues(patch, forScript), now = cues();
   const stored = JSON.stringify(undoTo.prev) !== JSON.stringify(store.get(undoTo.key));
   const { banner, message } = K.settingsOutcome({ words: cueChangeWords(was, now), forScript, hadOwn, stored, saved: undoTo.saved });
-  if (banner) showBanner(`${by.name} ${banner}`, [["Undo", () => { hideBanner(); restoreCues(undoTo); }]]);
+  if (banner) showBanner(`${by.name} ${banner}`, [["Undo", () => { if (restoreCues(undoTo)) hideBanner(); }]]);
   return { result: { message, ...now, forScript: ownCues() } };
 }
 // Ctrl/Cmd+B and the B button: toggle a cue (the person sees it as bold words) on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
