@@ -314,6 +314,10 @@ ok 1280x800: while composing: the ghost and the Tab key show
 ok 1280x800: an Enter that ends a composition sends nothing
 ok 1280x800: the Tab key takes the ghost during a composition
 ok 1280x800: then a normal Enter sends it
+ok 1280x800: keyboard up on a wide screen: the bar is above it
+ok 1280x800: and not on the words
+ok 1280x800: bold on part of the words: they aren't gone
+ok 1280x800: and the ask goes on them
 ok 1280x800: a redraw of the line while typing: the selected word stays marked
 ok 1280x800: words moved by a redraw: the mark stays on the selected word
 ok 1280x800: and what is typed stays
@@ -397,6 +401,8 @@ ok 390x760: then a normal Enter sends it
 ok 390x760: with a keyboard up the bar lifts and docks at the top
 ok 390x760: without it the bar is back at the bottom
 ok 390x760: the input keeps at least 200 px with B showing
+ok 390x760: bold on part of the words: they aren't gone
+ok 390x760: and the ask goes on them
 ok 390x760: a redraw of the line while typing: the selected word stays marked
 ok 390x760: words moved by a redraw: the mark stays on the selected word
 ok 390x760: and what is typed stays
