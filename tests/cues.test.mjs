@@ -983,3 +983,34 @@ test("a room edit inside a range, by offsets (textOpInside): inside or across it
   assert.equal(C.textOpInside(r, op(8, 2)), false, "deleted after it");
   assert.equal(C.textOpInside(r, { type: "split", blockId: "p", at: 7 }), false);
 });
+
+test("followRoomEdit: a host's ask goes through a guest's edit with bold on: closed when the edit fell inside, kept when it only spans its words", () => {
+  const op = (at, del, ins = "") => ({ type: "text", blockId: "p", at, del, ins });
+  const ask = (start, end, quote) => ({ start, end, quote });
+  // The ask on "two" in "**one two three**" (offsets 8..11).
+  const two = ask(8, 11, "two");
+  assert.deepEqual(C.followRoomEdit(two, op(0, 0, "x")), { start: 9, end: 12 }, "typed before it");
+  assert.deepEqual(C.followRoomEdit(two, op(14, 0, "x")), { start: 8, end: 11 }, "typed after it");
+  assert.equal(C.followRoomEdit(two, op(9, 0, "x")), null, "typed inside it");
+  assert.equal(C.followRoomEdit(two, op(10, 3)), null, "deleted across its end");
+  assert.equal(C.followRoomEdit(two, { type: "split", blockId: "p", at: 9, newId: "q" }), null, "a split inside it");
+  assert.deepEqual(C.followRoomEdit(two, { type: "split", blockId: "p", at: 3, newId: "q" }), { start: 8, end: 11 }, "a split before it is for moveAsks");
+  // One op from the first changed character to the last: "**one two three**" -> "one two three" (a guest deleted a "*").
+  assert.deepEqual(C.followRoomEdit(two, op(0, 17, "one two three")), { start: 4, end: 7 }, "the words stand once in the new text: follow them");
+  assert.equal(C.followRoomEdit(two, op(0, 17, "one and three")), null, "the words changed");
+  assert.equal(C.followRoomEdit(ask(3, 5, "no"), op(0, 14, "no and no more")), null, "the words stand twice: closed, never guessed");
+  // Bold off on the host: the old rules (followTextOp), and a null for an edit inside, which leaves the search to decide.
+  assert.equal(C.followTextOp(two, op(9, 0, "x")), null);
+});
+
+test("a lone stretch with spaces around it on its line also loses its marks with its last words (no rule line)", () => {
+  Q.readCuesWhen(() => false);
+  for (const [old, now, at, want] of [["** two ** ", "**  ** ", 3, "   "], [" ** two **", " **  **", 4, "   "], ["\t** two **  ", "\t**  **  ", 4, "\t    "]]) {
+    const s = Q.settleMarks(old, now, at);
+    assert.equal(s?.content, want, JSON.stringify(old));
+    assert.equal(D.parse(s.content).blocks.some((b) => b.type === "raw"), false);
+  }
+  // Text on the line around it: still not a stretch to settle.
+  assert.equal(Q.settleMarks("x ** two ** y", "x **  ** y", 5), null);
+  Q.readCuesWhen(() => true);
+});

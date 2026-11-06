@@ -19,7 +19,7 @@ Lex (2026-11-06): fix the follow-ups listed in fleet issues #29, #30 and #31, on
 
 ## PR C: two rare cases (#29)
 
-- Bold on: `public/app.js` `afterRoomOps`: a guest's edit that falls inside a host's open ask (or a "Sounds like me" mark) closes it (`C.textOpInside` in `public/changes.js`), so the old text search can no longer move it onto a later copy of its words. With bold off the old search decides, as before.
+- Bold on, on the host: `public/app.js` `afterRoomOps`: a guest's edit (typed or deleted inside it, or a split of its line inside it) that falls inside a host's open ask or "Sounds like me" mark closes it (`C.followRoomEdit` in `public/changes.js`), so the old text search can no longer move it onto a later copy of its words. One edit that spans the ask's words without changing them (a batch of edits, or a diff from the first changed character to the last) keeps the ask, followed to its words when they stand once in the new text. A guest leaves it to the host's asks message. With bold off the old search decides, as before.
 - Bold off: `public/cues.js` `emptied`: a stretch alone on its line, its outer words deleted first and the middle one last, leaves `**  **`, which reads as a rule and turned the paragraph into a raw block. Its marks now go with the last words. A stretch with text around it (`a ** b ** c`) is untouched, as before.
 - Checks: `tests/cues.test.mjs` (the sequence, `textOpInside`), and in a browser the guest case in the main run (`SMOKE_ONLY=guest`) and the `**one two three**` sequence in `runBoldOffEdits` (`SMOKE_ONLY=refusals`). Evidence: `docs/agents/evidence/step-r-browser-c.txt`.
 
@@ -29,7 +29,6 @@ Lex (2026-11-06): fix the follow-ups listed in fleet issues #29, #30 and #31, on
 
 ## Not in the first release (left, in this order)
 
-- PR C (fleet #29): done, see below.
 - PR D: fleet #31 item 5 (an open ask on part of a bold stretch shows its `**`; `unmark_cue` can't remove a stretch over about 550 characters; the colour inputs are small touch targets) and item 6 (a guest's selection is dropped when a host's ask arrives on that line) only if cheap, else they stay on the ticket.
 - Still open from #29, no fix planned here: deleting outer words first leaves `** two **`, which reads like `a ** b ** c` (documented limit); the Prompter doesn't draw inline `**`.
 
