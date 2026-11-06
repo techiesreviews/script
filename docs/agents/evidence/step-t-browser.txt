@@ -263,7 +263,9 @@ ok 1280x800: Enter with an empty input does nothing
 ok 1280x800: typing s: the ghost shows the rest of Shorter and the Tab key shows
 ok 1280x800: the Tab key doesn't change the input's size
 ok 1280x800: the ghost starts right after the typed letters
+ok 1280x800: the suggestion is read out
 ok 1280x800: Down switches the suggestion
+ok 1280x800: the new suggestion is read out
 ok 1280x800: Tab takes the ghost and stays in the input
 ok 1280x800: after Tab: no ghost, same size
 ok 1280x800: what Tab took is read out
@@ -304,7 +306,11 @@ ok 1280x800: the Tab key takes the ghost during a composition
 ok 1280x800: then a normal Enter sends it
 ok 1280x800: keyboard up on a wide screen: the bar is above it
 ok 1280x800: and not on the words
-ok 1280x800: the page panned by the keyboard: the bar is in what is seen
+ok 1280x800: the page panned by the keyboard: the bar is in what is seen, below the words
+ok 1280x800: bold on part of the words: they aren't gone
+ok 1280x800: the bold off again: they still aren't gone
+ok 1280x800: and the ask goes on them
+ok 1280x800: repeated words: the ask stays on the second copy
 ok 1280x800: a redraw of the line while typing: the selected word stays marked
 ok 1280x800: words moved by a redraw: the mark stays on the selected word
 ok 1280x800: and what is typed stays
@@ -333,7 +339,9 @@ ok 390x760: Enter with an empty input does nothing
 ok 390x760: typing s: the ghost shows the rest of Shorter and the Tab key shows
 ok 390x760: the Tab key doesn't change the input's size
 ok 390x760: the ghost starts right after the typed letters
+ok 390x760: the suggestion is read out
 ok 390x760: Down switches the suggestion
+ok 390x760: the new suggestion is read out
 ok 390x760: Tab takes the ghost and stays in the input
 ok 390x760: after Tab: no ghost, same size
 ok 390x760: what Tab took is read out
@@ -375,6 +383,10 @@ ok 390x760: then a normal Enter sends it
 ok 390x760: with a keyboard up the bar lifts and docks at the top
 ok 390x760: without it the bar is back at the bottom
 ok 390x760: the input keeps at least 200 px with B showing
+ok 390x760: bold on part of the words: they aren't gone
+ok 390x760: the bold off again: they still aren't gone
+ok 390x760: and the ask goes on them
+ok 390x760: repeated words: the ask stays on the second copy
 ok 390x760: a redraw of the line while typing: the selected word stays marked
 ok 390x760: words moved by a redraw: the mark stays on the selected word
 ok 390x760: and what is typed stays
@@ -419,6 +431,7 @@ ok 1280 px guest: Say it warmer: reaches the host's agent as ask
 ok 1280 px guest: a free ask goes as typed
 ok 1280 px guest: add b-roll stays the host's
 ok 1280 px guest: the selected word deleted while typing: no ask goes
+ok 1280 px guest: and it isn't kept as an earlier ask
 ok 390 px guest: b-roll: reaches the host's agent as broll
 ok 390 px guest: shorter: reaches the host's agent as shorter
 ok 390 px guest: Say it warmer: reaches the host's agent as ask
@@ -669,10 +682,4 @@ ok 390 px: Ctrl+B takes it off
 ok 390 px: Ctrl+B puts it back, and it shows
 ok 390 px: the camera export strips the stars
 ok 390 px: the prompter export strips the stars
-ok 1280x800: the suggestion is read out
-ok 1280x800: the new suggestion is read out
-ok 1280x800: what Tab took is read out
-ok 390x760: the suggestion is read out
-ok 390x760: the new suggestion is read out
-ok 390x760: what Tab took is read out
 RESULT: ok

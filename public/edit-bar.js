@@ -1,6 +1,8 @@
-// The slim edit bar (step T): what a typed line means, what to suggest as it is typed, and where the bar goes.
+// The slim edit bar (step T): what a typed line means, what to suggest as it is typed, finding the selected words again
+// after the line changed, and where the bar goes.
 // Pure module: no DOM. Imported by the app and by the tests.
 import { ACTIONS } from "./doc.js";
+import { plainView } from "./cues.js";
 
 /* ---------- Typed commands: what the bar's buttons did ----------
    name is what the grey ghost offers. needs: "spoken" (only over spoken words, as the B-roll buttons were), "addBroll"
@@ -54,6 +56,40 @@ export function rememberAsk(list, text) {
   const clean = cleanAsks(list);
   if (text.length > ASK_KEPT_LENGTH) return clean.slice(0, ASKS_KEPT);
   return [text, ...clean.filter((s) => s.toLowerCase() !== text.toLowerCase())].slice(0, ASKS_KEPT);
+}
+
+/* ---------- The selected words, after the line changed ----------
+   Everything is compared in the words without their bold marks, so marks going on or off anywhere on the line, also several
+   at once, never make another copy of the same words look nearer. */
+/** Where `offset` in the content is in the text without its bold marks. */
+export function plainOffset(content, offset) {
+  const view = plainView(String(content ?? ""));
+  if (!view) return offset;
+  let n = 0;
+  while (n < view.map.length && view.map[n] < offset) n++;
+  return n;
+}
+/** Where the selected words (`quote`) are in the content now, the copy nearest to `near` (from plainOffset): { start, end,
+ *  quote } (quote: the text there now, marks and all), or null when they are gone. */
+export function findWords(content, quote, near) {
+  if (!quote) return null;
+  const text = String(content ?? ""), view = plainView(text), plain = view ? view.plain : text;
+  const at = (x) => (view ? view.map[x] : x);
+  for (const words of quote.includes("**") ? [quote.replaceAll("**", ""), quote] : [quote]) {
+    if (!words) continue;
+    let best = -1, dist = Infinity;
+    for (let i = plain.indexOf(words); i >= 0; i = plain.indexOf(words, i + 1)) {
+      const d = Math.abs(i - near);
+      if (d < dist) { best = i; dist = d; }
+    }
+    if (best < 0) continue;
+    let start = at(best), end = at(best + words.length - 1) + 1;
+    // A quote that took in a whole stretch's marks takes them in again.
+    if (quote.startsWith("**") && text.slice(start - 2, start) === "**") start -= 2;
+    if (quote.endsWith("**") && text.slice(end, end + 2) === "**") end += 2;
+    return { start, end, quote: text.slice(start, end) };
+  }
+  return null;
 }
 
 /* ---------- Where the bar goes ----------

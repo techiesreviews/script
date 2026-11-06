@@ -645,7 +645,7 @@ async function runSlimBar(width, height) {
   check((await page.eval(`document.activeElement.id`)) === "scWhat", `${tag}: the card takes the focus`);
   await closeBar();
 
-  // Over words that aren't spoken: B-roll says why on the control and sends nothing.
+  // Over words that aren't spoken: B-roll turns Send off and sends nothing.
   const heading = `[...document.querySelectorAll('#script .block')].find((x) => x.dataset.type !== "para" && x.textContent.trim().length > 4)`;
   await page.eval(`getSelection().removeAllRanges()`);
   await sleep(150);
@@ -718,17 +718,65 @@ async function runSlimBar(width, height) {
     await selectWord();
     await page.eval(`(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); scrollBy({ top: r.top - 380, behavior: "instant" }); Object.defineProperty(visualViewport, "height", { value: 420, configurable: true }); visualViewport.dispatchEvent(new Event("resize")); })()`);
     await sleep(150);
-    const seen = await page.eval(`(() => { const b = document.querySelector("#editBar").getBoundingClientRect(), w = getSelection().getRangeAt(0).getBoundingClientRect(); return { fits: b.bottom <= 420, clear: b.bottom <= w.top || b.top >= w.bottom, top: b.top, bottom: b.bottom }; })()`);
+    const seen = await page.eval(`(() => { const b = document.querySelector("#editBar").getBoundingClientRect(), w = getSelection().getRangeAt(0).getBoundingClientRect(); return { fits: b.bottom <= 420, clear: b.bottom <= w.top || b.top >= w.bottom, top: b.top, bottom: b.bottom, wordBottom: w.bottom }; })()`);
     check(seen.fits, `${tag}: keyboard up on a wide screen: the bar is above it`, JSON.stringify(seen));
     check(seen.clear, `${tag}: and not on the words`, JSON.stringify(seen));
     await page.eval(`(() => { Object.defineProperty(visualViewport, "offsetTop", { value: 100, configurable: true }); visualViewport.dispatchEvent(new Event("scroll")); })()`);
     await sleep(100);
     const panned = await page.eval(`(() => { const b = document.querySelector("#editBar").getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; })()`);
-    check(panned.top >= 100 && panned.bottom <= 520, `${tag}: the page panned by the keyboard: the bar is in what is seen`, JSON.stringify(panned));
+    check(panned.top >= 100 && panned.bottom <= 520 && panned.top >= seen.wordBottom, `${tag}: the page panned by the keyboard: the bar is in what is seen, below the words`, JSON.stringify({ ...panned, seen }));
     await page.eval(`delete visualViewport.offsetTop`);
     await page.eval(`(() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event("resize")); })()`);
     await closeBar();
   }
+
+  // Part of the selected words bolded while typing: they are still there, so the ask goes on them.
+  await page.eval(`getSelection().removeAllRanges()`);
+  await sleep(150);
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("Most of us")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), n = w.nextNode(), from = n.data.indexOf("Most"), r = document.createRange(); r.setStart(n, from); r.setEnd(n, from + 7); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  await page.until(barOpen, "the bar on two words");
+  await sleep(200);
+  await type("warmer");
+  await agent("mark_cue", { cues: [{ quote: "Most" }] });
+  await sleep(300);
+  check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: bold on part of the words: they aren't gone`, await page.eval(ghost));
+  // The bold comes off again: still there.
+  await agent("unmark_cue", { cues: [{ quote: "Most" }] });
+  await sleep(300);
+  check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: the bold off again: they still aren't gone`, await page.eval(ghost));
+  // Bold again, part of the words: the ask goes while they cross its edge.
+  await agent("mark_cue", { cues: [{ quote: "Most" }] });
+  await sleep(300);
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  const parted = await newAsks();
+  check(parted[0]?.instruction === "warmer" && parted[0]?.quote.includes("Most") && parted[0]?.quote.includes("of"), `${tag}: and the ask goes on them`, JSON.stringify(parted.map((x) => x.quote)));
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
+  await agent("set_script", { markdown: start });
+  await sleep(300);
+
+  // Repeated words: the second copy stays the second, as bold goes on and off.
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page.")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: " Twice over. Twice over." });
+  await sleep(350);
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("Twice over.")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const t = nodes.map((x) => x.data).join(""), from = t.lastIndexOf("Twice over"), point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }, r = document.createRange(); r.setStart(...point(from)); r.setEnd(...point(from + 10)); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  await page.until(barOpen, "the bar on the second copy");
+  await sleep(200);
+  await type("warmer");
+  await agent("mark_cue", { cues: [{ quote: "Twice", occurrence: 2 }] });
+  await sleep(300);
+  await agent("unmark_cue", { cues: [{ quote: "Twice" }] });
+  await sleep(300);
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  const repeated = await newAsks();
+  const before = await page.eval(`(() => { const d = document.querySelector("#script [data-ask]"), r = document.createRange(); r.setStart(d.closest(".block"), 0); r.setEndBefore(d); return r.toString(); })()`);
+  check(repeated[0]?.instruction === "warmer" && before.includes("Twice over."), `${tag}: repeated words: the ask stays on the second copy`, before.slice(-40));
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
+  await agent("set_script", { markdown: start });
+  await sleep(300);
 
   // A redraw of the line while typing: the words stay marked.
   await selectWord();
@@ -919,8 +967,7 @@ async function runSlimGuest(width, height) {
   await sleep(200);
   await guest.click("#askInput");
   await guest.send("Input.insertText", { text: "add b-roll" });
-  await sleep(100);
-  await sleep(100);
+  await sleep(200);
   check((await guest.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && (await guest.eval(`document.querySelector("#askLive").textContent`)) === "Only the host can add B-roll.", `${tag}: add b-roll stays the host's`);
   await pressKey(guest, "Escape", "Escape", 27);
   await guest.eval(`getSelection().removeAllRanges()`);
@@ -934,6 +981,7 @@ async function runSlimGuest(width, height) {
     await page.click("#askInput");
     await page.send("Input.insertText", { text: "make it warmer" });
     await sleep(100);
+    const history = await page.eval(`localStorage.getItem("script-editor:askHistory")`);
     await guest.send("Page.bringToFront");
     await doubleClick(guest, await guest.eval(wordSpot));
     await sleep(200);
@@ -943,6 +991,7 @@ async function runSlimGuest(width, height) {
     await pressKey(page, "Enter", "Enter", 13, "\r");
     await sleep(200);
     check((await page.eval(`document.querySelector("#editBar").hidden`)) && !JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks.length, `${tag}: the selected word deleted while typing: no ask goes`);
+    check((await page.eval(`localStorage.getItem("script-editor:askHistory")`)) === history, `${tag}: and it isn't kept as an earlier ask`);
   }
   await guest.close();
   await page.close();
