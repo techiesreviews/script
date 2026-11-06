@@ -401,11 +401,27 @@ export function followTextOp({ start, end }, op) {
   const by = op.ins.length - op.del;
   return { start: start + by, end: end + by };
 }
-/** Does one room edit fall inside a range, by offsets (text typed strictly inside it, or text deleted from it)? Then the
- *  range's words changed under it: with bold marking on it is closed, never searched for again by its old words. */
+/** Does one room edit fall inside a range, by offsets (text typed strictly inside it, or text deleted from it)? */
 export function textOpInside({ start, end }, op) {
   if (op.type !== "text") return false;
   return op.del ? op.at < end && op.at + op.del > start : op.at > start && op.at < end;
+}
+/** Where a host's ask or mark (`range`: start, end, quote) goes through one room edit when Bold marking is on: as
+ *  followTextOp says; but when the edit fell inside it, it is closed (null), not searched for again by its old words.
+ *  One edit can span words nobody changed (a batch of edits, or one diff from the first changed character to the last): when
+ *  it covers the whole range and the quote stands once in the new text, the range follows the quote there. A split inside
+ *  it closes it too. */
+export function followRoomEdit(range, op) {
+  const kept = { start: range.start, end: range.end };
+  if (op.type === "split") return range.start < op.at && op.at < range.end ? null : kept;
+  const moved = followTextOp(range, op);
+  if (moved) return moved;
+  if (!textOpInside(range, op)) return kept;
+  if (range.quote && op.at <= range.start && op.at + op.del >= range.end) {
+    const i = op.ins.indexOf(range.quote);
+    if (i >= 0 && i === op.ins.lastIndexOf(range.quote)) return { start: op.at + i, end: op.at + i + range.quote.length };
+  }
+  return null;
 }
 /** May the person's Ctrl/Cmd+B do this toggle (K.toggleCue's result) in this block? Not over open work, and not when
  *  the new text would read as another kind of block ("**- item**" without its marks is a list line). */

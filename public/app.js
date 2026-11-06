@@ -850,7 +850,7 @@ const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, from
 // another word by a search. `insideGoes`: one the edit fell inside is cancelled, for the same reason.
 function followAnchors(id, content, at, { insideGoes = false } = {}) {
   const move = (x, gone) => {
-    const r = at(x.start, x.end);
+    const r = at(x.start, x.end, x);
     if (r) Object.assign(x, r, content == null ? {} : { quote: content.slice(r.start, r.end) });
     else if (insideGoes) gone();
   };
@@ -4926,15 +4926,21 @@ function afterRoomOps(ops, sel) {
   followMarks(ops);
   const touched = new Set();
   let structure = false;
+  // With bold marking on, the host closes an ask or mark that an edit fell inside (as for the person's own edit that
+  // breaks a bold stretch), so it can't jump to a later copy of its words by a search. A guest leaves that to the host's
+  // asks message. Off, the old search decides.
+  const strict = cues().on && together?.room?.role === "host";
   for (const op of ops) {
     if (op.type === "text") {
       touched.add(op.blockId);
-      // With bold marking on, an ask or mark the edit fell inside is closed (as for the person's own edit that breaks a
-      // bold stretch), so it can't jump to a later copy of its words by a search. Off, the old search decides.
-      const on = cues().on;
-      followAnchors(op.blockId, null, (start, end) => C.followTextOp({ start, end }, op) ?? (on && C.textOpInside({ start, end }, op) ? null : { start, end }), { insideGoes: on });
+      followAnchors(op.blockId, null, (start, end, x) => (strict ? C.followRoomEdit({ start, end, quote: x.quote }, op) : C.followTextOp({ start, end }, op)), { insideGoes: strict });
     }
-    else if (op.type === "split") { moveAsks(op.blockId, op.newId, op.at, -op.at); touched.add(op.blockId).add(op.newId); structure = true; }
+    else if (op.type === "split") {
+      if (strict) followAnchors(op.blockId, null, (start, end, x) => C.followRoomEdit({ start, end, quote: x.quote }, op), { insideGoes: true });
+      moveAsks(op.blockId, op.newId, op.at, -op.at);
+      touched.add(op.blockId).add(op.newId);
+      structure = true;
+    }
     else if (op.type === "merge") { moveAsks(op.blockId, op.into, 0, op.at); touched.add(op.into).add(op.blockId); structure = true; }
     else { touched.add(op.blockId ?? op.block.id); structure = true; }
   }
