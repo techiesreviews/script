@@ -21,7 +21,9 @@ Lex (2026-11-06): fix the follow-ups listed in fleet issues #29, #30 and #31, on
 
 - PR C: fleet #29 (a guest's edit inside a host's ask still uses the old text search with bold on; a stretch alone on its line emptied outer words first leaves `**  **`, which reads as a rule, with bold off). Next on `dev`.
 - PR D: fleet #31 item 5 (an open ask on part of a bold stretch shows its `**`; `unmark_cue` can't remove a stretch over about 550 characters; the colour inputs are small touch targets) and item 6 (a guest's selection is dropped when a host's ask arrives on that line) only if cheap, else they stay on the ticket.
-- Still open from #29, no fix planned here: deleting outer words first leaves `** two **`, which reads like `a ** b ** c` (documented limit); the Prompter doesn't draw inline `**`; Lex's Firefox and Safari check of Ctrl+B and ⌘B (due 2026-11-10) does not block anything.
+- Still open from #29, no fix planned here: deleting outer words first leaves `** two **`, which reads like `a ** b ** c` (documented limit); the Prompter doesn't draw inline `**`.
+
+Due 2026-11-10: Lex's Firefox and Safari hand check of Ctrl+B and ⌘B (fleet #29); it blocks nothing.
 - Test gaps the reviews listed and the lead waived (browser checks, none changes what the editor does): Enter, Shift+Enter and joins with bold off; a bold-on paste refusal; a script's own setting turned on from the menu; Undo with nothing stored before and storage full; the wheel over the recent list on a tall window (the menu fits, so the page behind must not scroll); a real `answer_broll` across a bold edge with Keep; bold in a non-spoken section for the new quote search; `matchOver(overFor(...))` for quotes that start or end inside a bold stretch.
 - Small things the reviews noted: a refused menu click or Undo gives no sign of why nothing happened; after a rename with storage full the agent is told `forScript: false` while the script's own settings are in force (held in memory); `.scripts` lost `overscroll-behavior: contain` and `.menu--scripts` has it, so the wheel moves on to the menu at the end of the list.
 
