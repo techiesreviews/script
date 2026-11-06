@@ -22,3 +22,13 @@ Lex (2026-11-06), with a screenshot of the Bold menu: "remove the bold settings.
 ## Done
 
 Feature list: updated (`docs/features.md`).
+
+### Follow-ups
+
+- Validation gaps (gap): R1-7 still open: the redraw check is back (`scripts/smoke-keep-all.mjs:587`), but only the caret's text node is compared. Scroll position, a selected word and the caret's offset are not checked. The old 300 ms wait after the name change is also gone, so a later redraw could be missed.
+- Validation gaps (gap): R1-6 still open: Reset is checked through the storage listener (`scripts/smoke-keep-all.mjs:557`). The colour half is not, because the second tab opens after the colours are chosen (`:547-554`), so it only reads them on load. Neither check looks at a bold word's colour, only at the `--bold-fg` and `--bold-bg` values on `#script`.
+- Validation gaps (gap): R1-5 still open: both fields are now checked in dark and light mode, and the four values are correct today (I converted them by hand). But `scripts/smoke-keep-all.mjs:541` and `:569` compare the fields with typed-in hex, not with the page's CSS. Changing `--bg` or `--bold-ink` in `public/app.css` still would not fail these two checks.
+- Validation gaps (gap): R1-5, `scripts/smoke-keep-all.mjs:541` and `:569`: in each mode, paint `getComputedStyle(document.body).backgroundColor` and the default bold word's computed colour onto a 1×1 canvas. Read the pixel back as `#rrggbb` and require it to match `#boldBg` and `#boldFg`, so a CSS change without a `BOLD_SHOWN` change fails.
+- Validation gaps (gap): R1-6, `scripts/smoke-keep-all.mjs:553-557`: with the second tab already open, set a new colour in the first tab and wait for the second tab to pick it up. Then mark a bold word in the second tab and check its computed `color` and `backgroundColor` after the colour change and after Reset. Comparing the same element before and after would also cover the "not redrawn" claim in the comment at `:546`.
+- Validation gaps (gap): R1-7, `scripts/smoke-keep-all.mjs:586-587`: scroll to a non-zero position before the rename and check `scrollY` is unchanged afterwards. Wait 300 ms after the name changes before checking. Check the caret's offset as well as its node. Add a second rename with a word selected, as the old `runRename` did, and check the same text is still selected.
+
