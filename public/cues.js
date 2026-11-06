@@ -247,7 +247,7 @@ const followEdit = (spans, now, content) => {
 // The last words of a stretch deleted: its marks go, read by the text alone, as no setting travels to a guest. Looks past
 // spaces, as an earlier deletion may have left them at one inner edge ("**two **", "** words**"). Both edges spaced around
 // words ("a ** b ** c") was never a stretch, unless it is alone on its line: then its last words going would leave
-// "**  **", a rule line, so its marks go. Neither was a word or "*" outside the marks, or a link, and marks with only
+// "**  **", a rule line (on the block's first line, where a rule can read), so its marks go. Neither was a word or "*" outside the marks, or a link, and marks with only
 // spaces between them hold no words to delete. Anything else stays byte for byte.
 function emptied(old, now, p, oe, ne) {
   if (ne !== p || oe <= p) return null;
@@ -256,10 +256,10 @@ function emptied(old, now, p, oe, ne) {
   while (close < old.length && /[^\S\n]/.test(old[close])) close++;
   if (open < 2 || old.slice(open - 2, open) !== "**" || old.slice(close, close + 2) !== "**") return null;
   const inner = old.slice(open, close), before = old[open - 3] ?? "", after = old[close + 2] ?? "";
-  // A stretch alone on its line (only spaces or tabs around it) has nothing to read "a ** b ** c" with: it may be spaced on
-  // both edges.
+  // A stretch alone on the first line of the block (only spaces or tabs around it, where a rule can read) has nothing to read
+  // "a ** b ** c" with: it may be spaced on both edges. On later lines the spaces-only rest would only split the block.
   const lineEnd = old.indexOf("\n", close + 2);
-  const alone = /^[ \t]*$/.test(old.slice(old.lastIndexOf("\n", open - 3) + 1, open - 2)) && /^[ \t]*$/.test(old.slice(close + 2, lineEnd < 0 ? old.length : lineEnd));
+  const alone = /^[ \t]*$/.test(old.slice(0, open - 2)) && /^[ \t]*$/.test(old.slice(close + 2, lineEnd < 0 ? old.length : lineEnd));
   if (BAD_WORDS.test(inner) || !WORDY.test(inner) || (!alone && /\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
   if (WORD_CHAR.test(before) || before === "*" || WORD_CHAR.test(after) || after === "*" || overlaps(linkRanges(old), open - 2, close + 2)) return null;
   // A mark that belongs to a real stretch the edit didn't touch isn't this one's to take.
