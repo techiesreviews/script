@@ -330,6 +330,7 @@
 ✔ adapter: a guest places the host's asks in its own copy, and the agent's caret follows them
 ✔ adapter: the host's ask desk answers every ref, and a repeat gets the same answer, done once
 ✔ shareAsks: guests get waiting pictures without the image (step K); the host's asks stay as they are
+✔ adapter: apply passes the text of the blocks the edits change, from before them
 ✔ ops: insert/insert in one block, both orders agree and the first one wins the tie
 ✔ ops: insert/delete keeps text typed inside a deleted part
 ✔ ops: delete/delete that overlap remove each character once
@@ -360,9 +361,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 362
+ℹ tests 363
 ℹ suites 0
-ℹ pass 362
+ℹ pass 363
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

@@ -1005,6 +1005,8 @@ test("followRoomEdit: a host's ask goes through a guest's edit with bold on: clo
   assert.equal(C.followRoomEdit(two, op(0, 17, "one and three"), text), null, "the words changed");
   // A whole line pasted over: the ask's letters turn up inside a longer word, which is not its word any more.
   assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "take note"), "so no more"), null, "no grew into a longer word");
+  // A combining mark counts as part of a word, as in cues.js: "no" + mark is another word.
+  assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "we no\u0301 more!"), "so no more"), null, "a combining mark grew into the word");
   // Bold off on the host: the old rules (followTextOp), and a null for an edit inside, which leaves the search to decide.
   assert.equal(C.followTextOp(two, op(7, 0, "x")), null);
 });
