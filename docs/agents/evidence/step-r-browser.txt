@@ -1,5 +1,5 @@
-# Step R, PR A (round 2): SMOKE_ONLY=refusals node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
-# Without the app.js change the same run fails 8 checks (paste with bold off, Shift+Enter just before the space).
+# Step R, PR A (round 3): SMOKE_ONLY=refusals node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Control: without the app.js change the run fails 8 checks; with only the joined-parts check removed it fails 14.
 ok 1280 px: Bold marking is off
 ok 1280 px: **Note** - more: it is in the script
 ok 1280 px: **Note** - more: Backspace over Note goes through (Bold marking off never refuses), no marks left
@@ -198,6 +198,7 @@ ok 1280 px: a paste with a blank line over a bold word goes in as two paragraphs
 ok 1280 px: one Ctrl+Z takes that paste back
 ok 1280 px: a list pasted on purpose goes in
 ok 1280 px: one Ctrl+Z takes it back
+ok 1280 px: Enter over a selection inside a bold list-like line is refused, no word leaves
 ok 1280 px: joining onto a bold list-like line is refused
 ok 1280 px: no literal marks from that join
 ok 1280 px: both lines stay bold
