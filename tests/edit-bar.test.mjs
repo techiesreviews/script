@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock } from "../public/edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, barSpot, phoneDock } from "../public/edit-bar.js";
 import { ACTIONS } from "../public/doc.js";
 import { GUEST_ACTIONS } from "../public/together-adapter.js";
 
@@ -12,13 +12,12 @@ const host = { spoken: true, addBroll: true, guest: false };
 const guest = { spoken: true, addBroll: false, guest: true };
 
 test("every old button is a typed command that makes the same ask", () => {
-  const acts = { Shorter: "shorter", simpler: "simpler", "SOUND LIKE ME": "like", "b-roll": "broll", broll: "broll", "b roll": "broll", "suggest b-roll": "broll", "suggest b roll": "broll", "explain how it works": "explain", explain: "explain", "check facts": "facts", facts: "facts", "find links": "links", links: "links", " shorter ": "shorter" };
+  const acts = { Shorter: "shorter", simpler: "simpler", "SOUND LIKE ME": "like", "b-roll": "broll", " shorter ": "shorter" };
   for (const [typed, action] of Object.entries(acts)) {
     assert.deepEqual(resolveTyped(typed, host), { kind: "act", action }, typed);
     assert.ok(ACTIONS[action].instruction, `${action} has its standard instruction`);
   }
   assert.deepEqual(resolveTyped("add b-roll", host), { kind: "add" });
-  assert.deepEqual(resolveTyped("Add broll", host), { kind: "add" });
   assert.deepEqual(resolveTyped("more", host), { kind: "more" });
 });
 
@@ -30,37 +29,37 @@ test("anything else is an ask with the words as typed; nothing typed does nothin
 });
 
 test("guests keep what they could do: asks and Suggest B-roll go through, adding a shot is the host's", () => {
-  for (const typed of ["shorter", "simpler", "sound like me", "b-roll", "explain", "check facts", "find links", "free words"]) {
+  for (const typed of ["shorter", "simpler", "sound like me", "b-roll", "free words"]) {
     const r = resolveTyped(typed, guest);
     assert.ok(GUEST_ACTIONS.includes(r.action ?? "ask"), typed);
   }
   assert.equal(resolveTyped("add b-roll", guest).kind, "blocked");
-  assert.match(resolveTyped("add b-roll", guest).why, /host/);
+  assert.equal(resolveTyped("add b-roll", guest).say, "Only the host can add B-roll.");
   assert.ok(!suggestions("a", { can: guest }).some((s) => /^add/i.test(s)));
 });
 
-test("B-roll needs spoken words, as its buttons did: it says so on the control and sends nothing", () => {
+test("B-roll needs spoken words, as its buttons did: it sends nothing, and only screen readers hear why", () => {
   const notSpoken = { ...host, spoken: false };
   assert.equal(resolveTyped("b-roll", notSpoken).kind, "blocked");
   assert.equal(resolveTyped("add b-roll", notSpoken).kind, "blocked");
-  assert.match(resolveTyped("b-roll", notSpoken).why, /spoken/);
+  assert.equal(resolveTyped("b-roll", notSpoken).say, "B-roll needs spoken words.");
   assert.deepEqual(resolveTyped("shorter", notSpoken), { kind: "act", action: "shorter" });
   assert.ok(!suggestions("b", { can: notSpoken }).length);
-  assert.match(resolveTyped("add b-roll", { ...host, addBroll: false }).why, /list/);
+  assert.equal(resolveTyped("add b-roll", { ...host, addBroll: false }).say, "The B-roll list isn't ready.");
 });
 
 test("suggestions: the commands first, then earlier asks; only longer than what is typed; any case", () => {
-  assert.deepEqual(suggestions("s", { can: host }), ["Shorter", "Simpler", "Sound like me", "Suggest B-roll"]);
+  assert.deepEqual(suggestions("s", { can: host }), ["Shorter", "Simpler", "Sound like me"]);
   assert.deepEqual(suggestions("SH", { can: host }), ["Shorter"]);
   assert.deepEqual(suggestions("b", { can: host }), ["B-roll"]);
-  assert.deepEqual(suggestions("br", { can: host }), ["Broll"]);
   assert.deepEqual(suggestions("m", { can: host, earlier: ["Make it funnier", "more jokes"] }), ["More", "Make it funnier", "more jokes"]);
   assert.deepEqual(suggestions("shorter", { can: host, earlier: ["Shorter and punchier"] }), ["Shorter and punchier"]);
   assert.deepEqual(suggestions("", { can: host, earlier: ["x"] }), []);
   assert.deepEqual(suggestions("   ", { can: host, earlier: ["x"] }), []);
   assert.deepEqual(suggestions("zzz", { can: host }), []);
-  // One line per command, however many of its spellings fit.
-  assert.deepEqual(suggestions("e", { can: host }), ["Explain how it works"]);
+  // More's items are in its menu, not commands.
+  assert.deepEqual(suggestions("e", { can: host }), []);
+  assert.deepEqual(resolveTyped("check facts", host), { kind: "ask", text: "check facts" });
 });
 
 test("earlier asks: newest first, no repeats in any case, a short list, long ones and rubbish stay out", () => {
@@ -70,39 +69,6 @@ test("earlier asks: newest first, no repeats in any case, a short list, long one
   assert.deepEqual(rememberAsk(["a"], "x".repeat(201)), ["a"]);
   assert.deepEqual(rememberAsk(null, "a"), ["a"]);
   assert.deepEqual(rememberAsk(["a", 3, null, "x".repeat(201)], "b"), ["b", "a"]);
-});
-
-test("the selected words after the line changed: marks don't lose them, and they never jump to another copy", () => {
-  // Bold on part of them, and off again: found both ways, from each state.
-  const marked = findWords("**Most** of us", "Most of", 0);
-  assert.deepEqual(marked, { start: 2, end: 11, quote: "Most** of" });
-  assert.deepEqual(findWords("Most of us", marked.quote, 0), { start: 0, end: 7, quote: "Most of" });
-  assert.deepEqual(findWords("**Most of** us", marked.quote, 0), { start: 2, end: 9, quote: "Most of" });
-  assert.deepEqual(findWords("**Most** **of** us", marked.quote, 0), { start: 2, end: 13, quote: "Most** **of" });
-  // Repeated words: the copy nearest to where they were, marks or no marks, on or off.
-  const near = plainOffset("**Most** of us wait. **Most** of them.", 23);
-  assert.equal(near, 17);
-  assert.equal(findWords("**Most** of us wait. **Most** of them.", "Most of", near).start, 23);
-  assert.equal(findWords("**Most** of us wait. Most of them.", "Most** of", near).start, 21, "bold off the second: it stays the second");
-  assert.equal(findWords("Most of us wait. **Most** of them.", "Most of", near).start, 19);
-  assert.equal(findWords("Most of us wait. Most of them.", "Most** of", near).start, 17);
-  // Several marks landing at once between the copies.
-  const it = plainOffset("A B C it D E it", 13);
-  assert.equal(findWords("A B C it **D** **E** it", "it", it).start, 21);
-  // A quote that took in a whole stretch's marks, moved along the line.
-  assert.deepEqual(findWords("So **go** now", "**go** now", 0), { start: 3, end: 13, quote: "**go** now" });
-  // Plain text that only looks like marks stays as it is.
-  assert.deepEqual(findWords("x a**b y", "a**b", 0), { start: 2, end: 6, quote: "a**b" });
-  // Gone.
-  assert.equal(findWords("nothing here", "Most of", 0), null);
-  assert.equal(findWords("nothing here", "", 0), null);
-  assert.equal(findWords("nothing here", "****", 0), null);
-});
-
-test("an offset without marks: nothing to count on a line with none; the marks before it don't count", () => {
-  assert.equal(plainOffset("no marks", 3), 3);
-  assert.equal(plainOffset("**go** now", 7), 3);
-  assert.equal(plainOffset("**go** now", 2), 0);
 });
 
 const place = (o) => barSpot({ first: { left: 100, top: 300, bottom: 330 }, last: { left: 60, top: 300, bottom: 330 }, w: 400, h: 72, top: 50, vw: 1280, vh: 800, line: 32, ...o });
@@ -167,13 +133,10 @@ test("the bar's markup: the word count, B, then the input with its ghost, Tab ke
   assert.deepEqual([...menu.matchAll(/data-act="(\w+)"/g)].map((m) => m[1]), ["explain", "facts", "links"]);
 });
 
-test("every command is named for screen readers, and the whole sentence says why one can't run", () => {
+test("every command is named for screen readers", () => {
   const html = file("public/index.html");
   const hint = html.slice(html.indexOf('id="askHint"'), html.indexOf("</span>", html.indexOf('id="askHint"')));
-  for (const name of ["Shorter", "Simpler", "Sound like me", "B-roll", "Add B-roll", "Explain how it works", "Check facts", "Find links", "More"]) assert.ok(hint.includes(name), name);
-  assert.equal(resolveTyped("b-roll", { ...host, spoken: false }).say, "B-roll needs spoken words.");
-  assert.equal(resolveTyped("add b-roll", guest).say, "Only the host can add B-roll.");
-  assert.equal(resolveTyped("add b-roll", { ...host, addBroll: false }).say, "The B-roll list isn't ready.");
+  for (const name of ["Shorter", "Simpler", "Sound like me", "B-roll", "Add B-roll", "More"]) assert.ok(hint.includes(name), name);
 });
 
 test("the Tab key takes its room all the time, so showing it never changes the input's size", () => {

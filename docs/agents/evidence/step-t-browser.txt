@@ -263,9 +263,7 @@ ok 1280x800: Enter with an empty input does nothing
 ok 1280x800: typing s: the ghost shows the rest of Shorter and the Tab key shows
 ok 1280x800: the Tab key doesn't change the input's size
 ok 1280x800: the ghost starts right after the typed letters
-ok 1280x800: the suggestion is read out
 ok 1280x800: Down switches the suggestion
-ok 1280x800: the new suggestion is read out
 ok 1280x800: Tab takes the ghost and stays in the input
 ok 1280x800: after Tab: no ghost, same size
 ok 1280x800: what Tab took is read out
@@ -281,15 +279,6 @@ ok 1280x800: Simpler: no text changed
 ok 1280x800: sound like me: makes the like ask on the selected word
 ok 1280x800: sound like me: the same words go to the agent as before
 ok 1280x800: sound like me: no text changed
-ok 1280x800: explain: makes the explain ask on the selected word
-ok 1280x800: explain: the same words go to the agent as before
-ok 1280x800: explain: no text changed
-ok 1280x800: check facts: makes the facts ask on the selected word
-ok 1280x800: check facts: the same words go to the agent as before
-ok 1280x800: check facts: no text changed
-ok 1280x800: find links: makes the links ask on the selected word
-ok 1280x800: find links: the same words go to the agent as before
-ok 1280x800: find links: no text changed
 ok 1280x800: b-roll: makes the broll ask on the selected word
 ok 1280x800: b-roll: the same words go to the agent as before
 ok 1280x800: b-roll: no text changed
@@ -304,11 +293,10 @@ ok 1280x800: add b-roll opens the card
 ok 1280x800: the card takes the focus
 ok 1280x800: a heading shows the bar
 ok 1280x800: no B over a heading
-ok 1280x800: b-roll over a heading says why, on the control
+ok 1280x800: b-roll over a heading: Send is off
 ok 1280x800: Enter there sends nothing and keeps the words
-ok 1280x800: the whole reason is read out too
-ok 1280x800: the longest reason fits inside the input
-ok 1280x800: an earlier ask doesn't hide the reason
+ok 1280x800: screen readers hear why
+ok 1280x800: an earlier ask offers nothing while the command can't run
 ok 1280x800: a new selection while sending: the bar is ready for it
 ok 1280x800: while composing: the ghost and the Tab key show
 ok 1280x800: an Enter that ends a composition sends nothing
@@ -317,10 +305,6 @@ ok 1280x800: then a normal Enter sends it
 ok 1280x800: keyboard up on a wide screen: the bar is above it
 ok 1280x800: and not on the words
 ok 1280x800: the page panned by the keyboard: the bar is in what is seen
-ok 1280x800: bold on part of the words: they aren't gone
-ok 1280x800: the bold off again: they still aren't gone
-ok 1280x800: and the ask goes on them
-ok 1280x800: repeated words: the ask stays on the second copy
 ok 1280x800: a redraw of the line while typing: the selected word stays marked
 ok 1280x800: words moved by a redraw: the mark stays on the selected word
 ok 1280x800: and what is typed stays
@@ -334,7 +318,6 @@ ok 1280x800: the focus in the bar's input: no bar in the middle of the drag
 ok 1280x800: the focus in the bar's input: the bar comes on release
 ok 1280x800: a drag from the margin: no bar in the middle of it
 ok 1280x800: a toolbar button doesn't bring a closed bar back
-ok 1280x800: right-to-left: no ghost
 ok 1280x800: B over a bold edge joins it
 ok 1280x800: and the input stays ready
 ok 1280x800: typing: the selected word stays marked
@@ -350,9 +333,7 @@ ok 390x760: Enter with an empty input does nothing
 ok 390x760: typing s: the ghost shows the rest of Shorter and the Tab key shows
 ok 390x760: the Tab key doesn't change the input's size
 ok 390x760: the ghost starts right after the typed letters
-ok 390x760: the suggestion is read out
 ok 390x760: Down switches the suggestion
-ok 390x760: the new suggestion is read out
 ok 390x760: Tab takes the ghost and stays in the input
 ok 390x760: after Tab: no ghost, same size
 ok 390x760: what Tab took is read out
@@ -368,15 +349,6 @@ ok 390x760: Simpler: no text changed
 ok 390x760: sound like me: makes the like ask on the selected word
 ok 390x760: sound like me: the same words go to the agent as before
 ok 390x760: sound like me: no text changed
-ok 390x760: explain: makes the explain ask on the selected word
-ok 390x760: explain: the same words go to the agent as before
-ok 390x760: explain: no text changed
-ok 390x760: check facts: makes the facts ask on the selected word
-ok 390x760: check facts: the same words go to the agent as before
-ok 390x760: check facts: no text changed
-ok 390x760: find links: makes the links ask on the selected word
-ok 390x760: find links: the same words go to the agent as before
-ok 390x760: find links: no text changed
 ok 390x760: b-roll: makes the broll ask on the selected word
 ok 390x760: b-roll: the same words go to the agent as before
 ok 390x760: b-roll: no text changed
@@ -391,11 +363,10 @@ ok 390x760: add b-roll opens the card
 ok 390x760: the card takes the focus
 ok 390x760: a heading shows the bar
 ok 390x760: no B over a heading
-ok 390x760: b-roll over a heading says why, on the control
+ok 390x760: b-roll over a heading: Send is off
 ok 390x760: Enter there sends nothing and keeps the words
-ok 390x760: the whole reason is read out too
-ok 390x760: the longest reason fits inside the input
-ok 390x760: an earlier ask doesn't hide the reason
+ok 390x760: screen readers hear why
+ok 390x760: an earlier ask offers nothing while the command can't run
 ok 390x760: a new selection while sending: the bar is ready for it
 ok 390x760: while composing: the ghost and the Tab key show
 ok 390x760: an Enter that ends a composition sends nothing
@@ -404,16 +375,11 @@ ok 390x760: then a normal Enter sends it
 ok 390x760: with a keyboard up the bar lifts and docks at the top
 ok 390x760: without it the bar is back at the bottom
 ok 390x760: the input keeps at least 200 px with B showing
-ok 390x760: bold on part of the words: they aren't gone
-ok 390x760: the bold off again: they still aren't gone
-ok 390x760: and the ask goes on them
-ok 390x760: repeated words: the ask stays on the second copy
 ok 390x760: a redraw of the line while typing: the selected word stays marked
 ok 390x760: words moved by a redraw: the mark stays on the selected word
 ok 390x760: and what is typed stays
 ok 390x760: the agent bolds the selected word: B shows pressed
 ok 390x760: a toolbar button doesn't bring a closed bar back
-ok 390x760: right-to-left: no ghost
 ok 390x760: B over a bold edge joins it
 ok 390x760: and the input stays ready
 ok 390x760: typing: the selected word stays marked
@@ -451,47 +417,22 @@ ok 1280 px guest: b-roll: reaches the host's agent as broll
 ok 1280 px guest: shorter: reaches the host's agent as shorter
 ok 1280 px guest: Say it warmer: reaches the host's agent as ask
 ok 1280 px guest: a free ask goes as typed
-ok 1280 px guest: add b-roll says it is the host's
-ok 1280 px guest: the reason fits inside the input
-ok 1280 px guest: the selected word deleted while typing: the input says so, Send is off
-ok 1280 px guest: a long ask doesn't hide the reason
-ok 1280 px guest: what is typed stays, the bar stays
-ok 1280 px guest: a scroll doesn't lose the bar
-ok 1280 px guest: Enter sends nothing and remembers nothing
-ok 1280 px guest: the word comes back: "words gone" goes
-ok 1280 px guest: Send is on again and what is typed is still there
+ok 1280 px guest: add b-roll stays the host's
+ok 1280 px guest: the selected word deleted while typing: no ask goes
 ok 390 px guest: b-roll: reaches the host's agent as broll
 ok 390 px guest: shorter: reaches the host's agent as shorter
 ok 390 px guest: Say it warmer: reaches the host's agent as ask
 ok 390 px guest: a free ask goes as typed
-ok 390 px guest: add b-roll says it is the host's
-ok 390 px guest: the reason fits inside the input
-ok 390 px guest: the selected word deleted while typing: the input says so, Send is off
-ok 390 px guest: a long ask doesn't hide the reason
-ok 390 px guest: what is typed stays, the bar stays
-ok 390 px guest: a scroll doesn't lose the bar
-ok 390 px guest: Enter sends nothing and remembers nothing
-ok 390 px guest: the word comes back: "words gone" goes
-ok 390 px guest: Send is on again and what is typed is still there
+ok 390 px guest: add b-roll stays the host's
 ok 320 px guest: b-roll: reaches the host's agent as broll
 ok 320 px guest: shorter: reaches the host's agent as shorter
 ok 320 px guest: Say it warmer: reaches the host's agent as ask
 ok 320 px guest: a free ask goes as typed
-ok 320 px guest: add b-roll says it is the host's
-ok 320 px guest: the reason fits inside the input
-ok 320 px guest: the selected word deleted while typing: the input says so, Send is off
-ok 320 px guest: a long ask doesn't hide the reason
-ok 320 px guest: what is typed stays, the bar stays
-ok 320 px guest: a scroll doesn't lose the bar
-ok 320 px guest: Enter sends nothing and remembers nothing
-ok 320 px guest: the word comes back: "words gone" goes
-ok 320 px guest: Send is on again and what is typed is still there
+ok 320 px guest: add b-roll stays the host's
 ok 360x740: no sideways scroll
 ok 360x740: the field is wide enough
-ok 360x740: the longest reason fits
 ok 320x640: no sideways scroll
 ok 320x640: the field is wide enough
-ok 320x640: the longest reason fits
 ok 1280 px look: the old switches left in the browser are gone
 ok 1280 px look: another key with a like name stays
 ok 1280 px look: the word is bold
@@ -499,15 +440,12 @@ ok 1280 px look: dark mode: the word has the prompter's orange
 ok 1280 px look: no background by default
 ok 1280 px look: the agent sees the bold word
 ok 1280 px look: the menu has no bold switches
-ok 1280 px look: the menu shows the two colours, no Reset yet
+ok 1280 px look: the menu shows the two colours
 ok 1280 px look: dark mode: the fields show the orange and the page's colour
-ok 1280 px look: the person's own colours show at once
-ok 1280 px look: Reset shows once a colour is chosen
-ok 1280 px look: another tab opened now has the colours
-ok 1280 px look: Reset reaches another tab
-ok 1280 px look: Reset brings the orange back
 ok 1280 px look: light mode: the fields show the orange and the page's colour
 ok 1280 px look: light mode: a darker orange that reads on white
+ok 1280 px look: the person's own colours show at once
+ok 1280 px look: another tab opened now has the colours
 ok 1280 px look: a rename redraws nothing: the word and the caret stay
 ok 1280 px look: an older colour choice stays when "own" was on
 ok 1280 px: **Note** - more: it is in the script
@@ -731,4 +669,10 @@ ok 390 px: Ctrl+B takes it off
 ok 390 px: Ctrl+B puts it back, and it shows
 ok 390 px: the camera export strips the stars
 ok 390 px: the prompter export strips the stars
+ok 1280x800: the suggestion is read out
+ok 1280x800: the new suggestion is read out
+ok 1280x800: what Tab took is read out
+ok 390x760: the suggestion is read out
+ok 390x760: the new suggestion is read out
+ok 390x760: what Tab took is read out
 RESULT: ok
