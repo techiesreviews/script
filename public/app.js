@@ -9,7 +9,7 @@ import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
 import { startPress, HOLD_MS } from "./press.js";
-import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock } from "./edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, barSpot, phoneDock } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1214,14 +1214,12 @@ applyBoldStyle();
 const setBoldStyle = (patch) => { store.set("boldStyle", { ...K.boldStyle(store.get("boldStyle")), ...patch }); renderCueMenu(); };
 $("#boldBg").addEventListener("input", (e) => setBoldStyle({ background: e.target.value }));
 $("#boldFg").addEventListener("input", (e) => setBoldStyle({ color: e.target.value }));
-$("#boldReset").addEventListener("click", () => { store.del("boldStyle"); renderCueMenu(); $("#boldFg").focus(); });
 // What the colour fields show while nothing is chosen: the default orange (as sRGB) and the page's own colour (--bg).
 const BOLD_SHOWN = { light: { color: "#b53707", background: "#fafafa" }, dark: { color: "#fb401e", background: "#080721" } };
 function renderCueMenu() {
   const bold = applyBoldStyle(), shown = BOLD_SHOWN[matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"];
   $("#boldFg").value = bold.color || shown.color;
   $("#boldBg").value = bold.background || shown.background;
-  $("#boldReset").hidden = !bold.color && !bold.background;
   $("#cueGroup").hidden = !state.doc;
 }
 $("#scriptMenu").addEventListener("toggle", renderCueMenu);
@@ -1236,7 +1234,7 @@ function toggleCueHere() {
   const inBar = bar.contains(document.activeElement);
   const s = (inBar && barSel) || currentSelection();
   const b = s && byId(s.id);
-  if (!b || !s.range || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return;
+  if (!b || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return;
   if (!B.spokenBlocks(state.doc).some((x) => x.id === b.id)) return;
   const res = cueTry(s);
   if (!C.canToggleCue(state.asks, b.id, b.type, res)) return;
@@ -1245,7 +1243,7 @@ function toggleCueHere() {
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
-  if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), plainAt: plainOffset(res.content, res.start) });
+  if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end) });
   renderBlock(b.id);
   const el = blockNode(b.id);
   if (el) {
@@ -1255,7 +1253,7 @@ function toggleCueHere() {
       sel.removeAllRanges();
       sel.addRange(range);
     }
-    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true, plainAt: plainOffset(res.content, res.start) };
+    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true };
     cueBtnState(barSel);
     paintBarSel();
     renderAsk();
@@ -1359,7 +1357,6 @@ function showBar() {
   if (!s) { hideBar(); return; }
   barSel = s;
   barSel.spoken = spokenSelection(s.range).length > 0;
-  barSel.plainAt = plainOffset(D.contentOf(byId(s.id)), s.start);
   $("#boldBtn").hidden = byId(s.id)?.type !== "para" || !barSel.spoken;
   cueBtnState(s);
   const n = D.countWords(K.spokenWords(s.quote));
@@ -1388,29 +1385,19 @@ function hideBar() {
 // A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
 // old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
 function keepBarSel(id) {
-  if ((!barSel?.range && !barSel?.gone) || barSel.id !== id || !bar.contains(document.activeElement)) return;
+  if (!barSel?.range || barSel.id !== id || !bar.contains(document.activeElement)) return;
   const b = byId(id), el = blockNode(id);
-  const content = b && el ? D.contentOf(b) : null;
+  if (!b || !el) return;
+  const content = D.contentOf(b);
   let { start, end } = barSel;
-  if (content?.slice(start, end) !== barSel.quote) {
-    const r = content == null ? null : findWords(content, barSel.quote, barSel.plainAt ?? start);
-    if (!r) {
-      // The words are gone: what is typed stays and the input says so; nothing can be sent or bolded here.
-      Object.assign(barSel, { range: null, gone: true });
-      $("#boldBtn").disabled = true;
-      paintBarSel();
-      renderAsk();
-      return;
-    }
+  if (content.slice(start, end) !== barSel.quote) {
+    const r = D.reanchor({ start, quote: barSel.quote }, content);
+    if (!r) return;
     ({ start, end } = r);
-    barSel.quote = r.quote;
-    barSel.plainAt = plainOffset(content, start);
   }
-  // Also when they came back (a guest's Undo): the input is ready again.
-  Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end), gone: false });
+  Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end) });
   cueBtnState(barSel);
   paintBarSel();
-  renderAsk();
   placeBar(barSel.range);
 }
 // The browser takes the page's selection away while the focus is in the bar, so the words stay marked by the script.
@@ -1426,11 +1413,6 @@ bar.addEventListener("focusout", (e) => { if (!bar.contains(e.relatedTarget)) CS
    after the caret; Tab or the Tab key takes it, Up and Down switch it, Enter sends what is typed. */
 const askCan = () => ({ spoken: !!barSel?.spoken, addBroll: canAddBroll(), guest: !!state.guest });
 const ASK_HISTORY = "askHistory";
-const RTL = /[\p{Script=Hebrew}\p{Script=Arabic}]/u;
-function askPlan() {
-  const plan = resolveTyped(askInput.value, askCan());
-  return plan && barSel?.gone ? { kind: "blocked", why: "words gone", say: "The selected words are gone." } : plan;
-}
 // For screen readers: the ghost is hidden from them. A suggestion waits for a pause in the typing.
 function sayAsk(text, wait = 0) {
   clearTimeout(askSayTimer);
@@ -1440,21 +1422,19 @@ function sayAsk(text, wait = 0) {
 function askGhostNow() {
   const end = askInput.value.length;
   if (barSending || askInput.selectionStart !== end || askInput.selectionEnd !== end) return null;
-  // Text written right to left can't flow across the two parts of the ghost.
-  if (askPlan()?.kind === "blocked" || RTL.test(askInput.value)) return null;
+  if (resolveTyped(askInput.value, askCan())?.kind === "blocked") return null;
   const list = suggestions(askInput.value, { can: askCan(), earlier: store.get(ASK_HISTORY) });
   if (!list.length) return null;
   const at = ((askPick % list.length) + list.length) % list.length;
   return { text: list[at], at, count: list.length };
 }
 function renderAsk() {
-  const typed = askInput.value, g = askGhostNow(), plan = askPlan(), blocked = plan?.kind === "blocked";
+  const typed = askInput.value, g = askGhostNow(), plan = resolveTyped(typed, askCan()), blocked = plan?.kind === "blocked";
   $("#askGhost span").textContent = typed;
-  $("#askGhost b").textContent = g ? g.text.slice(typed.length) : blocked ? plan.why : "";
+  $("#askGhost b").textContent = g ? g.text.slice(typed.length) : "";
   const say = barSending ? askSayWant : blocked ? plan.say : g ? `Suggestion: ${g.text}${g.count > 1 ? `, ${g.at + 1} of ${g.count}` : ""}` : "";
   if (say !== askSayWant) { askSayWant = say; sayAsk(say, blocked ? 0 : 400); }
-  // A refused command's reason is pinned to the end of the field (app.css), so it doesn't scroll with the typed words.
-  $("#askGhost").scrollLeft = blocked ? 0 : askInput.scrollLeft;
+  $("#askGhost").scrollLeft = askInput.scrollLeft;
   askTab.dataset.on = String(!!g);
   askTab.title = g ? `Accept “${g.text}”${g.count > 1 ? ` (${g.at + 1} of ${g.count}; Up and Down switch)` : ""}` : "";
   askSend.disabled = !!barSending || !plan || blocked;
@@ -1493,7 +1473,7 @@ askInput.addEventListener("keydown", (e) => {
 $("#askForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (barSending) return;
-  const plan = askPlan();
+  const plan = resolveTyped(askInput.value, askCan());
   if (!plan || plan.kind === "blocked") return;
   if (plan.kind === "more") return void moreMenu.showPopover();
   if (plan.kind === "add") return addBrollHere();
@@ -1590,7 +1570,7 @@ function makeAsk(action, typed = "") {
   const content = D.contentOf(b);
   let { start, end } = s;
   if (content.slice(start, end) !== s.quote) {
-    const r = findWords(content, s.quote, s.plainAt ?? start);
+    const r = D.reanchor({ start, quote: s.quote }, content);
     if (!r) return hideBar();
     ({ start, end } = r);
   }

@@ -32,7 +32,7 @@ test("colours: by default none of the person's own; only #rrggbb gets through; a
 test("the menu keeps only the colours", () => {
   const html = file("public/index.html");
   for (const gone of ["data-cue-set", 'id="boldOwn"', "Bold marking", "Camera action", "Bold words in the prompter file", "experimental"]) assert.ok(!html.includes(gone), gone);
-  for (const kept of ['id="boldFg"', 'id="boldBg"', 'id="boldReset"', "Bold style"]) assert.ok(html.includes(kept), kept);
+  for (const kept of ['id="boldFg"', 'id="boldBg"', "Bold style"]) assert.ok(html.includes(kept), kept);
   assert.doesNotMatch(file("public/app.js"), /cues\(\)|data-cue-set|set_cue_settings|get_cue_settings/);
 });
 

@@ -377,9 +377,9 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
    lives only in this rule: orange and bold like the prompter's own (--bold-ink), or the person's colours (Bold style). */
 .md-cue .md-link__words { text-decoration: none; font-weight: 800; color: var(--bold-fg, var(--bold-ink)); background: var(--bold-bg, transparent); box-decoration-break: clone; }
 .edit-bar__button--bold svg { stroke-width: 2.8; }
-.bold-colours { flex-wrap: wrap; gap: 0.5rem 0.75rem; font-size: 0.8rem; }
+.bold-colours { flex-wrap: wrap; font-size: 0.8rem; }
 .bold-colours label { display: inline-flex; align-items: center; gap: 0.35rem; }
-.bold-colours input { inline-size: 2.25rem; block-size: 2rem; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: none; cursor: pointer; }
+.bold-colours input { inline-size: 1.75rem; block-size: 1.5rem; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: none; cursor: pointer; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
 @keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
@@ -440,10 +440,6 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__ghost { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; white-space: pre; color: transparent; pointer-events: none; }
 .edit-bar__ghost span { visibility: hidden; }
 .edit-bar__ghost b { font-weight: inherit; color: var(--ghost); }
-/* A refused command's reason: pinned to the end of the field on its own background, so long typed words can't hide it,
-   and in the Tab key's room, as the key isn't showing then. */
-.edit-bar__field:has(input[aria-invalid]) .edit-bar__ghost { inset-inline-end: -3.1rem; z-index: 1; }
-.edit-bar__field:has(input[aria-invalid]) .edit-bar__ghost b { position: absolute; inset-block: 0; inset-inline-end: 0; display: flex; align-items: center; padding-inline: 0.4rem 0.2rem; background: var(--raised); color: var(--muted); }
 .edit-bar__sending { position: absolute; inset: 0; display: none; align-items: center; gap: 0.5rem; color: var(--muted); pointer-events: none; }
 .edit-bar__field[data-state="sending"] .edit-bar__sending { display: flex; }
 .edit-bar__field[data-state="sending"] input { color: transparent; caret-color: transparent; }
