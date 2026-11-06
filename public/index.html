@@ -30,7 +30,6 @@
         <div class="menu-row bold-colours">
           <label>Font colour <input type="color" id="boldFg"></label>
           <label>Background <input type="color" id="boldBg"></label>
-          <button class="small-btn" type="button" id="boldReset" hidden>Reset</button>
         </div>
       </div>
     </div>
@@ -115,7 +114,7 @@
     <form class="edit-bar__ask" id="askForm">
       <div class="edit-bar__field" id="askField" data-state="idle">
         <div class="edit-bar__ghost" id="askGhost" aria-hidden="true"><span></span><b></b></div>
-        <input id="askInput" type="text" placeholder="Ask… try Shorter or Simpler" aria-label="Ask or type a command for this selection" aria-describedby="askHint" dir="auto" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" maxlength="500">
+        <input id="askInput" type="text" placeholder="Ask… try Shorter or Simpler" aria-label="Ask or type a command for this selection" aria-describedby="askHint" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" maxlength="500">
         <div class="edit-bar__sending" id="askSending" aria-hidden="true"><span class="edit-bar__spin"></span>Sending…</div>
       </div>
       <button class="edit-bar__tab" id="askTab" type="button" tabindex="-1" aria-label="Accept suggestion (Tab)" data-on="false"><kbd>Tab</kbd></button>
@@ -127,7 +126,7 @@
       <button class="menu-action" type="button" role="menuitem" data-act="links"></button>
     </div>
   </div>
-  <span class="edit-bar__sr" id="askHint">Ask anything, or type a command: Shorter, Simpler, Sound like me, B-roll, Add B-roll, Explain how it works, Check facts, Find links, or More. Tab accepts the suggestion. Up and Down switch it. Enter sends. Escape closes.</span>
+  <span class="edit-bar__sr" id="askHint">Ask anything, or type a command: Shorter, Simpler, Sound like me, B-roll, Add B-roll or More. Tab accepts the suggestion. Up and Down switch it. Enter sends. Escape closes.</span>
   <span class="edit-bar__sr" id="askLive" aria-live="polite"></span>
 </div>
 
