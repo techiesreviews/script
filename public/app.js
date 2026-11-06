@@ -1439,10 +1439,11 @@ function askGhostNow() {
 function renderAsk() {
   const typed = askInput.value, g = askGhostNow(), plan = askPlan(), blocked = plan?.kind === "blocked";
   $("#askGhost span").textContent = typed;
-  $("#askGhost b").textContent = g ? g.text.slice(typed.length) : blocked ? ` · ${plan.why}` : "";
+  $("#askGhost b").textContent = g ? g.text.slice(typed.length) : blocked ? plan.why : "";
   const say = barSending ? askSayWant : blocked ? plan.say : g ? `Suggestion: ${g.text}${g.count > 1 ? `, ${g.at + 1} of ${g.count}` : ""}` : "";
   if (say !== askSayWant) { askSayWant = say; sayAsk(say, blocked ? 0 : 400); }
-  $("#askGhost").scrollLeft = askInput.scrollLeft;
+  // A refused command's reason is pinned to the end of the field (app.css), so it doesn't scroll with the typed words.
+  $("#askGhost").scrollLeft = blocked ? 0 : askInput.scrollLeft;
   askTab.dataset.on = String(!!g);
   askTab.title = g ? `Accept “${g.text}”${g.count > 1 ? ` (${g.at + 1} of ${g.count}; Up and Down switch)` : ""}` : "";
   askSend.disabled = !!barSending || !plan || blocked;
@@ -1544,14 +1545,17 @@ moreMenu.addEventListener("keydown", (e) => {
   to?.focus();
 });
 let selTimer = 0;
-scriptEl.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse" && e.button === 0) scriptPress = true; });
+// Started anywhere but in the bar: a drag can start in the page's margin and run into the text.
+document.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse" && e.button === 0 && !bar.contains(e.target)) scriptPress = true; }, { capture: true });
 function scriptReleased() {
   if (!scriptPress) return;
   scriptPress = false;
   clearTimeout(selTimer);
   selTimer = setTimeout(showBar, 120);
 }
-for (const t of ["pointerup", "pointercancel", "blur"]) addEventListener(t, scriptReleased, { capture: true });
+for (const t of ["pointerup", "pointercancel"]) addEventListener(t, scriptReleased, { capture: true });
+// The window losing the focus only, so without capture: a press often moves the focus between the page's blocks.
+addEventListener("blur", scriptReleased);
 // A release outside the window can go unseen: the first move with no button held ends the press too.
 addEventListener("pointermove", (e) => { if (!e.buttons) scriptReleased(); }, { passive: true, capture: true });
 document.addEventListener("selectionchange", () => { refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
