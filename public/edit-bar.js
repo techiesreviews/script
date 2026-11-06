@@ -75,7 +75,8 @@ export function findWords(content, quote, near) {
   if (!quote) return null;
   const text = String(content ?? ""), view = plainView(text), plain = view ? view.plain : text;
   const at = (x) => (view ? view.map[x] : x);
-  for (const words of quote.includes("**") ? [quote.replaceAll("**", ""), quote] : [quote]) {
+  // As written first: "a**b" is words here, not a mark.
+  for (const words of quote.includes("**") ? [quote, quote.replaceAll("**", "")] : [quote]) {
     if (!words) continue;
     let best = -1, dist = Infinity;
     for (let i = plain.indexOf(words); i >= 0; i = plain.indexOf(words, i + 1)) {
@@ -89,7 +90,13 @@ export function findWords(content, quote, near) {
     if (quote.endsWith("**") && text.slice(end, end + 2) === "**") end += 2;
     return { start, end, quote: text.slice(start, end) };
   }
-  return null;
+  // Real marks and plain "**" side by side: only the content itself still holds it as written.
+  let best = -1, dist = Infinity;
+  for (let i = text.indexOf(quote); i >= 0; i = text.indexOf(quote, i + 1)) {
+    const d = Math.abs(plainOffset(text, i) - near);
+    if (d < dist) { best = i; dist = d; }
+  }
+  return best < 0 ? null : { start: best, end: best + quote.length, quote };
 }
 
 /* ---------- Where the bar goes ----------

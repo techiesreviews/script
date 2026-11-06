@@ -95,6 +95,8 @@ test("the selected words after the line changed: marks don't lose them, and they
   assert.deepEqual(findWords("So **go** now", "**go** now", 0), { start: 3, end: 13, quote: "**go** now" });
   // Plain text that only looks like marks stays as it is.
   assert.deepEqual(findWords("x a**b y", "a**b", 0), { start: 2, end: 6, quote: "a**b" });
+  assert.equal(findWords("x a**b y ab", "a**b", 2).start, 2);
+  assert.deepEqual(findWords("**go** a**b now", "go** a**b", 0), { start: 2, end: 11, quote: "go** a**b" });
   // Gone.
   assert.equal(findWords("nothing here", "Most of", 0), null);
   assert.equal(findWords("nothing here", "", 0), null);
