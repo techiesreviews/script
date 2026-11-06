@@ -411,7 +411,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   color: var(--muted); font-size: 0.75rem; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .edit-bar__controls {
-  display: flex; align-items: center; gap: 4px; padding: 4px; inline-size: 100%;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px; inline-size: 100%;
   border-radius: 0 var(--radius-panel) var(--radius-panel) var(--radius-panel);
   background: var(--surface); box-shadow: var(--shadow);
 }
@@ -424,7 +424,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__button[aria-pressed="true"] { border-color: var(--accent); }
 .edit-bar__ask {
   --ask-fs: 0.85rem;
-  display: flex; align-items: center; flex: 1 1 200px; min-inline-size: 0; gap: 2px; padding-inline-start: 0.5rem;
+  /* The field stays at least 200 px wide while there is room: the room for the padding, Tab key and Send is added on. Under that, B takes a row of its own. */
+  display: flex; align-items: center; flex: 1 1 calc(200px + 0.5rem + 3.1rem + var(--send-size, 2rem) + 4px); min-inline-size: 0; gap: 2px; padding-inline-start: 0.5rem;
   border-radius: var(--radius); background: var(--raised);
 }
 .edit-bar__ask:focus-within { box-shadow: 0 0 0 2px var(--accent); }
@@ -439,6 +440,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__ghost { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; white-space: pre; color: transparent; pointer-events: none; }
 .edit-bar__ghost span { visibility: hidden; }
 .edit-bar__ghost b { font-weight: inherit; color: var(--ghost); }
+/* A refused command's reason may use the Tab key's room: the key isn't showing then. */
+.edit-bar__field:has(input[aria-invalid]) .edit-bar__ghost { inset-inline-end: -3.1rem; }
 .edit-bar__sending { position: absolute; inset: 0; display: none; align-items: center; gap: 0.5rem; color: var(--muted); pointer-events: none; }
 .edit-bar__field[data-state="sending"] .edit-bar__sending { display: flex; }
 .edit-bar__field[data-state="sending"] input { color: transparent; caret-color: transparent; }
@@ -474,7 +477,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 @media (width < 40rem) {
   .edit-bar { inset-block: auto calc(max(0.5rem, env(safe-area-inset-bottom, 0px)) + var(--bar-lift, 0px)); inset-inline: 0.5rem; inline-size: auto; }
   .edit-bar[data-dock="top"] { inset-block: var(--bar-y) auto; }
-  .edit-bar__ask { --ask-fs: 16px; }
+  .edit-bar__ask { --ask-fs: 16px; --send-size: 2.75rem; }
   .edit-bar__field input, .edit-bar__tab { min-block-size: 2.75rem; }
   .edit-bar__button, .edit-bar__send { inline-size: 2.75rem; block-size: 2.75rem; }
 }
