@@ -1,4 +1,4 @@
-# Step R, PR C (round 4): SMOKE_ONLY=refusals and SMOKE_ONLY=guest node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Step R, PR C (round 5): SMOKE_ONLY=refusals and SMOKE_ONLY=guest node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
 # Controls: without the app.js and cues.js changes the guest checks (typing and Enter inside the host's ask) and the outer-words-first check fail.
 ok 1280 px: Bold marking is off
 ok 1280 px: **Note** - more: it is in the script
@@ -11,7 +11,7 @@ ok 1280 px: **Memo** - less: it is in the script
 ok 1280 px: **Memo** - less: paste over Memo goes through (Bold marking off never refuses), no marks left
 ok 1280 px: **Memo** - less: paste: one Ctrl+Z brings it back
 ok 1280 px: a stretch alone on its line, outer words deleted first, the middle one last: no ** ** rule line is left
-ok 1280 px: the script still has its words
+ok 1280 px: only those three words went
 ok 1280 px: the Bold marking row shows no tick while it is off
 ok 1280 px: the Bold marking row shows a tick once it is on
 ok 1280 px: the rows that are off show no tick
