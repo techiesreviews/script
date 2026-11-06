@@ -327,6 +327,13 @@ async function runMenuHeight(width, height) {
   check(b.bottom <= b.h + 0.5 && b.top >= -0.5, `${tag}: the menu stays inside the window`, JSON.stringify(b));
   check(await page.eval(`${menu}.scrollWidth <= ${menu}.clientWidth`), `${tag}: it never scrolls sideways`);
   check(b.scrolls && b.overflowY === "auto", `${tag}: it scrolls inside itself when it is taller than the window`, JSON.stringify(b));
+  // With the pointer over the recent list, the wheel carries on to the menu once the list ends.
+  await page.eval(`${menu}.scrollTop = 0`);
+  const over = await page.eval(`(() => { const r = document.querySelector("#scriptList").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + Math.min(r.height, innerHeight - r.y) / 2 }; })()`);
+  for (let i = 0; i < 14; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: over.x, y: over.y, deltaX: 0, deltaY: 300 }); await sleep(120); }
+  await sleep(300);
+  const wheeled = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#boldFg").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, top: ${menu}.scrollTop }; })()`);
+  check(wheeled.top > 0 && wheeled.fgBottom <= wheeled.menuBottom + 0.5, `${tag}: the wheel over the recent list reaches the colours below it`, JSON.stringify(wheeled));
   await page.eval(`${menu}.scrollTop = ${menu}.scrollHeight`);
   await sleep(200);
   const last = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#boldFg").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, fgTop: r.top, menuTop: m.top, h: r.height }; })()`);
@@ -362,6 +369,18 @@ async function runCuesStorageFull(width, height) {
   await pressUndo();
   check(await page.until(`!(${hasUndo})`, "the Undo line closes"), `${tag}: with storage back, Undo works and its line closes`);
   check((await settings()).action === "highlight", `${tag}: with storage back, Undo brings the setting back`);
+  // The same on a script's own settings.
+  await agent("set_cue_settings", { on: true, forScript: true });
+  await agent("set_cue_settings", { export: "show", forScript: true });
+  check(await page.until(hasUndo, "the Undo line for the script's own"), `${tag}: a saved change to the script's own settings shows Undo`);
+  await page.eval(full);
+  await pressUndo();
+  await sleep(300);
+  check(await page.eval(hasUndo) && (await settings()).export === "show", `${tag}: storage full: Undo on the script's own settings keeps its line and changes nothing`);
+  await page.eval(`Storage.prototype.setItem = window.__setItem`);
+  await pressUndo();
+  check(await page.until(`!(${hasUndo})`, "the Undo line closes"), `${tag}: with storage back, Undo on the script's own settings works`);
+  check((await settings()).export === "strip", `${tag}: with storage back, Undo brings the script's own setting back`);
   await page.close();
 }
 
@@ -644,6 +663,19 @@ async function runRename(width, height) {
   check(/could not be saved/i.test(said), `${tag}: storage full right after a rename: set_cue_settings says the change could not be saved`, said);
   await sleep(300);
   check(await page.eval(onInMenu) && (await page.eval(drawn)) === 1, `${tag}: storage full right after a rename: the script keeps its own bold setting after the refused write`);
+  // The same from the person's own menu: a click on a row whose write is refused changes nothing.
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(300);
+  // (the person's own key is refused too: it would be written otherwise, as the script has no stored settings under its new name)
+  await page.eval(`Storage.prototype.setItem = function (k, v) { if (String(k).startsWith("script-editor:cues")) throw new Error("full"); return window.__setItem.call(this, k, v); }`);
+  const exportRow = `document.querySelector('#cueGroup [data-cue-set="export"]').getAttribute("aria-pressed")`;
+  const exportWas = await page.eval(exportRow);
+  await page.click(`#cueGroup [data-cue-set="export"]`);
+  await sleep(300);
+  check((await page.eval(exportRow)) === exportWas && (await page.eval(onInMenu)) && (await page.eval(drawn)) === 1, `${tag}: storage full: a click on a bold setting in the menu changes nothing`, await page.eval(exportRow));
+  await pressKey(page, "Escape", "Escape", 27);
+  await sleep(200);
   const kept2Text = await agent("get_cue_settings", {});
   let kept2 = {};
   try { kept2 = JSON.parse(kept2Text); } catch { /* the check below fails and shows the text */ }
