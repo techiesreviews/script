@@ -1,12 +1,14 @@
-# Step R, PR B (round 2): SMOKE_ONLY=menu, storage, rename node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
-# Controls: without the css the colour row cannot be reached at 1280x420; without the setCues change the storage-full rename run fails 8 checks; without the restoreCues change the storage run fails 2.
+# Step R, PR B (round 3): SMOKE_ONLY=menu, storage, rename node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Controls: without the css the colour row cannot be reached at 1280x420 and the wheel check fails (the inner list's overscroll-behavior); without the setCues change the storage-full rename run fails 8 checks; without the restoreCues change the storage run fails 2.
 ok 1280x420: the menu stays inside the window
 ok 1280x420: it never scrolls sideways
 ok 1280x420: it scrolls inside itself when it is taller than the window
+ok 1280x420: the wheel over the recent list reaches the colours below it
 ok 1280x420: scrolled down, the font colour input is in view
 ok 390x650: the menu stays inside the window
 ok 390x650: it never scrolls sideways
 ok 390x650: it scrolls inside itself when it is taller than the window
+ok 390x650: the wheel over the recent list reaches the colours below it
 ok 390x650: scrolled down, the font colour input is in view
 RESULT: ok
 ok 1280 px: storage full: set_cue_settings (the person's) says the change could not be saved
@@ -16,6 +18,10 @@ ok 1280 px: storage full: Undo that could not be saved keeps its line
 ok 1280 px: storage full: that Undo changes nothing
 ok 1280 px: with storage back, Undo works and its line closes
 ok 1280 px: with storage back, Undo brings the setting back
+ok 1280 px: a saved change to the script's own settings shows Undo
+ok 1280 px: storage full: Undo on the script's own settings keeps its line and changes nothing
+ok 1280 px: with storage back, Undo on the script's own settings works
+ok 1280 px: with storage back, Undo brings the script's own setting back
 RESULT: ok
 ok 1280 px: the person's own bold setting is off
 ok 1280 px: saved into the browser: the name changes
@@ -36,6 +42,7 @@ ok 1280 px: storage full: the settings stay under the old name
 ok 1280 px: storage full: bold is still on for this script, the B button shows
 ok 1280 px: storage full right after a rename: set_cue_settings says the change could not be saved
 ok 1280 px: storage full right after a rename: the script keeps its own bold setting after the refused write
+ok 1280 px: storage full: a click on a bold setting in the menu changes nothing
 ok 1280 px: storage full right after a rename: the settings in force are what they were
 ok 1280 px: Save as: the name changes
 ok 1280 px: Save as: the script keeps its own bold setting
@@ -61,6 +68,7 @@ ok 390 px: storage full: the settings stay under the old name
 ok 390 px: storage full: bold is still on for this script, the B button shows
 ok 390 px: storage full right after a rename: set_cue_settings says the change could not be saved
 ok 390 px: storage full right after a rename: the script keeps its own bold setting after the refused write
+ok 390 px: storage full: a click on a bold setting in the menu changes nothing
 ok 390 px: storage full right after a rename: the settings in force are what they were
 ok 390 px: Save as: the name changes
 ok 390 px: Save as: the script keeps its own bold setting
