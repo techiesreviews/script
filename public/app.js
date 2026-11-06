@@ -964,8 +964,10 @@ function splitAt(el, start, end, lineBreak) {
   if (broke) {
     const at = settled.caret - 1, left = settled.content.slice(0, at), right = settled.content.slice(at + 1);
     // The left part is tried with a letter after it: "1. " alone reads as text, but as a list once anything follows. The
-    // two parts joined without their marks must keep the type too ("**1.** x y" would join as the list "1. x y", "**##** Plan" as a heading).
-    if (cues().on && (lineBreak ? !C.keepsType(settled.content, b.type) : !(C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type) && C.keepsType(left + right, b.type)))) return;
+    // two parts joined without their marks must keep the type too: "**1. x y**" would join as the list "1. x y", "**## Plan**"
+    // as a heading (Enter and Shift+Enter alike).
+    const parts = lineBreak ? C.keepsType(settled.content, b.type) : C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type);
+    if (cues().on && !(parts && C.keepsType(left + right, b.type))) return;
   }
   checkpoint("enter", id);
   if (broke) {
@@ -1028,7 +1030,7 @@ function mergeInto(prevId, id) {
   // that would turn the line into another kind of block, the join is refused, quietly, and both lines stay as they are.
   const joined = D.contentOf(prev) + D.contentOf(byId(id));
   const settled = prev.type === "para" ? K.settleMarks(`${D.contentOf(prev)}\n${D.contentOf(byId(id))}`, joined, offset) : null;
-  if (settled && C.settlingChangesKind(joined, settled.content)) return;
+  if (cues().on && settled && C.settlingChangesKind(joined, settled.content)) return;
   checkpoint("merge", id);
   moveAsks(id, prevId, 0, offset);
   const m = D.mergeWithPrevious(state.doc, id);
@@ -1071,7 +1073,7 @@ function pasteText(el, raw) {
   const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
   // Without its marks this line would read as another kind of block: the paste is refused, quietly. A paste that makes
   // paragraphs or a list itself reads the same with or without them, and goes in.
-  if (settled && C.settlingChangesKind(pasted, settled.content)) return;
+  if (cues().on && settled && C.settlingChangesKind(pasted, settled.content)) return;
   checkpoint("paste", id);
   // Bold settled: asks follow by their offsets from the text before the paste; one it fell inside isn't moved at all.
   if (settled) followAnchors(id, settled.content, settled.follow, { insideGoes: true });
