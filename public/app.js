@@ -4941,12 +4941,13 @@ function afterRoomOps(ops, sel, before = new Map()) {
     }
     else if (op.type === "split") {
       if (strict) followAnchors(op.blockId, null, (start, end) => C.followRoomEdit({ start, end }, op), { insideGoes: true });
-      was.delete(op.blockId);
+      const old = was.get(op.blockId);
+      if (typeof old === "string") { was.set(op.blockId, old.slice(0, op.at)); was.set(op.newId, old.slice(op.at)); } else was.delete(op.blockId);
       moveAsks(op.blockId, op.newId, op.at, -op.at);
       touched.add(op.blockId).add(op.newId);
       structure = true;
     }
-    else if (op.type === "merge") { moveAsks(op.blockId, op.into, 0, op.at); touched.add(op.into).add(op.blockId); structure = true; }
+    else if (op.type === "merge") { was.delete(op.blockId); was.delete(op.into); moveAsks(op.blockId, op.into, 0, op.at); touched.add(op.into).add(op.blockId); structure = true; }
     else { touched.add(op.blockId ?? op.block.id); structure = true; }
   }
   for (const id of touched) reanchorBlock(id);
