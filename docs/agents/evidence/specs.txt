@@ -2,6 +2,12 @@
 ✔ prettyName: readable, short, and never empty
 ✔ every brand icon is drawn, filled in one colour, with the credits beside them
 ✔ carets: an agent's circle shows its own icon key, else the old agent mark; people show a letter
+✔ bold words are read from the start, with no switch
+✔ the prompter file holds plain words: it can't show ** yet
+✔ colours: by default none of the person's own; only #rrggbb gets through; an older choice stays
+✔ the menu keeps only the colours
+✔ by default the words are orange and bold, in the prompter's orange in dark mode
+✔ the agent has no bold settings and hears that bold is always on
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
@@ -90,17 +96,16 @@
 ✔ connection prompt: it names the prompt and the tools that answer asks
 ✔ top bar: no "Saved" time is shown (Lex, 2026-10-29); unsaved, saving and not saved still are
 ✔ top bar (Lex, 2026-10-29): Export last and primary with Export all first; Share icon-only; the MCP mark until connected
-✔ settings: off by default, highlight only, export strips; a script's own settings win over the person's
 ✔ format: **words** in a line; no brackets, * or line breaks inside; a letter or digit; not inside a link
 ✔ toggle: marks the selected words, a second toggle takes the marks off, the words stay
 ✔ toggle: half a cue or across two joins into one cue; refuses links, line breaks and no words
-✔ export: the prompter file strips cues unless the export setting says show
+✔ export: the prompter file strips cues
 ✔ agent: list_cues lists each cue with its id, section and the words around it
 ✔ agent: mark_cue marks the first free whole-word occurrence; skips what it can't mark, with the reason
 ✔ agent: mark_cue stays out of open asks; unmark_cue by quote or cueId keeps the words
 ✔ agent: landed cues are marked changes with Undo on the agent's name tag; Undo puts the text back
 ✔ rewrite: a cue stays when its words survive the agent's new text; else it is dropped and the agent is told
-✔ MCP: list_cues, mark_cue, unmark_cue and the cue settings, with their checks
+✔ MCP: list_cues, mark_cue and unmark_cue, with their checks
 ✔ review: links never land inside a cue; a rewrite whose cues would change the block keeps the text without them
 ✔ review 2: Ctrl+B never cuts into an open ask; the toggle says which stretch it changes
 ✔ review 2: a rewrite over half a cue takes the whole cue in, so no stray ** is left; duplicates count
@@ -110,41 +115,35 @@
 ✔ PR 8 fixes: the cue tools don't treat the agent's highlighted changes as busy; open asks still count
 ✔ PR 8 fixes: marking a cue flags no B-roll shot; the Over text never holds the marks
 ✔ PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion
-✔ bold style: plain bold by default, own colours only as a valid choice, kept per person
-✔ agent settings: what the person and the agent are told says where the setting went
 ✔ Sounds like me: a quote read without the marks is found across a cue's edge, covering the whole cue
 ✔ Ctrl+B changes nothing where taking the marks off would change the kind of block
 ✔ edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps; off, as before
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
-✔ last round: set_cue_settings says where the change really goes
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
-✔ Bold marking off: nothing reads ** anywhere; the exports and counts are byte for byte as before bold
-✔ Bold marking on: a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read
+✔ a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read
 ✔ an edit that breaks a bold stretch settles it, with no stray marks and no spoken word lost
 ✔ every small edit next to bold words leaves only marks that read as bold, and every spoken word
 ✔ typing a word in front of a bold word: it joins while typed, and stays plain once its space is typed
-✔ emptying a bold stretch takes its marks at edit time for everyone, even with Bold marking off (a guest's default)
+✔ emptying a bold stretch takes its marks at edit time
 ✔ asks are anchored by offsets through mark changes: they follow, and never jump into another word
-✔ marks never change a B-roll shot's check, whatever anyone's setting says; a changed word does
+✔ marks never change a B-roll shot's check; a changed word does
 ✔ mark_cue checks each quote on its own; a quote across a line break, or with * in it, is skipped with the reason
 ✔ an AI answer: a lone ** it copied from the asked text goes; ordinary text and whole bold words stay
 ✔ an AI rewrite keeps ** in ordinary text: only an ask that reaches a real bold stretch loses a lone mark
-✔ emptying a stretch over several selections leaves no **** either, with Bold marking off too
+✔ emptying a stretch over several selections leaves no **** either
 ✔ a host's asks follow a guest's marks by offsets: each room edit moves them, and they stay on their own word
 ✔ a range follows the marks to its own words: its end never slides past a closing mark
 ✔ a cue never ends before a combining mark, and whole words count them
-✔ emptying a stretch looks past spaces at one inner edge, on a line of its own too, with Bold marking off; outer words first is the written limit
+✔ emptying a stretch looks past spaces at one inner edge, on a line of its own too
 ✔ a paste that breaks a bold stretch inside an open ask's range doesn't move the ask: it is cancelled
 ✔ looking past spaces never takes a mark that belongs to a real stretch the edit didn't touch
 ✔ marks the deletion put back aren't hit: Ctrl+Backspace next to a bold stretch leaves no stray marks
-✔ set_cue_settings says so when the browser couldn't store the change
 ✔ a line whose bold words would read as another kind of block without their marks: settleMarks shows it, keepsType refuses
 ✔ an AI rewrite in a heading treats ** as plain text: it stays, and no cue is reported removed
 ✔ a quote read without the marks is only looked for across bold in paragraphs
 ✔ only settling that changes how the text reads is refused: a paste or edit that does it on purpose goes in
-✔ the setting says it is experimental, with its known limits in one plain line
 ✔ quoteSelection (B-roll): a quote across a bold edge is found, mapped back to the text with its marks
-✔ a stretch alone on its line, emptied outer words first: the last words going take the marks, no ** ** rule line is left (fleet #29)
+✔ a stretch alone on its line, emptied: the last words going take the marks, no ** ** rule line is left (fleet #29)
 ✔ a room edit inside a range, by offsets (textOpInside): inside or across it, not before, after or at its edges
 ✔ followRoomEdit: a host's ask goes through a guest's edit with bold on: closed when the edit fell inside, kept when it only spans its words
 ✔ alignChars: where each character of the old text is in the new, by the longest run kept in order
@@ -244,7 +243,7 @@
 ✔ initialize passes the client's name and version to the relay, cut short
 ✔ checkToken: a token lives 8 hours from its birth on the Worker's clock
 ✔ /mcp: a token past its time, or from the future, is refused without asking the relay
-✔ tools/list has the fifteen tools with input schemas and limits
+✔ tools/list has the thirteen tools with input schemas and limits
 ✔ prompts: watch_script sets up the loop
 ✔ ping, unknown methods and unknown tools
 ✔ 401 without a valid Bearer token, or when the relay does not know it
@@ -361,9 +360,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 363
+ℹ tests 362
 ℹ suites 0
-ℹ pass 363
+ℹ pass 362
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

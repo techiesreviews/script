@@ -26,15 +26,11 @@
       <button class="menu-action" id="menuNew" type="button"><span data-icon="plus"></span><span class="menu-action__text">New script</span></button>
       <div class="menu__group" role="group" aria-labelledby="cuesHead" id="cueGroup" hidden>
         <div class="menu__divider"></div>
-        <p class="menu__head" id="cuesHead">Bold</p>
-        <button class="menu-action" type="button" data-cue-set="on" aria-pressed="false"><span data-icon="bold"></span><span class="menu-action__text">Bold marking (experimental)<span class="menu-action__note">Rare edits next to bold lines can leave marks as text; shared scripts have edge cases; the prompter doesn't show inline ** yet.</span></span><span class="menu-action__check" data-icon="check"></span></button>
-        <button class="menu-action" type="button" data-cue-set="action" aria-pressed="false" hidden><span data-icon="camera"></span><span class="menu-action__text">Camera action with bold words</span><span class="menu-action__check" data-icon="check"></span></button>
-        <button class="menu-action" type="button" data-cue-set="export" aria-pressed="false" hidden><span data-icon="prompter"></span><span class="menu-action__text">Bold words in the prompter file</span><span class="menu-action__check" data-icon="check"></span></button>
-        <p class="menu__head" id="boldStyleHead" hidden>Bold style</p>
-        <button class="menu-action" type="button" id="boldOwn" aria-pressed="false" hidden><span data-icon="bold"></span><span class="menu-action__text">Use my own colours for bold</span><span class="menu-action__check" data-icon="check"></span></button>
-        <div class="menu-row bold-colours" id="boldColours" hidden>
-          <label>Background <input type="color" id="boldBg"></label>
+        <p class="menu__head" id="cuesHead">Bold style</p>
+        <div class="menu-row bold-colours">
           <label>Font colour <input type="color" id="boldFg"></label>
+          <label>Background <input type="color" id="boldBg"></label>
+          <button class="small-btn" type="button" id="boldReset" hidden>Reset</button>
         </div>
       </div>
     </div>
