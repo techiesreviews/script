@@ -17,7 +17,7 @@ Lex (2026-11-04), repeated 2026-11-06 through the fleet lead: the selection bar 
 
 ## Checks
 
-`tests/edit-bar.test.mjs`. In a real browser, `scripts/smoke-keep-all.mjs` with `SMOKE_ONLY=slim`: `runSlimBar` (1280 px and 390 px), `runBarPlace` (1280x800, 1280x420, 390x760) and `runSlimGuest`; the other groups now send their asks by typing. Evidence: `docs/agents/evidence/step-t-browser.txt`. Not checked: a real on-screen keyboard on a real phone (the ghost during a phone keyboard's composition, the lift above the keyboard), and Firefox and Safari. The field stays at least 200 px wide while it can: under about 378 px B takes a row of its own; at 320 px the field is about 190 px and a refused command's reason may use the Tab key's room.
+`tests/edit-bar.test.mjs`. In a real browser, `scripts/smoke-keep-all.mjs` with `SMOKE_ONLY=slim`: `runSlimBar` (1280 px and 390 px), `runBarPlace` (1280x800, 1280x420, 390x760), `runSlimGuest` (1280 px, 390 px, 320 px) and `runNarrowBar` (360x740, 320x640); the other groups now send their asks by typing. Evidence: `docs/agents/evidence/step-t-browser.txt`. Not checked: a real on-screen keyboard on a real phone (the ghost during a phone keyboard's composition, the lift above the keyboard), and Firefox and Safari. The field stays at least 200 px wide while it can: under about 378 px B takes a row of its own; at 320 px the field is about 190 px and a refused command's reason may use the Tab key's room.
 
 ## Done
 
