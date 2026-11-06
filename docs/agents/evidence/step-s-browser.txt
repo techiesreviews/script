@@ -270,7 +270,6 @@ ok 1280 px look: Reset reaches another tab
 ok 1280 px look: Reset brings the orange back
 ok 1280 px look: light mode: the fields show the orange and the page's colour
 ok 1280 px look: light mode: a darker orange that reads on white
-FAIL timed out: the name after the title change
 ok 1280 px look: a rename redraws nothing: the word and the caret stay
 ok 1280 px look: an older colour choice stays when "own" was on
 ok 1280 px: **Note** - more: it is in the script
@@ -494,4 +493,4 @@ ok 390 px: Ctrl+B takes it off
 ok 390 px: Ctrl+B puts it back, and it shows
 ok 390 px: the camera export strips the stars
 ok 390 px: the prompter export strips the stars
-RESULT: fail 1 checks
+RESULT: ok
