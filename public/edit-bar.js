@@ -9,7 +9,7 @@ const COMMANDS = [
   { action: "shorter", name: ACTIONS.shorter.name },
   { action: "simpler", name: ACTIONS.simpler.name },
   { action: "like", name: ACTIONS.like.name, also: ["Sounds like me"] },
-  { action: "broll", name: "B-roll", also: [ACTIONS.broll.name, "Broll", "B roll", "Suggest broll"], needs: "spoken" },
+  { action: "broll", name: "B-roll", also: [ACTIONS.broll.name, "Broll", "B roll", "Suggest broll", "Suggest b roll"], needs: "spoken" },
   { open: "add", name: "Add B-roll", also: ["Add broll", "Add b roll"], needs: "addBroll" },
   { action: "explain", name: ACTIONS.explain.name, also: ["Explain"] },
   { action: "facts", name: ACTIONS.facts.name, also: ["Facts"] },
@@ -20,8 +20,8 @@ const same = (text) => text.trim().replace(/\s+/g, " ").toLowerCase();
 const spellings = (c) => [c.name, ...(c.also || [])];
 // Why a command can't run here; "" when it can. can: { spoken, addBroll, guest }.
 function refusal(c, can) {
-  if (c.needs && !can.spoken) return "no spoken words here";
-  if (c.needs === "addBroll" && !can.addBroll) return can.guest ? "the host adds B-roll" : "the B-roll list isn't ready";
+  if (c.needs && !can.spoken) return "not spoken";
+  if (c.needs === "addBroll" && !can.addBroll) return can.guest ? "host only" : "list not ready";
   return "";
 }
 

@@ -12,7 +12,7 @@ const host = { spoken: true, addBroll: true, guest: false };
 const guest = { spoken: true, addBroll: false, guest: true };
 
 test("every old button is a typed command that makes the same ask", () => {
-  const acts = { Shorter: "shorter", simpler: "simpler", "SOUND LIKE ME": "like", "b-roll": "broll", broll: "broll", "b roll": "broll", "suggest b-roll": "broll", "explain how it works": "explain", explain: "explain", "check facts": "facts", facts: "facts", "find links": "links", links: "links", " shorter ": "shorter" };
+  const acts = { Shorter: "shorter", simpler: "simpler", "SOUND LIKE ME": "like", "b-roll": "broll", broll: "broll", "b roll": "broll", "suggest b-roll": "broll", "suggest b roll": "broll", "explain how it works": "explain", explain: "explain", "check facts": "facts", facts: "facts", "find links": "links", links: "links", " shorter ": "shorter" };
   for (const [typed, action] of Object.entries(acts)) {
     assert.deepEqual(resolveTyped(typed, host), { kind: "act", action }, typed);
     assert.ok(ACTIONS[action].instruction, `${action} has its standard instruction`);
