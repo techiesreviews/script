@@ -18,11 +18,12 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 
 ## Asks and the person's own agent
 
-- Select text and use the edit bar ("Sound like me", "Simpler", "Shorter", "Explain how it works", "Check facts", "Find links", "Ask…"; "Find links in the script" in the agent menu): this makes an **ask**.
+- Select text and use the edit bar: this makes an **ask** ("Find links in the script" in the agent menu makes one for the whole script). The bar holds only the **B** button and a text input (step T, Lex 2026-11-04). Type an ask in your own words, or a command: Shorter, Simpler, Sound like me, B-roll (or Suggest B-roll), Add B-roll, Explain how it works, Check facts, Find links, or More, which opens a small menu with those last three. As you type, a grey ghost shows the rest of the suggestion after the caret (the commands, then your earlier asks, kept in this browser only), with a small **Tab** key beside it that never changes the input's size. Tab or pressing the key takes it, Up and Down switch it, Enter sends what is typed (empty: nothing), and Escape closes without changing the text. The input itself shows **Sending…**. B-roll over words that aren't spoken, or Add B-roll as a guest, says why in grey and sends nothing.
+- The bar sits below the selected words, so they and the line above stay readable; with no room below it goes above them, one line clear when that fits. On a phone it is docked at the bottom, above the on-screen keyboard, and at the top when it would sit on the words. While the focus is in the bar the selected words stay marked.
 - The person's **own connected agent** (over MCP) answers it: a new text or an addition goes straight into the script, lightly marked, with Undo on the agent's name tag (step F), until the person scrolls past it or 60 minutes are over (step M); a note shows beside the text.
-- The agent can read and change the bold settings (shown on a line at the top with Undo; not the colours), list bold words, and mark or remove them (each lightly marked, with Undo on its name tag); a rewrite keeps bold words that survive and tells the agent when some went.
-- A script keeps its own bold settings when it gets a new name (its title in the browser, Save as), and nothing on the page is redrawn (step Q).
-- The file name's menu scrolls inside itself on a short window, so the Bold settings are always reachable; the agent can suggest B-roll over words that cross a bold edge (it reads the spoken text without the `**` marks); and when the browser refuses to store a bold setting, nothing changes on the page and the agent is told it could not be saved (step R).
+- The agent can list bold words, and mark or remove them (each lightly marked, with Undo on its name tag); a rewrite keeps bold words that survive and tells the agent when some went.
+- A script's new name (its title in the browser, Save as) redraws nothing on the page (step Q).
+- The file name's menu scrolls inside itself on a short window, so the bold colours are always reachable; the agent can suggest B-roll over words that cross a bold edge (it reads the spoken text without the `**` marks) (step R).
 - Asked for a whole script, the agent can also open one of the person's recent scripts, open a new script it wrote, or put in the whole text with an Undo line (step H).
 
 ## B-roll

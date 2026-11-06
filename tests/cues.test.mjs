@@ -314,13 +314,6 @@ test("Ctrl+B changes nothing where taking the marks off would change the kind of
   assert.equal(C.canToggleCue([open], p1.id, p1.type, fine), false);
 });
 
-test("edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const css = await readFile(new URL("../public/app.css", import.meta.url), "utf8");
-  assert.match(css, /\.edit-bar__controls:has\(#boldBtn:not\(\[hidden\]\)\) \{ flex-wrap: wrap; \}/);
-  assert.match(css, /\.edit-bar__controls:has\(#boldBtn:not\(\[hidden\]\)\) \.edit-bar__ask \{ flex: 1 1 200px; min-inline-size: 200px;/);
-});
-
 test("last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks", () => {
   const doc = D.parse("# T\n\n## A\n\n**start here** now.\n");
   const p = paras(doc)[0], [s, e] = sel(D.contentOf(p), "start");
