@@ -1305,7 +1305,7 @@ const cueDrops = new Map();
 /* ---------- Edit bar ---------- */
 const bar = $("#editBar");
 const askInput = $("#askInput"), askField = $("#askField"), askTab = $("#askTab"), askSend = $("#askForm .edit-bar__send"), moreMenu = $("#moreMenu");
-let barSel = null, barSending = 0, askPick = 0, scriptPress = false, askSayTimer = 0, askSayWant = "";
+let barSel = null, barSending = 0, askPick = 0, scriptPress = false, pressMoved = false, askSayTimer = 0, askSayWant = "";
 // A selection across blocks is clamped to the first block where it covers at least one word.
 function currentSelection() {
   if (state.pendingDraft) return null;
@@ -1546,10 +1546,12 @@ moreMenu.addEventListener("keydown", (e) => {
 });
 let selTimer = 0;
 // Started anywhere but in the bar: a drag can start in the page's margin and run into the text.
-document.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse" && e.button === 0 && !bar.contains(e.target)) scriptPress = true; }, { capture: true });
+document.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse" && e.button === 0 && !bar.contains(e.target)) { scriptPress = true; pressMoved = false; } }, { capture: true });
 function scriptReleased() {
   if (!scriptPress) return;
   scriptPress = false;
+  // A press that moved no selection (a toolbar button, say) has nothing to do with the bar.
+  if (!pressMoved) return;
   clearTimeout(selTimer);
   selTimer = setTimeout(showBar, 120);
 }
@@ -1558,7 +1560,7 @@ for (const t of ["pointerup", "pointercancel"]) addEventListener(t, scriptReleas
 addEventListener("blur", scriptReleased);
 // A release outside the window can go unseen: the first move with no button held ends the press too.
 addEventListener("pointermove", (e) => { if (!e.buttons) scriptReleased(); }, { passive: true, capture: true });
-document.addEventListener("selectionchange", () => { refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
+document.addEventListener("selectionchange", () => { if (scriptPress) pressMoved = true; refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 // What floats over the text follows it: on a scroll, and when the Keep all row moves the text without one (step Q).
 function placeBarAgain() { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); if (moreMenu.matches(":popover-open")) placeBarMenu(); } }
 function placeOverText() { placeBarAgain(); if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }

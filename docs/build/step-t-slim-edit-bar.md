@@ -19,12 +19,15 @@ Lex (2026-11-04), repeated 2026-11-06 through the fleet lead: the selection bar 
 
 `tests/edit-bar.test.mjs`. In a real browser, `scripts/smoke-keep-all.mjs` with `SMOKE_ONLY=slim`: `runSlimBar` (1280 px and 390 px), `runBarPlace` (1280x800, 1280x420, 390x760), `runSlimGuest` (1280 px, 390 px, 320 px) and `runNarrowBar` (360x740, 320x640); the other groups now send their asks by typing. Evidence: `docs/agents/evidence/step-t-browser.txt`. Not checked: a real on-screen keyboard on a real phone (the ghost during a phone keyboard's composition, the lift above the keyboard), and Firefox and Safari. The field stays at least 200 px wide while it can: under about 378 px B takes a row of its own; at 320 px the field is about 190 px and a refused command's reason may use the Tab key's room.
 
+## Left as it was
+
+Pressing a toolbar button with an ask half typed closes the bar and drops the typed words. The site did this before this step too (checked on the live site, 2026-11-06), so it is not changed here; the script text is never touched.
+
 ## Done
 
 Feature list: updated (`docs/features.md`).
 
 ### Follow-ups
 
-- Validation gaps (gap): The longest reason in the narrowest field: the check "the longest reason fits inside the input" (`scripts/smoke-keep-all.mjs:656-659`) runs over a heading, where B is hidden, so the field is about 260 px wide at 390 px. "Not spoken" can only appear with B hidden. With B showing, the field is about 212 px, and the longest line there is "add b-roll · list not ready", also 27 characters. Only the shorter "add b-roll · host only" is measured at that width (line 813). By estimate it should fit, but nothing shows it. Test to add: at 390 px over a spoken word, make the B-roll list not ready (`canAddBroll()` false for the host). Type "add b roll" and assert that the right edge of `#askGhost b` is within the right edge of `#askField`. If that state is awkward to reach, set the text of `#askGhost b` to " · list not ready" after the guest check at line 813 and measure the same edges, with the guest page opened at 390 px.
-- Validation gaps (gap): The whole sentences for screen readers: the new `say` text is not checked. `tests/edit-bar.test.mjs` only asserts `why`, and the smoke check at line 655 matches `/spoken/`, which the short "not spoken" also passes. If `public/app.js:1423` went back to `plan.why`, every check would still pass. Test to add: in `tests/edit-bar.test.mjs`, assert `say` for all three refusals (`/needs spoken words/`, `/Only the host/`, `/list isn't ready/`). In the smoke check at line 655, tighten the match to `/^B-roll needs spoken words\.$/`.
+- Validation gaps (gap): The longest reason in the narrowest field: the check "the longest reason fits inside the input" (`scripts/smoke-keep-all.mjs:656-659`) runs over a heading, where B is hidden, so the field is about 260 px wide at 390 px. "Not spoken" can only appear with B hidden. With B showing, the field is about 212 px, and the longest line there is "list not ready", also 27 characters. Only the shorter "add b-roll · host only" is measured at that width (line 813). By estimate it should fit, but nothing shows it. Test to add: at 390 px over a spoken word, make the B-roll list not ready (`canAddBroll()` false for the host). Type "add b roll" and assert that the right edge of `#askGhost b` is within the right edge of `#askField`. If that state is awkward to reach, set the text of `#askGhost b` to " · list not ready" after the guest check at line 813 and measure the same edges, with the guest page opened at 390 px.
 
