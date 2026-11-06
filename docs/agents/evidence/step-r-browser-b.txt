@@ -1,10 +1,21 @@
-# Step R, PR B: SMOKE_ONLY=menu, then SMOKE_ONLY=rename node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
-# Controls: without the css the colour row cannot be reached at 1280x420; without the setCues change the storage-full rename run fails 8 checks.
+# Step R, PR B (round 2): SMOKE_ONLY=menu, storage, rename node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Controls: without the css the colour row cannot be reached at 1280x420; without the setCues change the storage-full rename run fails 8 checks; without the restoreCues change the storage run fails 2.
 ok 1280x420: the menu stays inside the window
+ok 1280x420: it never scrolls sideways
 ok 1280x420: it scrolls inside itself when it is taller than the window
 ok 1280x420: scrolled down, the font colour input is in view
 ok 390x650: the menu stays inside the window
+ok 390x650: it never scrolls sideways
+ok 390x650: it scrolls inside itself when it is taller than the window
 ok 390x650: scrolled down, the font colour input is in view
+RESULT: ok
+ok 1280 px: storage full: set_cue_settings (the person's) says the change could not be saved
+ok 1280 px: storage full: the settings in force did not change
+ok 1280 px: a saved agent change shows Undo
+ok 1280 px: storage full: Undo that could not be saved keeps its line
+ok 1280 px: storage full: that Undo changes nothing
+ok 1280 px: with storage back, Undo works and its line closes
+ok 1280 px: with storage back, Undo brings the setting back
 RESULT: ok
 ok 1280 px: the person's own bold setting is off
 ok 1280 px: saved into the browser: the name changes

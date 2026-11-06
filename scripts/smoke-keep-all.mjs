@@ -311,9 +311,12 @@ async function runMenuHeight(width, height) {
   const { page, agent } = await openDemo(width, height);
   await agent("set_cue_settings", { on: true });
   await page.until(`!!document.querySelector('#cueGroup [data-cue-set="on"]')`, "the bold menu");
+  // A full recent list: scripts kept in the browser are listed by name, so a dozen files make a long one.
+  await page.eval(`(async () => { const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts", { create: true }); for (let i = 1; i <= 12; i++) { const w = await (await dir.getFileHandle("Recent script " + i + ".md", { create: true })).createWritable(); await w.write("# Recent " + i + "\\n\\nWords.\\n"); await w.close(); } })()`);
   await page.eval(`getSelection().removeAllRanges()`);
   await page.click("#docInfo");
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await page.until(`document.querySelectorAll("#scriptList .scripts__row").length >= 12`, "a long recent list");
   await sleep(400);
   await page.click("#boldOwn");
   await page.until(`document.querySelector("#boldColours") && !document.querySelector("#boldColours").hidden`, "the colour row");
@@ -322,12 +325,43 @@ async function runMenuHeight(width, height) {
   const box = () => page.eval(`(() => { const m = ${menu}, r = m.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight, scrolls: m.scrollHeight > m.clientHeight + 1, overflowY: getComputedStyle(m).overflowY }; })()`);
   const b = await box();
   check(b.bottom <= b.h + 0.5 && b.top >= -0.5, `${tag}: the menu stays inside the window`, JSON.stringify(b));
-  if (height < 500) check(b.scrolls && b.overflowY === "auto", `${tag}: it scrolls inside itself when it is taller than the window`, JSON.stringify(b));
+  check(await page.eval(`${menu}.scrollWidth <= ${menu}.clientWidth`), `${tag}: it never scrolls sideways`);
+  check(b.scrolls && b.overflowY === "auto", `${tag}: it scrolls inside itself when it is taller than the window`, JSON.stringify(b));
   await page.eval(`${menu}.scrollTop = ${menu}.scrollHeight`);
   await sleep(200);
   const last = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#boldFg").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, fgTop: r.top, menuTop: m.top, h: r.height }; })()`);
   check(last.fgBottom <= last.menuBottom + 0.5 && last.fgTop >= last.menuTop && last.h > 0, `${tag}: scrolled down, the font colour input is in view`, JSON.stringify(last));
   await pressKey(page, "Escape", "Escape", 27);
+  await page.close();
+}
+
+// Storage full (fleet #31 item 4): set_cue_settings says the change could not be saved, and nothing changes; Undo on the agent's
+// settings line, when its write is refused, keeps the line and changes nothing, and works once storage is back.
+async function runCuesStorageFull(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const settings = async () => JSON.parse(await agent("get_cue_settings", {}));
+  const pressUndo = () => page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent.includes("Undo"))?.click()`);
+  const hasUndo = `[...document.querySelectorAll("#banner button")].some((b) => b.textContent.includes("Undo"))`;
+  await agent("set_cue_settings", { on: true });
+  const full = `window.__setItem = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (String(k).startsWith("script-editor:cues")) throw new Error("full"); return window.__setItem.call(this, k, v); }`;
+  await page.eval(full);
+  const said = await agent("set_cue_settings", { export: "show" });
+  check(/could not be saved/i.test(said), `${tag}: storage full: set_cue_settings (the person's) says the change could not be saved`, said);
+  const now = await settings();
+  check(now.on === true && now.export === "strip", `${tag}: storage full: the settings in force did not change`, JSON.stringify(now));
+  await page.eval(`Storage.prototype.setItem = window.__setItem`);
+  await agent("set_cue_settings", { action: "camera" });
+  check(await page.until(hasUndo, "the Undo line"), `${tag}: a saved agent change shows Undo`);
+  await page.eval(full);
+  await pressUndo();
+  await sleep(300);
+  check(await page.eval(hasUndo), `${tag}: storage full: Undo that could not be saved keeps its line`);
+  check((await settings()).action === "camera", `${tag}: storage full: that Undo changes nothing`);
+  await page.eval(`Storage.prototype.setItem = window.__setItem`);
+  await pressUndo();
+  check(await page.until(`!(${hasUndo})`, "the Undo line closes"), `${tag}: with storage back, Undo works and its line closes`);
+  check((await settings()).action === "highlight", `${tag}: with storage back, Undo brings the setting back`);
   await page.close();
 }
 
@@ -1116,6 +1150,8 @@ try {
   } else if (only === "menu") {
     await runMenuHeight(1280, 420);
     await runMenuHeight(390, 650);
+  } else if (only === "storage") {
+    await runCuesStorageFull(1280, 800);
   } else if (only === "rename") {
     await runRename(1280, 800);
     await runRename(390, 760);
@@ -1137,6 +1173,7 @@ try {
     await runBoldKinds(1280, 800);
     await runMenuHeight(1280, 420);
     await runMenuHeight(390, 650);
+    await runCuesStorageFull(1280, 800);
     await runRename(1280, 800);
     await runRename(390, 760);
     await runUndoAndTabs(1280, 800);

@@ -863,7 +863,9 @@ const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const oneLine = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
 
 /** The spoken text a quote stands for, as a selection [{ id, start, end }] across spoken paras ([] when not found).
- *  The quote must be word for word; any run of spaces or line breaks matches any other, so it may span lines. */
+ *  The quote must be word for word; any run of spaces or line breaks matches any other, so it may span lines. Found
+ *  in the text as written first, else in the spoken text without the `**` marks of bold words (the offsets are then
+ *  mapped back into the text with its marks, covering only what was quoted). */
 export function quoteSelection(doc, quote) {
   const words = String(quote ?? "").trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
@@ -881,9 +883,7 @@ export function quoteSelection(doc, quote) {
     const a = m.index, z = m.index + m[0].length;
     return spans.filter((p) => p.start < z && p.end > a).map((p) => {
       const from = Math.max(a, p.start) - p.start, to = Math.min(z, p.end) - p.start, map = maps[p.k];
-      if (!map) return { id: p.id, start: from, end: to };
-      const start = map[from] ?? raw[p.k].length; // an empty para or nothing of it quoted: an empty range
-      return { id: p.id, start, end: to > from ? map[to - 1] + 1 : start };
+      return { id: p.id, start: map ? map[from] : from, end: map ? map[to - 1] + 1 : to };
     });
   };
   const sel = find(raw, raw.map(() => null));
