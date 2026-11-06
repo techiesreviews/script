@@ -11,7 +11,7 @@ A calm editor for video scripts. Open a Markdown script, edit it, and let **your
 - A section list with spoken times, a word count and the spoken length.
 - Type `/` while writing to add a part: Hook, Intro, Problem, Point, Demo, Recap, Call to action, Close or a named Section (numbered for where it lands; later sections move up), an `[ON SCREEN: ]` or `[SILENT: ]` note, B-roll for the current line, or a divider.
 - Export: the camera script (spoken text only), a prompter file, or **Open in prompter**, which opens the script on [prompter.techies.tools](https://prompter.techies.tools).
-- B-roll beside the lines: link a B-roll list, add a shot to selected text yourself, or let your agent suggest shots ("Suggest B-roll" on a selection, "Plan B-roll" for the whole script). Every suggested add, change or removal waits for your Keep or Undo.
+- B-roll beside the lines: link a B-roll list, add a shot to selected text yourself ("Add B-roll" typed in the selection bar), or let your agent suggest shots ("B-roll" typed there, "Plan B-roll" for the whole script). Every suggested add, change or removal waits for your Keep or Undo.
 - A switcher with your recent scripts and a search.
 - **Share to edit:** copy a link, and others edit the script with you live, each with their own caret. They type only a name. Your file stays the only copy and keeps saving itself. Guests see the B-roll and can ask your agent too (you see their asks, everyone sees the answers, and only the person who asked or you keep them); they can't save, export, change the B-roll or share it further. Your agent shows its own caret where it works. Stop sharing with ×, or close the tab.
 - "Try a demo script" on the start screen loads a made-up example.

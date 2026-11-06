@@ -117,7 +117,6 @@
 ✔ PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cue's marks survive a deletion
 ✔ Sounds like me: a quote read without the marks is found across a cue's edge, covering the whole cue
 ✔ Ctrl+B changes nothing where taking the marks off would change the kind of block
-✔ edit bar: with the B button showing, the text input stays at least 200 px wide and the bar wraps
 ✔ last round: a rewrite widened over a cue never turns the paragraph into a list; link and cue side by side leave no marks
 ✔ Sounds like me: a rewrite of a quote over part of a cue never deletes the cue's other spoken words
 ✔ a ** pair is bold only at word boundaries with no space inside its edges; no == is ever read
@@ -208,6 +207,21 @@
 ✔ wholeText: the script's own line endings, null for the same text; the old copy stays exactly as it was
 ✔ keepIds: blocks left word for word keep their ids, once each
 ✔ titleFileName: a script in the browser takes its title's name; its own name counts as free (step J)
+✔ every old button is a typed command that makes the same ask
+✔ anything else is an ask with the words as typed; nothing typed does nothing
+✔ guests keep what they could do: asks and Suggest B-roll go through, adding a shot is the host's
+✔ B-roll needs spoken words, as its buttons did: it says so on the control and sends nothing
+✔ suggestions: the commands first, then earlier asks; only longer than what is typed; any case
+✔ earlier asks: newest first, no repeats in any case, a short list, long ones and rubbish stay out
+✔ the bar goes below the selected words, so they and the line above stay readable
+✔ no room below: above, one line clear when it fits, else right above the words
+✔ a selection taller than the window: the bar stays on screen, on the side with more room
+✔ words scrolled out of the window: the bar stays on screen and reachable
+✔ never past the sides of the window
+✔ phone: docked at the bottom, at the top when it would sit on the words and they are clear of the top
+✔ the bar's markup: the word count, B, then the input with its ghost, Tab key and Send; no old buttons
+✔ the Tab key takes its room all the time, so showing it never changes the input's size
+✔ phone: no zoom on focus, room for the thumb, and the bar clear of the home bar
 ✔ kit.json lands on dev, releases to main, and the docs agree
 ✔ kit deploy stops before wrangler when kit release-check fails
 ✔ kit deploy reaches wrangler when kit release-check passes
@@ -218,7 +232,6 @@
 ✔ every hook name either file uses is one the kit runs
 ✔ the view switch is its own column of the top bar
 ✔ the voice and agent labels stay readable for screen readers
-✔ the edit bar: Shorter, Simpler, Sound like me, More ▾ (Explain, Check facts, Find links), B-roll ▾ (or a guest's Suggest B-roll) and Ask
 ✔ links: found with their words and address; link lines; spoken text without them
 ✔ safe addresses: full https:// or http:// only, no javascript:, data:, spaces or control characters
 ✔ a para that starts with a link stays spoken; a reminder is still a note
@@ -360,9 +373,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 362
+ℹ tests 375
 ℹ suites 0
-ℹ pass 362
+ℹ pass 375
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
