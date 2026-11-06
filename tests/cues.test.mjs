@@ -965,7 +965,10 @@ test("a stretch alone on its line, emptied outer words first: the last words goi
     assert.equal(text, "  ");
     // Not alone on its line: "a ** b ** c" is still not a stretch, the edit keeps every byte.
     assert.equal(Q.settleMarks("a ** two ** c", "a **  ** c", 5), null);
-    assert.equal(Q.settleMarks("x\n** two **\ny", "x\n**  **\ny", 6)?.content, "x\n  \ny", "alone on a line of its own inside a paragraph");
+    // On a later line no rule can read, and a spaces-only line would split the block: the edit keeps every byte.
+    assert.equal(Q.settleMarks("x\n** two **\ny", "x\n**  **\ny", 6), null, "alone on a later line");
+    assert.equal(Q.settleMarks("x\n** two **\n- y", "x\n**  **\n- y", 6), null);
+
   }
   Q.readCuesWhen(() => true);
 });
@@ -1005,6 +1008,10 @@ test("followRoomEdit: a host's ask goes through a guest's edit with bold on: clo
   assert.equal(C.followRoomEdit(two, op(0, 17, "one and three"), text), null, "the words changed");
   // A whole line pasted over: the ask's letters turn up inside a longer word, which is not its word any more.
   assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "take note"), "so no more"), null, "no grew into a longer word");
+  // A word that grew in front of it, and a split right at its edges (moveAsks' business, the ask stays).
+  assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "we ano more!"), "so no more"), null, "a letter grew in front");
+  assert.deepEqual(C.followRoomEdit(two, { type: "split", blockId: "p", at: 6, newId: "q" }, text), { start: 6, end: 9 }, "a split at its start");
+  assert.deepEqual(C.followRoomEdit(two, { type: "split", blockId: "p", at: 9, newId: "q" }, text), { start: 6, end: 9 }, "a split at its end");
   // A combining mark counts as part of a word, as in cues.js: "no" + mark is another word.
   assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "we no\u0301 more!"), "so no more"), null, "a combining mark grew into the word");
   // Bold off on the host: the old rules (followTextOp), and a null for an edit inside, which leaves the search to decide.

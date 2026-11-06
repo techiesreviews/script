@@ -426,6 +426,7 @@ async function runBoldOffEdits(width, height) {
   await press("Enter", "Enter", 13, 0, "\r");
   await page.send("Input.insertText", { text: alone });
   await sleep(350);
+  const wordsAfterTyping = (await script()).words;
   let text = alone;
   for (const word of ["one", "three", "two"]) {
     const from = text.indexOf(word);
@@ -436,7 +437,7 @@ async function runBoldOffEdits(width, height) {
   }
   const md = (await script()).markdown;
   check(!md.includes("**  **") && !md.includes("** two") && !md.includes("**one"), `${tag}: a stretch alone on its line, outer words deleted first, the middle one last: no ** ** rule line is left`, md.split("\n").filter((l) => l.includes("**")).join(" | "));
-  check((await script()).words > 0, `${tag}: the script still has its words`);
+  check((await script()).words === wordsAfterTyping - 3, `${tag}: only those three words went`, `${(await script()).words} ${wordsAfterTyping}`);
   await page.close();
 }
 
