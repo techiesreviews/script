@@ -220,6 +220,7 @@
 ✔ never past the sides of the window
 ✔ phone: docked at the bottom, at the top when it would sit on the words and they are clear of the top
 ✔ the bar's markup: the word count, B, then the input with its ghost, Tab key and Send; no old buttons
+✔ every command is named for screen readers, and the whole sentence says why one can't run
 ✔ the Tab key takes its room all the time, so showing it never changes the input's size
 ✔ phone: no zoom on focus, room for the thumb, and the bar clear of the home bar
 ✔ kit.json lands on dev, releases to main, and the docs agree
@@ -373,9 +374,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 375
+ℹ tests 376
 ℹ suites 0
-ℹ pass 375
+ℹ pass 376
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
