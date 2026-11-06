@@ -9,7 +9,7 @@ import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
 import { startPress, HOLD_MS } from "./press.js";
-import { resolveTyped, suggestions, rememberAsk, barSpot, phoneDock } from "./edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, barSpot, phoneDock } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1386,18 +1386,13 @@ function hideBar() {
 }
 // A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
 // old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
-// Where the bar's words are now: a bold mark put inside them since (an agent's, a guest's) doesn't lose them.
-function barWordsIn(content, s) {
-  const r = D.reanchor({ start: s.start, quote: s.quote }, content);
-  return r ? { ...r, quote: s.quote } : K.quoteAcrossCues(content, s.quote);
-}
 function keepBarSel(id) {
   if ((!barSel?.range && !barSel?.gone) || barSel.id !== id || !bar.contains(document.activeElement)) return;
   const b = byId(id), el = blockNode(id);
   const content = b && el ? D.contentOf(b) : null;
   let { start, end } = barSel;
   if (content?.slice(start, end) !== barSel.quote) {
-    const r = content == null ? null : barWordsIn(content, barSel);
+    const r = content == null ? null : findWords(content, barSel.quote, start);
     if (!r) {
       // The words are gone: what is typed stays and the input says so; nothing can be sent or bolded here.
       Object.assign(barSel, { range: null, gone: true });
@@ -1593,7 +1588,7 @@ function makeAsk(action, typed = "") {
   const content = D.contentOf(b);
   let { start, end } = s;
   if (content.slice(start, end) !== s.quote) {
-    const r = barWordsIn(content, s);
+    const r = findWords(content, s.quote, start);
     if (!r) return hideBar();
     ({ start, end } = r);
   }

@@ -213,6 +213,7 @@
 ✔ B-roll needs spoken words, as its buttons did: it says so on the control and sends nothing
 ✔ suggestions: the commands first, then earlier asks; only longer than what is typed; any case
 ✔ earlier asks: newest first, no repeats in any case, a short list, long ones and rubbish stay out
+✔ the selected words after the line changed: marks don't lose them, and they never jump to another copy
 ✔ the bar goes below the selected words, so they and the line above stay readable
 ✔ no room below: above, one line clear when it fits, else right above the words
 ✔ a selection taller than the window: the bar stays on screen, on the side with more room
@@ -374,9 +375,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 376
+ℹ tests 377
 ℹ suites 0
-ℹ pass 376
+ℹ pass 377
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
