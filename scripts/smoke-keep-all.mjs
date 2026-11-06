@@ -315,7 +315,8 @@ async function runBoldOffEdits(width, height) {
   check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: Bold marking is off`);
   await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
-  for (const [line, word] of [["**Note** - more", "Note"], ["**y**- z", "y"]]) {
+  // Deleting the bold word (Backspace) or pasting over the opening marks and the word: the marks go with the word, whatever the text left reads like.
+  for (const [line, word, left, how] of [["**Note** - more", "Note", "- more", "Backspace"], ["**y**- z", "y", "- z", "Backspace"], ["**Memo** - less", "Memo", "- less", "paste"]]) {
     await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
     await sleep(150);
     await press("Enter", "Enter", 13, 0, "\r");
@@ -324,15 +325,19 @@ async function runBoldOffEdits(width, height) {
     const has = async () => (await script()).markdown.split("\n").includes(line);
     check(await has(), `${tag}: ${line}: it is in the script`);
     const para = `[...document.querySelectorAll('#script .block')].find((x) => x.textContent.startsWith(${JSON.stringify(line)}))`;
-    const from = line.indexOf(word);
-    await page.eval(`(() => { const el = ${para}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${from + word.length})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+    const from = how === "paste" ? 0 : line.indexOf(word), to = line.indexOf(word) + word.length;
+    await page.eval(`(() => { const el = ${para}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
     await sleep(250);
-    await press("Backspace", "Backspace", 8);
-    const now = (await script()).markdown;
-    check(!now.includes(line), `${tag}: ${line}: deleting ${word} goes through (Bold marking off never refuses)`, now.split("\n").find((l) => l.includes("more") || l.includes("- z")));
+    if (how === "paste") {
+      await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "**"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
+      await sleep(300);
+    } else await press("Backspace", "Backspace", 8);
+    const now = (await script()).markdown.split("\n");
+    const got = now.find((l) => l.trim() === left);
+    check(!now.includes(line) && !!got && !got.includes("*"), `${tag}: ${line}: ${how} over ${word} goes through (Bold marking off never refuses), no marks left`, now.filter((l) => l.includes("less") || l.includes("more") || l.includes("- z") || l.includes("*")).map((l) => JSON.stringify(l)).join(" | "));
     await page.eval(`${first}.focus()`);
     await press("z", "KeyZ", 90, CTRL);
-    check(await has(), `${tag}: ${line}: one Ctrl+Z brings it back`);
+    check(await has(), `${tag}: ${line}: ${how}: one Ctrl+Z brings it back`);
   }
   await page.close();
 }
@@ -360,7 +365,7 @@ async function runBoldKinds(width, height) {
   await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
   const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
   const caretIn = (para) => page.eval(`(() => { const el = ${para}, sel = getSelection(), r = document.createRange(); if (!el || !sel.focusNode || !el.contains(sel.focusNode)) return -1; r.setStart(el, 0); r.setEnd(sel.focusNode, sel.focusOffset); return r.toString().length; })()`);
-  for (const line of ["**- item two**", "**# Plan**", "**> x y**", "**1. x y**", "**- item two** more"]) {
+  for (const line of ["**- item two**", "**# Plan**", "**## Plan**", "**> x y**", "**1. x y**", "**- item two** more"]) {
     // A line of its own under the demo's first line.
     await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
     await sleep(150);
@@ -412,18 +417,22 @@ async function runBoldKinds(width, height) {
     check(await has(), `${tag}: ${line}: one Ctrl+Z takes the typing back`);
     // Enter right after the line's mark, and just before the space after it ("**1.| x y**"): the parts joined without their
     // marks would read as a list or a heading, so it is refused (nothing changes); otherwise it splits. No word leaves either way.
-    for (const [what, at] of [["right after its mark", line.indexOf(" ") + 1], ["just before the space", line.indexOf(" ")]]) {
+    for (const [what, at, keys] of [
+      ["Enter right after its mark", line.indexOf(" ") + 1, ["Enter", "Enter", 13, 0, "\r"]],
+      ["Enter just before the space", line.indexOf(" "), ["Enter", "Enter", 13, 0, "\r"]],
+      ["Shift+Enter just before the space", line.indexOf(" "), ["Enter", "Enter", 13, SHIFT, "\r"]],
+    ]) {
       await page.eval(pick(at));
       await sleep(250);
-      await press("Enter", "Enter", 13, 0, "\r");
+      await press(...keys);
       const split = await script();
-      check(split.words === start.words, `${tag}: ${line}: Enter ${what}: no spoken word leaves the counts`, split.words);
-      if (what.startsWith("just")) check(split.markdown === start.markdown, `${tag}: ${line}: Enter ${what}: refused, nothing changes`, split.markdown.split("\n").filter((l) => l.includes("item") || l.includes("Plan") || l.includes("x y")).join(" | "));
+      check(split.words === start.words, `${tag}: ${line}: ${what}: no spoken word leaves the counts`, split.words);
+      if (what.includes("just before")) check(split.markdown === start.markdown, `${tag}: ${line}: ${what}: refused, nothing changes`, split.markdown.split("\n").filter((l) => l.includes("item") || l.includes("Plan") || l.includes("x y")).join(" | "));
       if (split.markdown !== start.markdown) {
         await page.eval(`${first}.focus()`);
         await press("z", "KeyZ", 90, CTRL);
       }
-      check(await has(), `${tag}: ${line}: Enter ${what}: refused, or one Ctrl+Z takes it back`);
+      check(await has(), `${tag}: ${line}: ${what}: refused, or one Ctrl+Z takes it back`);
     }
   }
   // The other edits: each new line goes under the demo's first line.
