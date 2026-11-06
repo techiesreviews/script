@@ -766,12 +766,34 @@ async function runSlimBar(width, height) {
   await type("warmer");
   await agent("mark_cue", { cues: [{ quote: "Twice", occurrence: 2 }] });
   await sleep(300);
+  check((await script()).includes("**Twice** over."), `${tag}: repeated words: the agent's bold is there`);
   await agent("unmark_cue", { cues: [{ quote: "Twice" }] });
   await sleep(300);
   await pressKey(page, "Enter", "Enter", 13, "\r");
   const repeated = await newAsks();
   const before = await page.eval(`(() => { const d = document.querySelector("#script [data-ask]"), r = document.createRange(); r.setStart(d.closest(".block"), 0); r.setEndBefore(d); return r.toString(); })()`);
   check(repeated[0]?.instruction === "warmer" && before.includes("Twice over."), `${tag}: repeated words: the ask stays on the second copy`, before.slice(-40));
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
+  await agent("set_script", { markdown: start });
+  await sleep(300);
+
+  // A mark before the words moves another copy onto their old offset: the ask stays on its own copy.
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page.")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: " zed the the the" });
+  await sleep(350);
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("zed the")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const t = nodes.map((x) => x.data).join(""), from = t.lastIndexOf("the"), point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }, r = document.createRange(); r.setStart(...point(from)); r.setEnd(...point(from + 3)); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  await page.until(barOpen, "the bar on the last copy");
+  await sleep(200);
+  await type("warmer");
+  await agent("mark_cue", { cues: [{ quote: "zed" }] });
+  await sleep(300);
+  check((await script()).includes("**zed** the the the"), `${tag}: a mark before the words: the agent's bold is there`);
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  await newAsks();
+  const after = await page.eval(`(() => { const d = [...document.querySelectorAll("#script [data-ask]")].at(-1), r = document.createRange(); r.setStart(d.closest(".block"), 0); r.setEndBefore(d); return r.toString(); })()`);
+  check(after.endsWith("the the "), `${tag}: a mark before the words: the ask stays on the last copy`, after.slice(-30));
   await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
   await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
   await sleep(150);
@@ -973,7 +995,7 @@ async function runSlimGuest(width, height) {
   await guest.eval(`getSelection().removeAllRanges()`);
   await sleep(200);
   // The host types an ask while the guest deletes the selected word: as before, Enter closes the bar and no ask goes.
-  if (width >= 640) {
+  {
     await page.send("Page.bringToFront");
     await doubleClick(page, await page.eval(wordSpot));
     await page.until(`!document.querySelector("#editBar").hidden`, "the host's bar");
