@@ -9,6 +9,7 @@ import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
 import { startPress, HOLD_MS } from "./press.js";
+import { resolveTyped, suggestions, rememberAsk, barSpot, phoneDock } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1250,8 +1251,9 @@ function toggleCueHere() {
       sel.removeAllRanges();
       sel.addRange(range);
     }
-    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange() };
+    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true };
     cueBtnState(barSel);
+    paintBarSel();
   }
   changed();
 }
@@ -1300,7 +1302,8 @@ const cueDrops = new Map();
 
 /* ---------- Edit bar ---------- */
 const bar = $("#editBar");
-let barSel = null;
+const askInput = $("#askInput"), askField = $("#askField"), askTab = $("#askTab"), askSend = $("#askForm .edit-bar__send"), moreMenu = $("#moreMenu");
+let barSel = null, barSending = 0, askPick = 0, askComposing = false;
 // A selection across blocks is clamped to the first block where it covers at least one word.
 function currentSelection() {
   if (state.pendingDraft) return null;
@@ -1318,132 +1321,195 @@ function currentSelection() {
   return null;
 }
 function placeBar(r) {
-  const rects = r.getClientRects(), first = rects[0] || r.getBoundingClientRect(), last = rects[rects.length - 1] || first;
+  const rects = [...r.getClientRects()].filter((x) => x.width > 0), first = rects[0] || r.getBoundingClientRect(), last = rects[rects.length - 1] || first;
   bar.hidden = false;
-  if (matchMedia("(max-width: 40rem)").matches) return;
-  const w = bar.offsetWidth, ht = bar.offsetHeight, top = $(".top").getBoundingClientRect().bottom;
-  const x = Math.max(8, Math.min(first.left - 4, document.documentElement.clientWidth - w - 8));
-  let y = first.top - ht - 10;
-  if (y < top + 8) y = last.bottom + 12;
+  const top = $(".top").getBoundingClientRect().bottom;
+  if (matchMedia("(width < 40rem)").matches) {
+    const v = window.visualViewport, lift = v ? Math.max(0, innerHeight - v.height - v.offsetTop) : 0;
+    bar.style.setProperty("--bar-lift", lift + "px");
+    bar.style.setProperty("--bar-y", top + 8 + "px");
+    bar.dataset.dock = phoneDock({ first, last, h: bar.offsetHeight, top, vh: innerHeight, lift });
+    return;
+  }
+  const at = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  const line = parseFloat(getComputedStyle(at).lineHeight) || first.height;
+  const { x, y } = barSpot({ first, last, w: bar.offsetWidth, h: bar.offsetHeight, top, vw: document.documentElement.clientWidth, vh: innerHeight, line });
   bar.style.setProperty("--bar-x", x + "px");
   bar.style.setProperty("--bar-y", y + "px");
 }
 function showBar() {
   if (state.locked) return hideBar();
+  // The moment an ask is sending: a new selection ends it at once; nothing else changes it.
+  if (barSending) {
+    if (!currentSelection()) return;
+    hideBar();
+  }
   if (bar.contains(document.activeElement) || !shotCard.hidden) return;
   const s = currentSelection();
   if (!s) { hideBar(); return; }
   barSel = s;
-  const spoken = spokenSelection(s.range).length > 0;
-  $("#addBroll").disabled = !canAddBroll() || !spoken;
-  for (const b of $$('#editBar [data-act="broll"]')) b.disabled = !spoken;
-  $("#brollBtn").disabled = $("#addBroll").disabled && !spoken; // nothing usable in its menu
-  // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
-  $("#brollBtn").hidden = state.guest;
-  $("#suggestBroll").hidden = !state.guest;
-  $("#boldBtn").hidden = byId(s.id)?.type !== "para" || !spoken;
+  barSel.spoken = spokenSelection(s.range).length > 0;
+  $("#boldBtn").hidden = byId(s.id)?.type !== "para" || !barSel.spoken;
   cueBtnState(s);
   const n = D.countWords(K.spokenWords(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
+  renderAsk();
   placeBar(s.range);
 }
-function hideBar() { closeBarMenus(); bar.hidden = true; $("#askInput").value = ""; barSel = null; }
+function hideBar() {
+  closeBarMenus();
+  clearTimeout(barSending);
+  barSending = 0;
+  bar.hidden = true;
+  barSel = null;
+  askField.dataset.state = "idle";
+  askInput.readOnly = false;
+  askInput.removeAttribute("aria-busy");
+  askInput.value = "";
+  askPick = 0;
+  $("#askLive").textContent = "";
+  paintBarSel();
+  renderAsk();
+}
+// The browser takes the page's selection away while the focus is in the bar, so the words stay marked by the script.
+function paintBarSel() {
+  if (!window.Highlight || !CSS.highlights) return;
+  if (barSel?.range && bar.contains(document.activeElement)) CSS.highlights.set("bar-selection", new Highlight(barSel.range));
+  else CSS.highlights.delete("bar-selection");
+}
+bar.addEventListener("focusin", paintBarSel);
+bar.addEventListener("focusout", (e) => { if (!bar.contains(e.relatedTarget)) CSS.highlights?.delete("bar-selection"); });
 
-/* More ▾ and B-roll ▾: small menus in the bar. They never take the text selection (barSel keeps it), open below
-   their button or above it, whichever fits, and work with the keyboard: Enter or Space opens, the arrow keys move,
-   Escape closes and goes back to the button. */
-const barMenus = [["#moreMenu", "#moreBtn"], ["#brollMenu", "#brollBtn"]].map(([m, b]) => ({ menu: $(m), btn: $(b), keys: false }));
-function closeBarMenus() { for (const { menu } of barMenus) if (menu.matches(":popover-open")) menu.hidePopover(); }
-// Escape: close the open bar menu and give its button the focus. Returns false when no menu was open.
+/* The input: an ask in the person's words, or a typed command (edit-bar.js). A grey ghost shows the rest of the suggestion
+   after the caret; Tab or the Tab key takes it, Up and Down switch it, Enter sends what is typed. */
+const askCan = () => ({ spoken: !!barSel?.spoken, addBroll: canAddBroll(), guest: !!state.guest });
+const ASK_HISTORY = "askHistory";
+// The suggestion on offer, with the caret at the end of the typed words only.
+function askGhostNow() {
+  const end = askInput.value.length;
+  if (barSending || askComposing || askInput.selectionStart !== end || askInput.selectionEnd !== end) return null;
+  const list = suggestions(askInput.value, { can: askCan(), earlier: store.get(ASK_HISTORY) });
+  if (!list.length) return null;
+  const at = ((askPick % list.length) + list.length) % list.length;
+  return { text: list[at], at, count: list.length };
+}
+function renderAsk() {
+  const typed = askInput.value, g = askGhostNow(), plan = resolveTyped(typed, askCan()), blocked = plan?.kind === "blocked";
+  $("#askGhost span").textContent = typed;
+  $("#askGhost b").textContent = g ? g.text.slice(typed.length) : blocked ? ` · ${plan.why}` : "";
+  $("#askGhost").scrollLeft = askInput.scrollLeft;
+  askTab.dataset.on = String(!!g);
+  askTab.title = g ? `Accept “${g.text}”${g.count > 1 ? ` (${g.at + 1} of ${g.count}; Up and Down switch)` : ""}` : "";
+  askSend.disabled = !!barSending || !plan || blocked;
+  if (blocked) askInput.setAttribute("aria-invalid", "true");
+  else askInput.removeAttribute("aria-invalid");
+}
+function acceptGhost() {
+  const g = askGhostNow();
+  if (!g) return;
+  askInput.value = g.text;
+  askInput.setSelectionRange(g.text.length, g.text.length);
+  askInput.scrollLeft = askInput.scrollWidth;
+  askPick = 0;
+  askInput.focus({ preventScroll: true });
+  renderAsk();
+}
+askInput.addEventListener("input", () => { askPick = 0; renderAsk(); });
+for (const type of ["keyup", "click", "select", "scroll"]) askInput.addEventListener(type, renderAsk);
+askInput.addEventListener("compositionstart", () => { askComposing = true; renderAsk(); });
+askInput.addEventListener("compositionend", () => { askComposing = false; renderAsk(); });
+askTab.addEventListener("click", acceptGhost);
+askInput.addEventListener("keydown", (e) => {
+  // Enter that ends a composition (some browsers send it after the composition): never a send.
+  if (e.isComposing || e.keyCode === 229) { if (e.key === "Enter") e.preventDefault(); return; }
+  if (e.key === "Escape") {
+    // The menu that "more" opens closes alone and keeps what is typed.
+    if (closeBarMenu()) { e.preventDefault(); e.stopPropagation(); return; }
+    hideBar();
+    return;
+  }
+  const g = askGhostNow();
+  if (!g) return;
+  if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); acceptGhost(); }
+  else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && g.count > 1) { e.preventDefault(); askPick = g.at + (e.key === "ArrowDown" ? 1 : -1); renderAsk(); }
+});
+$("#askForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (barSending) return;
+  const plan = resolveTyped(askInput.value, askCan());
+  if (!plan || plan.kind === "blocked") return;
+  if (plan.kind === "more") return void moreMenu.showPopover();
+  if (plan.kind === "add") return addBrollHere();
+  if (plan.kind === "act") return void makeAsk(plan.action);
+  store.set(ASK_HISTORY, rememberAsk(store.get(ASK_HISTORY), plan.text));
+  makeAsk("ask", plan.text);
+});
+// The ask is made at once and shows on its words; for this moment the input says so too, then the bar goes.
+const SENDING_MS = 700;
+function showSending() {
+  closeBarMenus();
+  barSel = null;
+  paintBarSel();
+  askInput.value = "";
+  askInput.readOnly = true;
+  askInput.setAttribute("aria-busy", "true");
+  askField.dataset.state = "sending";
+  $("#boldBtn").disabled = true;
+  $("#askLive").textContent = "Sending";
+  barSending = setTimeout(hideBar, SENDING_MS);
+  renderAsk();
+}
+
+/* What the old More button held: the typed command "more" opens it. It never takes the text selection (barSel keeps it),
+   opens below the input or above it, whichever fits, and works with the keyboard: the arrow keys move, Escape and Tab
+   go back to the input. */
+function closeBarMenus() { if (moreMenu.matches(":popover-open")) moreMenu.hidePopover(); }
+// Escape: close the menu and give the input the focus. Returns false when it was not open.
 function closeBarMenu() {
-  const m = barMenus.find((x) => x.menu.matches(":popover-open"));
-  if (!m) return false;
-  m.menu.hidePopover();
-  m.btn.focus();
+  if (!moreMenu.matches(":popover-open")) return false;
+  moreMenu.hidePopover();
+  askInput.focus();
   return true;
 }
-// The bar's controls in Tab order, as shown now (menus' items are not in it).
-const barControls = () => [...$$(".edit-bar__controls > button", bar), $("#askInput"), $("#askForm button")].filter((el) => !el.hidden && !el.disabled && el.offsetParent);
-function placeBarMenu({ menu, btn }) {
-  const r = btn.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight;
+function placeBarMenu() {
+  const r = $("#askForm").getBoundingClientRect(), w = moreMenu.offsetWidth, h = moreMenu.offsetHeight;
   const below = innerHeight - r.bottom - 8, above = r.top - 8;
   const up = h + 6 > below && above > below;
-  menu.style.top = `${Math.max(8, up ? r.top - h - 6 : r.bottom + 6)}px`;
-  menu.style.left = `${Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8))}px`;
+  moreMenu.style.top = `${Math.max(8, up ? r.top - h - 6 : r.bottom + 6)}px`;
+  moreMenu.style.left = `${Math.max(8, Math.min(r.left, document.documentElement.clientWidth - w - 8))}px`;
 }
-const menuItems = (menu) => $$(".menu-action:not(:disabled):not([hidden])", menu);
-for (const m of barMenus) {
-  m.btn.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") m.keys = true;
-    else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); m.keys = e.key === "ArrowUp" ? "last" : true; if (!m.menu.matches(":popover-open")) m.menu.showPopover(); }
-  });
-  m.menu.addEventListener("toggle", (e) => {
-    const open = e.newState === "open";
-    m.btn.setAttribute("aria-expanded", String(open));
-    if (open) {
-      placeBarMenu(m);
-      if (m.keys) menuItems(m.menu)[m.keys === "last" ? menuItems(m.menu).length - 1 : 0]?.focus();
-    }
-    m.keys = false;
-  });
-  m.menu.addEventListener("keydown", (e) => {
-    const items = menuItems(m.menu), i = items.indexOf(document.activeElement);
-    let to = null;
-    if (e.key === "ArrowDown") to = items[(i + 1) % items.length];
-    else if (e.key === "ArrowUp") to = items[(i - 1 + items.length) % items.length];
-    else if (e.key === "Home") to = items[0];
-    else if (e.key === "End") to = items.at(-1);
-    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeBarMenu(); return; }
-    else if (e.key === "Tab") {
-      // Tab leaves the menu for the next (Shift: previous) bar control; the closing menu never takes the focus.
-      e.preventDefault();
-      m.menu.hidePopover();
-      const list = barControls(), i = list.indexOf(m.btn);
-      (list[i + (e.shiftKey ? -1 : 1)] || m.btn).focus();
-      return;
-    }
-    else return;
-    e.preventDefault();
-    to?.focus();
-  });
-}
+const menuItems = () => $$(".menu-action:not(:disabled):not([hidden])", moreMenu);
+moreMenu.addEventListener("toggle", (e) => {
+  if (e.newState !== "open") return;
+  placeBarMenu();
+  menuItems()[0]?.focus();
+});
+moreMenu.addEventListener("keydown", (e) => {
+  const items = menuItems(), i = items.indexOf(document.activeElement);
+  let to = null;
+  if (e.key === "ArrowDown") to = items[(i + 1) % items.length];
+  else if (e.key === "ArrowUp") to = items[(i - 1 + items.length) % items.length];
+  else if (e.key === "Home") to = items[0];
+  else if (e.key === "End") to = items.at(-1);
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeBarMenu(); return; }
+  else if (e.key === "Tab") { e.preventDefault(); closeBarMenu(); return; }
+  else return;
+  e.preventDefault();
+  to?.focus();
+});
 let selTimer = 0;
 document.addEventListener("selectionchange", () => { refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 // What floats over the text follows it: on a scroll, and when the Keep all row moves the text without one (step Q).
-function placeOverText() { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }
+function placeBarAgain() { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); if (moreMenu.matches(":popover-open")) placeBarMenu(); } }
+function placeOverText() { placeBarAgain(); if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }
 addEventListener("scroll", placeOverText, { passive: true });
-addEventListener("resize", () => { if (document.activeElement === $("#askInput")) fitAsk(true); if (!bar.hidden && barSel?.range) { placeBar(barSel.range); for (const m of barMenus) if (m.menu.matches(":popover-open")) placeBarMenu(m); } positionShotCard(); });
+addEventListener("resize", () => { placeBarAgain(); positionShotCard(); });
+// The on-screen keyboard: the bar stays above it.
+window.visualViewport?.addEventListener("resize", placeBarAgain);
+window.visualViewport?.addEventListener("scroll", placeBarAgain);
 bar.addEventListener("pointerdown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
 bar.addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) makeAsk(b.dataset.act); });
-$("#askForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const q = $("#askInput").value.trim();
-  if (q) makeAsk("ask", q);
-});
-$("#askInput").addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  // A bar menu opened with the mouse leaves the focus here: Escape closes only that menu and keeps the typed ask.
-  if (closeBarMenu()) { e.preventDefault(); e.stopPropagation(); return; }
-  hideBar();
-});
-// The field grows when focused, but only into the room the screen has; the bar is placed again as it grows and shrinks.
-function fitAsk(focused) {
-  const input = $("#askInput");
-  if (focused) {
-    // Measured against the field's resting width (7rem) and the bar's full content, so neither an already-widened
-    // field (no transition with reduced motion) nor the bar's own width cap hides how much room there is.
-    const rest = 7 * parseFloat(getComputedStyle(document.documentElement).fontSize);
-    const controls = $(".edit-bar__controls", bar);
-    const barAtRest = bar.offsetWidth - controls.offsetWidth + controls.scrollWidth - input.offsetWidth + rest;
-    input.style.setProperty("--ask-max", `${rest + Math.max(0, document.documentElement.clientWidth - 16 - barAtRest)}px`);
-  }
-  if (!bar.hidden && barSel?.range) placeBar(barSel.range);
-}
-$("#askInput").addEventListener("focusin", () => fitAsk(true));
-$("#askInput").addEventListener("focusout", () => fitAsk(false));
-$("#askInput").addEventListener("transitionend", () => fitAsk(false));
-
 function makeAsk(action, typed = "") {
   const s = barSel;
   if (!s || !state.doc) return;
@@ -1456,7 +1522,8 @@ function makeAsk(action, typed = "") {
     if (!r) return hideBar();
     ({ start, end } = r);
   }
-  hideBar();
+  if (bar.hidden) hideBar();
+  else showSending();
   getSelection().removeAllRanges();
   // A guest's ask goes to the host, which adds it for everyone and hands it to its agent.
   if (state.guest) {
@@ -2614,7 +2681,7 @@ document.addEventListener("keydown", (e) => {
   if (!mod || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === "s") { e.preventDefault(); save(); return; }
-  // Focus in the edit bar (the Ask input, the B button): Ctrl/Cmd+B works there too, on the bar's saved selection.
+  // Focus in the edit bar (the input, the B button): Ctrl/Cmd+B works there too, on the bar's saved selection.
   if (k === "b" && !e.shiftKey && state.doc && bar.contains(e.target)) { e.preventDefault(); toggleCueHere(); return; }
   if (!state.doc || e.target.closest?.("input, textarea")) return;
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
@@ -3478,14 +3545,15 @@ function failShotCard(e) {
   p.title = e?.message || "Could not save the B-roll list.";
   renderShotCard();
 }
-$("#addBroll").addEventListener("click", () => {
+// The typed command "add b-roll".
+function addBrollHere() {
   const s = barSel;
   if (!s?.range || !canAddBroll()) return;
   const sel = spokenSelection(s.range);
   if (!sel.length) return;
   const range = s.range.cloneRange();
   openShotCard({ mode: "add", sel, anchor: () => range });
-});
+}
 $("#scKind").addEventListener("click", (e) => {
   const b = e.target.closest("[data-kind]");
   if (!b || sc.busy) return;

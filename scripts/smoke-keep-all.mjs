@@ -161,6 +161,14 @@ async function noCover(page, tag) {
 const wordSpot = `(() => { const l = [...document.querySelectorAll("#script .line__text, #script .line")].find((x) => x.textContent.includes("A blank page.")), w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { const at = n.textContent.indexOf("deadline"); if (at < 0) continue; const r = document.createRange(); r.setStart(n, at); r.setEnd(n, at + 8); const b = r.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; } return null; })()`;
 const doubleClick = async (page, at) => { for (const clickCount of [1, 2]) for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount }); await sleep(250); };
 
+// The selection bar's text input: type into it, and send with Enter.
+async function barSend(page, text) {
+  await page.click("#askInput");
+  await page.send("Input.insertText", { text });
+  await sleep(80);
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+}
+
 // Bold is always on (step S): the B button shows, it marks the word and the word shows bold.
 async function runBold(width, height) {
   const tag = `${width} px`;
@@ -189,7 +197,7 @@ async function runBold(width, height) {
   const opening = (await line()).indexOf("**");
   await page.eval(pick(opening, opening + word.length + 10));
   await sleep(300);
-  await page.click(`#editBar [data-act="shorter"]`);
+  await barSend(page, "shorter");
   check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "an ask over the bold word"), `${tag}: an ask sits over the bold word`);
   await page.eval(pick(opening + 3, opening + 4));
   await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "=*"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
@@ -201,7 +209,7 @@ async function runBold(width, height) {
   const copy = (await line()).lastIndexOf("**go on**") + 2;
   await page.eval(pick(copy, copy + 5));
   await sleep(300);
-  await page.click(`#editBar [data-act="shorter"]`);
+  await barSend(page, "shorter");
   check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "an ask on the repeated words"), `${tag}: an ask sits on the first of two repeated phrases`);
   await page.eval(pick(copy + 4, copy + 5));
   await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "=*"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
@@ -213,7 +221,7 @@ async function runBold(width, height) {
   const reached = (await line()).lastIndexOf("**note this**");
   await page.eval(pick(reached, reached + 13));
   await sleep(300);
-  await page.click(`#editBar [data-act="shorter"]`);
+  await barSend(page, "shorter");
   await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "an ask to answer");
   const taken = JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks.at(-1);
   await agent("answer_ask", { askId: taken.id, kind: "note", text: "A note." });
@@ -496,6 +504,236 @@ async function runExports(width, height) {
     const out = await exported(kind);
     check(out.includes(word) && !out.includes(`**${word}**`), `${tag}: the ${kind} export strips the stars`);
   }
+  await page.close();
+}
+
+// The slim bar (step T): only the input and B; typed commands with a grey ghost; what Enter sends; what the bar never does.
+async function runSlimBar(width, height) {
+  const tag = `${width}x${height}`;
+  const { page, agent } = await openDemo(width, height);
+  const script = async () => JSON.parse(await agent("get_script", {})).markdown;
+  const start = await script();
+  const barOpen = `!document.querySelector("#editBar").hidden`;
+  const value = `document.querySelector("#askInput").value`;
+  const ghost = `document.querySelector("#askGhost b").textContent`;
+  const tabOn = `document.querySelector("#askTab").dataset.on === "true"`;
+  const newAsks = async () => JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks;
+  const selectWord = async () => {
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(200);
+    await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+    await doubleClick(page, await page.eval(wordSpot));
+    await page.until(barOpen, "the selection bar");
+    await sleep(200);
+  };
+  const type = async (text) => { await page.click("#askInput"); await page.send("Input.insertText", { text }); await sleep(100); };
+  const closeBar = async () => { await pressKey(page, "Escape", "Escape", 27); await sleep(150); };
+
+  await selectWord();
+  check((await page.eval(`document.querySelector("#ebLabel").textContent`)) === "1 word", `${tag}: one word selected: the bar says 1 word`);
+  check(await page.eval(`[...document.querySelectorAll(".edit-bar__controls > button")].map((b) => b.id).join() === "boldBtn"`), `${tag}: the bar's only button outside the input is B`);
+  check(await page.eval(`document.querySelector("#askForm").getBoundingClientRect().left > document.querySelector("#boldBtn").getBoundingClientRect().left`), `${tag}: B sits before the input`);
+  check(await page.eval(`document.documentElement.scrollWidth <= document.documentElement.clientWidth`), `${tag}: no sideways scroll`);
+
+  // The ghost, and the Tab key that never changes the input's size.
+  const inputBox = `(() => { const r = document.querySelector("#askInput").getBoundingClientRect(); return r.width + "x" + r.height; })()`;
+  const sizeBefore = await page.eval(inputBox);
+  await page.click("#askInput");
+  await page.shot(`${width}-bar-empty`);
+  check((await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: Send is off with nothing typed`);
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  await sleep(150);
+  check((await page.eval(barOpen)) && (await script()) === start && !(await newAsks()).length, `${tag}: Enter with an empty input does nothing`);
+  await page.send("Input.insertText", { text: "s" });
+  await sleep(120);
+  check((await page.eval(ghost)) === "horter" && (await page.eval(tabOn)), `${tag}: typing s: the ghost shows the rest of Shorter and the Tab key shows`, await page.eval(ghost));
+  await page.shot(`${width}-bar-ghost`);
+  check((await page.eval(inputBox)) === sizeBefore, `${tag}: the Tab key doesn't change the input's size`, `${sizeBefore} ${await page.eval(inputBox)}`);
+  const aligned = await page.eval(`(() => { const m = document.createElement("canvas").getContext("2d"), i = document.querySelector("#askInput"), c = getComputedStyle(i); m.font = c.font; const b = document.querySelector("#askGhost b").getBoundingClientRect(), left = i.getBoundingClientRect().left + parseFloat(c.paddingLeft) + m.measureText(i.value).width; return Math.abs(b.left - left); })()`);
+  check(aligned <= 1.5, `${tag}: the ghost starts right after the typed letters`, aligned);
+  await pressKey(page, "ArrowDown", "ArrowDown", 40);
+  await sleep(80);
+  check((await page.eval(ghost)) === "impler", `${tag}: Down switches the suggestion`, await page.eval(ghost));
+  await pressKey(page, "ArrowUp", "ArrowUp", 38);
+  await sleep(80);
+  await pressKey(page, "Tab", "Tab", 9);
+  await sleep(100);
+  check((await page.eval(value)) === "Shorter" && (await page.eval(`document.activeElement.id`)) === "askInput", `${tag}: Tab takes the ghost and stays in the input`, await page.eval(value));
+  check(!(await page.eval(tabOn)) && (await page.eval(inputBox)) === sizeBefore, `${tag}: after Tab: no ghost, same size`);
+  // The Tab key can be pressed too (no Tab key on a phone).
+  await page.eval(`(() => { const i = document.querySelector("#askInput"); i.value = "si"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+  await sleep(80);
+  await page.click("#askTab");
+  await sleep(100);
+  check((await page.eval(value)) === "Simpler" && (await page.eval(`document.activeElement.id`)) === "askInput", `${tag}: pressing the Tab key takes the ghost`, await page.eval(value));
+  await closeBar();
+  check(!(await page.eval(barOpen)) && (await script()) === start, `${tag}: Escape closes and changes no text`);
+
+  // Enter sends: each command makes the same ask its button made, and the input shows the sending.
+  const sent = [["shorter", "shorter"], ["Simpler", "simpler"], ["sound like me", "like"], ["explain", "explain"], ["check facts", "facts"], ["find links", "links"], ["b-roll", "broll"]];
+  for (const [typed, action] of sent) {
+    await selectWord();
+    const word = await page.eval(`document.querySelector("#ebLabel").textContent`);
+    await type(typed);
+    await pressKey(page, "Enter", "Enter", 13, "\r");
+    if (typed === "shorter") {
+      check(await page.eval(`document.querySelector("#askField").dataset.state === "sending" && getComputedStyle(document.querySelector("#askSending")).display !== "none"`), `${tag}: the input shows the sending, no toast`);
+      await page.shot(`${width}-bar-sending`);
+    }
+    const asks = await newAsks();
+    check(asks.length === 1 && asks[0].action === action && asks[0].quote === "deadline", `${tag}: ${typed}: makes the ${action} ask on the selected word`, JSON.stringify(asks.map((a) => [a.action, a.quote])) + word);
+    check(asks[0]?.instruction === (await page.eval(`import("/doc.js").then((D) => D.ACTIONS[${JSON.stringify(action)}].instruction)`)), `${tag}: ${typed}: the same words go to the agent as before`);
+    await page.until(`document.querySelector("#editBar").hidden`, "the bar closing after sending");
+    check((await script()) === start, `${tag}: ${typed}: no text changed`);
+    await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+    await sleep(150);
+  }
+  // A free ask goes as typed, also from the Send button, and comes back as a suggestion next time.
+  await selectWord();
+  await type("  Make it funnier ");
+  await page.click("#askForm .edit-bar__send");
+  const free = await newAsks();
+  check(free.length === 1 && free[0].action === "ask" && free[0].instruction === "Make it funnier", `${tag}: a free ask goes as typed`, JSON.stringify(free.map((a) => a.instruction)));
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
+  await selectWord();
+  await type("mak");
+  check((await page.eval(ghost)) === "e it funnier", `${tag}: an earlier ask comes back as a suggestion`, await page.eval(ghost));
+  // A short ask that only starts like a command is sent as typed: Enter sends the text, not the ghost.
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  const short = await newAsks();
+  check(short[0]?.action === "ask" && short[0]?.instruction === "mak", `${tag}: Enter sends what is typed, not the ghost`);
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
+
+  // More: the menu with what it held, one of which asks.
+  await selectWord();
+  await type("more");
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  check(await page.until(`document.querySelector("#moreMenu").matches(":popover-open")`, "the More menu"), `${tag}: more opens the menu`);
+  await sleep(150);
+  check((await page.eval(`document.activeElement.dataset.act`)) === "explain", `${tag}: the menu takes the focus`, await page.eval(`document.activeElement.outerHTML.slice(0, 120) + " items " + document.querySelectorAll("#moreMenu .menu-action").length`));
+  await page.shot(`${width}-bar-more`);
+  await pressKey(page, "Escape", "Escape", 27);
+  await sleep(100);
+  check((await page.eval(barOpen)) && (await page.eval(`document.activeElement.id`)) === "askInput" && (await page.eval(value)) === "more", `${tag}: Escape closes only the menu and keeps what is typed`);
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  await page.until(`document.querySelector("#moreMenu").matches(":popover-open")`, "the More menu again");
+  await sleep(150);
+  await pressKey(page, "ArrowDown", "ArrowDown", 40);
+  await sleep(100);
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  const facts = await newAsks();
+  check(facts[0]?.action === "facts", `${tag}: a menu item makes its ask`, JSON.stringify(facts.map((a) => a.action)));
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
+
+  // Add B-roll opens its card, as the menu item did.
+  await selectWord();
+  await type("add b-roll");
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  check(await page.until(`!document.querySelector("#shotCard").hidden`, "the Add B-roll card"), `${tag}: add b-roll opens the card`);
+  check((await page.eval(`document.activeElement.id`)) === "scWhat", `${tag}: the card takes the focus`);
+  await closeBar();
+
+  // Over words that aren't spoken: B-roll says why on the control and sends nothing.
+  const heading = `[...document.querySelectorAll('#script .block')].find((x) => x.dataset.type !== "para" && x.textContent.trim().length > 4)`;
+  await page.eval(`getSelection().removeAllRanges()`);
+  await sleep(150);
+  await page.eval(`(() => { const el = ${heading}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (/\\p{L}{3,}/u.test(n.data)) break; const m = n.data.match(/\\p{L}{3,}/u), r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length); el.scrollIntoView({ block: "center" }); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  check(await page.until(barOpen, "the bar over a heading"), `${tag}: a heading shows the bar`);
+  await sleep(200);
+  check(await page.eval(`document.querySelector("#boldBtn").hidden`), `${tag}: no B over a heading`);
+  await type("b-roll");
+  check(/spoken/.test(await page.eval(ghost)) && (await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled && document.querySelector("#askInput").getAttribute("aria-invalid") === "true"`)), `${tag}: b-roll over a heading says why, on the control`, await page.eval(ghost));
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  await sleep(120);
+  check((await page.eval(barOpen)) && (await page.eval(value)) === "b-roll" && !(await newAsks()).length, `${tag}: Enter there sends nothing and keeps the words`);
+  await closeBar();
+
+  // The selected words stay marked while the focus is in the bar.
+  await selectWord();
+  await page.click("#askInput");
+  await sleep(100);
+  check(await page.eval(`CSS.highlights.has("bar-selection") && [...CSS.highlights.get("bar-selection")][0].toString() === "deadline"`), `${tag}: typing: the selected word stays marked`);
+  await page.send("Input.insertText", { text: "x" });
+  await page.click("#boldBtn");
+  await sleep(200);
+  check((await script()).includes("**deadline**") && (await page.eval(value)) === "x" && (await page.eval(barOpen)), `${tag}: B from the input marks the word and keeps what is typed`);
+  check(await page.eval(`[...CSS.highlights.get("bar-selection")][0].toString().includes("deadline")`), `${tag}: the word stays marked after B`);
+  await closeBar();
+  check(!(await page.eval(`CSS.highlights.has("bar-selection")`)), `${tag}: closing the bar takes the mark away`);
+  await page.close();
+}
+
+// Where the bar goes (Lex's screenshots: the old one sat on the paragraph above): not on the selected words nor on the line
+// above them, on a tall window, a short one and a phone. Only where neither fits may it cover the line above.
+async function runBarPlace(width, height) {
+  const tag = `${width}x${height}`;
+  const { page } = await openDemo(width, height);
+  const lines = `[...document.querySelectorAll('#script .block[data-type="para"]')].filter((x) => x.textContent.trim().split(/\\s+/).length > 8)`;
+  const selectIn = (index, scrollTo) => page.eval(`(() => { const el = ${lines}[${index}]; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); const n = w.nextNode(); const r = document.createRange(); r.setStart(n, 0); r.setEnd(n, Math.min(n.data.length, 20)); ${scrollTo}; const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  const report = () => page.eval(`(() => { const s = getSelection().getRangeAt(0), rs = [...s.getClientRects()].filter((x) => x.width > 0), first = rs[0], last = rs.at(-1), b = document.querySelector("#editBar").getBoundingClientRect(), lh = parseFloat(getComputedStyle(s.startContainer.parentElement).lineHeight); const clear = (t, bm) => b.bottom <= t || b.top >= bm; return { words: clear(first.top, last.bottom), above: clear(first.top - lh, first.top), inWindow: b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth, top: b.top, first: first.top, h: b.height, vh: innerHeight, topBar: document.querySelector(".top").getBoundingClientRect().bottom, room: first.top - document.querySelector(".top").getBoundingClientRect().bottom }; })()`);
+  const count = await page.eval(`${lines}.length`);
+  for (const [name, index, pos] of [["top of the window", 1, `el.scrollIntoView({ block: "start" }); scrollBy({ top: -80, behavior: "instant" })`], ["middle", 2, `el.scrollIntoView({ block: "center" })`], ["bottom of the window", 3, `el.scrollIntoView({ block: "end" })`]]) {
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(180);
+    await selectIn(Math.min(index, count - 1), pos);
+    await page.until(`!document.querySelector("#editBar").hidden`, "the selection bar");
+    await sleep(250);
+    const r = await report();
+    check(r.words, `${tag}: ${name}: the bar is not on the selected words`, JSON.stringify(r));
+    check(r.inWindow, `${tag}: ${name}: the bar is inside the window`, JSON.stringify(r));
+    // The line above is kept clear wherever there is room for that.
+    if (r.h + 8 + 8 + 30 <= Math.max(r.room, r.vh - r.first - 30)) check(r.above, `${tag}: ${name}: the bar is not on the line above`, JSON.stringify(r));
+    await page.shot(`${width}x${height}-place-${name.split(" ").at(-1)}`);
+  }
+  await page.close();
+}
+
+// A guest's bar (step T): the same commands; Suggest B-roll and asks reach the host's agent, adding a shot stays the host's.
+async function runSlimGuest(width, height) {
+  const tag = `${width} px guest`;
+  const { page, agent } = await openDemo(width, height);
+  await page.eval(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__link = t; } } })`);
+  await page.click("#shareBtn");
+  await page.until(`!!window.__link`, "the share link");
+  const guest = await openPage(width, height);
+  await guest.send("Page.navigate", { url: await page.eval(`window.__link`) });
+  await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+  await guest.eval(`document.querySelector("#joinName").value = "Guest"`);
+  await guest.click("#joinForm button");
+  await guest.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the guest's script", 12000);
+  await guest.send("Page.bringToFront");
+  for (const [typed, action] of [["b-roll", "broll"], ["shorter", "shorter"], ["Say it warmer", "ask"]]) {
+    await guest.eval(`getSelection().removeAllRanges()`);
+    await sleep(200);
+    await guest.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+    await doubleClick(guest, await guest.eval(wordSpot));
+    await guest.until(`!document.querySelector("#editBar").hidden`, "the guest's bar");
+    await sleep(200);
+    await barSend(guest, typed);
+    let asks = [];
+    for (let i = 0; i < 40 && !asks.length; i++) { asks = JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks; if (!asks.length) await sleep(100); }
+    check(asks[0]?.action === action && asks[0]?.quote === "deadline", `${tag}: ${typed}: reaches the host's agent as ${action}`, JSON.stringify(asks.map((a) => [a.action, a.quote])));
+    if (action === "ask") check(asks[0]?.instruction === typed, `${tag}: a free ask goes as typed`);
+    await guest.until(`document.querySelector("#editBar").hidden`, "the guest's bar closing");
+    await guest.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+    await sleep(300);
+  }
+  await guest.eval(`getSelection().removeAllRanges()`);
+  await sleep(200);
+  await doubleClick(guest, await guest.eval(wordSpot));
+  await guest.until(`!document.querySelector("#editBar").hidden`, "the guest's bar");
+  await sleep(200);
+  await guest.click("#askInput");
+  await guest.send("Input.insertText", { text: "add b-roll" });
+  await sleep(100);
+  check(/host/.test(await guest.eval(`document.querySelector("#askGhost b").textContent`)) && (await guest.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: add b-roll says it is the host's`);
+  await guest.close();
   await page.close();
 }
 
@@ -985,7 +1223,7 @@ async function run(width, height) {
     const pick = (fromEnd, len = 2) => `(() => { const el = ${paraOf}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n, total = 0; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) { nodes.push(n); total += n.data.length; } const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const from = total - ${fromEnd}, r = document.createRange(); r.setStart(...point(from)); r.setEnd(...point(from + ${len})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
     await page.eval(pick(5));
     await sleep(300);
-    await page.click(`#editBar [data-act="shorter"]`);
+    await barSend(page, "shorter");
     check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's ask"), `${tag}: the host has an ask on the second word`);
     // The ask reaches the guest over the network and redraws the line, so the guest selects once it has arrived.
     check(await guest.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's ask reaches the guest"), `${tag}: the host's ask reaches the guest`);
@@ -1004,7 +1242,7 @@ async function run(width, height) {
     // A guest's Enter inside a new ask of the host's closes it too (a split), and no ask is left on another "no".
     await page.eval(pick(2));
     await sleep(300);
-    await page.click(`#editBar [data-act="shorter"]`);
+    await barSend(page, "shorter");
     check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's second ask"), `${tag}: the host has a second ask on the last word`);
     check(await guest.until(`!!${paraOf}.querySelector("[data-ask]")`, "the second ask reaches the guest"), `${tag}: the second ask reaches the guest`);
     await sleep(300);
@@ -1030,6 +1268,13 @@ try {
   } else if (only === "refusals") {
     await runBoldRefuses(1280, 800);
     await runBoldKinds(1280, 800);
+  } else if (only === "slim") {
+    await runSlimBar(1280, 800);
+    await runSlimBar(390, 760);
+    await runBarPlace(1280, 800);
+    await runBarPlace(1280, 420);
+    await runBarPlace(390, 760);
+    await runSlimGuest(1280, 800);
   } else if (only === "look") {
     await runBoldLook(1280, 800);
   } else if (only === "exports") {
@@ -1043,6 +1288,12 @@ try {
     await runBold(390, 760);
     await runBoldKeys(1280, 800);
     await runBoldKeys(390, 760);
+    await runSlimBar(1280, 800);
+    await runSlimBar(390, 760);
+    await runBarPlace(1280, 800);
+    await runBarPlace(1280, 420);
+    await runBarPlace(390, 760);
+    await runSlimGuest(1280, 800);
     await runBoldLook(1280, 800);
     await runBoldRefuses(1280, 800);
     await runBoldKinds(1280, 800);
