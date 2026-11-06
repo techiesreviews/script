@@ -304,6 +304,33 @@ async function runBoldKeys(width, height) {
   await page.close();
 }
 
+// The file name's menu on a short window (fleet #31 item 2): with Bold marking and the own colours on, it is taller than the
+// window, so it scrolls inside itself and its last row (the colours) can be reached; it never runs off the bottom.
+async function runMenuHeight(width, height) {
+  const tag = `${width}x${height}`;
+  const { page, agent } = await openDemo(width, height);
+  await agent("set_cue_settings", { on: true });
+  await page.until(`!!document.querySelector('#cueGroup [data-cue-set="on"]')`, "the bold menu");
+  await page.eval(`getSelection().removeAllRanges()`);
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(400);
+  await page.click("#boldOwn");
+  await page.until(`document.querySelector("#boldColours") && !document.querySelector("#boldColours").hidden`, "the colour row");
+  await sleep(300);
+  const menu = `document.querySelector("#scriptMenu")`;
+  const box = () => page.eval(`(() => { const m = ${menu}, r = m.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight, scrolls: m.scrollHeight > m.clientHeight + 1, overflowY: getComputedStyle(m).overflowY }; })()`);
+  const b = await box();
+  check(b.bottom <= b.h + 0.5 && b.top >= -0.5, `${tag}: the menu stays inside the window`, JSON.stringify(b));
+  if (height < 500) check(b.scrolls && b.overflowY === "auto", `${tag}: it scrolls inside itself when it is taller than the window`, JSON.stringify(b));
+  await page.eval(`${menu}.scrollTop = ${menu}.scrollHeight`);
+  await sleep(200);
+  const last = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#boldFg").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, fgTop: r.top, menuTop: m.top, h: r.height }; })()`);
+  check(last.fgBottom <= last.menuBottom + 0.5 && last.fgTop >= last.menuTop && last.h > 0, `${tag}: scrolled down, the font colour input is in view`, JSON.stringify(last));
+  await pressKey(page, "Escape", "Escape", 27);
+  await page.close();
+}
+
 // With Bold marking off an edit is never refused (Lex, 2026-11-06): deleting the bold word in "**Note** - more" or "**y**- z" goes
 // through, however the text left reads, and one Ctrl+Z brings it back.
 async function runBoldOffEdits(width, height) {
@@ -578,6 +605,15 @@ async function runRename(width, height) {
   check((await page.eval(`localStorage.getItem(${JSON.stringify(`script-editor:cues:${was}`)})`)) !== null, `${tag}: storage full: the settings stay under the old name`);
   await doubleClick(page, await page.eval(wordSpot));
   check(await page.until(`!document.querySelector("#boldBtn").hidden`, "the B button with storage full"), `${tag}: storage full: bold is still on for this script, the B button shows`);
+  // Storage still full: the agent is told the write failed, and the script keeps the settings it holds in memory.
+  const said = await agent("set_cue_settings", { export: "show", forScript: true });
+  check(/could not be saved/i.test(said), `${tag}: storage full right after a rename: set_cue_settings says the change could not be saved`, said);
+  await sleep(300);
+  check(await page.eval(onInMenu) && (await page.eval(drawn)) === 1, `${tag}: storage full right after a rename: the script keeps its own bold setting after the refused write`);
+  const kept2Text = await agent("get_cue_settings", {});
+  let kept2 = {};
+  try { kept2 = JSON.parse(kept2Text); } catch { /* the check below fails and shows the text */ }
+  check(kept2.on === true && kept2.export !== "show", `${tag}: storage full right after a rename: the settings in force are what they were`, kept2Text);
   await page.eval(`Storage.prototype.setItem = window.__setItem`);
   await page.eval(`getSelection().removeAllRanges()`);
 
@@ -1077,6 +1113,12 @@ const only = process.env.SMOKE_ONLY;
 try {
   if (only === "guest") {
     await run(1280, 800);
+  } else if (only === "menu") {
+    await runMenuHeight(1280, 420);
+    await runMenuHeight(390, 650);
+  } else if (only === "rename") {
+    await runRename(1280, 800);
+    await runRename(390, 760);
   } else if (only === "refusals") {
     await runBoldOffEdits(1280, 800);
     await runBoldKinds(1280, 800);
@@ -1093,6 +1135,8 @@ try {
     await runBoldKeys(390, 760);
     await runBoldOffEdits(1280, 800);
     await runBoldKinds(1280, 800);
+    await runMenuHeight(1280, 420);
+    await runMenuHeight(390, 650);
     await runRename(1280, 800);
     await runRename(390, 760);
     await runUndoAndTabs(1280, 800);
@@ -1100,7 +1144,7 @@ try {
     await runExports(390, 760);
   }
 } catch (e) {
-  check(false, `stopped: ${e.message}`);
+  check(false, `stopped: ${e.message}`, e.stack?.split("\n").slice(1, 3).join(" "));
 }
 cdp.close();
 console.log(failures ? `RESULT: fail ${failures} checks` : "RESULT: ok");
