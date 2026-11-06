@@ -845,12 +845,13 @@ function reanchorAll() {
   for (const id of ids) reanchorBlock(id);
 }
 const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, fromId, toId, fromStart, shift);
-// Bold marks moved in a block: open asks and "Sounds like me" marks there follow by their offsets (`at(start, end)`, null
-// when an edit fell inside them), with their quote as it reads now (`content`; null when it stays), so they can't jump into
-// another word by a search. `insideGoes`: one the edit fell inside is cancelled, for the same reason.
+// Bold marks moved in a block: open asks and "Sounds like me" marks there follow by their offsets (`at(start, end)` gives
+// the new range of one, or null when an edit fell inside it), with their quote as it reads now (`content`; null when it
+// stays), so they can't jump into another word by a search. `insideGoes`: one the edit fell inside is cancelled, for the
+// same reason.
 function followAnchors(id, content, at, { insideGoes = false } = {}) {
   const move = (x, gone) => {
-    const r = at(x.start, x.end, x);
+    const r = at(x.start, x.end);
     if (r) Object.assign(x, r, content == null ? {} : { quote: content.slice(r.start, r.end) });
     else if (insideGoes) gone();
   };
@@ -4922,21 +4923,25 @@ function restoreSelection(sel) {
   try { getSelection().setBaseAndExtent(an, ao, fn, fo); } catch { setCaretAt(el, sel.focus); }
 }
 // Someone else's change (or an undo on a name tag) is in state.doc: asks follow the text, then the script redraws.
-function afterRoomOps(ops, sel) {
+function afterRoomOps(ops, sel, before = new Map()) {
   followMarks(ops);
   const touched = new Set();
   let structure = false;
   // With bold marking on, the host closes an ask or mark that an edit fell inside (as for the person's own edit that
-  // breaks a bold stretch), so it can't jump to a later copy of its words by a search. A guest leaves that to the host's
-  // asks message. Off, the old search decides.
+  // breaks a bold stretch), so it can't jump to a later copy of its words by a search; the same for its own Undo and an
+  // Undo on a name tag. A guest leaves that to the host's asks message. Off, the old search decides.
   const strict = cues().on && together?.room?.role === "host";
+  const was = new Map(before); // the text of each block before the edit being followed (edits of a batch come one by one)
   for (const op of ops) {
     if (op.type === "text") {
       touched.add(op.blockId);
-      followAnchors(op.blockId, null, (start, end, x) => (strict ? C.followRoomEdit({ start, end, quote: x.quote }, op) : C.followTextOp({ start, end }, op)), { insideGoes: strict });
+      const old = was.get(op.blockId);
+      followAnchors(op.blockId, null, (start, end) => (strict ? C.followRoomEdit({ start, end }, op, old) : C.followTextOp({ start, end }, op)), { insideGoes: strict });
+      if (typeof old === "string") was.set(op.blockId, old.slice(0, op.at) + op.ins + old.slice(op.at + op.del));
     }
     else if (op.type === "split") {
-      if (strict) followAnchors(op.blockId, null, (start, end, x) => C.followRoomEdit({ start, end, quote: x.quote }, op), { insideGoes: true });
+      if (strict) followAnchors(op.blockId, null, (start, end) => C.followRoomEdit({ start, end }, op), { insideGoes: true });
+      was.delete(op.blockId);
       moveAsks(op.blockId, op.newId, op.at, -op.at);
       touched.add(op.blockId).add(op.newId);
       structure = true;

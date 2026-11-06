@@ -406,22 +406,48 @@ export function textOpInside({ start, end }, op) {
   if (op.type !== "text") return false;
   return op.del ? op.at < end && op.at + op.del > start : op.at > start && op.at < end;
 }
-/** Where a host's ask or mark (`range`: start, end, quote) goes through one room edit when Bold marking is on: as
- *  followTextOp says; but when the edit fell inside it, it is closed (null), not searched for again by its old words.
- *  One edit can span words nobody changed (a batch of edits, or one diff from the first changed character to the last): when
- *  it covers the whole range and the quote stands once in the new text, the range follows the quote there. A split inside
- *  it closes it too. */
-export function followRoomEdit(range, op) {
+// Where each character of `a` is in `b` (-1: gone), by the longest run of characters kept in order, after the common start and end
+// are paired off. null when the middle is too big to work out.
+export function alignChars(a, b) {
+  const max = Math.min(a.length, b.length);
+  let p = 0, q = 0;
+  while (p < max && a[p] === b[p]) p++;
+  while (q < max - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+  const map = new Array(a.length).fill(-1);
+  for (let i = 0; i < p; i++) map[i] = i;
+  for (let k = 1; k <= q; k++) map[a.length - k] = b.length - k;
+  const x = a.slice(p, a.length - q), y = b.slice(p, b.length - q);
+  if (x.length * y.length > 250_000) return null;
+  const w = y.length + 1, lcs = new Uint32Array((x.length + 1) * w);
+  for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) lcs[i * w + j] = x[i] === y[j] ? lcs[(i + 1) * w + j + 1] + 1 : Math.max(lcs[(i + 1) * w + j], lcs[i * w + j + 1]);
+  for (let i = 0, j = 0; i < x.length && j < y.length;) {
+    if (x[i] === y[j]) { map[p + i] = p + j; i++; j++; }
+    else if (lcs[(i + 1) * w + j] >= lcs[i * w + j + 1]) i++;
+    else j++;
+  }
+  return map;
+}
+const WORDISH = /[\p{L}\p{N}]/u;
+/** Where a host's ask or mark (`range`: start, end) goes through one room edit when Bold marking is on: as followTextOp says;
+ *  but when the edit fell inside it, it is closed (null), not searched for again by its old words. `old`: the block's text
+ *  before the edit, when known. One edit can span words nobody changed (several edits sent as one, or one diff from the first
+ *  changed character to the last): the old and new text it replaces are lined up, and the range follows when all its own
+ *  characters were kept side by side and no word grew into it. A split inside it closes it too. */
+export function followRoomEdit(range, op, old = null) {
   const kept = { start: range.start, end: range.end };
   if (op.type === "split") return range.start < op.at && op.at < range.end ? null : kept;
   const moved = followTextOp(range, op);
   if (moved) return moved;
   if (!textOpInside(range, op)) return kept;
-  if (range.quote && op.at <= range.start && op.at + op.del >= range.end) {
-    const i = op.ins.indexOf(range.quote);
-    if (i >= 0 && i === op.ins.lastIndexOf(range.quote)) return { start: op.at + i, end: op.at + i + range.quote.length };
-  }
-  return null;
+  if (typeof old !== "string" || op.at > range.start || op.at + op.del < range.end) return null;
+  const map = alignChars(old.slice(op.at, op.at + op.del), op.ins);
+  if (!map) return null;
+  const from = range.start - op.at, len = range.end - range.start;
+  for (let i = from; i < from + len; i++) if (map[i] < 0 || (i > from && map[i] !== map[i - 1] + 1)) return null;
+  const start = op.at + map[from], now = old.slice(0, op.at) + op.ins + old.slice(op.at + op.del);
+  const grew = (before, after) => WORDISH.test(after ?? "") && !WORDISH.test(before ?? "");
+  if (grew(old[range.start - 1], now[start - 1]) || grew(old[range.end], now[start + len])) return null;
+  return { start, end: start + len };
 }
 /** May the person's Ctrl/Cmd+B do this toggle (K.toggleCue's result) in this block? Not over open work, and not when
  *  the new text would read as another kind of block ("**- item**" without its marks is a list line). */
