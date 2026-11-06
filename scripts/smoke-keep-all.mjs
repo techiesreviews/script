@@ -659,7 +659,7 @@ async function runSlimBar(width, height) {
   await sleep(120);
   check((await page.eval(barOpen)) && (await page.eval(value)) === "b-roll" && !(await newAsks()).length, `${tag}: Enter there sends nothing and keeps the words`);
   check((await page.eval(`document.querySelector("#askLive").textContent`)) === "B-roll needs spoken words.", `${tag}: the whole reason is read out too`, await page.eval(`document.querySelector("#askLive").textContent`));
-  const reasonFits = `document.querySelector("#askGhost b").getBoundingClientRect().right <= document.querySelector("#askGhost").getBoundingClientRect().right`;
+  const reasonFits = `document.querySelector("#askGhost b").getBoundingClientRect().left >= document.querySelector("#askGhost").getBoundingClientRect().left`;
   await page.eval(`(() => { const i = document.querySelector("#askInput"); i.value = "suggest b roll"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
   await sleep(80);
   check(await page.eval(reasonFits), `${tag}: the longest reason fits inside the input`, await page.eval(`document.querySelector("#askGhost").textContent`));
@@ -789,7 +789,16 @@ async function runSlimBar(width, height) {
     await sleep(200);
   }
 
-  // Right-to-left words: the ghost stays away, what is typed goes as typed.
+  // A press that has nothing to do with the text: a closed bar stays closed.
+  await selectWord();
+  await closeBar();
+  await page.click('#viewSwitch [data-view="script"]');
+  await sleep(350);
+  check(!(await page.eval(barOpen)), `${tag}: a toolbar button doesn't bring a closed bar back`);
+  await page.eval(`getSelection().removeAllRanges()`);
+  await sleep(200);
+
+    // Right-to-left words: the ghost stays away, what is typed goes as typed.
   await page.eval(`localStorage.setItem("script-editor:askHistory", JSON.stringify(["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"]))`);
   await selectWord();
   await type("\u05e9\u05dc");
@@ -834,7 +843,7 @@ async function runNarrowBar(width, height) {
   await page.click("#askInput");
   await page.send("Input.insertText", { text: "suggest b roll" });
   await sleep(120);
-  check(await page.eval(`document.querySelector("#askGhost b").getBoundingClientRect().right <= document.querySelector("#askGhost").getBoundingClientRect().right`), `${tag}: the longest reason fits`, await page.eval(`document.querySelector("#askGhost").textContent`));
+  check(await page.eval(`document.querySelector("#askGhost b").getBoundingClientRect().left >= document.querySelector("#askGhost").getBoundingClientRect().left`), `${tag}: the longest reason fits`, await page.eval(`document.querySelector("#askGhost").textContent`));
   await page.close();
 }
 
@@ -902,7 +911,7 @@ async function runSlimGuest(width, height) {
   await guest.send("Input.insertText", { text: "add b-roll" });
   await sleep(100);
   check(/host/.test(await guest.eval(`document.querySelector("#askGhost b").textContent`)) && (await guest.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: add b-roll says it is the host's`);
-  check(await guest.eval(`document.querySelector("#askGhost b").getBoundingClientRect().right <= document.querySelector("#askGhost").getBoundingClientRect().right`), `${tag}: the reason fits inside the input`);
+  check(await guest.eval(`document.querySelector("#askGhost b").getBoundingClientRect().left >= document.querySelector("#askGhost").getBoundingClientRect().left`), `${tag}: the reason fits inside the input`);
   await pressKey(guest, "Escape", "Escape", 27);
   await guest.eval(`getSelection().removeAllRanges()`);
   await sleep(200);
