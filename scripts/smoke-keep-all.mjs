@@ -469,6 +469,16 @@ async function runBoldKinds(width, height) {
   await undoOnce();
   check((await script()).markdown === before1.markdown, `${tag}: one Ctrl+Z takes it back`);
 
+  // Enter over a selection inside a bold list-like line: neither part reads as a list, but joined they would ("- y z").
+  const over = await addLine("**-x y** z");
+  const beforeOver = await script();
+  await placeIn(over, 3, 4);
+  await sleep(250);
+  await press("Enter", "Enter", 13, 0, "\r");
+  const afterOver = await script();
+  check(afterOver.markdown === beforeOver.markdown && afterOver.words === beforeOver.words, `${tag}: Enter over a selection inside a bold list-like line is refused, no word leaves`, (await lines()).find((l) => l.includes("y")));
+  if (afterOver.markdown !== beforeOver.markdown) await undoOnce();
+
   // Joining a line onto a bold list-like line would make it a list: refused, both stay bold, no literal marks.
   const upper = await addLine("**- a**");
   const lower = await addLine("**b**", upper);
