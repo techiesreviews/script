@@ -2537,7 +2537,7 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
   // A script's own bold settings go with it, so a new name changes nothing on the page and nothing is redrawn. The new
   // name belongs to this script now: settings left there before go. If they can't be written (storage full) they stay
-  // under the old name, and the memo keeps them until the next settings change or reload, so the page stays as it is.
+  // under the old name, and the memo keeps them until the next settings change that is saved, or a reload, so the page stays as it is.
   const own = store.get(cueKey(from));
   store.del(cueKey(to));
   if (own != null && store.set(cueKey(to), own) && clear) store.del(cueKey(from));

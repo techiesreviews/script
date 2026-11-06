@@ -500,7 +500,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .menu__search { display: block; inline-size: 100%; margin-block-end: 0.35rem; padding: 0.35rem 0.55rem; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--raised); color: var(--text); font: inherit; font-size: max(16px, 0.9rem); }
 .menu__search:focus-visible { outline-offset: 0; }
 @media (pointer: fine) { .menu__search { font-size: 0.85rem; } }
-.scripts { display: grid; gap: 1px; max-block-size: min(22rem, 55dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.scripts { display: grid; gap: 1px; max-block-size: min(22rem, 55dvh); overflow-y: auto; scrollbar-width: thin; } /* no overscroll-behavior: at its end the wheel goes on scrolling the menu around it */
 .scripts__row { display: flex; align-items: center; gap: 0.15rem; border-radius: var(--radius); }
 .scripts__row:has([aria-current="true"]) { background: var(--raised); }
 .scripts__open { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-inline-size: 0; min-block-size: 2.25rem; padding: 0.3rem 0.5rem; border: 0; border-radius: var(--radius); background: transparent; text-align: start; cursor: pointer; }

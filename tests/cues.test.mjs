@@ -940,4 +940,9 @@ test("quoteSelection (B-roll): a quote across a bold edge is found, mapped back 
   const twice = B.quoteSelection(mixed, "one and two");
   assert.equal(twice.length, 1);
   assert.equal(at(2).slice(twice[0].start, twice[0].end), "one** and **two");
+  // A quote found as written wins, as before bold: "now okay" lands on the plain copy, not on the one hidden by marks.
+  const twin = D.parse("# T\n\n## P\n\nSay **now** okay.\n\nLater now okay again.\n");
+  const hit = B.quoteSelection(twin, "now okay");
+  assert.equal(hit.length, 1);
+  assert.equal(D.contentOf(D.blockById(twin, hit[0].id)), "Later now okay again.");
 });
