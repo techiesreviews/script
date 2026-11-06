@@ -4,7 +4,7 @@ Lex (2026-11-04), repeated 2026-11-06 through the fleet lead: the selection bar 
 
 ## What changes
 
-- `public/edit-bar.js` (pure, tested): `resolveTyped` says what a typed line does, `suggestions` what the ghost offers, `rememberAsk` keeps earlier free asks, `barSpot` and `phoneDock` where the bar goes.
+- `public/edit-bar.js` (pure, tested): `resolveTyped` says what a typed line does, `suggestions` what the ghost offers, `rememberAsk` keeps earlier free asks, `findWords` finds the selected words again after the line changed, `barSpot` and `phoneDock` where the bar goes.
 - A typed command gives the same `action` and standard instruction as its button: nothing changes in what reaches the agent or the host, guests included. Anything else is an `ask` with the words as typed; Enter sends what is typed, never the ghost.
 - Decisions the mock-up left open:
   - **More:** the mock-up has no place for it, so each of its items is a command of its own (Explain how it works, Check facts, Find links), and `more` opens the same small menu.
