@@ -5,7 +5,7 @@ import { safeUrl } from "../public/links.js";
 import { CUE_LIMITS } from "../public/cues.js";
 import { SKETCH_MAX, BROLL_LIMITS, IMAGE_UPLOAD_MAX } from "../public/broll.js";
 
-export const VERSION = "0.9.0";
+export const VERSION = "0.10.0";
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 // An agent token: "se2-<birth time>-<random>", made by the Worker (POST /api/agent-token). The birth time is the
 // Worker's Date.now() in base36; the random part is 32 random bytes in base64url. The Worker's clock both writes and
