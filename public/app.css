@@ -491,6 +491,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 
 /* ---------- Script switcher (under the file name) ---------- */
 .menu--scripts { inline-size: min(21rem, calc(100vw - 1.5rem)); }
+/* The recent list, the open script's actions and the Bold settings can be taller than a short window: scroll inside. */
+.menu--scripts { max-block-size: calc(100dvh - 4.5rem); overflow-y: auto; overscroll-behavior: contain; }
 #docInfo { anchor-name: --doc; }
 @supports (position-area: block-end) {
   .menu--scripts { position-anchor: --doc; position-area: block-end span-inline-end; position-try-fallbacks: flip-inline; }

@@ -1215,7 +1215,9 @@ const prompterOpts = () => ({ cues: cues().on ? cues().export : "strip" });
 function setCues(patch, forScript) {
   const key = forScript ? cueKey() : "cues", prev = store.get(key);
   const saved = store.set(key, { ...(prev || {}), ...patch });
-  cuesChanged();
+  // A refused write changes nothing, so nothing is redrawn: settings held only in memory (a script's own after a rename
+  // with storage full) would be read again from storage and drop.
+  if (saved) cuesChanged();
   return { forScript: !!forScript, key, prev, saved };
 }
 // The script may have a new name by now and its settings went with it, so the key is worked out here. The Undo line
