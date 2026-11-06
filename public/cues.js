@@ -1,22 +1,14 @@
 // Cues in the script (fleet issue #14, Lex 2026-11-04), shown as bold: "**words**" in a spoken line, the standard Markdown
 // bold (the fleet lead's decision after the release review; first built as "==words==", never released, so no script
-// holds that). Optional and off by default
-// (settings below). The prompter shows "**" as literal asterisks today, so its export strips them unless the setting
-// `export` says show. Rules like links (links.js): words on one line, no brackets or "*" inside, at least one letter or
-// digit, never inside a link. A pair starts and ends at word boundaries: no letter, digit or "*" outside it, no space
-// inside its edges, so a**b, **kwargs, 2**3 and a ** b are plain text.
-// With cue marking off nothing reads "**" anywhere: textCues finds none, so the page, the exports, word counts, links and
-// rewrites treat it as plain text, byte for byte (Lex's promise, 2026-11-05). The app says when cues are read
-// (readCuesWhen); until it does, they are not. The one thing that happens while off: an edit that empties a stretch takes
-// its marks (settleMarks), read from the text alone, as no setting travels to a guest.
+// holds that). Always on (Lex, 2026-11-06). The prompter shows "**" as literal asterisks today, so its export strips them.
+// Rules like links (links.js): words on one line, no brackets or "*" inside, at least one letter or digit, never inside a
+// link. A pair starts and ends at word boundaries: no letter, digit or "*" outside it, no space inside its edges, so
+// a**b, **kwargs, 2**3 and a ** b are plain text.
 // Pure: no DOM. app.js draws cues with the links' show/hide trick; changes.js plans the agent's cue changes.
 import { textLinks, isLinkLine, spokenText, quoteRe, overlaps } from "./links.js";
 
 export const CUE_LIMITS = { cues: 30 };
 const CUE = /(?<![\p{L}\p{N}\p{M}*])\*\*([^\s*[\]](?:[^*[\]\n]*[^\s*[\]])?)\*\*(?![\p{L}\p{N}\p{M}*])/gu;
-let reading = () => false;
-/** Say when cues are read: fn() is true while cue marking is on (asked each time, so it follows the open script). */
-export const readCuesWhen = (fn) => { reading = fn; };
 const WORDY = /[\p{L}\p{N}]/u;
 const BAD_WORDS = /[*[\]\n]/;
 // Whole words for a cue: a letter, digit or combining mark on both sides of an edge means the edge cuts a word (or,
@@ -24,49 +16,14 @@ const BAD_WORDS = /[*[\]\n]/;
 export const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
 const wholeWords = (t, s, e) => !(WORD_CHAR.test(t[s] ?? "") && WORD_CHAR.test(t[s - 1] ?? "")) && !(WORD_CHAR.test(t[e - 1] ?? "") && WORD_CHAR.test(t[e] ?? ""));
 
-/* ---------- Settings (Lex 2026-11-04: chosen by the person and by the agent) ----------
-   on: cue marking on or off (off: no shortcut, no button, cues show as plain text, as before).
-   action: "highlight" (only a highlight) or "camera" (also a camera action; stored only, the prompter acts later).
-   export: "strip" (the prompter file shows plain words) or "show" (it keeps the "**" marks). */
-export const CUE_DEFAULTS = Object.freeze({ on: false, action: "highlight", export: "strip" });
-const CHOICES = { on: [true, false], action: ["highlight", "camera"], export: ["strip", "show"] };
-const pick = (from) => Object.fromEntries(Object.keys(CHOICES).filter((k) => from && CHOICES[k].includes(from[k])).map((k) => [k, from[k]]));
-/** The settings in force: the defaults, then the person's, then the open script's own (the agent may set those). */
-export const cueSettings = (person, script) => ({ ...CUE_DEFAULTS, ...pick(person), ...pick(script) });
-/** A settings change's problem ("" when fine). `extra`: other argument names allowed beside the settings. */
-export function checkSettings(patch, extra = []) {
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return "Settings must be an object.";
-  for (const k of Object.keys(patch)) if (!(k in CHOICES) && !extra.includes(k)) return `Unknown setting: ${k}.`;
-  if (!Object.keys(CHOICES).some((k) => patch[k] !== undefined)) return "Give at least one of on, action or export.";
-  if (patch.on !== undefined && typeof patch.on !== "boolean") return "on must be true or false.";
-  if (patch.action !== undefined && !CHOICES.action.includes(patch.action)) return "action must be highlight or camera.";
-  if (patch.export !== undefined && !CHOICES.export.includes(patch.export)) return "export must be strip or show.";
-  return "";
-}
-
-/* ---------- How bold looks (Lex 2026-11-04): plain bold, or the person's own colours ----------
-   Kept per person, apart from the settings above. Only "#rrggbb" values reach the page's CSS. */
-export const BOLD_DEFAULTS = Object.freeze({ own: false, background: "#fff1b8", color: "#1f1f1f" });
+/* ---------- How bold looks (Lex 2026-11-06): orange and bold, or the person's own colours ----------
+   Kept per person. null: not chosen, so the page's own look (--bold-ink in app.css, no background). Only "#rrggbb" values
+   reach the page's CSS. A choice saved before 2026-11-06 counted only with `own: true`. */
 const HEX = /^#[0-9a-f]{6}$/i;
 export const boldStyle = (stored) => ({
-  own: stored?.own === true,
-  background: HEX.test(stored?.background) ? stored.background : BOLD_DEFAULTS.background,
-  color: HEX.test(stored?.color) ? stored.color : BOLD_DEFAULTS.color,
+  color: stored?.own !== false && HEX.test(stored?.color) ? stored.color : null,
+  background: stored?.own !== false && HEX.test(stored?.background) ? stored.background : null,
 });
-
-/** What the person (the banner, after the agent's name; null for none) and the agent are told after set_cue_settings.
- *  words: what changed in force (empty when nothing did); forScript: where it was saved; hadOwn: the open script had
- *  its own settings before; stored: whether what is saved changed; saved: false when the browser refused to store it. */
-export function settingsOutcome({ words, forScript, hadOwn, stored, saved = true }) {
-  if (!saved) return { banner: null, message: "The change could not be saved: this browser's storage is full or turned off. Nothing changed." };
-  const same = { banner: null, message: "Those settings were in force already: nothing changed." };
-  if (words) return { banner: `${words}${forScript ? " for this script" : ""}`, message: "Done: the person sees the change, with Undo." };
-  if (!stored) return same;
-  if (forScript && !hadOwn) return { banner: "gave this script its own bold settings", message: "Done: this script now has its own settings, the same as those in force. The person can undo it." };
-  if (forScript) return { banner: "changed this script's bold settings", message: "Done: saved in this script's own settings; what is in force did not change. The person can undo it." };
-  if (hadOwn) return { banner: "changed your own bold settings; this script keeps its own", message: "Saved for the person, but this script has its own cue settings, which win; pass forScript: true to change them." };
-  return same;
-}
 
 /* ---------- Reading cues ---------- */
 // Where cues may not be: text links and link lines ("- Label: https://…").
@@ -79,7 +36,7 @@ function linkRanges(text) {
   }
   return out;
 }
-// The stretches in the text, whatever the setting says.
+// The stretches in the text.
 function readCues(content) {
   const text = String(content ?? "");
   const links = linkRanges(text);
@@ -92,14 +49,12 @@ function readCues(content) {
   return out;
 }
 /** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
- *  same shape as textLinks() so the editor draws both alike). A "**…**" inside or across a link is not a cue. None while
- *  cue marking is off. */
-export const textCues = (content) => (reading() ? readCues(content) : []);
+ *  same shape as textLinks() so the editor draws both alike). A "**…**" inside or across a link is not a cue. */
+export const textCues = (content) => readCues(content);
 /** An AI's new text, when the text it was asked about held marks: a "**" it copied that makes no cue goes. Ordinary text
  *  stays: a letter or digit on both sides (a**b), or spaces on both sides (a ** b). */
 export function dropLoneMarks(text) {
   const t = String(text ?? ""), cues = textCues(t);
-  if (!reading()) return t;
   let out = "", at = 0;
   for (const m of t.matchAll(/(?<!\*)\*\*(?!\*)/g)) {
     const i = m.index, e = i + 2, l = t[i - 1] ?? "", r = t[e] ?? "";
@@ -115,14 +70,6 @@ export function stripCues(text) {
   const t = String(text ?? "");
   let out = "", at = 0;
   for (const c of textCues(t)) { out += t.slice(at, c.start) + c.label; at = c.end; }
-  return out + t.slice(at);
-}
-/** The text without its stretches' marks, whatever the setting says: for what must not depend on anyone's setting (a
- *  B-roll shot's check, which a host and a guest share). */
-export function withoutMarks(text) {
-  const t = String(text ?? "");
-  let out = "", at = 0;
-  for (const c of readCues(t)) { out += t.slice(at, c.start) + c.label; at = c.end; }
   return out + t.slice(at);
 }
 // Where each character of `from` is in `to` (when only "*" marks differ), and which ones stayed.
@@ -165,7 +112,7 @@ export function quoteAcrossCues(content, quote) {
   const start = view.map[i], end = view.map[i + quote.length - 1] + 1;
   return { start, end, quote: String(content).slice(start, end) };
 }
-/** The text without its cues' marks (as the setting reads them) and where each of its characters is in the text:
+/** The text without its cues' marks and where each of its characters is in the text:
  *  { plain, map } (map[i] is the offset in `content` of plain[i]), or null when there is no cue. */
 export function plainView(content) {
   const text = String(content ?? ""), cues = textCues(text);
@@ -244,7 +191,7 @@ const followEdit = (spans, now, content) => {
     return range(throughSpans(spans, start), end > start ? throughSpans(spans, end - 1) + 1 : throughSpans(spans, start));
   };
 };
-// The last words of a stretch deleted: its marks go, read by the text alone, as no setting travels to a guest. Looks past
+// The last words of a stretch deleted: its marks go, read by the text alone. Looks past
 // spaces, as an earlier deletion may have left them at one inner edge ("**two **", "** words**"). Both edges spaced around
 // words ("a ** b ** c") was never a stretch, unless the stretch is the whole block: then its last words going would leave
 // "**  **", a rule line, so its marks go. Neither was a word or "*" outside the marks, or a link, and marks with only
@@ -275,7 +222,7 @@ function emptied(old, now, p, oe, ne) {
  * (typed, or the space between deleted) joins it. A "*" right outside it: the marks go.
  * A word being typed in front of a cue joins it only until its space is typed, then stays plain: `typedBefore` says where
  * that word ends in `old`, and the result's `typedBefore` where it ends now (null once the person is doing anything else).
- * Whatever the settings say (a guest's are their own), an edit that empties a stretch takes its marks with it: `emptied`.
+ * An edit that empties a stretch takes its marks with it: `emptied`.
  * `deleted`: the [start, end] ranges of `old` that really went, when hidden marks were put back (L.keepHidden), so several
  * stretches of text went while the marks stayed: marks put back aren't hit.
  * Returns { content, caret, typedBefore, follow }, or null when no cue needs settling (no cue was there, or the edit broke

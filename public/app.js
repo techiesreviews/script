@@ -284,13 +284,12 @@ function decorationsFor(id) {
    address are hidden while the caret is outside the link; with the caret at or in it, or a selection touching it, the
    link is open (data-open) and shows all of its Markdown. The text nodes are still the block's exact content, so
    offsets, asks, carets and the room are unchanged. A link cut by a decoration's edge shows as plain Markdown. */
-/* Cues (fleet issue #14, Lex 2026-11-04): with cue marking on, a "**words**" in a para is drawn with the same trick:
-   the "**" marks are hidden while the caret is outside it, and the words show bold (.md-cue in app.css). Off (the
-   default), "**" shows as plain text, as before. */
+/* Cues (fleet issue #14, Lex 2026-11-04): a "**words**" in a para is drawn with the same trick: the "**" marks are hidden
+   while the caret is outside it, and the words show orange and bold (.md-cue in app.css). */
 const linksOf = (b) => {
   if (b.type !== "para") return [];
   const content = D.contentOf(b), links = L.textLinks(content);
-  return cues().on ? [...links, ...K.textCues(content)].sort((x, y) => x.start - y.start) : links;
+  return [...links, ...K.textCues(content)].sort((x, y) => x.start - y.start);
 };
 function linkNodes(content, from, to, links) {
   const nodes = [];
@@ -724,7 +723,7 @@ function renderDerived() {
   const st = D.stats(state.doc);
   $("#docMeta").textContent = `${st.words.toLocaleString("en")} words · ${st.spoken} spoken`;
   // The prompter link is made ahead of the click; a script that is too long gets a quiet note instead.
-  const pro = D.exportPrompter(state.doc, prompterOpts());
+  const pro = D.exportPrompter(state.doc);
   const tooLong = pro.length > D.PROMPTER_MAX_CHARS;
   $("#prompterAction").disabled = tooLong;
   $("#prompterNote").hidden = !tooLong;
@@ -767,7 +766,7 @@ async function prompterUrl(text) {
 }
 async function openPrompter() {
   if (!state.doc) return;
-  const text = D.exportPrompter(state.doc, prompterOpts());
+  const text = D.exportPrompter(state.doc);
   const url = prompterCache.text === text ? prompterCache.url : await prompterUrl(text);
   if (url) window.open(url, "_blank", "noopener");
 }
@@ -918,10 +917,9 @@ function syncFromDom(el) {
     // The space that ends a word typed in front of a bold word: the person is writing, say a numbered list, and asked for it.
     const endsTyped = going != null && now.length === old.length + 1 && /\s/.test(now[caret - 1] ?? "");
     // A deletion is judged against the text before it, as it can take the marks itself; text put in, against what was put in.
-    if (cues().on && settled && !endsTyped && C.settlingChangesKind(now.length < old.length ? old : now, settled.content)) {
+    if (settled && !endsTyped && C.settlingChangesKind(now.length < old.length ? old : now, settled.content)) {
       // Without its marks this line would read as another kind of block ("- item", "# Plan"), and its words would leave
-      // the spoken text: the edit is refused, quietly, and it keeps them, with the caret where it was. Only while Bold
-      // marking is on (Lex, 2026-11-06): with it off an edit is never refused, as before bold.
+      // the spoken text: the edit is refused, quietly, and it keeps them, with the caret where it was.
       const was = state.preCaret?.id === id ? state.preCaret.offset : (caret ?? 0) + old.length - now.length;
       fix = { content: old, caret: Math.max(0, Math.min(old.length, was)) };
       boldTyping = null;
@@ -966,10 +964,9 @@ function splitAt(el, start, end, lineBreak) {
     const at = settled.caret - 1, left = settled.content.slice(0, at), right = settled.content.slice(at + 1);
     // The left part is tried with a letter after it: "1. " alone reads as text, but as a list once anything follows. The
     // two parts joined without their marks must keep the type too: "**1. x y**" would join as the list "1. x y", "**## Plan**"
-    // as a heading (Enter and Shift+Enter alike). Refused only while Bold marking is on; with it off `broke` is false in
-    // practice (no stretch is read), and the guard keeps it so.
+    // as a heading (Enter and Shift+Enter alike).
     const parts = lineBreak ? C.keepsType(settled.content, b.type) : C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type);
-    if (cues().on && !(parts && C.keepsType(left + right, b.type))) return;
+    if (!(parts && C.keepsType(left + right, b.type))) return;
   }
   checkpoint("enter", id);
   if (broke) {
@@ -1032,7 +1029,7 @@ function mergeInto(prevId, id) {
   // that would turn the line into another kind of block, the join is refused, quietly, and both lines stay as they are.
   const joined = D.contentOf(prev) + D.contentOf(byId(id));
   const settled = prev.type === "para" ? K.settleMarks(`${D.contentOf(prev)}\n${D.contentOf(byId(id))}`, joined, offset) : null;
-  if (cues().on && settled && C.settlingChangesKind(joined, settled.content)) return;
+  if (settled && C.settlingChangesKind(joined, settled.content)) return;
   checkpoint("merge", id);
   moveAsks(id, prevId, 0, offset);
   const m = D.mergeWithPrevious(state.doc, id);
@@ -1075,7 +1072,7 @@ function pasteText(el, raw) {
   const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
   // Without its marks this line would read as another kind of block: the paste is refused, quietly. A paste that makes
   // paragraphs or a list itself reads the same with or without them, and goes in.
-  if (cues().on && settled && C.settlingChangesKind(pasted, settled.content)) return;
+  if (settled && C.settlingChangesKind(pasted, settled.content)) return;
   checkpoint("paste", id);
   // Bold settled: asks follow by their offsets from the text before the paste; one it fell inside isn't moved at all.
   if (settled) followAnchors(id, settled.content, settled.follow, { insideGoes: true });
@@ -1198,115 +1195,39 @@ scriptEl.addEventListener("paste", (e) => {
   pasteText(el, e.clipboardData?.getData("text/plain") || "");
 });
 
-/* ---------- Cues (fleet issue #14, Lex 2026-11-04) ---------- */
-// Optional, off by default. Settings (K.cueSettings): the person's own, and the open script's own when one was set
-// for it (by the agent, or by the person once a script has its own); kept in this browser.
-const cueKey = (name = state.name) => `cues:${name || ""}`;
-let cueMemo = null;
-function cues() {
-  if (cueMemo?.name !== state.name) cueMemo = { name: state.name, value: K.cueSettings(store.get("cues"), state.name ? store.get(cueKey()) : null) };
-  return cueMemo.value;
-}
-K.readCuesWhen(() => cues().on);
-const ownCues = () => !!state.name && store.get(cueKey()) != null;
-// The prompter file keeps cue marks only when cue marking is on and its export setting says show.
-const prompterOpts = () => ({ cues: cues().on ? cues().export : "strip" });
-// Store a settings change (for the open script or the person) and redraw what it changes. Returns what it
-// replaced, for Undo.
-function setCues(patch, forScript) {
-  const key = forScript ? cueKey() : "cues", prev = store.get(key);
-  const saved = store.set(key, { ...(prev || {}), ...patch });
-  // A refused write changes nothing, so nothing is redrawn: settings held only in memory (a script's own after a rename
-  // with storage full) would be read again from storage and drop.
-  if (saved) cuesChanged();
-  return { forScript: !!forScript, key, prev, saved };
-}
-// The script may have a new name by now and its settings went with it, so the key is worked out here. The Undo line
-// closes when another script opens, so this is still the same script.
-// Returns false when the browser refused the write: then nothing is redrawn and the settings in force stay as they are.
-function restoreCues({ forScript, prev }) {
-  const key = forScript ? cueKey() : "cues";
-  if (prev == null) store.del(key);
-  else if (!store.set(key, prev)) return false;
-  cuesChanged();
-  return true;
-}
-function cuesChanged() {
-  cueMemo = null;
-  renderCueMenu();
-  if (state.doc) {
-    renderAll(getCaret());
-    renderDerived(); // the prompter link and its too-long check follow the export setting at once
-  }
-  if (!bar.hidden) showBar();
-}
-// Bold style: plain bold, or the person's own colours (K.boldStyle lets only "#rrggbb" through to the CSS).
+/* ---------- Cues (fleet issue #14; always on, Lex 2026-11-06) ---------- */
+// The on/off and export settings saved before 2026-11-06 mean nothing now: they go from this browser.
+try { for (const k of Object.keys(localStorage)) if (k === `${LS}cues` || k.startsWith(`${LS}cues:`)) localStorage.removeItem(k); } catch { /* storage off */ }
+// Bold style: orange and bold (app.css), or the person's own colours (K.boldStyle lets only "#rrggbb" through to the CSS).
 function applyBoldStyle() {
   const b = K.boldStyle(store.get("boldStyle"));
-  scriptEl.toggleAttribute("data-bold-own", b.own);
-  scriptEl.style.setProperty("--bold-bg", b.background);
-  scriptEl.style.setProperty("--bold-fg", b.color);
+  for (const [prop, value] of [["--bold-fg", b.color], ["--bold-bg", b.background]]) {
+    if (value) scriptEl.style.setProperty(prop, value);
+    else scriptEl.style.removeProperty(prop);
+  }
   return b;
 }
 applyBoldStyle();
 const setBoldStyle = (patch) => { store.set("boldStyle", { ...K.boldStyle(store.get("boldStyle")), ...patch }); renderCueMenu(); };
-$("#boldOwn").addEventListener("click", () => setBoldStyle({ own: !K.boldStyle(store.get("boldStyle")).own }));
 $("#boldBg").addEventListener("input", (e) => setBoldStyle({ background: e.target.value }));
 $("#boldFg").addEventListener("input", (e) => setBoldStyle({ color: e.target.value }));
+$("#boldReset").addEventListener("click", () => { store.del("boldStyle"); renderCueMenu(); $("#boldFg").focus(); });
+// What the colour fields show while nothing is chosen: the default orange (as sRGB) and the page's own colour.
+const BOLD_SHOWN = { light: { color: "#b53707", background: "#ffffff" }, dark: { color: "#fb401e", background: "#14122a" } };
 function renderCueMenu() {
-  const c = cues(), g = $("#cueGroup"), bold = applyBoldStyle();
-  $("#boldStyleHead").hidden = $("#boldOwn").hidden = !c.on;
-  $("#boldOwn").setAttribute("aria-pressed", String(bold.own));
-  $("#boldColours").hidden = !c.on || !bold.own;
-  $("#boldBg").value = bold.background;
-  $("#boldFg").value = bold.color;
-  g.hidden = !state.doc;
-  for (const b of $$("[data-cue-set]", g)) {
-    const k = b.dataset.cueSet;
-    b.setAttribute("aria-pressed", String(k === "on" ? c.on : k === "action" ? c.action === "camera" : c.export === "show"));
-    if (k !== "on") b.hidden = !c.on;
-  }
+  const bold = applyBoldStyle(), shown = BOLD_SHOWN[matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"];
+  $("#boldFg").value = bold.color || shown.color;
+  $("#boldBg").value = bold.background || shown.background;
+  $("#boldReset").hidden = !bold.color && !bold.background;
+  $("#cueGroup").hidden = !state.doc;
 }
 $("#scriptMenu").addEventListener("toggle", renderCueMenu);
-// Settings changed in another tab of this browser.
-// Another tab changed settings: this page is redrawn only if its own really changed (a rename there moves that script's).
-addEventListener("storage", (e) => {
-  if (e.key === `${LS}boldStyle`) return renderCueMenu();
-  if (e.key != null && !e.key.startsWith(`${LS}cues`)) return;
-  const was = JSON.stringify(cues());
-  cueMemo = null;
-  if (JSON.stringify(cues()) !== was) cuesChanged();
-  else renderCueMenu();
-});
-$("#cueGroup").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-cue-set]");
-  if (!b) return;
-  const c = cues(), k = b.dataset.cueSet;
-  setCues(k === "on" ? { on: !c.on } : k === "action" ? { action: c.action === "camera" ? "highlight" : "camera" } : { export: c.export === "show" ? "strip" : "show" }, ownCues());
-});
-// The agent's set_cue_settings: shown at once on a line at the top, with Undo, like its other changes.
-function cueChangeWords(was, now) {
-  const out = [];
-  if (was.on !== now.on) out.push(`turned bold marking ${now.on ? "on" : "off"}`);
-  if (was.action !== now.action) out.push(now.action === "camera" ? "gave bold words a camera action" : "took the camera action off bold words");
-  if (was.export !== now.export) out.push(now.export === "show" ? "kept bold words in the prompter file" : "took the bold marks out of the prompter file");
-  return out.join(" and ");
-}
-function agentCueSettings(args, by) {
-  // Without forScript the change goes where the person's own menu click would: to the script's own settings when it
-  // has them (they win), else to the person's.
-  const { forScript = ownCues(), ...patch } = args;
-  if (forScript && !state.name) return { error: "The open script has no file name yet, so it can't have its own settings. Leave out forScript to set them for the person." };
-  const hadOwn = ownCues(), was = cues(), undoTo = setCues(patch, forScript), now = cues();
-  const stored = JSON.stringify(undoTo.prev) !== JSON.stringify(store.get(undoTo.key));
-  const { banner, message } = K.settingsOutcome({ words: cueChangeWords(was, now), forScript, hadOwn, stored, saved: undoTo.saved });
-  if (banner) showBanner(`${by.name} ${banner}`, [["Undo", () => { if (restoreCues(undoTo)) hideBanner(); }]]);
-  return { result: { message, ...now, forScript: ownCues() } };
-}
+// Colours changed in another tab of this browser.
+addEventListener("storage", (e) => { if (e.key === `${LS}boldStyle`) renderCueMenu(); });
 // Ctrl/Cmd+B and the B button: toggle a cue (the person sees it as bold words) on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
 // Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
 function toggleCueHere() {
-  if (!cues().on || state.locked || state.pendingDraft) return;
+  if (state.locked || state.pendingDraft) return;
   // Focus in the bar (the Ask input, or the B button by keyboard) takes the page's selection away: the bar's saved
   // selection is what it acts on, as makeAsk does.
   const inBar = bar.contains(document.activeElement);
@@ -1420,7 +1341,7 @@ function showBar() {
   // Guests can't add shots: their B-roll is the "Suggest B-roll" ask alone, as a plain button.
   $("#brollBtn").hidden = state.guest;
   $("#suggestBroll").hidden = !state.guest;
-  $("#boldBtn").hidden = !cues().on || byId(s.id)?.type !== "para" || !spoken;
+  $("#boldBtn").hidden = byId(s.id)?.type !== "para" || !spoken;
   cueBtnState(s);
   const n = D.countWords(K.spokenWords(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
@@ -2337,7 +2258,7 @@ function download(text, name, type) {
 function exportFile(kind) {
   if (!state.doc || state.guest) return;
   if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
-  else if (kind === "prompter") download(D.exportPrompter(state.doc, prompterOpts()), `${baseName()}-prompter.md`, "text/markdown");
+  else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
   else if (kind === "prompter-open") openPrompter();
   else if (kind === "markdown") saveAs();
   else if (kind === "all") exportAll();
@@ -2362,7 +2283,7 @@ function exportAll() {
   const files = [
     { name: /\.(md|markdown|txt)$/i.test(state.name) ? state.name : `${base}.md`, text: saveText() },
     { name: `${base}-camera.txt`, text: D.exportCamera(state.doc) },
-    { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc, prompterOpts()) },
+    { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc) },
   ];
   if (broll.status === "ok") files.push(...brollExports());
   download(makeZip(files), `${base}.zip`, "application/zip");
@@ -2536,13 +2457,6 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   const draft = store.get(draftKey(from));
   if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
-  // A script's own bold settings go with it, so a new name changes nothing on the page and nothing is redrawn. The new
-  // name belongs to this script now: settings left there before go. If they can't be written (storage full) they stay
-  // under the old name, and the memo keeps them until the next settings change that is saved, or a reload, so the page stays as it is.
-  const own = store.get(cueKey(from));
-  store.del(cueKey(to));
-  if (own != null && store.set(cueKey(to), own) && clear) store.del(cueKey(from));
-  if (cueMemo?.name === from) cueMemo = { ...cueMemo, name: to };
   // The new name belongs to this script now: it takes this script's link, or none (never one left there before).
   await keyed(async () => {
     const stored = await idbGet(brollKey(from));
@@ -2701,11 +2615,11 @@ document.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "s") { e.preventDefault(); save(); return; }
   // Focus in the edit bar (the Ask input, the B button): Ctrl/Cmd+B works there too, on the bar's saved selection.
-  if (k === "b" && !e.shiftKey && state.doc && cues().on && bar.contains(e.target)) { e.preventDefault(); toggleCueHere(); return; }
+  if (k === "b" && !e.shiftKey && state.doc && bar.contains(e.target)) { e.preventDefault(); toggleCueHere(); return; }
   if (!state.doc || e.target.closest?.("input, textarea")) return;
   if (k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === "y" && e.ctrlKey && !e.metaKey) { e.preventDefault(); redo(); }
-  else if (k === "b" && !e.shiftKey && cues().on && scriptEl.contains(e.target)) { e.preventDefault(); toggleCueHere(); }
+  else if (k === "b" && !e.shiftKey && scriptEl.contains(e.target)) { e.preventDefault(); toggleCueHere(); }
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
@@ -4377,7 +4291,7 @@ function scriptInfo() {
     words: st.words,
     spoken: st.spoken,
     broll: broll.status === "ok" ? broll.shots.map(B.forAgent) : [],
-    ...(cues().on ? { cues: C.listCues(state.doc), cueSettings: cues() } : {}),
+    cues: C.listCues(state.doc),
   };
 }
 function handleCall({ id, tool, args = {} }) {
@@ -4424,16 +4338,10 @@ function handleCall({ id, tool, args = {} }) {
       return send({ result: "Done: the whole text is in the editor now. The person can undo it." });
     }
     if (tool === "list_asks") return send({ result: { asks: state.asks.map(askForList) } });
-    if (tool === "get_cue_settings") return send({ result: { ...cues(), forScript: ownCues() } });
-    if (tool === "set_cue_settings") {
-      const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
-      return send(busy ? { error: busy } : agentCueSettings(args, agentBy()));
-    }
-    if (tool === "list_cues") return send({ result: { cues: C.listCues(state.doc), settings: cues() } });
+    if (tool === "list_cues") return send({ result: { cues: C.listCues(state.doc) } });
     if (tool === "mark_cue" || tool === "unmark_cue") {
       const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
       if (busy) return send({ error: busy });
-      if (!cues().on) return send({ error: "Cue marking is off, so ** is plain text. Turn it on with set_cue_settings only when the person asks for cues." });
       const mode = tool === "mark_cue" ? "mark" : "unmark";
       const plan = C.planCues(state.doc, mode, args.cues, { asks: state.asks });
       const n = plan.segments.length ? landAgentCues(plan, mode, agentBy()) : 0;
@@ -4927,10 +4835,10 @@ function afterRoomOps(ops, sel, before = new Map()) {
   followMarks(ops);
   const touched = new Set();
   let structure = false;
-  // With bold marking on, the host closes an ask or mark that an edit fell inside (as for the person's own edit that
+  // The host closes an ask or mark that an edit fell inside (as for the person's own edit that
   // breaks a bold stretch), so it can't jump to a later copy of its words by a search; the same for its own Undo and an
-  // Undo on a name tag. A guest leaves that to the host's asks message. Off, the old search decides.
-  const strict = cues().on && together?.room?.role === "host";
+  // Undo on a name tag. A guest leaves that to the host's asks message.
+  const strict = together?.room?.role === "host";
   const was = new Map(before); // the text of each block before the edit being followed (edits of a batch come one by one)
   for (const op of ops) {
     if (op.type === "text") {

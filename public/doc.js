@@ -369,8 +369,8 @@ export function prompterLabel(info) {
   return [info.num, info.name.toUpperCase(), info.start].filter(Boolean).join(" · ");
 }
 
-// Cues ("**words**", cues.js) are stripped to their words unless `cues` is "show" (the cue export setting).
-export function exportPrompter(doc, { cues = "strip" } = {}) {
+// Cues ("**words**", cues.js) are stripped to their words: the prompter shows "**" as literal asterisks today.
+export function exportPrompter(doc) {
   const out = [`# ${titleOf(doc) || "Script"}`];
   for (const s of outline(doc).sections) {
     if (!s.spoken) continue;
@@ -380,7 +380,7 @@ export function exportPrompter(doc, { cues = "strip" } = {}) {
     for (const b of s.blocks) {
       const c = contentOf(b);
       if (!c.trim()) continue;
-      if (b.type === "para") out.push("", ...paraLines(cues === "show" ? c : stripCues(c)));
+      if (b.type === "para") out.push("", ...paraLines(stripCues(c)));
       else if (b.type === "note") out.push("", ...noteLines(c));
       else if (b.type === "raw") {
         // Lists, tables and code stay out of the prompter; their link lines go in, in their place.

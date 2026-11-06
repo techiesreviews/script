@@ -95,9 +95,9 @@ test("/mcp: a token past its time, or from the future, is refused without asking
   }
 });
 
-test("tools/list has the fifteen tools with input schemas and limits", async () => {
+test("tools/list has the thirteen tools with input schemas and limits", async () => {
   const r = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "answer_broll", "get_cue_settings", "get_script", "list_asks", "list_cues", "list_scripts", "mark_cue", "open_script", "set_cue_settings", "set_script", "sketch_shot", "unmark_cue", "upload_image", "wait_for_asks"]);
+  assert.deepEqual(r.body.result.tools.map((t) => t.name).sort(), ["answer_ask", "answer_broll", "get_script", "list_asks", "list_cues", "list_scripts", "mark_cue", "open_script", "set_script", "sketch_shot", "unmark_cue", "upload_image", "wait_for_asks"]);
   const answer = TOOLS.find((t) => t.name === "answer_ask").inputSchema;
   assert.equal(answer.properties.text.maxLength, 4000);
   assert.equal(answer.properties.message.maxLength, 200);
