@@ -965,7 +965,8 @@ function splitAt(el, start, end, lineBreak) {
     const at = settled.caret - 1, left = settled.content.slice(0, at), right = settled.content.slice(at + 1);
     // The left part is tried with a letter after it: "1. " alone reads as text, but as a list once anything follows. The
     // two parts joined without their marks must keep the type too: "**1. x y**" would join as the list "1. x y", "**## Plan**"
-    // as a heading (Enter and Shift+Enter alike).
+    // as a heading (Enter and Shift+Enter alike). Refused only while Bold marking is on; with it off `broke` is false in
+    // practice (no stretch is read), and the guard keeps it so.
     const parts = lineBreak ? C.keepsType(settled.content, b.type) : C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type);
     if (cues().on && !(parts && C.keepsType(left + right, b.type))) return;
   }
