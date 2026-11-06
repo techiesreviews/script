@@ -1,4 +1,4 @@
-# Step R, PR C (round 3): SMOKE_ONLY=refusals and SMOKE_ONLY=guest node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Step R, PR C (round 4): SMOKE_ONLY=refusals and SMOKE_ONLY=guest node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
 # Controls: without the app.js and cues.js changes the guest checks (typing and Enter inside the host's ask) and the outer-words-first check fail.
 ok 1280 px: Bold marking is off
 ok 1280 px: **Note** - more: it is in the script

@@ -427,7 +427,7 @@ export function alignChars(a, b) {
   }
   return map;
 }
-const WORDISH = /[\p{L}\p{N}]/u;
+const WORDISH = /[\p{L}\p{N}\p{M}]/u; // a letter, a digit or a combining mark, as cues.js reads a word
 /** Where a host's ask or mark (`range`: start, end) goes through one room edit when Bold marking is on: as followTextOp says;
  *  but when the edit fell inside it, it is closed (null), not searched for again by its old words. `old`: the block's text
  *  before the edit, when known. One edit can span words nobody changed (several edits sent as one, or one diff from the first
