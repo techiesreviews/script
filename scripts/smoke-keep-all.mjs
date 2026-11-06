@@ -419,6 +419,24 @@ async function runBoldOffEdits(width, height) {
     await press("z", "KeyZ", 90, CTRL);
     check(await has(), `${tag}: ${line}: ${how}: one Ctrl+Z brings it back`);
   }
+  // A stretch alone on its line, its words deleted outer ones first (fleet #29): the last deletion takes the marks, so no "**  **" rule line is left.
+  const alone = "**one two three**";
+  await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await sleep(150);
+  await press("Enter", "Enter", 13, 0, "\r");
+  await page.send("Input.insertText", { text: alone });
+  await sleep(350);
+  let text = alone;
+  for (const word of ["one", "three", "two"]) {
+    const from = text.indexOf(word);
+    await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block')].find((x) => x.textContent === ${JSON.stringify(text)}); if (!el) throw new Error("the line is not there: ${text}"); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${from + word.length})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+    await sleep(250);
+    await press("Backspace", "Backspace", 8);
+    text = text.slice(0, from) + text.slice(from + word.length);
+  }
+  const md = (await script()).markdown;
+  check(!md.includes("**  **") && !md.includes("** two") && !md.includes("**one"), `${tag}: a stretch alone on its line, outer words deleted first, the middle one last: no ** ** rule line is left`, md.split("\n").filter((l) => l.includes("**")).join(" | "));
+  check((await script()).words > 0, `${tag}: the script still has its words`);
   await page.close();
 }
 
@@ -1170,6 +1188,14 @@ async function run(width, height) {
     await guest.click("#boldBtn");
     check(await page.until(`${paraOf}.textContent.includes("**no** ")`, "the guest's bold reaches the host"), `${tag}: the guest's bold reaches the host as text`);
     check(await page.eval(`(() => { const el = ${paraOf}, d = el.querySelector("[data-ask]"), r = document.createRange(); r.setStart(el, 0); r.setEndBefore(d); return r.toString().endsWith("**no** ") && d.textContent.startsWith("no"); })()`), `${tag}: the host's ask stays on its own word`);
+    // Bold marking on at the host: a guest typing inside the host's ask closes it; the ask does not jump to a later copy of its words (fleet #29).
+    await agent("set_cue_settings", { on: true });
+    await page.until(`document.querySelector('#cueGroup [data-cue-set="on"]')?.getAttribute("aria-pressed") === "true"`, "the host's bold on");
+    await sleep(300);
+    await guest.eval(`(() => { const el = ${paraOf}, t = el.querySelector("[data-ask]")?.firstChild; if (!t) throw new Error("no ask text on the guest's page"); el.focus(); getSelection().setBaseAndExtent(t, 1, t, 1); })()`);
+    await sleep(200);
+    await guest.send("Input.insertText", { text: "x" });
+    check(await page.until(`!${paraOf}.querySelector("[data-ask]")`, "the ask closed", 8000), `${tag}: a guest typing inside the host's ask closes it (bold on), it does not jump to another copy of its words`);
     await guest.close();
   }
   await page.close();
