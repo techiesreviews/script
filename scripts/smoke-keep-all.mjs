@@ -739,10 +739,16 @@ async function runSlimBar(width, height) {
   await agent("mark_cue", { cues: [{ quote: "Most" }] });
   await sleep(300);
   check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: bold on part of the words: they aren't gone`, await page.eval(ghost));
+  // The bold comes off again: still there.
+  await agent("unmark_cue", { cues: [{ quote: "Most" }] });
+  await sleep(300);
+  check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: the bold off again: they still aren't gone`, await page.eval(ghost));
   await pressKey(page, "Enter", "Enter", 13, "\r");
   const parted = await newAsks();
   check(parted[0]?.instruction === "warmer" && parted[0]?.quote.includes("Most") && parted[0]?.quote.includes("of"), `${tag}: and the ask goes on them`, JSON.stringify(parted.map((x) => x.quote)));
   await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
   await agent("set_script", { markdown: start });
   await sleep(300);
 
