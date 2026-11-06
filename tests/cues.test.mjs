@@ -1,6 +1,6 @@
-// Cue marking (fleet issue #14, Lex 2026-11-04): a cue is "**words**" in a spoken paragraph. Optional and off by
-// default; Ctrl/Cmd+B toggles it on the selected words; the agent lists, marks and unmarks cues; a rewrite keeps a
-// cue only when its words survive; the prompter export strips cues unless the export setting says show.
+// Cue marking (fleet issue #14, Lex 2026-11-04): a cue is "**words**" in a spoken paragraph, always on (Lex,
+// 2026-11-06). Ctrl/Cmd+B toggles it on the selected words; the agent lists, marks and unmarks cues; a rewrite keeps a
+// cue only when its words survive; the prompter export strips cues.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as D from "../public/doc.js";

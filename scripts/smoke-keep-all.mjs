@@ -529,18 +529,33 @@ async function runBoldLook(width, height) {
   const orange = await probe("oklch(65% 0.227 32.3)");
   check(dark.color === orange, `${tag}: dark mode: the word has the prompter's orange`, `${dark.color} ${orange}`);
   check(dark.background === "rgba(0, 0, 0, 0)", `${tag}: no background by default`, dark.background);
+  const said = await agent("get_script", {});
+  check(JSON.parse(said).cues?.some((c) => c.quote === word), `${tag}: the agent sees the bold word`, word);
   check((await page.eval(`document.querySelectorAll("#cueGroup .menu-action").length`)) === 0, `${tag}: the menu has no bold switches`);
   await page.click("#docInfo");
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await sleep(400);
   await page.shot("bold-menu");
   check(await page.eval(`!!document.querySelector("#boldFg").offsetParent && !!document.querySelector("#boldBg").offsetParent && document.querySelector("#boldReset").hidden`), `${tag}: the menu shows the two colours, no Reset yet`);
+  const shown = () => page.eval(`document.querySelector("#boldFg").value + " " + document.querySelector("#boldBg").value`);
+  check((await shown()) === "#fb401e #080721", `${tag}: dark mode: the fields show the orange and the page's colour`, await shown());
   await page.eval(`(() => { const set = (id, v) => { const e = document.querySelector(id); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); }; set("#boldFg", "#112233"); set("#boldBg", "#ddeeff"); })()`);
   const own = await look();
   check(own.color === "rgb(17, 34, 51)" && own.background === "rgb(221, 238, 255)", `${tag}: the person's own colours show at once`, JSON.stringify(own));
   check(!(await page.eval(`document.querySelector("#boldReset").hidden`)), `${tag}: Reset shows once a colour is chosen`);
+  // Another tab of this browser follows, and is not redrawn.
+  const other = await openPage(width, height, page);
+  await other.send("Page.navigate", { url: `${BASE}/` });
+  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the second tab");
+  await other.click("#emptySample");
+  await other.until(`!!document.querySelector("#script .block")`, "the second tab's script");
+  const scriptStyle = (prop) => other.eval(`document.querySelector("#script").style.getPropertyValue("${prop}")`);
+  await other.until(`document.querySelector("#script").style.getPropertyValue("--bold-fg") === "#112233"`, "the colour in the second tab");
+  check((await scriptStyle("--bold-bg")) === "#ddeeff", `${tag}: another tab opened now has the colours`);
   await page.click("#boldReset");
   await sleep(100);
+  check(await other.until(`document.querySelector("#script").style.getPropertyValue("--bold-fg") === ""`, "Reset in the second tab"), `${tag}: Reset reaches another tab`);
+  await send("Target.closeTarget", { targetId: other.targetId });
   const back = await look();
   check(back.color === dark.color && back.background === dark.background, `${tag}: Reset brings the orange back`, JSON.stringify(back));
   await pressKey(page, "Escape", "Escape", 27);
@@ -548,9 +563,23 @@ async function runBoldLook(width, height) {
   await sleep(150);
   const light = await look();
   const lightOrange = await probe("oklch(52% 0.17 37)");
+  await page.click("#docInfo");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await sleep(300);
+  check((await shown()) === "#b53707 #fafafa", `${tag}: light mode: the fields show the orange and the page's colour`, await shown());
+  await pressKey(page, "Escape", "Escape", 27);
+  await sleep(150);
   check(light.color === lightOrange && light.weight === 800, `${tag}: light mode: a darker orange that reads on white`, `${JSON.stringify(light)} ${lightOrange}`);
-  const said = await agent("get_script", {});
-  check(JSON.parse(said).cues?.some((c) => c.quote === word), `${tag}: the agent sees the bold word`, word);
+  // A new title renames the script: its name changes and nothing on the page is redrawn.
+  const name = `document.querySelector(".doc__name").textContent`, before = await page.eval(name);
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" }); window.__word = document.querySelector("#script [data-cue]");`);
+  const titleAt = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
+  await clickAt(page, titleAt);
+  await sleep(150);
+  await page.eval(`(() => { const n = getSelection().anchorNode; getSelection().collapse(n, n.textContent.length); window.__caret = [getSelection().anchorNode]; })()`);
+  await pressKey(page, "q", "KeyQ", 81, "q");
+  await page.until(`${name} !== ${JSON.stringify(before)}`, "the name after the title change", 10000);
+  check(await page.eval(`window.__word.isConnected && window.__word === document.querySelector("#script [data-cue]") && getSelection().anchorNode === window.__caret[0]`), `${tag}: a rename redraws nothing: the word and the caret stay`);
   await page.close();
   // A colour chosen before bold's settings went: it stays when "own" was on.
   const { page: older } = await openDemo(width, height);
@@ -584,13 +613,13 @@ async function runBoldRefuses(width, height) {
     await page.send("Input.insertText", { text: line });
     await sleep(350);
   };
-  const pickIn = (holding, from, to) => `(() => { const el = [...document.querySelectorAll('#script .block')].find((x) => x.textContent.includes(${JSON.stringify(holding)})); if (!el) throw new Error("the line is not there: " + ${JSON.stringify(holding)}); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+  const pickIn = (line, from, to) => `(() => { const el = [...document.querySelectorAll('#script .block')].find((x) => x.textContent === ${JSON.stringify(line)}); if (!el) throw new Error("the line is not there: " + ${JSON.stringify(line)}); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
   for (const [line, word, how] of [["**Note** - more", "Note", "Backspace"], ["**y**- z", "y", "Backspace"], ["**Memo** - less", "Memo", "paste"]]) {
     await addLine(line);
     const words = (await script()).words;
     check((await script()).markdown.split("\n").includes(line), `${tag}: ${line}: it is in the script`);
     const from = how === "paste" ? 0 : line.indexOf(word), to = line.indexOf(word) + word.length;
-    await page.eval(pickIn(word, from, to));
+    await page.eval(pickIn(line, from, to));
     await sleep(250);
     if (how === "paste") {
       await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "**"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
@@ -604,7 +633,7 @@ async function runBoldRefuses(width, height) {
   for (const word of ["one", "three", "two"]) {
     const line = (await script()).markdown.split("\n").find((l) => l.includes(word) && /^\s*\*\*/.test(l) && !/Note|Memo|\*\*y/.test(l));
     const from = line.indexOf(word);
-    await page.eval(pickIn(word, from, from + word.length));
+    await page.eval(pickIn(line, from, from + word.length));
     await sleep(250);
     await press("Backspace", "Backspace", 8);
   }
@@ -966,7 +995,7 @@ async function run(width, height) {
     await guest.eval(`(() => { const el = ${paraOf}, t = el.querySelector("[data-ask]")?.firstChild; if (!t) throw new Error("no ask text on the guest's page"); el.focus(); getSelection().setBaseAndExtent(t, 1, t, 1); })()`);
     await sleep(200);
     await guest.send("Input.insertText", { text: "x" });
-    check(await page.until(`!${paraOf}.querySelector("[data-ask]")`, "the ask closed", 8000), `${tag}: a guest typing inside the host's ask closes it (bold on), it does not jump to another copy of its words`);
+    check(await page.until(`!${paraOf}.querySelector("[data-ask]")`, "the ask closed", 8000), `${tag}: a guest typing inside the host's ask closes it, it does not jump to another copy of its words`);
     // A guest's Enter inside a new ask of the host's closes it too (a split), and no ask is left on another "no".
     await page.eval(pick(2));
     await sleep(300);
