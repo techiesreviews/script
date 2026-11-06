@@ -606,6 +606,7 @@ function renderBlock(id, caret = null) {
   if (caret && caret.id === id) setCaretAt(el, caret.offset);
   refreshLinks();
   together?.redraw();
+  keepBarSel(id);
 }
 
 let sectionObserver = null;
@@ -644,6 +645,7 @@ function renderAll(caret = null) {
   if (caret) placeCaret(caret.id, caret.offset);
   refreshLinks();
   together?.redraw();
+  if (barSel) keepBarSel(barSel.id);
 }
 
 function renderToc() {
@@ -1229,7 +1231,7 @@ addEventListener("storage", (e) => { if (e.key === `${LS}boldStyle`) renderCueMe
 // Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
 function toggleCueHere() {
   if (state.locked || state.pendingDraft) return;
-  // Focus in the bar (the Ask input, or the B button by keyboard) takes the page's selection away: the bar's saved
+  // Focus in the bar (the input, or the B button by keyboard) takes the page's selection away: the bar's saved
   // selection is what it acts on, as makeAsk does.
   const inBar = bar.contains(document.activeElement);
   const s = (inBar && barSel) || currentSelection();
@@ -1303,7 +1305,7 @@ const cueDrops = new Map();
 /* ---------- Edit bar ---------- */
 const bar = $("#editBar");
 const askInput = $("#askInput"), askField = $("#askField"), askTab = $("#askTab"), askSend = $("#askForm .edit-bar__send"), moreMenu = $("#moreMenu");
-let barSel = null, barSending = 0, askPick = 0, askComposing = false;
+let barSel = null, barSending = 0, askPick = 0;
 // A selection across blocks is clamped to the first block where it covers at least one word.
 function currentSelection() {
   if (state.pendingDraft) return null;
@@ -1372,6 +1374,23 @@ function hideBar() {
   paintBarSel();
   renderAsk();
 }
+// A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
+// old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
+function keepBarSel(id) {
+  if (!barSel?.range || barSel.id !== id || !bar.contains(document.activeElement)) return;
+  const b = byId(id), el = blockNode(id);
+  if (!b || !el) return;
+  const content = D.contentOf(b);
+  let { start, end } = barSel;
+  if (content.slice(start, end) !== barSel.quote) {
+    const r = D.reanchor({ start, quote: barSel.quote }, content);
+    if (!r) return;
+    ({ start, end } = r);
+  }
+  Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end) });
+  paintBarSel();
+  placeBar(barSel.range);
+}
 // The browser takes the page's selection away while the focus is in the bar, so the words stay marked by the script.
 function paintBarSel() {
   if (!window.Highlight || !CSS.highlights) return;
@@ -1388,7 +1407,8 @@ const ASK_HISTORY = "askHistory";
 // The suggestion on offer, with the caret at the end of the typed words only.
 function askGhostNow() {
   const end = askInput.value.length;
-  if (barSending || askComposing || askInput.selectionStart !== end || askInput.selectionEnd !== end) return null;
+  if (barSending || askInput.selectionStart !== end || askInput.selectionEnd !== end) return null;
+  if (resolveTyped(askInput.value, askCan())?.kind === "blocked") return null;
   const list = suggestions(askInput.value, { can: askCan(), earlier: store.get(ASK_HISTORY) });
   if (!list.length) return null;
   const at = ((askPick % list.length) + list.length) % list.length;
@@ -1398,6 +1418,8 @@ function renderAsk() {
   const typed = askInput.value, g = askGhostNow(), plan = resolveTyped(typed, askCan()), blocked = plan?.kind === "blocked";
   $("#askGhost span").textContent = typed;
   $("#askGhost b").textContent = g ? g.text.slice(typed.length) : blocked ? ` · ${plan.why}` : "";
+  // Read out too: the ghost is hidden from screen readers. Sending has its own word there.
+  if (!barSending) { const say = blocked ? plan.why : ""; if ($("#askLive").textContent !== say) $("#askLive").textContent = say; }
   $("#askGhost").scrollLeft = askInput.scrollLeft;
   askTab.dataset.on = String(!!g);
   askTab.title = g ? `Accept “${g.text}”${g.count > 1 ? ` (${g.at + 1} of ${g.count}; Up and Down switch)` : ""}` : "";
@@ -1417,8 +1439,7 @@ function acceptGhost() {
 }
 askInput.addEventListener("input", () => { askPick = 0; renderAsk(); });
 for (const type of ["keyup", "click", "select", "scroll"]) askInput.addEventListener(type, renderAsk);
-askInput.addEventListener("compositionstart", () => { askComposing = true; renderAsk(); });
-askInput.addEventListener("compositionend", () => { askComposing = false; renderAsk(); });
+askInput.addEventListener("compositionend", renderAsk);
 askTab.addEventListener("click", acceptGhost);
 askInput.addEventListener("keydown", (e) => {
   // Enter that ends a composition (some browsers send it after the composition): never a send.
@@ -2690,7 +2711,7 @@ document.addEventListener("keydown", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  // An open bar menu (from the mouse too, or with nothing usable in it) closes alone; the bar stays.
+  // The menu that "more" opens closes alone; the bar stays.
   if (closeBarMenu()) { e.preventDefault(); return; }
   hideBar(); closeCard(); closeShotCard(); if (broll.lit) lightShot(broll.lit, false);
 });

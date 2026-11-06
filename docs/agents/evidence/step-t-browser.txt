@@ -303,6 +303,14 @@ ok 1280x800: a heading shows the bar
 ok 1280x800: no B over a heading
 ok 1280x800: b-roll over a heading says why, on the control
 ok 1280x800: Enter there sends nothing and keeps the words
+ok 1280x800: the reason is read out too
+ok 1280x800: an earlier ask doesn't hide the reason
+ok 1280x800: a new selection while sending: the bar is ready for it
+ok 1280x800: while composing: the ghost and the Tab key show
+ok 1280x800: an Enter that ends a composition sends nothing
+ok 1280x800: the Tab key takes the ghost during a composition
+ok 1280x800: a redraw of the line while typing: the selected word stays marked
+ok 1280x800: and what is typed stays
 ok 1280x800: typing: the selected word stays marked
 ok 1280x800: B from the input marks the word and keeps what is typed
 ok 1280x800: the word stays marked after B
@@ -356,6 +364,17 @@ ok 390x760: a heading shows the bar
 ok 390x760: no B over a heading
 ok 390x760: b-roll over a heading says why, on the control
 ok 390x760: Enter there sends nothing and keeps the words
+ok 390x760: the reason is read out too
+ok 390x760: an earlier ask doesn't hide the reason
+ok 390x760: a new selection while sending: the bar is ready for it
+ok 390x760: while composing: the ghost and the Tab key show
+ok 390x760: an Enter that ends a composition sends nothing
+ok 390x760: the Tab key takes the ghost during a composition
+ok 390x760: with a keyboard up the bar lifts and docks at the top
+ok 390x760: without it the bar is back at the bottom
+ok 390x760: the input keeps at least 200 px with B showing
+ok 390x760: a redraw of the line while typing: the selected word stays marked
+ok 390x760: and what is typed stays
 ok 390x760: typing: the selected word stays marked
 ok 390x760: B from the input marks the word and keeps what is typed
 ok 390x760: the word stays marked after B
@@ -392,6 +411,13 @@ ok 1280 px guest: shorter: reaches the host's agent as shorter
 ok 1280 px guest: Say it warmer: reaches the host's agent as ask
 ok 1280 px guest: a free ask goes as typed
 ok 1280 px guest: add b-roll says it is the host's
+ok 1280 px guest: the reason fits inside the input
+ok 390 px guest: b-roll: reaches the host's agent as broll
+ok 390 px guest: shorter: reaches the host's agent as shorter
+ok 390 px guest: Say it warmer: reaches the host's agent as ask
+ok 390 px guest: a free ask goes as typed
+ok 390 px guest: add b-roll says it is the host's
+ok 390 px guest: the reason fits inside the input
 ok 1280 px look: the old switches left in the browser are gone
 ok 1280 px look: another key with a like name stays
 ok 1280 px look: the word is bold
