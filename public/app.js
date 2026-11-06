@@ -1388,6 +1388,7 @@ function keepBarSel(id) {
     ({ start, end } = r);
   }
   Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end) });
+  cueBtnState(barSel);
   paintBarSel();
   placeBar(barSel.range);
 }
@@ -1419,7 +1420,7 @@ function renderAsk() {
   $("#askGhost span").textContent = typed;
   $("#askGhost b").textContent = g ? g.text.slice(typed.length) : blocked ? ` · ${plan.why}` : "";
   // Read out too: the ghost is hidden from screen readers. Sending has its own word there.
-  if (!barSending) { const say = blocked ? plan.why : ""; if ($("#askLive").textContent !== say) $("#askLive").textContent = say; }
+  if (!barSending) { const say = blocked ? plan.say : ""; if ($("#askLive").textContent !== say) $("#askLive").textContent = say; }
   $("#askGhost").scrollLeft = askInput.scrollLeft;
   askTab.dataset.on = String(!!g);
   askTab.title = g ? `Accept “${g.text}”${g.count > 1 ? ` (${g.at + 1} of ${g.count}; Up and Down switch)` : ""}` : "";

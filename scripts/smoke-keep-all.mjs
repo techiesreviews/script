@@ -653,6 +653,11 @@ async function runSlimBar(width, height) {
   await sleep(120);
   check((await page.eval(barOpen)) && (await page.eval(value)) === "b-roll" && !(await newAsks()).length, `${tag}: Enter there sends nothing and keeps the words`);
   check(/spoken/.test(await page.eval(`document.querySelector("#askLive").textContent`)), `${tag}: the reason is read out too`);
+  const reasonFits = `document.querySelector("#askGhost b").getBoundingClientRect().right <= document.querySelector("#askField").getBoundingClientRect().right`;
+  await page.eval(`(() => { const i = document.querySelector("#askInput"); i.value = "suggest b roll"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+  await sleep(80);
+  check(await page.eval(reasonFits), `${tag}: the longest reason fits inside the input`, await page.eval(`document.querySelector("#askGhost").textContent`));
+  await page.eval(`(() => { const i = document.querySelector("#askInput"); i.value = "b-roll"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
   await page.eval(`localStorage.setItem("script-editor:askHistory", JSON.stringify(["b-roll ideas"]))`);
   await page.eval(`document.querySelector("#askInput").dispatchEvent(new Event("input", { bubbles: true }))`);
   await sleep(80);
@@ -677,13 +682,18 @@ async function runSlimBar(width, height) {
   await page.send("Input.imeSetComposition", { text: "sh", selectionStart: 2, selectionEnd: 2 });
   await sleep(120);
   check((await page.eval(ghost)) === "orter" && (await page.eval(tabOn)), `${tag}: while composing: the ghost and the Tab key show`, await page.eval(ghost));
-  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 229 });
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 229, ...(type === "keyDown" ? { text: "\r" } : {}) });
   await sleep(120);
   check((await page.eval(barOpen)) && !(await newAsks()).length, `${tag}: an Enter that ends a composition sends nothing`);
   await page.click("#askTab");
   await sleep(120);
   check((await page.eval(value)) === "Shorter", `${tag}: the Tab key takes the ghost during a composition`, await page.eval(value));
-  await closeBar();
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  const composed = await newAsks();
+  check(composed[0]?.action === "shorter", `${tag}: then a normal Enter sends it`, JSON.stringify(composed.map((a) => a.action)));
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
 
   // The on-screen keyboard: the bar stays above it, and moves to the top rather than sit on the words.
   if (width < 640) {
@@ -697,19 +707,28 @@ async function runSlimBar(width, height) {
     await page.eval(`(() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event("resize")); })()`);
     await sleep(100);
     check((await page.eval(`document.querySelector("#editBar").dataset.dock`)) === "bottom", `${tag}: without it the bar is back at the bottom`);
-    check((await page.eval(`document.querySelector("#askForm").getBoundingClientRect().width`)) >= 200, `${tag}: the input keeps at least 200 px with B showing`);
+    check((await page.eval(`document.querySelector("#askField").getBoundingClientRect().width`)) >= 200, `${tag}: the input keeps at least 200 px with B showing`, await page.eval(`document.querySelector("#askField").getBoundingClientRect().width`));
     await closeBar();
   }
 
   // A redraw of the line while typing: the words stay marked.
   await selectWord();
   await type("x");
+  const markedWord = `CSS.highlights.has("bar-selection") && [...CSS.highlights.get("bar-selection")][0].toString() === "deadline"`;
   await agent("mark_cue", { cues: [{ quote: "until you say it" }] });
   await sleep(300);
-  check(await page.eval(`CSS.highlights.has("bar-selection") && [...CSS.highlights.get("bar-selection")][0].toString().includes("deadline")`), `${tag}: a redraw of the line while typing: the selected word stays marked`);
+  check(await page.eval(markedWord), `${tag}: a redraw of the line while typing: the selected word stays marked`);
+  // Marks before it move it: the mark goes with it.
+  await agent("mark_cue", { cues: [{ quote: "A blank page" }] });
+  await sleep(300);
+  check(await page.eval(markedWord), `${tag}: words moved by a redraw: the mark stays on the selected word`);
   check((await page.eval(value)) === "x" && (await page.eval(barOpen)), `${tag}: and what is typed stays`);
+  // The agent bolds the selected word: B follows.
+  await agent("mark_cue", { cues: [{ quote: "deadline" }] });
+  await sleep(300);
+  check((await page.eval(`document.querySelector("#boldBtn").getAttribute("aria-pressed")`)) === "true", `${tag}: the agent bolds the selected word: B shows pressed`);
   await closeBar();
-  await agent("unmark_cue", { cues: [{ quote: "until you say it" }] });
+  await agent("unmark_cue", { cues: [{ quote: "until you say it" }, { quote: "A blank page" }, { quote: "deadline" }] });
   await sleep(200);
 
   // The selected words stay marked while the focus is in the bar.

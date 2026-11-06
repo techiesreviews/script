@@ -18,22 +18,23 @@ const COMMANDS = [
 ];
 const same = (text) => text.trim().replace(/\s+/g, " ").toLowerCase();
 const spellings = (c) => [c.name, ...(c.also || [])];
-// Why a command can't run here; "" when it can. can: { spoken, addBroll, guest }.
+// Why a command can't run here, or null when it can: short for the input (why), whole for a screen reader (say).
+// can: { spoken, addBroll, guest }.
 function refusal(c, can) {
-  if (c.needs && !can.spoken) return "not spoken";
-  if (c.needs === "addBroll" && !can.addBroll) return can.guest ? "host only" : "list not ready";
-  return "";
+  if (c.needs && !can.spoken) return { why: "not spoken", say: "B-roll needs spoken words." };
+  if (c.needs === "addBroll" && !can.addBroll) return can.guest ? { why: "host only", say: "Only the host can add B-roll." } : { why: "list not ready", say: "The B-roll list isn't ready." };
+  return null;
 }
 
 /** What the typed line does: null (nothing typed), { kind: "act", action }, { kind: "add" }, { kind: "more" },
- *  { kind: "blocked", why } or { kind: "ask", text }. */
+ *  { kind: "blocked", why, say } or { kind: "ask", text }. */
 export function resolveTyped(typed, can) {
   const text = String(typed ?? "").trim();
   if (!text) return null;
   const c = COMMANDS.find((x) => spellings(x).some((s) => same(s) === same(text)));
   if (!c) return { kind: "ask", text };
-  const why = refusal(c, can);
-  if (why) return { kind: "blocked", why };
+  const no = refusal(c, can);
+  if (no) return { kind: "blocked", ...no };
   return c.open ? { kind: c.open } : { kind: "act", action: c.action };
 }
 
