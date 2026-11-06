@@ -17,9 +17,19 @@ Lex (2026-11-06): fix the follow-ups listed in fleet issues #29, #30 and #31, on
 - Browser checks in `scripts/smoke-keep-all.mjs`: `runMenuHeight` (`SMOKE_ONLY=menu`, with twelve recent scripts), `runCuesStorageFull` (`SMOKE_ONLY=storage`) and the storage-full checks in `runRename` (`SMOKE_ONLY=rename`). Evidence: `docs/agents/evidence/step-r-browser-b.txt`.
 - Known flake of the local test server, not of the editor: about one `runRename` run in six stops with `Error: Net…` as the body of an agent call (wrangler dev); a second run passes.
 
+## PR C: two rare cases (#29)
+
+- Bold on: `public/app.js` `afterRoomOps`: a guest's edit that falls inside a host's open ask (or a "Sounds like me" mark) closes it (`C.textOpInside` in `public/changes.js`), so the old text search can no longer move it onto a later copy of its words. With bold off the old search decides, as before.
+- Bold off: `public/cues.js` `emptied`: a stretch alone on its line, its outer words deleted first and the middle one last, leaves `**  **`, which reads as a rule and turned the paragraph into a raw block. Its marks now go with the last words. A stretch with text around it (`a ** b ** c`) is untouched, as before.
+- Checks: `tests/cues.test.mjs` (the sequence, `textOpInside`), and in a browser the guest case in the main run (`SMOKE_ONLY=guest`) and the `**one two three**` sequence in `runBoldOffEdits` (`SMOKE_ONLY=refusals`). Evidence: `docs/agents/evidence/step-r-browser-c.txt`.
+
+## Live
+
+2026-11-06: PRs A and B went live in one release (main `8a6986c`). Evidence: `docs/agents/evidence/step-r-live.txt`; the handoff has the rollback command.
+
 ## Not in the first release (left, in this order)
 
-- PR C: fleet #29 (a guest's edit inside a host's ask still uses the old text search with bold on; a stretch alone on its line emptied outer words first leaves `**  **`, which reads as a rule, with bold off). Next on `dev`.
+- PR C (fleet #29): done, see below.
 - PR D: fleet #31 item 5 (an open ask on part of a bold stretch shows its `**`; `unmark_cue` can't remove a stretch over about 550 characters; the colour inputs are small touch targets) and item 6 (a guest's selection is dropped when a host's ask arrives on that line) only if cheap, else they stay on the ticket.
 - Still open from #29, no fix planned here: deleting outer words first leaves `** two **`, which reads like `a ** b ** c` (documented limit); the Prompter doesn't draw inline `**`.
 
