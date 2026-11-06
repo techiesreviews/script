@@ -447,6 +447,15 @@ export function followRoomEdit(range, op, old = null) {
   const start = op.at + map[from], now = old.slice(0, op.at) + op.ins + old.slice(op.at + op.del);
   const grew = (before, after) => WORDISH.test(after ?? "") && !WORDISH.test(before ?? "");
   if (grew(old[range.start - 1], now[start - 1]) || grew(old[range.end], now[start + len])) return null;
+  // Matching letters do not prove the same words: the character on each side of the ask (not counting "*") must be kept
+  // right next to it, or lie outside the edit. Else the ask could land on another copy of its word.
+  const marks = /^\**$/;
+  let lo = range.start - 1;
+  while (lo >= op.at && old[lo] === "*") lo--;
+  if (lo >= op.at ? map[lo - op.at] < 0 || !marks.test(now.slice(op.at + map[lo - op.at] + 1, start)) : !marks.test(now.slice(op.at, start))) return null;
+  let hi = range.end;
+  while (hi < op.at + op.del && old[hi] === "*") hi++;
+  if (hi < op.at + op.del ? map[hi - op.at] < 0 || !marks.test(now.slice(start + len, op.at + map[hi - op.at])) : !marks.test(now.slice(start + len, op.at + op.ins.length))) return null;
   return { start, end: start + len };
 }
 /** May the person's Ctrl/Cmd+B do this toggle (K.toggleCue's result) in this block? Not over open work, and not when
