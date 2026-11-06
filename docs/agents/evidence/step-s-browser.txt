@@ -67,7 +67,7 @@ ok 1280 px: the host's ask reaches the guest
 ok 1280 px: the guest has the B button
 ok 1280 px: the guest's bold reaches the host as text
 ok 1280 px: the host's ask stays on its own word
-ok 1280 px: a guest typing inside the host's ask closes it (bold on), it does not jump to another copy of its words
+ok 1280 px: a guest typing inside the host's ask closes it, it does not jump to another copy of its words
 ok 1280 px: the host has a second ask on the last word
 ok 1280 px: the second ask reaches the guest
 ok 1280 px: a guest pressing Enter inside the host's ask closes it, no ask jumps to another copy
@@ -259,13 +259,19 @@ ok 1280 px look: another key with a like name stays
 ok 1280 px look: the word is bold
 ok 1280 px look: dark mode: the word has the prompter's orange
 ok 1280 px look: no background by default
+ok 1280 px look: the agent sees the bold word
 ok 1280 px look: the menu has no bold switches
 ok 1280 px look: the menu shows the two colours, no Reset yet
+ok 1280 px look: dark mode: the fields show the orange and the page's colour
 ok 1280 px look: the person's own colours show at once
 ok 1280 px look: Reset shows once a colour is chosen
+ok 1280 px look: another tab opened now has the colours
+ok 1280 px look: Reset reaches another tab
 ok 1280 px look: Reset brings the orange back
+ok 1280 px look: light mode: the fields show the orange and the page's colour
 ok 1280 px look: light mode: a darker orange that reads on white
-ok 1280 px look: the agent sees the bold word
+FAIL timed out: the name after the title change
+ok 1280 px look: a rename redraws nothing: the word and the caret stay
 ok 1280 px look: an older colour choice stays when "own" was on
 ok 1280 px: **Note** - more: it is in the script
 ok 1280 px: **Note** - more: Backspace over Note is refused, the line stays as it was
@@ -488,4 +494,4 @@ ok 390 px: Ctrl+B takes it off
 ok 390 px: Ctrl+B puts it back, and it shows
 ok 390 px: the camera export strips the stars
 ok 390 px: the prompter export strips the stars
-RESULT: ok
+RESULT: fail 1 checks
