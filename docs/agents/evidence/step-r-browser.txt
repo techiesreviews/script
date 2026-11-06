@@ -1,12 +1,15 @@
-# Step R, PR A: SMOKE_ONLY=refusals node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 7284388 + this change, 2026-11-06
-# Without the app.js change the same run fails 9 checks (the bold-off deletions and Enter just before the space).
+# Step R, PR A (round 2): SMOKE_ONLY=refusals node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Without the app.js change the same run fails 8 checks (paste with bold off, Shift+Enter just before the space).
 ok 1280 px: Bold marking is off
 ok 1280 px: **Note** - more: it is in the script
-ok 1280 px: **Note** - more: deleting Note goes through (Bold marking off never refuses)
-ok 1280 px: **Note** - more: one Ctrl+Z brings it back
+ok 1280 px: **Note** - more: Backspace over Note goes through (Bold marking off never refuses), no marks left
+ok 1280 px: **Note** - more: Backspace: one Ctrl+Z brings it back
 ok 1280 px: **y**- z: it is in the script
-ok 1280 px: **y**- z: deleting y goes through (Bold marking off never refuses)
-ok 1280 px: **y**- z: one Ctrl+Z brings it back
+ok 1280 px: **y**- z: Backspace over y goes through (Bold marking off never refuses), no marks left
+ok 1280 px: **y**- z: Backspace: one Ctrl+Z brings it back
+ok 1280 px: **Memo** - less: it is in the script
+ok 1280 px: **Memo** - less: paste over Memo goes through (Bold marking off never refuses), no marks left
+ok 1280 px: **Memo** - less: paste: one Ctrl+Z brings it back
 ok 1280 px: the Bold marking row shows no tick while it is off
 ok 1280 px: the Bold marking row shows a tick once it is on
 ok 1280 px: the rows that are off show no tick
@@ -37,6 +40,9 @@ ok 1280 px: **- item two**: Enter right after its mark: refused, or one Ctrl+Z t
 ok 1280 px: **- item two**: Enter just before the space: no spoken word leaves the counts
 ok 1280 px: **- item two**: Enter just before the space: refused, nothing changes
 ok 1280 px: **- item two**: Enter just before the space: refused, or one Ctrl+Z takes it back
+ok 1280 px: **- item two**: Shift+Enter just before the space: no spoken word leaves the counts
+ok 1280 px: **- item two**: Shift+Enter just before the space: refused, nothing changes
+ok 1280 px: **- item two**: Shift+Enter just before the space: refused, or one Ctrl+Z takes it back
 ok 1280 px: **# Plan**: a paragraph holding it
 ok 1280 px: **# Plan**: it shows bold
 ok 1280 px: **# Plan**: Backspace at the start of its words: it doesn't turn into # Plan
@@ -64,6 +70,39 @@ ok 1280 px: **# Plan**: Enter right after its mark: refused, or one Ctrl+Z takes
 ok 1280 px: **# Plan**: Enter just before the space: no spoken word leaves the counts
 ok 1280 px: **# Plan**: Enter just before the space: refused, nothing changes
 ok 1280 px: **# Plan**: Enter just before the space: refused, or one Ctrl+Z takes it back
+ok 1280 px: **# Plan**: Shift+Enter just before the space: no spoken word leaves the counts
+ok 1280 px: **# Plan**: Shift+Enter just before the space: refused, nothing changes
+ok 1280 px: **# Plan**: Shift+Enter just before the space: refused, or one Ctrl+Z takes it back
+ok 1280 px: **## Plan**: a paragraph holding it
+ok 1280 px: **## Plan**: it shows bold
+ok 1280 px: **## Plan**: Backspace at the start of its words: it doesn't turn into ## Plan
+ok 1280 px: **## Plan**: Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **## Plan**: Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **## Plan**: Delete at the start of the line: it doesn't turn into ## Plan
+ok 1280 px: **## Plan**: Delete at the start of the line: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Delete at the start of the line: it is still a paragraph
+ok 1280 px: **## Plan**: Delete at the start of the line: the caret stays
+ok 1280 px: **## Plan**: Ctrl+Backspace at the start of its words: it doesn't turn into ## Plan
+ok 1280 px: **## Plan**: Ctrl+Backspace at the start of its words: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Ctrl+Backspace at the start of its words: it is still a paragraph
+ok 1280 px: **## Plan**: Ctrl+Backspace at the start of its words: the caret isn't between the asterisks
+ok 1280 px: **## Plan**: Enter inside its last word: it doesn't turn into ## Plan
+ok 1280 px: **## Plan**: Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Enter inside its last word: it is still a paragraph
+ok 1280 px: **## Plan**: Shift+Enter inside its last word: it doesn't turn into ## Plan
+ok 1280 px: **## Plan**: Shift+Enter inside its last word: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Shift+Enter inside its last word: it is still a paragraph
+ok 1280 px: **## Plan**: typing in its words works
+ok 1280 px: **## Plan**: one Ctrl+Z takes the typing back
+ok 1280 px: **## Plan**: Enter right after its mark: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Enter right after its mark: refused, or one Ctrl+Z takes it back
+ok 1280 px: **## Plan**: Enter just before the space: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Enter just before the space: refused, nothing changes
+ok 1280 px: **## Plan**: Enter just before the space: refused, or one Ctrl+Z takes it back
+ok 1280 px: **## Plan**: Shift+Enter just before the space: no spoken word leaves the counts
+ok 1280 px: **## Plan**: Shift+Enter just before the space: refused, nothing changes
+ok 1280 px: **## Plan**: Shift+Enter just before the space: refused, or one Ctrl+Z takes it back
 ok 1280 px: **> x y**: a paragraph holding it
 ok 1280 px: **> x y**: it shows bold
 ok 1280 px: **> x y**: Backspace at the start of its words: it doesn't turn into > x y
@@ -91,6 +130,9 @@ ok 1280 px: **> x y**: Enter right after its mark: refused, or one Ctrl+Z takes 
 ok 1280 px: **> x y**: Enter just before the space: no spoken word leaves the counts
 ok 1280 px: **> x y**: Enter just before the space: refused, nothing changes
 ok 1280 px: **> x y**: Enter just before the space: refused, or one Ctrl+Z takes it back
+ok 1280 px: **> x y**: Shift+Enter just before the space: no spoken word leaves the counts
+ok 1280 px: **> x y**: Shift+Enter just before the space: refused, nothing changes
+ok 1280 px: **> x y**: Shift+Enter just before the space: refused, or one Ctrl+Z takes it back
 ok 1280 px: **1. x y**: a paragraph holding it
 ok 1280 px: **1. x y**: it shows bold
 ok 1280 px: **1. x y**: Backspace at the start of its words: it doesn't turn into 1. x y
@@ -118,6 +160,9 @@ ok 1280 px: **1. x y**: Enter right after its mark: refused, or one Ctrl+Z takes
 ok 1280 px: **1. x y**: Enter just before the space: no spoken word leaves the counts
 ok 1280 px: **1. x y**: Enter just before the space: refused, nothing changes
 ok 1280 px: **1. x y**: Enter just before the space: refused, or one Ctrl+Z takes it back
+ok 1280 px: **1. x y**: Shift+Enter just before the space: no spoken word leaves the counts
+ok 1280 px: **1. x y**: Shift+Enter just before the space: refused, nothing changes
+ok 1280 px: **1. x y**: Shift+Enter just before the space: refused, or one Ctrl+Z takes it back
 ok 1280 px: **- item two** more: a paragraph holding it
 ok 1280 px: **- item two** more: it shows bold
 ok 1280 px: **- item two** more: Backspace at the start of its words: it doesn't turn into - item two more
@@ -146,6 +191,9 @@ ok 1280 px: **- item two** more: Enter right after its mark: refused, or one Ctr
 ok 1280 px: **- item two** more: Enter just before the space: no spoken word leaves the counts
 ok 1280 px: **- item two** more: Enter just before the space: refused, nothing changes
 ok 1280 px: **- item two** more: Enter just before the space: refused, or one Ctrl+Z takes it back
+ok 1280 px: **- item two** more: Shift+Enter just before the space: no spoken word leaves the counts
+ok 1280 px: **- item two** more: Shift+Enter just before the space: refused, nothing changes
+ok 1280 px: **- item two** more: Shift+Enter just before the space: refused, or one Ctrl+Z takes it back
 ok 1280 px: a paste with a blank line over a bold word goes in as two paragraphs
 ok 1280 px: one Ctrl+Z takes that paste back
 ok 1280 px: a list pasted on purpose goes in
