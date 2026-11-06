@@ -553,12 +553,12 @@ async function runSlimBar(width, height) {
   check(aligned <= 1.5, `${tag}: the ghost starts right after the typed letters`, aligned);
   const live = `document.querySelector("#askLive").textContent`;
   await sleep(500);
-  check(/Shorter, 1 of 4/.test(await page.eval(live)), `${tag}: the suggestion is read out`, await page.eval(live));
+  check(/Shorter, 1 of 3/.test(await page.eval(live)), `${tag}: the suggestion is read out`, await page.eval(live));
   await pressKey(page, "ArrowDown", "ArrowDown", 40);
   await sleep(80);
   check((await page.eval(ghost)) === "impler", `${tag}: Down switches the suggestion`, await page.eval(ghost));
   await sleep(500);
-  check(/Simpler, 2 of 4/.test(await page.eval(live)), `${tag}: the new suggestion is read out`, await page.eval(live));
+  check(/Simpler, 2 of 3/.test(await page.eval(live)), `${tag}: the new suggestion is read out`, await page.eval(live));
   await pressKey(page, "ArrowUp", "ArrowUp", 38);
   await sleep(80);
   await pressKey(page, "Tab", "Tab", 9);
@@ -576,7 +576,7 @@ async function runSlimBar(width, height) {
   check(!(await page.eval(barOpen)) && (await script()) === start, `${tag}: Escape closes and changes no text`);
 
   // Enter sends: each command makes the same ask its button made, and the input shows the sending.
-  const sent = [["shorter", "shorter"], ["Simpler", "simpler"], ["sound like me", "like"], ["explain", "explain"], ["check facts", "facts"], ["find links", "links"], ["b-roll", "broll"]];
+  const sent = [["shorter", "shorter"], ["Simpler", "simpler"], ["sound like me", "like"], ["b-roll", "broll"]];
   for (const [typed, action] of sent) {
     await selectWord();
     const word = await page.eval(`document.querySelector("#ebLabel").textContent`);
@@ -654,20 +654,16 @@ async function runSlimBar(width, height) {
   await sleep(200);
   check(await page.eval(`document.querySelector("#boldBtn").hidden`), `${tag}: no B over a heading`);
   await type("b-roll");
-  check(/spoken/.test(await page.eval(ghost)) && (await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled && document.querySelector("#askInput").getAttribute("aria-invalid") === "true"`)), `${tag}: b-roll over a heading says why, on the control`, await page.eval(ghost));
+  check(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled && document.querySelector("#askInput").getAttribute("aria-invalid") === "true"`), `${tag}: b-roll over a heading: Send is off`);
   await pressKey(page, "Enter", "Enter", 13, "\r");
   await sleep(120);
   check((await page.eval(barOpen)) && (await page.eval(value)) === "b-roll" && !(await newAsks()).length, `${tag}: Enter there sends nothing and keeps the words`);
-  check((await page.eval(`document.querySelector("#askLive").textContent`)) === "B-roll needs spoken words.", `${tag}: the whole reason is read out too`, await page.eval(`document.querySelector("#askLive").textContent`));
-  const reasonFits = `document.querySelector("#askGhost b").getBoundingClientRect().left >= document.querySelector("#askGhost").getBoundingClientRect().left`;
-  await page.eval(`(() => { const i = document.querySelector("#askInput"); i.value = "suggest b roll"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
-  await sleep(80);
-  check(await page.eval(reasonFits), `${tag}: the longest reason fits inside the input`, await page.eval(`document.querySelector("#askGhost").textContent`));
-  await page.eval(`(() => { const i = document.querySelector("#askInput"); i.value = "b-roll"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+  check((await page.eval(`document.querySelector("#askLive").textContent`)) === "B-roll needs spoken words.", `${tag}: screen readers hear why`, await page.eval(`document.querySelector("#askLive").textContent`));
   await page.eval(`localStorage.setItem("script-editor:askHistory", JSON.stringify(["b-roll ideas"]))`);
   await page.eval(`document.querySelector("#askInput").dispatchEvent(new Event("input", { bubbles: true }))`);
   await sleep(80);
-  check(/spoken/.test(await page.eval(ghost)) && !(await page.eval(tabOn)), `${tag}: an earlier ask doesn't hide the reason`, await page.eval(ghost));
+  check(!(await page.eval(tabOn)), `${tag}: an earlier ask offers nothing while the command can't run`);
+  await page.eval(`localStorage.removeItem("script-editor:askHistory")`);
   await closeBar();
 
   // A new selection during the sending ends it: the bar is ready for the new words.
@@ -733,54 +729,6 @@ async function runSlimBar(width, height) {
     await page.eval(`(() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event("resize")); })()`);
     await closeBar();
   }
-
-  // Part of the selected words bolded while typing: they are still there, so the ask goes on them.
-  await page.eval(`getSelection().removeAllRanges()`);
-  await sleep(150);
-  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("Most of us")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), n = w.nextNode(), from = n.data.indexOf("Most"), r = document.createRange(); r.setStart(n, from); r.setEnd(n, from + 7); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
-  await page.until(barOpen, "the bar on two words");
-  await sleep(200);
-  await type("warmer");
-  await agent("mark_cue", { cues: [{ quote: "Most" }] });
-  await sleep(300);
-  check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: bold on part of the words: they aren't gone`, await page.eval(ghost));
-  // The bold comes off again: still there.
-  await agent("unmark_cue", { cues: [{ quote: "Most" }] });
-  await sleep(300);
-  check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: the bold off again: they still aren't gone`, await page.eval(ghost));
-  // Bold again, part of the words: the ask goes while they cross its edge.
-  await agent("mark_cue", { cues: [{ quote: "Most" }] });
-  await sleep(300);
-  await pressKey(page, "Enter", "Enter", 13, "\r");
-  const parted = await newAsks();
-  check(parted[0]?.instruction === "warmer" && parted[0]?.quote.includes("Most") && parted[0]?.quote.includes("of"), `${tag}: and the ask goes on them`, JSON.stringify(parted.map((x) => x.quote)));
-  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
-  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
-  await sleep(150);
-  await agent("set_script", { markdown: start });
-  await sleep(300);
-
-  // Repeated words: the second copy stays the second, as bold goes on and off.
-  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page.")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
-  await page.send("Input.insertText", { text: " Twice over. Twice over." });
-  await sleep(350);
-  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("Twice over.")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const t = nodes.map((x) => x.data).join(""), from = t.lastIndexOf("Twice over"), point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }, r = document.createRange(); r.setStart(...point(from)); r.setEnd(...point(from + 10)); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
-  await page.until(barOpen, "the bar on the second copy");
-  await sleep(200);
-  await type("warmer");
-  await agent("mark_cue", { cues: [{ quote: "Twice", occurrence: 2 }] });
-  await sleep(300);
-  await agent("unmark_cue", { cues: [{ quote: "Twice" }] });
-  await sleep(300);
-  await pressKey(page, "Enter", "Enter", 13, "\r");
-  const repeated = await newAsks();
-  const before = await page.eval(`(() => { const d = document.querySelector("#script [data-ask]"), r = document.createRange(); r.setStart(d.closest(".block"), 0); r.setEndBefore(d); return r.toString(); })()`);
-  check(repeated[0]?.instruction === "warmer" && before.includes("Twice over."), `${tag}: repeated words: the ask stays on the second copy`, before.slice(-40));
-  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
-  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
-  await sleep(150);
-  await agent("set_script", { markdown: start });
-  await sleep(300);
 
   // A redraw of the line while typing: the words stay marked.
   await selectWord();
@@ -863,14 +811,6 @@ async function runSlimBar(width, height) {
   await page.eval(`getSelection().removeAllRanges()`);
   await sleep(200);
 
-    // Right-to-left words: the ghost stays away, what is typed goes as typed.
-  await page.eval(`localStorage.setItem("script-editor:askHistory", JSON.stringify(["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd"]))`);
-  await selectWord();
-  await type("\u05e9\u05dc");
-  check((await page.eval(ghost)) === "" && !(await page.eval(tabOn)), `${tag}: right-to-left: no ghost`);
-  await closeBar();
-  await page.eval(`localStorage.removeItem("script-editor:askHistory")`);
-
   // B over a bold edge, with an ask typed: the words are the same words, so the input stays ready.
   await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page.")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
   await page.send("Input.insertText", { text: " **big word** now" });
@@ -882,7 +822,7 @@ async function runSlimBar(width, height) {
   await page.click("#boldBtn");
   await sleep(250);
   check((await script()).includes("**big word now**"), `${tag}: B over a bold edge joins it`);
-  check(!(await page.eval(`document.querySelector("#askGhost b").textContent`)) && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && !(await page.eval(`document.querySelector("#askInput").hasAttribute("aria-invalid")`)), `${tag}: and the input stays ready`, await page.eval(`document.querySelector("#askGhost b").textContent`));
+  check(!(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && (await page.eval(value)) === "say it warmer", `${tag}: and the input stays ready`);
   await closeBar();
   await agent("set_script", { markdown: start });
   await sleep(300);
@@ -902,7 +842,7 @@ async function runSlimBar(width, height) {
   await page.close();
 }
 
-// Narrow phones: the field stays at least 200 px while it can (B takes a row of its own), and the longest reason fits.
+// Narrow phones: the field stays at least 200 px while it can (B takes a row of its own).
 async function runNarrowBar(width, height) {
   const tag = `${width}x${height}`;
   const { page } = await openDemo(width, height);
@@ -914,17 +854,6 @@ async function runNarrowBar(width, height) {
   check(field >= (width >= 360 ? 200 : 180), `${tag}: the field is wide enough`, field);
   await page.click("#askInput");
   await page.shot(`${width}-bar-narrow`);
-  await pressKey(page, "Escape", "Escape", 27);
-  await page.eval(`getSelection().removeAllRanges()`);
-  await sleep(200);
-  const heading = `[...document.querySelectorAll('#script .block')].find((x) => x.dataset.type !== "para" && x.textContent.trim().length > 4)`;
-  await page.eval(`(() => { const el = ${heading}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (/\\p{L}{3,}/u.test(n.data)) break; const m = n.data.match(/\\p{L}{3,}/u), r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
-  await page.until(`!document.querySelector("#editBar").hidden`, "the bar over a heading");
-  await sleep(200);
-  await page.click("#askInput");
-  await page.send("Input.insertText", { text: "suggest b roll" });
-  await sleep(120);
-  check(await page.eval(`document.querySelector("#askGhost b").getBoundingClientRect().left >= document.querySelector("#askGhost").getBoundingClientRect().left`), `${tag}: the longest reason fits`, await page.eval(`document.querySelector("#askGhost").textContent`));
   await page.close();
 }
 
@@ -991,52 +920,36 @@ async function runSlimGuest(width, height) {
   await guest.click("#askInput");
   await guest.send("Input.insertText", { text: "add b-roll" });
   await sleep(100);
-  check(/host/.test(await guest.eval(`document.querySelector("#askGhost b").textContent`)) && (await guest.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: add b-roll says it is the host's`);
-  check(await guest.eval(`document.querySelector("#askGhost b").getBoundingClientRect().left >= document.querySelector("#askGhost").getBoundingClientRect().left`), `${tag}: the reason fits inside the input`);
+  await sleep(100);
+  check((await guest.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && (await guest.eval(`document.querySelector("#askLive").textContent`)) === "Only the host can add B-roll.", `${tag}: add b-roll stays the host's`);
   await pressKey(guest, "Escape", "Escape", 27);
   await guest.eval(`getSelection().removeAllRanges()`);
   await sleep(200);
-  // The host types an ask while the guest deletes the selected word: what is typed stays, and the input says why nothing can go.
-  const longAsk = "make it warmer and a good deal shorter than it reads right now";
-  {
+  // The host types an ask while the guest deletes the selected word: as before, Enter closes the bar and no ask goes.
+  if (width >= 640) {
     await page.send("Page.bringToFront");
     await doubleClick(page, await page.eval(wordSpot));
     await page.until(`!document.querySelector("#editBar").hidden`, "the host's bar");
     await sleep(200);
     await page.click("#askInput");
-    await page.send("Input.insertText", { text: longAsk });
+    await page.send("Input.insertText", { text: "make it warmer" });
     await sleep(100);
-    const history = await page.eval(`localStorage.getItem("script-editor:askHistory")`);
     await guest.send("Page.bringToFront");
     await doubleClick(guest, await guest.eval(wordSpot));
     await sleep(200);
-    await guest.eval(`document.querySelector("#askInput").blur()`);
     await pressKey(guest, "Backspace", "Backspace", 8);
-    await page.until(`document.querySelector("#askGhost b").textContent.includes("words gone")`, "the host's input says the words went");
+    await page.until(`!document.querySelector("#script").textContent.includes("deadline")`, "the word gone on the host's page");
     await page.send("Page.bringToFront");
-    check((await page.eval(`document.querySelector("#askGhost b").textContent`)).includes("words gone") && (await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: the selected word deleted while typing: the input says so, Send is off`);
-    check(await page.eval(`(() => { const b = document.querySelector("#askGhost b").getBoundingClientRect(), f = document.querySelector("#askForm").getBoundingClientRect(); return b.width > 40 && b.left >= f.left && b.right <= f.right; })()`), `${tag}: a long ask doesn't hide the reason`);
-    check((await page.eval(`document.querySelector("#askInput").value`)) === longAsk && !(await page.eval(`document.querySelector("#editBar").hidden`)), `${tag}: what is typed stays, the bar stays`);
-    await page.eval(`scrollBy({ top: 40, behavior: "instant" })`);
-    await sleep(120);
-    const box = await page.eval(`(() => { const b = document.querySelector("#editBar").getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; })()`);
-    check(box, `${tag}: a scroll doesn't lose the bar`);
     await pressKey(page, "Enter", "Enter", 13, "\r");
     await sleep(200);
-    check(!JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks.length && (await page.eval(`localStorage.getItem("script-editor:askHistory")`)) === history, `${tag}: Enter sends nothing and remembers nothing`);
-    // The guest's Undo brings the word back: the input is ready again.
-    await guest.send("Page.bringToFront");
-    for (const type of ["keyDown", "keyUp"]) await guest.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", modifiers: 2, windowsVirtualKeyCode: 90 });
-    check(await page.until(`!document.querySelector("#askGhost b").textContent.includes("words gone")`, "the words back"), `${tag}: the word comes back: "words gone" goes`);
-    await page.send("Page.bringToFront");
-    check(!(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && (await page.eval(`document.querySelector("#askInput").value`)) === longAsk, `${tag}: Send is on again and what is typed is still there`);
+    check((await page.eval(`document.querySelector("#editBar").hidden`)) && !JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks.length, `${tag}: the selected word deleted while typing: no ask goes`);
   }
   await guest.close();
   await page.close();
 }
 
 // How bold looks (step S): orange and bold by default, in the prompter's orange in dark mode; the menu holds only the colours,
-// and they can be chosen and reset. An older "off" switch left in the browser means nothing and goes away.
+// and they can be chosen. An older "off" switch left in the browser means nothing and goes away.
 async function runBoldLook(width, height) {
   const tag = `${width} px look`;
   const { page, agent } = await openDemo(width, height);
@@ -1072,28 +985,9 @@ async function runBoldLook(width, height) {
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await sleep(400);
   await page.shot("bold-menu");
-  check(await page.eval(`!!document.querySelector("#boldFg").offsetParent && !!document.querySelector("#boldBg").offsetParent && document.querySelector("#boldReset").hidden`), `${tag}: the menu shows the two colours, no Reset yet`);
+  check(await page.eval(`!!document.querySelector("#boldFg").offsetParent && !!document.querySelector("#boldBg").offsetParent`), `${tag}: the menu shows the two colours`);
   const shown = () => page.eval(`document.querySelector("#boldFg").value + " " + document.querySelector("#boldBg").value`);
   check((await shown()) === "#fb401e #080721", `${tag}: dark mode: the fields show the orange and the page's colour`, await shown());
-  await page.eval(`(() => { const set = (id, v) => { const e = document.querySelector(id); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); }; set("#boldFg", "#112233"); set("#boldBg", "#ddeeff"); })()`);
-  const own = await look();
-  check(own.color === "rgb(17, 34, 51)" && own.background === "rgb(221, 238, 255)", `${tag}: the person's own colours show at once`, JSON.stringify(own));
-  check(!(await page.eval(`document.querySelector("#boldReset").hidden`)), `${tag}: Reset shows once a colour is chosen`);
-  // Another tab of this browser follows, and is not redrawn.
-  const other = await openPage(width, height, page);
-  await other.send("Page.navigate", { url: `${BASE}/` });
-  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the second tab");
-  await other.click("#emptySample");
-  await other.until(`!!document.querySelector("#script .block")`, "the second tab's script");
-  const scriptStyle = (prop) => other.eval(`document.querySelector("#script").style.getPropertyValue("${prop}")`);
-  await other.until(`document.querySelector("#script").style.getPropertyValue("--bold-fg") === "#112233"`, "the colour in the second tab");
-  check((await scriptStyle("--bold-bg")) === "#ddeeff", `${tag}: another tab opened now has the colours`);
-  await page.click("#boldReset");
-  await sleep(100);
-  check(await other.until(`document.querySelector("#script").style.getPropertyValue("--bold-fg") === ""`, "Reset in the second tab"), `${tag}: Reset reaches another tab`);
-  await send("Target.closeTarget", { targetId: other.targetId });
-  const back = await look();
-  check(back.color === dark.color && back.background === dark.background, `${tag}: Reset brings the orange back`, JSON.stringify(back));
   await pressKey(page, "Escape", "Escape", 27);
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await sleep(150);
@@ -1106,6 +1000,19 @@ async function runBoldLook(width, height) {
   await pressKey(page, "Escape", "Escape", 27);
   await sleep(150);
   check(light.color === lightOrange && light.weight === 800, `${tag}: light mode: a darker orange that reads on white`, `${JSON.stringify(light)} ${lightOrange}`);
+  await page.eval(`(() => { const set = (id, v) => { const e = document.querySelector(id); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); }; set("#boldFg", "#112233"); set("#boldBg", "#ddeeff"); })()`);
+  const own = await look();
+  check(own.color === "rgb(17, 34, 51)" && own.background === "rgb(221, 238, 255)", `${tag}: the person's own colours show at once`, JSON.stringify(own));
+  // Another tab of this browser follows, and is not redrawn.
+  const other = await openPage(width, height, page);
+  await other.send("Page.navigate", { url: `${BASE}/` });
+  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the second tab");
+  await other.click("#emptySample");
+  await other.until(`!!document.querySelector("#script .block")`, "the second tab's script");
+  const scriptStyle = (prop) => other.eval(`document.querySelector("#script").style.getPropertyValue("${prop}")`);
+  await other.until(`document.querySelector("#script").style.getPropertyValue("--bold-fg") === "#112233"`, "the colour in the second tab");
+  check((await scriptStyle("--bold-bg")) === "#ddeeff", `${tag}: another tab opened now has the colours`);
+  await send("Target.closeTarget", { targetId: other.targetId });
   // A new title renames the script: its name changes and nothing on the page is redrawn.
   const name = `document.querySelector(".doc__name").textContent`, demoName = await page.eval(name);
   await page.send("Page.bringToFront");

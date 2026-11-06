@@ -1,42 +1,36 @@
-// The slim edit bar (step T): what a typed line means, what to suggest as it is typed, finding the selected words again
-// after the line changed, and where the bar goes.
+// The slim edit bar (step T): what a typed line means, what to suggest as it is typed, and where the bar goes.
 // Pure module: no DOM. Imported by the app and by the tests.
 import { ACTIONS } from "./doc.js";
-import { plainView } from "./cues.js";
 
 /* ---------- Typed commands: what the bar's buttons did ----------
-   name is what the grey ghost offers; also: other spellings that mean the same.
-   needs: "spoken" (only over spoken words, as the B-roll buttons were), "addBroll" (and only where a shot can be added). */
+   name is what the grey ghost offers. needs: "spoken" (only over spoken words, as the B-roll buttons were), "addBroll"
+   (and only where a shot can be added). More's own items are in the menu it opens. */
 const COMMANDS = [
   { action: "shorter", name: ACTIONS.shorter.name },
   { action: "simpler", name: ACTIONS.simpler.name },
-  { action: "like", name: ACTIONS.like.name, also: ["Sounds like me"] },
-  { action: "broll", name: "B-roll", also: [ACTIONS.broll.name, "Broll", "B roll", "Suggest broll", "Suggest b roll"], needs: "spoken" },
-  { open: "add", name: "Add B-roll", also: ["Add broll", "Add b roll"], needs: "addBroll" },
-  { action: "explain", name: ACTIONS.explain.name, also: ["Explain"] },
-  { action: "facts", name: ACTIONS.facts.name, also: ["Facts"] },
-  { action: "links", name: ACTIONS.links.name, also: ["Links"] },
+  { action: "like", name: ACTIONS.like.name },
+  { action: "broll", name: "B-roll", needs: "spoken" },
+  { open: "add", name: "Add B-roll", needs: "addBroll" },
   { open: "more", name: "More" },
 ];
 const same = (text) => text.trim().replace(/\s+/g, " ").toLowerCase();
-const spellings = (c) => [c.name, ...(c.also || [])];
-// Why a command can't run here, or null when it can: short for the input (why), whole for a screen reader (say).
+// Why a command can't run here (for screen readers: the input only turns Send off), or "" when it can.
 // can: { spoken, addBroll, guest }.
 function refusal(c, can) {
-  if (c.needs && !can.spoken) return { why: "not spoken", say: "B-roll needs spoken words." };
-  if (c.needs === "addBroll" && !can.addBroll) return can.guest ? { why: "host only", say: "Only the host can add B-roll." } : { why: "list not ready", say: "The B-roll list isn't ready." };
-  return null;
+  if (c.needs && !can.spoken) return "B-roll needs spoken words.";
+  if (c.needs === "addBroll" && !can.addBroll) return can.guest ? "Only the host can add B-roll." : "The B-roll list isn't ready.";
+  return "";
 }
 
 /** What the typed line does: null (nothing typed), { kind: "act", action }, { kind: "add" }, { kind: "more" },
- *  { kind: "blocked", why, say } or { kind: "ask", text }. */
+ *  { kind: "blocked", say } or { kind: "ask", text }. */
 export function resolveTyped(typed, can) {
   const text = String(typed ?? "").trim();
   if (!text) return null;
-  const c = COMMANDS.find((x) => spellings(x).some((s) => same(s) === same(text)));
+  const c = COMMANDS.find((x) => same(x.name) === same(text));
   if (!c) return { kind: "ask", text };
-  const no = refusal(c, can);
-  if (no) return { kind: "blocked", ...no };
+  const say = refusal(c, can);
+  if (say) return { kind: "blocked", say };
   return c.open ? { kind: c.open } : { kind: "act", action: c.action };
 }
 
@@ -47,11 +41,7 @@ export function suggestions(typed, { can, earlier = [] } = {}) {
   if (!text.trim()) return [];
   const fits = (s) => s.length > text.length && s.slice(0, text.length).toLowerCase() === text.toLowerCase();
   const out = [];
-  for (const c of COMMANDS) {
-    if (refusal(c, can)) continue;
-    const s = spellings(c).find(fits);
-    if (s) out.push(s);
-  }
+  for (const c of COMMANDS) if (!refusal(c, can) && fits(c.name)) out.push(c.name);
   for (const s of cleanAsks(earlier)) if (fits(s) && !out.some((x) => x.toLowerCase() === s.toLowerCase())) out.push(s);
   return out;
 }
@@ -64,40 +54,6 @@ export function rememberAsk(list, text) {
   const clean = cleanAsks(list);
   if (text.length > ASK_KEPT_LENGTH) return clean.slice(0, ASKS_KEPT);
   return [text, ...clean.filter((s) => s.toLowerCase() !== text.toLowerCase())].slice(0, ASKS_KEPT);
-}
-
-/* ---------- The selected words, after the line changed ----------
-   Everything is compared in the words without their bold marks, so marks going on or off anywhere on the line, also several
-   at once, never make another copy of the same words look nearer. */
-/** Where `offset` in the content is in the text without its bold marks. */
-export function plainOffset(content, offset) {
-  const view = plainView(String(content ?? ""));
-  if (!view) return offset;
-  let n = 0;
-  while (n < view.map.length && view.map[n] < offset) n++;
-  return n;
-}
-/** Where the selected words (`quote`) are in the content now, the copy nearest to `near` (from plainOffset): { start, end,
- *  quote } (quote: the text there now, marks and all), or null when they are gone. */
-export function findWords(content, quote, near) {
-  if (!quote) return null;
-  const text = String(content ?? ""), view = plainView(text), plain = view ? view.plain : text;
-  const at = (x) => (view ? view.map[x] : x);
-  for (const words of quote.includes("**") ? [quote.replaceAll("**", ""), quote] : [quote]) {
-    if (!words) continue;
-    let best = -1, dist = Infinity;
-    for (let i = plain.indexOf(words); i >= 0; i = plain.indexOf(words, i + 1)) {
-      const d = Math.abs(i - near);
-      if (d < dist) { best = i; dist = d; }
-    }
-    if (best < 0) continue;
-    let start = at(best), end = at(best + words.length - 1) + 1;
-    // A quote that took in a whole stretch's marks takes them in again.
-    if (quote.startsWith("**") && text.slice(start - 2, start) === "**") start -= 2;
-    if (quote.endsWith("**") && text.slice(end, end + 2) === "**") end += 2;
-    return { start, end, quote: text.slice(start, end) };
-  }
-  return null;
 }
 
 /* ---------- Where the bar goes ----------
