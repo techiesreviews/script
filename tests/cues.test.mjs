@@ -920,9 +920,24 @@ test("quoteSelection (B-roll): a quote across a bold edge is found, mapped back 
   // Each is a selection overFor can use, and the shot matches the same paragraphs again.
   const across = B.quoteSelection(doc, "Say big");
   assert.deepEqual(B.matchOver(B.spokenBlocks(doc), B.overFor(doc, across)), [across[0].id]);
+  // The agent's answer: an add with such a quote is accepted and its Over matches the same paragraph.
+  const answered = B.checkBrollAnswer({ id: "a1", scope: "selection", action: "broll", status: "taken" }, { changes: [{ op: "add", kind: "broll", what: "x", quote: "Say big" }] }, { doc });
+  assert.ok(!answered.error, answered.error);
+  assert.deepEqual(B.matchOver(B.spokenBlocks(doc), answered.answer.changes[0].over), [across[0].id]);
   // A whole word only, as before; an exact match on the marks is still found first.
   assert.deepEqual(B.quoteSelection(doc, "ig word"), []);
   assert.equal(B.quoteSelection(doc, "**big word**").length, 1);
   // Bold off: the marks are plain text, so the spoken-text quote is not found (nothing changes from before bold).
   whileOff(() => assert.deepEqual(B.quoteSelection(doc, "Say big"), []));
+  // Bold in one paragraph only, and a quote across two bold stretches.
+  const mixed = D.parse("# Title\n\n## Part\n\nPlain line here.\n\nA **second** line\n\n**one** and **two** end\n");
+  const paras = D.outline(mixed).sections.flatMap((s) => s.blocks).filter((b) => b.type === "para");
+  const at = (i) => D.contentOf(paras[i]);
+  const half = B.quoteSelection(mixed, "here. A second");
+  assert.equal(half.length, 2);
+  assert.equal(at(0).slice(half[0].start, half[0].end), "here.");
+  assert.equal(at(1).slice(half[1].start, half[1].end), "A **second");
+  const twice = B.quoteSelection(mixed, "one and two");
+  assert.equal(twice.length, 1);
+  assert.equal(at(2).slice(twice[0].start, twice[0].end), "one** and **two");
 });
