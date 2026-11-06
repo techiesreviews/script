@@ -440,8 +440,10 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__ghost { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; white-space: pre; color: transparent; pointer-events: none; }
 .edit-bar__ghost span { visibility: hidden; }
 .edit-bar__ghost b { font-weight: inherit; color: var(--ghost); }
-/* A refused command's reason may use the Tab key's room: the key isn't showing then. */
-.edit-bar__field:has(input[aria-invalid]) .edit-bar__ghost { inset-inline-end: -3.1rem; }
+/* A refused command's reason: pinned to the end of the field on its own background, so long typed words can't hide it,
+   and in the Tab key's room, as the key isn't showing then. */
+.edit-bar__field:has(input[aria-invalid]) .edit-bar__ghost { inset-inline-end: -3.1rem; z-index: 1; }
+.edit-bar__field:has(input[aria-invalid]) .edit-bar__ghost b { position: absolute; inset-block: 0; inset-inline-end: 0; display: flex; align-items: center; padding-inline: 0.4rem 0.2rem; background: var(--raised); color: var(--muted); }
 .edit-bar__sending { position: absolute; inset: 0; display: none; align-items: center; gap: 0.5rem; color: var(--muted); pointer-events: none; }
 .edit-bar__field[data-state="sending"] .edit-bar__sending { display: flex; }
 .edit-bar__field[data-state="sending"] input { color: transparent; caret-color: transparent; }

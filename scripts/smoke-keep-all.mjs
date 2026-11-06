@@ -658,7 +658,7 @@ async function runSlimBar(width, height) {
   await pressKey(page, "Enter", "Enter", 13, "\r");
   await sleep(120);
   check((await page.eval(barOpen)) && (await page.eval(value)) === "b-roll" && !(await newAsks()).length, `${tag}: Enter there sends nothing and keeps the words`);
-  check(/spoken/.test(await page.eval(`document.querySelector("#askLive").textContent`)), `${tag}: the reason is read out too`);
+  check((await page.eval(`document.querySelector("#askLive").textContent`)) === "B-roll needs spoken words.", `${tag}: the whole reason is read out too`, await page.eval(`document.querySelector("#askLive").textContent`));
   const reasonFits = `document.querySelector("#askGhost b").getBoundingClientRect().right <= document.querySelector("#askGhost").getBoundingClientRect().right`;
   await page.eval(`(() => { const i = document.querySelector("#askInput"); i.value = "suggest b roll"; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
   await sleep(80);
@@ -752,6 +752,38 @@ async function runSlimBar(width, height) {
     check(await page.eval(`document.querySelector("#editBar").hidden && getSelection().toString().length > 20`), `${tag}: the drag carries on over the lines below`);
     await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x + 60, y: at.y + 90, button: "left", clickCount: 1 });
     check(await page.until(barOpen, "the bar after the release", 1500), `${tag}: the bar comes on release`);
+    await closeBar();
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(200);
+    // The same when the press moves the focus: from another paragraph, and from the bar's input.
+    const dragFrom = async (name) => {
+      const spot = await page.eval(wordSpot);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...spot, button: "none" });
+      await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...spot, button: "left", clickCount: 1, buttons: 1 });
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: spot.x + 50, y: spot.y + 32, button: "left", buttons: 1 });
+      await sleep(350);
+      check(await page.eval(`document.querySelector("#editBar").hidden`), `${tag}: ${name}: no bar in the middle of the drag`);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: spot.x + 50, y: spot.y + 32, button: "left", clickCount: 1 });
+      check(await page.until(barOpen, "the bar after the release", 1500), `${tag}: ${name}: the bar comes on release`);
+    };
+    await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("Most of us")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToStart(); })()`);
+    await sleep(200);
+    await dragFrom("the caret in another paragraph");
+    await page.click("#askInput");
+    await sleep(120);
+    await dragFrom("the focus in the bar's input");
+    await closeBar();
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(200);
+    // From the page's margin, into the text.
+    const margin = await page.eval(`(() => { const r = document.querySelector("#script .block[data-type='para']").getBoundingClientRect(); return { x: r.left - 12, y: r.top + 8 }; })()`);
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...margin, button: "none" });
+    await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...margin, button: "left", clickCount: 1, buttons: 1 });
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: margin.x + 120, y: margin.y + 34, button: "left", buttons: 1 });
+    await sleep(350);
+    check(await page.eval(`document.querySelector("#editBar").hidden`), `${tag}: a drag from the margin: no bar in the middle of it`);
+    await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: margin.x + 120, y: margin.y + 34, button: "left", clickCount: 1 });
+    await sleep(250);
     await closeBar();
     await page.eval(`getSelection().removeAllRanges()`);
     await sleep(200);
@@ -875,13 +907,14 @@ async function runSlimGuest(width, height) {
   await guest.eval(`getSelection().removeAllRanges()`);
   await sleep(200);
   // The host types an ask while the guest deletes the selected word: what is typed stays, and the input says why nothing can go.
-  if (width >= 640) {
+  const longAsk = "make it warmer and a good deal shorter than it reads right now";
+  {
     await page.send("Page.bringToFront");
     await doubleClick(page, await page.eval(wordSpot));
     await page.until(`!document.querySelector("#editBar").hidden`, "the host's bar");
     await sleep(200);
     await page.click("#askInput");
-    await page.send("Input.insertText", { text: "make it warmer" });
+    await page.send("Input.insertText", { text: longAsk });
     await sleep(100);
     const history = await page.eval(`localStorage.getItem("script-editor:askHistory")`);
     await guest.send("Page.bringToFront");
@@ -892,7 +925,8 @@ async function runSlimGuest(width, height) {
     await page.until(`document.querySelector("#askGhost b").textContent.includes("words gone")`, "the host's input says the words went");
     await page.send("Page.bringToFront");
     check((await page.eval(`document.querySelector("#askGhost b").textContent`)).includes("words gone") && (await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: the selected word deleted while typing: the input says so, Send is off`);
-    check((await page.eval(`document.querySelector("#askInput").value`)) === "make it warmer" && !(await page.eval(`document.querySelector("#editBar").hidden`)), `${tag}: what is typed stays, the bar stays`);
+    check(await page.eval(`(() => { const b = document.querySelector("#askGhost b").getBoundingClientRect(), f = document.querySelector("#askForm").getBoundingClientRect(); return b.width > 40 && b.left >= f.left && b.right <= f.right; })()`), `${tag}: a long ask doesn't hide the reason`);
+    check((await page.eval(`document.querySelector("#askInput").value`)) === longAsk && !(await page.eval(`document.querySelector("#editBar").hidden`)), `${tag}: what is typed stays, the bar stays`);
     await page.eval(`scrollBy({ top: 40, behavior: "instant" })`);
     await sleep(120);
     const box = await page.eval(`(() => { const b = document.querySelector("#editBar").getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; })()`);

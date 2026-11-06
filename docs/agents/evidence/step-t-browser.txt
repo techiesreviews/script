@@ -306,7 +306,7 @@ ok 1280x800: a heading shows the bar
 ok 1280x800: no B over a heading
 ok 1280x800: b-roll over a heading says why, on the control
 ok 1280x800: Enter there sends nothing and keeps the words
-ok 1280x800: the reason is read out too
+ok 1280x800: the whole reason is read out too
 ok 1280x800: the longest reason fits inside the input
 ok 1280x800: an earlier ask doesn't hide the reason
 ok 1280x800: a new selection while sending: the bar is ready for it
@@ -321,6 +321,11 @@ ok 1280x800: the agent bolds the selected word: B shows pressed
 ok 1280x800: a pause in a drag: no bar yet
 ok 1280x800: the drag carries on over the lines below
 ok 1280x800: the bar comes on release
+ok 1280x800: the caret in another paragraph: no bar in the middle of the drag
+ok 1280x800: the caret in another paragraph: the bar comes on release
+ok 1280x800: the focus in the bar's input: no bar in the middle of the drag
+ok 1280x800: the focus in the bar's input: the bar comes on release
+ok 1280x800: a drag from the margin: no bar in the middle of it
 ok 1280x800: right-to-left: no ghost
 ok 1280x800: typing: the selected word stays marked
 ok 1280x800: B from the input marks the word and keeps what is typed
@@ -378,7 +383,7 @@ ok 390x760: a heading shows the bar
 ok 390x760: no B over a heading
 ok 390x760: b-roll over a heading says why, on the control
 ok 390x760: Enter there sends nothing and keeps the words
-ok 390x760: the reason is read out too
+ok 390x760: the whole reason is read out too
 ok 390x760: the longest reason fits inside the input
 ok 390x760: an earlier ask doesn't hide the reason
 ok 390x760: a new selection while sending: the bar is ready for it
@@ -432,6 +437,7 @@ ok 1280 px guest: a free ask goes as typed
 ok 1280 px guest: add b-roll says it is the host's
 ok 1280 px guest: the reason fits inside the input
 ok 1280 px guest: the selected word deleted while typing: the input says so, Send is off
+ok 1280 px guest: a long ask doesn't hide the reason
 ok 1280 px guest: what is typed stays, the bar stays
 ok 1280 px guest: a scroll doesn't lose the bar
 ok 1280 px guest: Enter sends nothing and remembers nothing
@@ -441,12 +447,22 @@ ok 390 px guest: Say it warmer: reaches the host's agent as ask
 ok 390 px guest: a free ask goes as typed
 ok 390 px guest: add b-roll says it is the host's
 ok 390 px guest: the reason fits inside the input
+ok 390 px guest: the selected word deleted while typing: the input says so, Send is off
+ok 390 px guest: a long ask doesn't hide the reason
+ok 390 px guest: what is typed stays, the bar stays
+ok 390 px guest: a scroll doesn't lose the bar
+ok 390 px guest: Enter sends nothing and remembers nothing
 ok 320 px guest: b-roll: reaches the host's agent as broll
 ok 320 px guest: shorter: reaches the host's agent as shorter
 ok 320 px guest: Say it warmer: reaches the host's agent as ask
 ok 320 px guest: a free ask goes as typed
 ok 320 px guest: add b-roll says it is the host's
 ok 320 px guest: the reason fits inside the input
+ok 320 px guest: the selected word deleted while typing: the input says so, Send is off
+ok 320 px guest: a long ask doesn't hide the reason
+ok 320 px guest: what is typed stays, the bar stays
+ok 320 px guest: a scroll doesn't lose the bar
+ok 320 px guest: Enter sends nothing and remembers nothing
 ok 360x740: no sideways scroll
 ok 360x740: the field is wide enough
 ok 360x740: the longest reason fits
