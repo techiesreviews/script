@@ -428,7 +428,7 @@ export function alignChars(a, b) {
   return map;
 }
 const WORDISH = K.WORD_CHAR; // a word, as cues.js reads one
-/** Where a host's ask or mark (`range`: start, end) goes through one room edit when Bold marking is on: as followTextOp says;
+/** Where a host's ask or mark (`range`: start, end) goes through one room edit: as followTextOp says;
  *  but when the edit fell inside it, it is closed (null), not searched for again by its old words. `old`: the block's text
  *  before the edit, when known. One edit can span words nobody changed (several edits sent as one, or one diff from the first
  *  changed character to the last): the old and new text it replaces are lined up, and the range follows when all its own

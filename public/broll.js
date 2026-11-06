@@ -3,7 +3,7 @@
 // "## Sketches" section. Pure module: no DOM, no network. Imported by the app and by the tests.
 import { outline, contentOf, blockById } from "./doc.js";
 import { spokenText, textLinks } from "./links.js";
-import { spokenWords, textCues, withoutMarks, plainView } from "./cues.js";
+import { spokenWords, textCues, stripCues, plainView } from "./cues.js";
 
 export const SKETCH_MAX = 8 * 1024;
 // A picture as a sketch (step K): a PNG, JPEG or WebP data address, shrunk by the tab first.
@@ -213,9 +213,9 @@ export function matchShots(doc, shots) {
 /* ---------- Check flags ---------- */
 export function coverText(doc, blockIds) {
   // What is spoken, spaces folded, so adding a link or a cue to a covered line (even across a line break) asks for no
-  // check; a change of words, punctuation or case still does. Marks never count, whatever anyone's setting says: a host
+  // check; a change of words, punctuation or case still does. Marks never count: a host
   // and a guest share the flags.
-  return blockIds.map((id) => { const b = blockById(doc, id); return b ? spokenText(withoutMarks(contentOf(b))).replace(/\s+/g, " ").trim() : "\u0000"; }).join("\u0001");
+  return blockIds.map((id) => { const b = blockById(doc, id); return b ? spokenText(stripCues(contentOf(b))).replace(/\s+/g, " ").trim() : "\u0000"; }).join("\u0001");
 }
 /** After an edit, Keep or undo: a shot whose covered text changed gets check = true. Returns the ids flagged now. */
 export function touchShots(doc, shots) {

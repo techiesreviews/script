@@ -15,6 +15,8 @@
   /* The only accent: Lex's warm orange, #ff6a3d. */
   --accent: oklch(70.4% 0.1915 37.1);
   --accent-ink: light-dark(oklch(52% 0.17 37), oklch(79% 0.14 40));
+  /* Bold words: the prompter's bright orange on the night blue; in light mode the darker orange that reads on white. */
+  --bold-ink: light-dark(oklch(52% 0.17 37), oklch(65% 0.227 32.3));
   --accent-soft: color-mix(in oklch, var(--accent) 15%, transparent);
   --accent-faint: color-mix(in oklch, var(--accent) 8%, transparent);
   --on-accent: oklch(19% 0.03 37);
@@ -370,14 +372,13 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .md-link:not(.md-cue) .md-link__words:hover { text-decoration-color: var(--accent); }
   .script[data-mod] .md-link:not(.md-cue) .md-link__words { cursor: pointer; }
 }
-/* Cues, shown as bold (fleet issue #14; Lex 2026-11-04): the "**" marks hide and show like a link's Markdown. The look
-   lives only in these two rules: plain bold, or the person's own colours (Bold style). */
-.md-cue .md-link__words { text-decoration: none; font-weight: 700; }
-.script[data-bold-own] .md-cue .md-link__words { background: var(--bold-bg); color: var(--bold-fg); box-decoration-break: clone; }
+/* Cues, shown as bold (fleet issue #14; Lex 2026-11-06): the "**" marks hide and show like a link's Markdown. The look
+   lives only in this rule: orange and bold like the prompter's own (--bold-ink), or the person's colours (Bold style). */
+.md-cue .md-link__words { text-decoration: none; font-weight: 800; color: var(--bold-fg, var(--bold-ink)); background: var(--bold-bg, transparent); box-decoration-break: clone; }
 .edit-bar__button--bold svg { stroke-width: 2.8; }
-.bold-colours { flex-wrap: wrap; font-size: 0.8rem; }
+.bold-colours { flex-wrap: wrap; gap: 0.5rem 0.75rem; font-size: 0.8rem; }
 .bold-colours label { display: inline-flex; align-items: center; gap: 0.35rem; }
-.bold-colours input { inline-size: 1.75rem; block-size: 1.5rem; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: none; cursor: pointer; }
+.bold-colours input { inline-size: 2.25rem; block-size: 2rem; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: none; cursor: pointer; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
 .menu-action[aria-pressed] > svg:last-child { margin-inline-start: auto; color: var(--accent-ink); }
