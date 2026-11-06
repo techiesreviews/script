@@ -917,9 +917,10 @@ function syncFromDom(el) {
     // The space that ends a word typed in front of a bold word: the person is writing, say a numbered list, and asked for it.
     const endsTyped = going != null && now.length === old.length + 1 && /\s/.test(now[caret - 1] ?? "");
     // A deletion is judged against the text before it, as it can take the marks itself; text put in, against what was put in.
-    if (settled && !endsTyped && C.settlingChangesKind(now.length < old.length ? old : now, settled.content)) {
+    if (cues().on && settled && !endsTyped && C.settlingChangesKind(now.length < old.length ? old : now, settled.content)) {
       // Without its marks this line would read as another kind of block ("- item", "# Plan"), and its words would leave
-      // the spoken text: the edit is refused, quietly, and it keeps them, with the caret where it was.
+      // the spoken text: the edit is refused, quietly, and it keeps them, with the caret where it was. Only while Bold
+      // marking is on (Lex, 2026-11-06): with it off an edit is never refused, as before bold.
       const was = state.preCaret?.id === id ? state.preCaret.offset : (caret ?? 0) + old.length - now.length;
       fix = { content: old, caret: Math.max(0, Math.min(old.length, was)) };
       boldTyping = null;
@@ -962,8 +963,9 @@ function splitAt(el, start, end, lineBreak) {
   const broke = settled?.content[settled.caret - 1] === "\n";
   if (broke) {
     const at = settled.caret - 1, left = settled.content.slice(0, at), right = settled.content.slice(at + 1);
-    // The left part is tried with a letter after it: "1. " alone reads as text, but as a list once anything follows.
-    if (lineBreak ? !C.keepsType(settled.content, b.type) : !(C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type))) return;
+    // The left part is tried with a letter after it: "1. " alone reads as text, but as a list once anything follows. The
+    // two parts joined without their marks must keep the type too ("**1.** x y" would join as the list "1. x y", "**##** Plan" as a heading).
+    if (cues().on && (lineBreak ? !C.keepsType(settled.content, b.type) : !(C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type) && C.keepsType(left + right, b.type)))) return;
   }
   checkpoint("enter", id);
   if (broke) {
