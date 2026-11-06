@@ -328,6 +328,8 @@ ok 1280x800: the focus in the bar's input: the bar comes on release
 ok 1280x800: a drag from the margin: no bar in the middle of it
 ok 1280x800: a toolbar button doesn't bring a closed bar back
 ok 1280x800: right-to-left: no ghost
+ok 1280x800: B over a bold edge joins it
+ok 1280x800: and the input stays ready
 ok 1280x800: typing: the selected word stays marked
 ok 1280x800: B from the input marks the word and keeps what is typed
 ok 1280x800: the word stays marked after B
@@ -401,6 +403,8 @@ ok 390x760: and what is typed stays
 ok 390x760: the agent bolds the selected word: B shows pressed
 ok 390x760: a toolbar button doesn't bring a closed bar back
 ok 390x760: right-to-left: no ghost
+ok 390x760: B over a bold edge joins it
+ok 390x760: and the input stays ready
 ok 390x760: typing: the selected word stays marked
 ok 390x760: B from the input marks the word and keeps what is typed
 ok 390x760: the word stays marked after B
@@ -443,6 +447,8 @@ ok 1280 px guest: a long ask doesn't hide the reason
 ok 1280 px guest: what is typed stays, the bar stays
 ok 1280 px guest: a scroll doesn't lose the bar
 ok 1280 px guest: Enter sends nothing and remembers nothing
+ok 1280 px guest: the word comes back: "words gone" goes
+ok 1280 px guest: Send is on again and what is typed is still there
 ok 390 px guest: b-roll: reaches the host's agent as broll
 ok 390 px guest: shorter: reaches the host's agent as shorter
 ok 390 px guest: Say it warmer: reaches the host's agent as ask
@@ -454,6 +460,8 @@ ok 390 px guest: a long ask doesn't hide the reason
 ok 390 px guest: what is typed stays, the bar stays
 ok 390 px guest: a scroll doesn't lose the bar
 ok 390 px guest: Enter sends nothing and remembers nothing
+ok 390 px guest: the word comes back: "words gone" goes
+ok 390 px guest: Send is on again and what is typed is still there
 ok 320 px guest: b-roll: reaches the host's agent as broll
 ok 320 px guest: shorter: reaches the host's agent as shorter
 ok 320 px guest: Say it warmer: reaches the host's agent as ask
@@ -465,6 +473,8 @@ ok 320 px guest: a long ask doesn't hide the reason
 ok 320 px guest: what is typed stays, the bar stays
 ok 320 px guest: a scroll doesn't lose the bar
 ok 320 px guest: Enter sends nothing and remembers nothing
+ok 320 px guest: the word comes back: "words gone" goes
+ok 320 px guest: Send is on again and what is typed is still there
 ok 360x740: no sideways scroll
 ok 360x740: the field is wide enough
 ok 360x740: the longest reason fits

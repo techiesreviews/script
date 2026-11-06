@@ -806,6 +806,22 @@ async function runSlimBar(width, height) {
   await closeBar();
   await page.eval(`localStorage.removeItem("script-editor:askHistory")`);
 
+  // B over a bold edge, with an ask typed: the words are the same words, so the input stays ready.
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page.")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: " **big word** now" });
+  await sleep(350);
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("big word")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const t = nodes.map((x) => x.data).join(""), from = t.indexOf("word**"), to = t.indexOf(" now", from) + 4, point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }, r = document.createRange(); r.setStart(...point(from)); r.setEnd(...point(to)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  await page.until(barOpen, "the bar over a bold edge");
+  await sleep(200);
+  await type("say it warmer");
+  await page.click("#boldBtn");
+  await sleep(250);
+  check((await script()).includes("**big word now**"), `${tag}: B over a bold edge joins it`);
+  check(!(await page.eval(`document.querySelector("#askGhost b").textContent`)) && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && !(await page.eval(`document.querySelector("#askInput").hasAttribute("aria-invalid")`)), `${tag}: and the input stays ready`, await page.eval(`document.querySelector("#askGhost b").textContent`));
+  await closeBar();
+  await agent("set_script", { markdown: start });
+  await sleep(300);
+
   // The selected words stay marked while the focus is in the bar.
   await selectWord();
   await page.click("#askInput");
@@ -943,6 +959,12 @@ async function runSlimGuest(width, height) {
     await pressKey(page, "Enter", "Enter", 13, "\r");
     await sleep(200);
     check(!JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks.length && (await page.eval(`localStorage.getItem("script-editor:askHistory")`)) === history, `${tag}: Enter sends nothing and remembers nothing`);
+    // The guest's Undo brings the word back: the input is ready again.
+    await guest.send("Page.bringToFront");
+    for (const type of ["keyDown", "keyUp"]) await guest.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", modifiers: 2, windowsVirtualKeyCode: 90 });
+    check(await page.until(`!document.querySelector("#askGhost b").textContent.includes("words gone")`, "the words back"), `${tag}: the word comes back: "words gone" goes`);
+    await page.send("Page.bringToFront");
+    check(!(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && (await page.eval(`document.querySelector("#askInput").value`)) === longAsk, `${tag}: Send is on again and what is typed is still there`);
   }
   await guest.close();
   await page.close();

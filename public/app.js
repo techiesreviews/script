@@ -1236,7 +1236,7 @@ function toggleCueHere() {
   const inBar = bar.contains(document.activeElement);
   const s = (inBar && barSel) || currentSelection();
   const b = s && byId(s.id);
-  if (!b || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return;
+  if (!b || !s.range || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return;
   if (!B.spokenBlocks(state.doc).some((x) => x.id === b.id)) return;
   const res = cueTry(s);
   if (!C.canToggleCue(state.asks, b.id, b.type, res)) return;
@@ -1244,6 +1244,8 @@ function toggleCueHere() {
   followAnchors(b.id, res.content, marksMoved(D.contentOf(b), res.content));
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
+  // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
+  if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end) });
   renderBlock(b.id);
   const el = blockNode(b.id);
   if (el) {
@@ -1256,6 +1258,7 @@ function toggleCueHere() {
     barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true };
     cueBtnState(barSel);
     paintBarSel();
+    renderAsk();
   }
   changed();
 }
@@ -1329,8 +1332,9 @@ function placeBar(r) {
   if (matchMedia("(width < 40rem)").matches) {
     const v = window.visualViewport, lift = v ? Math.max(0, innerHeight - v.height - v.offsetTop) : 0;
     bar.style.setProperty("--bar-lift", lift + "px");
-    bar.style.setProperty("--bar-y", top + 8 + "px");
-    bar.dataset.dock = phoneDock({ first, last, h: bar.offsetHeight, top, vh: innerHeight, lift });
+    const panned = v?.offsetTop || 0; // a keyboard can pan the page up: the top of what is seen is lower down
+    bar.style.setProperty("--bar-y", top + panned + 8 + "px");
+    bar.dataset.dock = phoneDock({ first, last, h: bar.offsetHeight, top: top + panned, vh: innerHeight, lift });
     return;
   }
   const at = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
@@ -1381,7 +1385,7 @@ function hideBar() {
 // A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
 // old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
 function keepBarSel(id) {
-  if (!barSel?.range || barSel.id !== id || !bar.contains(document.activeElement)) return;
+  if ((!barSel?.range && !barSel?.gone) || barSel.id !== id || !bar.contains(document.activeElement)) return;
   const b = byId(id), el = blockNode(id);
   const content = b && el ? D.contentOf(b) : null;
   let { start, end } = barSel;
@@ -1397,9 +1401,11 @@ function keepBarSel(id) {
     }
     ({ start, end } = r);
   }
-  Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end) });
+  // Also when they came back (a guest's Undo): the input is ready again.
+  Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end), gone: false });
   cueBtnState(barSel);
   paintBarSel();
+  renderAsk();
   placeBar(barSel.range);
 }
 // The browser takes the page's selection away while the focus is in the bar, so the words stay marked by the script.
