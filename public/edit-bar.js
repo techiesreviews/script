@@ -1,6 +1,7 @@
 // The slim edit bar (step T): what a typed line means, what to suggest as it is typed, and where the bar goes.
 // Pure module: no DOM. Imported by the app and by the tests.
 import { ACTIONS } from "./doc.js";
+import { plainView } from "./cues.js";
 
 /* ---------- Typed commands: what the bar's buttons did ----------
    name is what the grey ghost offers; also: other spellings that mean the same.
@@ -62,6 +63,34 @@ export function rememberAsk(list, text) {
   const clean = cleanAsks(list);
   if (text.length > ASK_KEPT_LENGTH) return clean.slice(0, ASKS_KEPT);
   return [text, ...clean.filter((s) => s.toLowerCase() !== text.toLowerCase())].slice(0, ASKS_KEPT);
+}
+
+/* ---------- The selected words, after the line changed ---------- */
+// The copy of `words` in `text` nearest to `near`; at(i) is where text[i] is in the content. -1 when there is none.
+function nearest(text, words, near, at) {
+  let best = -1, dist = Infinity;
+  for (let i = text.indexOf(words); i >= 0; i = text.indexOf(words, i + 1)) {
+    const d = Math.abs(at(i) - near);
+    if (d < dist) { best = i; dist = d; }
+  }
+  return best;
+}
+/** Where the selected words (`quote`) are in the content now, nearest to `near`, the offset they had: { start, end, quote }
+ *  (quote: the text there now, marks and all), or null when they are gone. Bold marks put in or taken out since don't lose
+ *  them, and they never jump to an earlier copy of the same words because of a mark. */
+export function findWords(content, quote, near) {
+  if (!quote) return null;
+  const text = String(content ?? "");
+  if (quote.includes("**")) {
+    const i = nearest(text, quote, near, (x) => x);
+    if (i >= 0) return { start: i, end: i + quote.length, quote };
+  }
+  const view = plainView(text), plain = view ? view.plain : text, at = (x) => (view ? view.map[x] : x);
+  const words = quote.includes("**") ? quote.replaceAll("**", "") : quote;
+  const i = words ? nearest(plain, words, near, at) : -1;
+  if (i < 0) return null;
+  const start = at(i), end = at(i + words.length - 1) + 1;
+  return { start, end, quote: text.slice(start, end) };
 }
 
 /* ---------- Where the bar goes ----------
