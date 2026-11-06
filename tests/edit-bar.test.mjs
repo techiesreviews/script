@@ -134,6 +134,15 @@ test("the bar's markup: the word count, B, then the input with its ghost, Tab ke
   assert.deepEqual([...menu.matchAll(/data-act="(\w+)"/g)].map((m) => m[1]), ["explain", "facts", "links"]);
 });
 
+test("every command is named for screen readers, and the whole sentence says why one can't run", () => {
+  const html = file("public/index.html");
+  const hint = html.slice(html.indexOf('id="askHint"'), html.indexOf("</span>", html.indexOf('id="askHint"')));
+  for (const name of ["Shorter", "Simpler", "Sound like me", "B-roll", "Add B-roll", "Explain how it works", "Check facts", "Find links", "More"]) assert.ok(hint.includes(name), name);
+  assert.equal(resolveTyped("b-roll", { ...host, spoken: false }).say, "B-roll needs spoken words.");
+  assert.equal(resolveTyped("add b-roll", guest).say, "Only the host can add B-roll.");
+  assert.equal(resolveTyped("add b-roll", { ...host, addBroll: false }).say, "The B-roll list isn't ready.");
+});
+
 test("the Tab key takes its room all the time, so showing it never changes the input's size", () => {
   const css = file("public/app.css");
   const slot = css.match(/\.edit-bar__tab \{[^}]*\}/)?.[0] ?? "";

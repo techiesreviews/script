@@ -1305,7 +1305,7 @@ const cueDrops = new Map();
 /* ---------- Edit bar ---------- */
 const bar = $("#editBar");
 const askInput = $("#askInput"), askField = $("#askField"), askTab = $("#askTab"), askSend = $("#askForm .edit-bar__send"), moreMenu = $("#moreMenu");
-let barSel = null, barSending = 0, askPick = 0;
+let barSel = null, barSending = 0, askPick = 0, scriptPress = false, askSayTimer = 0, askSayWant = "";
 // A selection across blocks is clamped to the first block where it covers at least one word.
 function currentSelection() {
   if (state.pendingDraft) return null;
@@ -1341,6 +1341,8 @@ function placeBar(r) {
 }
 function showBar() {
   if (state.locked) return hideBar();
+  // A mouse selecting: the bar comes on release (selTimer), not under the pointer in the middle of a drag.
+  if (scriptPress) { if (!bar.hidden) hideBar(); return; }
   // The moment an ask is sending: a new selection ends it at once; nothing else changes it.
   if (barSending) {
     if (!currentSelection()) return;
@@ -1362,6 +1364,8 @@ function showBar() {
 function hideBar() {
   closeBarMenus();
   clearTimeout(barSending);
+  clearTimeout(askSayTimer);
+  askSayWant = "";
   barSending = 0;
   bar.hidden = true;
   barSel = null;
@@ -1379,12 +1383,18 @@ function hideBar() {
 function keepBarSel(id) {
   if (!barSel?.range || barSel.id !== id || !bar.contains(document.activeElement)) return;
   const b = byId(id), el = blockNode(id);
-  if (!b || !el) return;
-  const content = D.contentOf(b);
+  const content = b && el ? D.contentOf(b) : null;
   let { start, end } = barSel;
-  if (content.slice(start, end) !== barSel.quote) {
-    const r = D.reanchor({ start, quote: barSel.quote }, content);
-    if (!r) return;
+  if (content?.slice(start, end) !== barSel.quote) {
+    const r = content == null ? null : D.reanchor({ start, quote: barSel.quote }, content);
+    if (!r) {
+      // The words are gone: what is typed stays and the input says so; nothing can be sent or bolded here.
+      Object.assign(barSel, { range: null, gone: true });
+      $("#boldBtn").disabled = true;
+      paintBarSel();
+      renderAsk();
+      return;
+    }
     ({ start, end } = r);
   }
   Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end) });
@@ -1405,22 +1415,33 @@ bar.addEventListener("focusout", (e) => { if (!bar.contains(e.relatedTarget)) CS
    after the caret; Tab or the Tab key takes it, Up and Down switch it, Enter sends what is typed. */
 const askCan = () => ({ spoken: !!barSel?.spoken, addBroll: canAddBroll(), guest: !!state.guest });
 const ASK_HISTORY = "askHistory";
+const RTL = /[\p{Script=Hebrew}\p{Script=Arabic}]/u;
+function askPlan() {
+  const plan = resolveTyped(askInput.value, askCan());
+  return plan && barSel?.gone ? { kind: "blocked", why: "words gone", say: "The selected words are gone." } : plan;
+}
+// For screen readers: the ghost is hidden from them. A suggestion waits for a pause in the typing.
+function sayAsk(text, wait = 0) {
+  clearTimeout(askSayTimer);
+  askSayTimer = setTimeout(() => { if (!barSending) $("#askLive").textContent = text; }, wait);
+}
 // The suggestion on offer, with the caret at the end of the typed words only.
 function askGhostNow() {
   const end = askInput.value.length;
   if (barSending || askInput.selectionStart !== end || askInput.selectionEnd !== end) return null;
-  if (resolveTyped(askInput.value, askCan())?.kind === "blocked") return null;
+  // Text written right to left can't flow across the two parts of the ghost.
+  if (askPlan()?.kind === "blocked" || RTL.test(askInput.value)) return null;
   const list = suggestions(askInput.value, { can: askCan(), earlier: store.get(ASK_HISTORY) });
   if (!list.length) return null;
   const at = ((askPick % list.length) + list.length) % list.length;
   return { text: list[at], at, count: list.length };
 }
 function renderAsk() {
-  const typed = askInput.value, g = askGhostNow(), plan = resolveTyped(typed, askCan()), blocked = plan?.kind === "blocked";
+  const typed = askInput.value, g = askGhostNow(), plan = askPlan(), blocked = plan?.kind === "blocked";
   $("#askGhost span").textContent = typed;
   $("#askGhost b").textContent = g ? g.text.slice(typed.length) : blocked ? ` · ${plan.why}` : "";
-  // Read out too: the ghost is hidden from screen readers. Sending has its own word there.
-  if (!barSending) { const say = blocked ? plan.say : ""; if ($("#askLive").textContent !== say) $("#askLive").textContent = say; }
+  const say = barSending ? askSayWant : blocked ? plan.say : g ? `Suggestion: ${g.text}${g.count > 1 ? `, ${g.at + 1} of ${g.count}` : ""}` : "";
+  if (say !== askSayWant) { askSayWant = say; sayAsk(say, blocked ? 0 : 400); }
   $("#askGhost").scrollLeft = askInput.scrollLeft;
   askTab.dataset.on = String(!!g);
   askTab.title = g ? `Accept “${g.text}”${g.count > 1 ? ` (${g.at + 1} of ${g.count}; Up and Down switch)` : ""}` : "";
@@ -1437,6 +1458,7 @@ function acceptGhost() {
   askPick = 0;
   askInput.focus({ preventScroll: true });
   renderAsk();
+  sayAsk(`Accepted: ${g.text}`);
 }
 askInput.addEventListener("input", () => { askPick = 0; renderAsk(); });
 for (const type of ["keyup", "click", "select", "scroll"]) askInput.addEventListener(type, renderAsk);
@@ -1459,7 +1481,7 @@ askInput.addEventListener("keydown", (e) => {
 $("#askForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (barSending) return;
-  const plan = resolveTyped(askInput.value, askCan());
+  const plan = askPlan();
   if (!plan || plan.kind === "blocked") return;
   if (plan.kind === "more") return void moreMenu.showPopover();
   if (plan.kind === "add") return addBrollHere();
@@ -1478,6 +1500,7 @@ function showSending() {
   askInput.setAttribute("aria-busy", "true");
   askField.dataset.state = "sending";
   $("#boldBtn").disabled = true;
+  clearTimeout(askSayTimer);
   $("#askLive").textContent = "Sending";
   barSending = setTimeout(hideBar, SENDING_MS);
   renderAsk();
@@ -1521,6 +1544,16 @@ moreMenu.addEventListener("keydown", (e) => {
   to?.focus();
 });
 let selTimer = 0;
+scriptEl.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse" && e.button === 0) scriptPress = true; });
+function scriptReleased() {
+  if (!scriptPress) return;
+  scriptPress = false;
+  clearTimeout(selTimer);
+  selTimer = setTimeout(showBar, 120);
+}
+for (const t of ["pointerup", "pointercancel", "blur"]) addEventListener(t, scriptReleased, { capture: true });
+// A release outside the window can go unseen: the first move with no button held ends the press too.
+addEventListener("pointermove", (e) => { if (!e.buttons) scriptReleased(); }, { passive: true, capture: true });
 document.addEventListener("selectionchange", () => { refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 // What floats over the text follows it: on a scroll, and when the Keep all row moves the text without one (step Q).
 function placeBarAgain() { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); if (moreMenu.matches(":popover-open")) placeBarMenu(); } }
@@ -2852,6 +2885,7 @@ function brollTouched() {
 }
 // Everything that shows the list: the frames in the script, the storyboard and the export items.
 function renderBroll() {
+  if (!bar.hidden) renderAsk(); // "add b-roll" may have become possible, or stopped being
   renderBrollMarks();
   renderBoard();
   together?.sync(); // the host shares the list with guests when it changed
