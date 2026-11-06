@@ -1,0 +1,59 @@
+# Step R, PR B: SMOKE_ONLY=menu, then SMOKE_ONLY=rename node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Controls: without the css the colour row cannot be reached at 1280x420; without the setCues change the storage-full rename run fails 8 checks.
+ok 1280x420: the menu stays inside the window
+ok 1280x420: it scrolls inside itself when it is taller than the window
+ok 1280x420: scrolled down, the font colour input is in view
+ok 390x650: the menu stays inside the window
+ok 390x650: scrolled down, the font colour input is in view
+RESULT: ok
+ok 1280 px: the person's own bold setting is off
+ok 1280 px: saved into the browser: the name changes
+ok 1280 px: saved into the browser: the script keeps its own bold setting
+ok 1280 px: saved into the browser: nothing on the page is redrawn
+ok 1280 px: saved into the browser: the person's own setting is untouched
+ok 1280 px: the title changed: the name changes
+ok 1280 px: the title changed: the script keeps its own bold setting
+ok 1280 px: the title changed: nothing on the page is redrawn
+ok 1280 px: the title changed: the person's own setting is untouched
+ok 1280 px: the title changed: the selected word stays selected
+ok 1280 px: the B button is still there after the rename
+ok 1280 px: the title changed with storage full: the name changes
+ok 1280 px: the title changed with storage full: the script keeps its own bold setting
+ok 1280 px: the title changed with storage full: nothing on the page is redrawn
+ok 1280 px: the title changed with storage full: the person's own setting is untouched
+ok 1280 px: storage full: the settings stay under the old name
+ok 1280 px: storage full: bold is still on for this script, the B button shows
+ok 1280 px: storage full right after a rename: set_cue_settings says the change could not be saved
+ok 1280 px: storage full right after a rename: the script keeps its own bold setting after the refused write
+ok 1280 px: storage full right after a rename: the settings in force are what they were
+ok 1280 px: Save as: the name changes
+ok 1280 px: Save as: the script keeps its own bold setting
+ok 1280 px: Save as: nothing on the page is redrawn
+ok 1280 px: Save as: the person's own setting is untouched
+ok 1280 px: Save as: the page stays where it was scrolled to
+ok 390 px: the person's own bold setting is off
+ok 390 px: saved into the browser: the name changes
+ok 390 px: saved into the browser: the script keeps its own bold setting
+ok 390 px: saved into the browser: nothing on the page is redrawn
+ok 390 px: saved into the browser: the person's own setting is untouched
+ok 390 px: the title changed: the name changes
+ok 390 px: the title changed: the script keeps its own bold setting
+ok 390 px: the title changed: nothing on the page is redrawn
+ok 390 px: the title changed: the person's own setting is untouched
+ok 390 px: the title changed: the selected word stays selected
+ok 390 px: the B button is still there after the rename
+ok 390 px: the title changed with storage full: the name changes
+ok 390 px: the title changed with storage full: the script keeps its own bold setting
+ok 390 px: the title changed with storage full: nothing on the page is redrawn
+ok 390 px: the title changed with storage full: the person's own setting is untouched
+ok 390 px: storage full: the settings stay under the old name
+ok 390 px: storage full: bold is still on for this script, the B button shows
+ok 390 px: storage full right after a rename: set_cue_settings says the change could not be saved
+ok 390 px: storage full right after a rename: the script keeps its own bold setting after the refused write
+ok 390 px: storage full right after a rename: the settings in force are what they were
+ok 390 px: Save as: the name changes
+ok 390 px: Save as: the script keeps its own bold setting
+ok 390 px: Save as: nothing on the page is redrawn
+ok 390 px: Save as: the person's own setting is untouched
+ok 390 px: Save as: the page stays where it was scrolled to
+RESULT: ok

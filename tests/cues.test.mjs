@@ -902,3 +902,27 @@ test("the setting says it is experimental, with its known limits in one plain li
   assert.ok(features.includes("Bold marking (experimental)"));
   assert.ok(features.includes(limits));
 });
+
+test("quoteSelection (B-roll): a quote across a bold edge is found, mapped back to the text with its marks", () => {
+  const doc = D.parse("# Title\n\n## Part\n\nSay **big word** now okay.\n\nA **second** line here.\n");
+  const para = (i) => D.contentOf(D.outline(doc).sections.flatMap((s) => s.blocks).filter((b) => b.type === "para")[i]);
+  const t0 = para(0);
+  // Bold on: across the opening and across the closing edge, the whole stretch, and across two paragraphs.
+  for (const [quote, want] of [["Say big", "Say **big"], ["word now", "word** now"], ["big word", "big word"], ["Say big word now okay.", t0]]) {
+    const sel = B.quoteSelection(doc, quote);
+    assert.equal(sel.length, 1, quote);
+    assert.equal(t0.slice(sel[0].start, sel[0].end), want, quote);
+  }
+  const two = B.quoteSelection(doc, "now okay. A second");
+  assert.equal(two.length, 2);
+  assert.equal(t0.slice(two[0].start, two[0].end), "now okay.");
+  assert.equal(para(1).slice(two[1].start, two[1].end), "A **second");
+  // Each is a selection overFor can use, and the shot matches the same paragraphs again.
+  const across = B.quoteSelection(doc, "Say big");
+  assert.deepEqual(B.matchOver(B.spokenBlocks(doc), B.overFor(doc, across)), [across[0].id]);
+  // A whole word only, as before; an exact match on the marks is still found first.
+  assert.deepEqual(B.quoteSelection(doc, "ig word"), []);
+  assert.equal(B.quoteSelection(doc, "**big word**").length, 1);
+  // Bold off: the marks are plain text, so the spoken-text quote is not found (nothing changes from before bold).
+  whileOff(() => assert.deepEqual(B.quoteSelection(doc, "Say big"), []));
+});
