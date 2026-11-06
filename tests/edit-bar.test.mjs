@@ -85,6 +85,9 @@ test("the selected words after the line changed: marks don't lose them, and they
   assert.equal(findWords("**Most** of us wait. Most of them.", "Most** of", near).start, 21, "bold off the second: it stays the second");
   assert.equal(findWords("Most of us wait. **Most** of them.", "Most of", near).start, 19);
   assert.equal(findWords("Most of us wait. Most of them.", "Most** of", near).start, 17);
+  // A mark before it moves another copy onto its old offset: still its own copy.
+  const last = plainOffset("say the the the", 12);
+  assert.equal(findWords("say **the** the the", "the", last).start, 16);
   // Several marks landing at once between the copies.
   const it = plainOffset("A B C it D E it", 13);
   assert.equal(findWords("A B C it **D** **E** it", "it", it).start, 21);
