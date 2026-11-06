@@ -1,5 +1,5 @@
-# Step R, PR C: SMOKE_ONLY=refusals and SMOKE_ONLY=guest node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
-# Controls: without the app.js and cues.js changes the guest check fails and the outer-words-first check fails.
+# Step R, PR C (round 2): SMOKE_ONLY=refusals and SMOKE_ONLY=guest node scripts/smoke-keep-all.mjs (headless Chrome, wrangler dev), 2026-11-06
+# Controls: without the app.js and cues.js changes the guest checks (typing and Enter inside the host's ask) and the outer-words-first check fail.
 ok 1280 px: Bold marking is off
 ok 1280 px: **Note** - more: it is in the script
 ok 1280 px: **Note** - more: Backspace over Note goes through (Bold marking off never refuses), no marks left
@@ -279,4 +279,7 @@ ok 1280 px: the guest with Bold marking on has the B button
 ok 1280 px: the guest's bold reaches the host as text
 ok 1280 px: the host's ask stays on its own word
 ok 1280 px: a guest typing inside the host's ask closes it (bold on), it does not jump to another copy of its words
+ok 1280 px: the host has a second ask on the last word
+ok 1280 px: the second ask reaches the guest
+ok 1280 px: a guest pressing Enter inside the host's ask closes it, no ask jumps to another copy
 RESULT: ok

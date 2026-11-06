@@ -1196,6 +1196,18 @@ async function run(width, height) {
     await sleep(200);
     await guest.send("Input.insertText", { text: "x" });
     check(await page.until(`!${paraOf}.querySelector("[data-ask]")`, "the ask closed", 8000), `${tag}: a guest typing inside the host's ask closes it (bold on), it does not jump to another copy of its words`);
+    // A guest's Enter inside a new ask of the host's closes it too (a split), and no ask is left on another "no".
+    await page.eval(pick(2));
+    await sleep(300);
+    await page.click(`#editBar [data-act="shorter"]`);
+    check(await page.until(`!!${paraOf}.querySelector("[data-ask]")`, "the host's second ask"), `${tag}: the host has a second ask on the last word`);
+    check(await guest.until(`!!${paraOf}.querySelector("[data-ask]")`, "the second ask reaches the guest"), `${tag}: the second ask reaches the guest`);
+    await sleep(300);
+    await guest.eval(`(() => { const el = ${paraOf}, t = el.querySelector("[data-ask]")?.firstChild; if (!t) throw new Error("no ask text on the guest's page"); el.focus(); getSelection().setBaseAndExtent(t, 1, t, 1); })()`);
+    await sleep(200);
+    await pressKey(guest, "Enter", "Enter", 13, "\r");
+    const closedAfterEnter = await page.until(`![...document.querySelectorAll('#script .block[data-type="para"] [data-ask]')].length`, "the ask closed after Enter", 8000);
+    check(closedAfterEnter, `${tag}: a guest pressing Enter inside the host's ask closes it, no ask jumps to another copy`, closedAfterEnter ? "" : JSON.stringify({ host: await page.eval(`[...document.querySelectorAll('#script .block[data-type="para"] [data-ask]')].map((x) => x.parentElement.textContent.slice(-60) + " / " + x.outerHTML.slice(0, 200))`), guest: await guest.eval(`[...document.querySelectorAll("#script .block")].filter((x) => x.textContent.includes("no")).map((x) => x.textContent.slice(-40))`) }));
     await guest.close();
   }
   await page.close();
