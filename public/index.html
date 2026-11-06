@@ -111,24 +111,24 @@
 <div class="edit-bar" id="editBar" role="toolbar" aria-label="Edit selection" hidden>
   <span class="edit-bar__label" id="ebLabel">0 words</span>
   <div class="edit-bar__controls">
-    <button class="edit-bar__button" type="button" data-act="shorter"></button>
-    <button class="edit-bar__button" type="button" data-act="simpler"></button>
-    <button class="edit-bar__button edit-bar__button--voice" type="button" data-act="like"></button>
-    <button class="edit-bar__button" type="button" id="moreBtn" popovertarget="moreMenu" aria-haspopup="menu" aria-expanded="false">More<span data-icon="chevron"></span></button>
-    <div class="menu bar-menu" id="moreMenu" role="menu" aria-labelledby="moreBtn" popover>
+    <button class="edit-bar__button edit-bar__button--bold" type="button" id="boldBtn" aria-label="Bold" aria-pressed="false" aria-keyshortcuts="Control+B Meta+B" hidden data-icon="bold"></button>
+    <form class="edit-bar__ask" id="askForm">
+      <div class="edit-bar__field" id="askField" data-state="idle">
+        <div class="edit-bar__ghost" id="askGhost" aria-hidden="true"><span></span><b></b></div>
+        <input id="askInput" type="text" placeholder="Ask… try Shorter or Simpler" aria-label="Ask or type a command for this selection" aria-describedby="askHint" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" maxlength="500">
+        <div class="edit-bar__sending" id="askSending" aria-hidden="true"><span class="edit-bar__spin"></span>Sending…</div>
+      </div>
+      <button class="edit-bar__tab" id="askTab" type="button" tabindex="-1" aria-label="Accept suggestion (Tab)" data-on="false"><kbd>Tab</kbd></button>
+      <button class="edit-bar__send" type="submit" aria-label="Send" data-icon="send" disabled></button>
+    </form>
+    <div class="menu bar-menu" id="moreMenu" role="menu" aria-label="More" popover>
       <button class="menu-action" type="button" role="menuitem" data-act="explain"></button>
       <button class="menu-action" type="button" role="menuitem" data-act="facts"></button>
       <button class="menu-action" type="button" role="menuitem" data-act="links"></button>
     </div>
-    <button class="edit-bar__button" type="button" id="brollBtn" popovertarget="brollMenu" aria-haspopup="menu" aria-expanded="false"><span data-icon="film"></span>B-roll<span data-icon="chevron"></span></button>
-    <div class="menu bar-menu" id="brollMenu" role="menu" aria-labelledby="brollBtn" popover>
-      <button class="menu-action" type="button" role="menuitem" id="addBroll"><span data-icon="film"></span>Add B-roll…</button>
-      <button class="menu-action" type="button" role="menuitem" data-act="broll"></button>
-    </div>
-    <button class="edit-bar__button" type="button" data-act="broll" id="suggestBroll" hidden></button>
-    <button class="edit-bar__button edit-bar__button--bold" type="button" id="boldBtn" aria-label="Bold" aria-pressed="false" aria-keyshortcuts="Control+B Meta+B" hidden data-icon="bold"></button>
-    <form class="edit-bar__ask" id="askForm"><input id="askInput" type="text" placeholder="Ask…" aria-label="Ask about this selection" autocomplete="off" maxlength="500"><button type="submit" aria-label="Send" data-icon="send"></button></form>
   </div>
+  <span class="edit-bar__sr" id="askHint">Type a command such as Shorter, or ask anything. Tab accepts the grey suggestion. Up and Down switch suggestion. Enter sends. Escape closes.</span>
+  <span class="edit-bar__sr" id="askLive" aria-live="polite"></span>
 </div>
 
 <div class="slash-menu" id="slashMenu" role="listbox" aria-label="Parts" hidden></div>
