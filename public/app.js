@@ -9,7 +9,7 @@ import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
 import { startPress, HOLD_MS } from "./press.js";
-import { resolveTyped, suggestions, rememberAsk, findWords, barSpot, phoneDock } from "./edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1245,7 +1245,7 @@ function toggleCueHere() {
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
-  if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end) });
+  if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), plainAt: plainOffset(res.content, res.start) });
   renderBlock(b.id);
   const el = blockNode(b.id);
   if (el) {
@@ -1255,7 +1255,7 @@ function toggleCueHere() {
       sel.removeAllRanges();
       sel.addRange(range);
     }
-    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true };
+    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true, plainAt: plainOffset(res.content, res.start) };
     cueBtnState(barSel);
     paintBarSel();
     renderAsk();
@@ -1359,6 +1359,7 @@ function showBar() {
   if (!s) { hideBar(); return; }
   barSel = s;
   barSel.spoken = spokenSelection(s.range).length > 0;
+  barSel.plainAt = plainOffset(D.contentOf(byId(s.id)), s.start);
   $("#boldBtn").hidden = byId(s.id)?.type !== "para" || !barSel.spoken;
   cueBtnState(s);
   const n = D.countWords(K.spokenWords(s.quote));
@@ -1392,7 +1393,7 @@ function keepBarSel(id) {
   const content = b && el ? D.contentOf(b) : null;
   let { start, end } = barSel;
   if (content?.slice(start, end) !== barSel.quote) {
-    const r = content == null ? null : findWords(content, barSel.quote, start);
+    const r = content == null ? null : findWords(content, barSel.quote, barSel.plainAt ?? start);
     if (!r) {
       // The words are gone: what is typed stays and the input says so; nothing can be sent or bolded here.
       Object.assign(barSel, { range: null, gone: true });
@@ -1403,6 +1404,7 @@ function keepBarSel(id) {
     }
     ({ start, end } = r);
     barSel.quote = r.quote;
+    barSel.plainAt = plainOffset(content, start);
   }
   // Also when they came back (a guest's Undo): the input is ready again.
   Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end), gone: false });
@@ -1588,7 +1590,7 @@ function makeAsk(action, typed = "") {
   const content = D.contentOf(b);
   let { start, end } = s;
   if (content.slice(start, end) !== s.quote) {
-    const r = findWords(content, s.quote, start);
+    const r = findWords(content, s.quote, s.plainAt ?? start);
     if (!r) return hideBar();
     ({ start, end } = r);
   }

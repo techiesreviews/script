@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveTyped, suggestions, rememberAsk, findWords, barSpot, phoneDock } from "../public/edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock } from "../public/edit-bar.js";
 import { ACTIONS } from "../public/doc.js";
 import { GUEST_ACTIONS } from "../public/together-adapter.js";
 
@@ -76,15 +76,20 @@ test("the selected words after the line changed: marks don't lose them, and they
   // Bold on part of them, and off again: found both ways, from each state.
   const marked = findWords("**Most** of us", "Most of", 0);
   assert.deepEqual(marked, { start: 2, end: 11, quote: "Most** of" });
-  assert.deepEqual(findWords("Most of us", marked.quote, marked.start), { start: 0, end: 7, quote: "Most of" });
-  assert.deepEqual(findWords("**Most of** us", marked.quote, marked.start), { start: 2, end: 9, quote: "Most of" });
-  assert.deepEqual(findWords("**Most** **of** us", marked.quote, marked.start), { start: 2, end: 13, quote: "Most** **of" });
-  // Repeated words: the copy nearest to where they were, marks or no marks.
-  const twice = "**Most** of us wait. **Most** of them don't.";
-  assert.equal(findWords(twice, "Most of", 21).start, 23);
-  assert.equal(findWords("Most of us wait. **Most** of them.", "Most of", 17).start, 19);
-  assert.equal(findWords("**Most** of us wait. Most of them.", "Most of", 21).start, 21);
-  // A quote that holds real marks, moved along the line.
+  assert.deepEqual(findWords("Most of us", marked.quote, 0), { start: 0, end: 7, quote: "Most of" });
+  assert.deepEqual(findWords("**Most of** us", marked.quote, 0), { start: 2, end: 9, quote: "Most of" });
+  assert.deepEqual(findWords("**Most** **of** us", marked.quote, 0), { start: 2, end: 13, quote: "Most** **of" });
+  // Repeated words: the copy nearest to where they were, marks or no marks, on or off.
+  const near = plainOffset("**Most** of us wait. **Most** of them.", 23);
+  assert.equal(near, 17);
+  assert.equal(findWords("**Most** of us wait. **Most** of them.", "Most of", near).start, 23);
+  assert.equal(findWords("**Most** of us wait. Most of them.", "Most** of", near).start, 21, "bold off the second: it stays the second");
+  assert.equal(findWords("Most of us wait. **Most** of them.", "Most of", near).start, 19);
+  assert.equal(findWords("Most of us wait. Most of them.", "Most** of", near).start, 17);
+  // Several marks landing at once between the copies.
+  const it = plainOffset("A B C it D E it", 13);
+  assert.equal(findWords("A B C it **D** **E** it", "it", it).start, 21);
+  // A quote that took in a whole stretch's marks, moved along the line.
   assert.deepEqual(findWords("So **go** now", "**go** now", 0), { start: 3, end: 13, quote: "**go** now" });
   // Plain text that only looks like marks stays as it is.
   assert.deepEqual(findWords("x a**b y", "a**b", 0), { start: 2, end: 6, quote: "a**b" });
@@ -92,6 +97,12 @@ test("the selected words after the line changed: marks don't lose them, and they
   assert.equal(findWords("nothing here", "Most of", 0), null);
   assert.equal(findWords("nothing here", "", 0), null);
   assert.equal(findWords("nothing here", "****", 0), null);
+});
+
+test("an offset without marks: nothing to count on a line with none; the marks before it don't count", () => {
+  assert.equal(plainOffset("no marks", 3), 3);
+  assert.equal(plainOffset("**go** now", 7), 3);
+  assert.equal(plainOffset("**go** now", 2), 0);
 });
 
 const place = (o) => barSpot({ first: { left: 100, top: 300, bottom: 330 }, last: { left: 60, top: 300, bottom: 330 }, w: 400, h: 72, top: 50, vw: 1280, vh: 800, line: 32, ...o });
