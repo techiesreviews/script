@@ -4929,7 +4929,10 @@ function afterRoomOps(ops, sel) {
   for (const op of ops) {
     if (op.type === "text") {
       touched.add(op.blockId);
-      followAnchors(op.blockId, null, (start, end) => C.followTextOp({ start, end }, op));
+      // With bold marking on, an ask or mark the edit fell inside is closed (as for the person's own edit that breaks a
+      // bold stretch), so it can't jump to a later copy of its words by a search. Off, the old search decides.
+      const on = cues().on;
+      followAnchors(op.blockId, null, (start, end) => C.followTextOp({ start, end }, op) ?? (on && C.textOpInside({ start, end }, op) ? null : { start, end }), { insideGoes: on });
     }
     else if (op.type === "split") { moveAsks(op.blockId, op.newId, op.at, -op.at); touched.add(op.blockId).add(op.newId); structure = true; }
     else if (op.type === "merge") { moveAsks(op.blockId, op.into, 0, op.at); touched.add(op.into).add(op.blockId); structure = true; }

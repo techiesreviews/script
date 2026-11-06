@@ -946,3 +946,40 @@ test("quoteSelection (B-roll): a quote across a bold edge is found, mapped back 
   assert.equal(hit.length, 1);
   assert.equal(D.contentOf(D.blockById(twin, hit[0].id)), "Later now okay again.");
 });
+
+test("a stretch alone on its line, emptied outer words first: the last words going take the marks, no ** ** rule line is left (fleet #29)", () => {
+  for (const on of [false, true]) {
+    Q.readCuesWhen(() => on);
+    // "one two three" -> delete "one" -> delete "three" -> delete "two"; each step is one edit. (With bold on, the first
+    // deletion moves the space outside the marks, so it never gets here.)
+    let text = on ? "** two **" : "**one two three**";
+    for (const word of on ? ["two"] : ["one", "three", "two"]) {
+      const i = text.indexOf(word), now = text.slice(0, i) + text.slice(i + word.length);
+      const settled = Q.settleMarks(text, now, i);
+      if (word === "two") {
+        assert.equal(settled?.content, "  ", `bold ${on}: the marks go with the last words`);
+        assert.equal(D.parse(settled.content).blocks.some((b) => b.type === "raw"), false);
+      } else assert.equal(settled, null, `bold ${on}: ${word} leaves the marks as they were (documented limit)`);
+      text = settled?.content ?? now;
+    }
+    assert.equal(text, "  ");
+    // Not alone on its line: "a ** b ** c" is still not a stretch, the edit keeps every byte.
+    assert.equal(Q.settleMarks("a ** two ** c", "a **  ** c", 5), null);
+    assert.equal(Q.settleMarks("x\n** two **\ny", "x\n**  **\ny", 6)?.content, "x\n  \ny", "alone on a line of its own inside a paragraph");
+  }
+  Q.readCuesWhen(() => true);
+});
+
+test("a room edit inside a range, by offsets (textOpInside): inside or across it, not before, after or at its edges", () => {
+  const op = (at, del, ins = "") => ({ type: "text", blockId: "p", at, del, ins });
+  const r = { start: 6, end: 8 };
+  assert.equal(C.textOpInside(r, op(7, 0, "x")), true, "typed inside");
+  assert.equal(C.textOpInside(r, op(6, 1)), true, "a letter deleted from it");
+  assert.equal(C.textOpInside(r, op(5, 2)), true, "deleted across its start");
+  assert.equal(C.textOpInside(r, op(7, 3)), true, "deleted across its end");
+  assert.equal(C.textOpInside(r, op(6, 0, "x")), false, "typed right before it");
+  assert.equal(C.textOpInside(r, op(8, 0, "x")), false, "typed right after it");
+  assert.equal(C.textOpInside(r, op(2, 3)), false, "deleted before it");
+  assert.equal(C.textOpInside(r, op(8, 2)), false, "deleted after it");
+  assert.equal(C.textOpInside(r, { type: "split", blockId: "p", at: 7 }), false);
+});

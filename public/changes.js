@@ -401,6 +401,12 @@ export function followTextOp({ start, end }, op) {
   const by = op.ins.length - op.del;
   return { start: start + by, end: end + by };
 }
+/** Does one room edit fall inside a range, by offsets (text typed strictly inside it, or text deleted from it)? Then the
+ *  range's words changed under it: with bold marking on it is closed, never searched for again by its old words. */
+export function textOpInside({ start, end }, op) {
+  if (op.type !== "text") return false;
+  return op.del ? op.at < end && op.at + op.del > start : op.at > start && op.at < end;
+}
 /** May the person's Ctrl/Cmd+B do this toggle (K.toggleCue's result) in this block? Not over open work, and not when
  *  the new text would read as another kind of block ("**- item**" without its marks is a list line). */
 export const canToggleCue = (asks, blockId, type, res) => !!res && !cueBlocked(asks, blockId, res.from, res.to) && keepsType(res.content, type);
