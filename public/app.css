@@ -15,8 +15,8 @@
   /* The only accent: Lex's warm orange, #ff6a3d. */
   --accent: oklch(70.4% 0.1915 37.1);
   --accent-ink: light-dark(oklch(52% 0.17 37), oklch(79% 0.14 40));
-  /* Bold words: the prompter's bright orange on the night blue; in light mode the darker orange that reads on white. */
   --ghost: light-dark(oklch(52% 0 none), oklch(66% 0.035 280));
+  /* Bold words: the prompter's bright orange on the night blue; in light mode the darker orange that reads on white. */
   --bold-ink: light-dark(oklch(52% 0.17 37), oklch(65% 0.227 32.3));
   --accent-soft: color-mix(in oklch, var(--accent) 15%, transparent);
   --accent-faint: color-mix(in oklch, var(--accent) 8%, transparent);

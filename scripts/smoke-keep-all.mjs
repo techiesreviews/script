@@ -652,7 +652,65 @@ async function runSlimBar(width, height) {
   await pressKey(page, "Enter", "Enter", 13, "\r");
   await sleep(120);
   check((await page.eval(barOpen)) && (await page.eval(value)) === "b-roll" && !(await newAsks()).length, `${tag}: Enter there sends nothing and keeps the words`);
+  check(/spoken/.test(await page.eval(`document.querySelector("#askLive").textContent`)), `${tag}: the reason is read out too`);
+  await page.eval(`localStorage.setItem("script-editor:askHistory", JSON.stringify(["b-roll ideas"]))`);
+  await page.eval(`document.querySelector("#askInput").dispatchEvent(new Event("input", { bubbles: true }))`);
+  await sleep(80);
+  check(/spoken/.test(await page.eval(ghost)) && !(await page.eval(tabOn)), `${tag}: an earlier ask doesn't hide the reason`, await page.eval(ghost));
   await closeBar();
+
+  // A new selection during the sending ends it: the bar is ready for the new words.
+  await selectWord();
+  await type("shorter");
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("Most of us")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), n = w.nextNode(), r = document.createRange(); r.setStart(n, 0); r.setEnd(n, 4); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  check(await page.until(`document.querySelector("#askField").dataset.state === "idle" && !document.querySelector("#editBar").hidden && !document.querySelector("#askInput").readOnly && !document.querySelector("#boldBtn").disabled && document.querySelector("#ebLabel").textContent === "1 word"`, "the bar for the new words", 2000), `${tag}: a new selection while sending: the bar is ready for it`);
+  await newAsks();
+  await page.eval(`getSelection().removeAllRanges()`);
+  await closeBar();
+  await page.eval(`document.querySelector("#script .ask-chip__x")?.click()`);
+  await sleep(150);
+
+  // A phone keyboard composes each word: the ghost shows during that, and an Enter that ends it sends nothing.
+  await selectWord();
+  await page.click("#askInput");
+  await page.send("Input.imeSetComposition", { text: "sh", selectionStart: 2, selectionEnd: 2 });
+  await sleep(120);
+  check((await page.eval(ghost)) === "orter" && (await page.eval(tabOn)), `${tag}: while composing: the ghost and the Tab key show`, await page.eval(ghost));
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 229 });
+  await sleep(120);
+  check((await page.eval(barOpen)) && !(await newAsks()).length, `${tag}: an Enter that ends a composition sends nothing`);
+  await page.click("#askTab");
+  await sleep(120);
+  check((await page.eval(value)) === "Shorter", `${tag}: the Tab key takes the ghost during a composition`, await page.eval(value));
+  await closeBar();
+
+  // The on-screen keyboard: the bar stays above it, and moves to the top rather than sit on the words.
+  if (width < 640) {
+    await selectWord();
+    await page.eval(`(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); scrollBy({ top: r.top - 350, behavior: "instant" }); })()`);
+    await sleep(150);
+    await page.eval(`(() => { Object.defineProperty(visualViewport, "height", { value: 400, configurable: true }); visualViewport.dispatchEvent(new Event("resize")); })()`);
+    await sleep(100);
+    const lifted = await page.eval(`[document.querySelector("#editBar").style.getPropertyValue("--bar-lift"), document.querySelector("#editBar").dataset.dock].join()`);
+    check(lifted === `${height - 400}px,top`, `${tag}: with a keyboard up the bar lifts and docks at the top`, lifted);
+    await page.eval(`(() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event("resize")); })()`);
+    await sleep(100);
+    check((await page.eval(`document.querySelector("#editBar").dataset.dock`)) === "bottom", `${tag}: without it the bar is back at the bottom`);
+    check((await page.eval(`document.querySelector("#askForm").getBoundingClientRect().width`)) >= 200, `${tag}: the input keeps at least 200 px with B showing`);
+    await closeBar();
+  }
+
+  // A redraw of the line while typing: the words stay marked.
+  await selectWord();
+  await type("x");
+  await agent("mark_cue", { cues: [{ quote: "until you say it" }] });
+  await sleep(300);
+  check(await page.eval(`CSS.highlights.has("bar-selection") && [...CSS.highlights.get("bar-selection")][0].toString().includes("deadline")`), `${tag}: a redraw of the line while typing: the selected word stays marked`);
+  check((await page.eval(value)) === "x" && (await page.eval(barOpen)), `${tag}: and what is typed stays`);
+  await closeBar();
+  await agent("unmark_cue", { cues: [{ quote: "until you say it" }] });
+  await sleep(200);
 
   // The selected words stay marked while the focus is in the bar.
   await selectWord();
@@ -697,7 +755,7 @@ async function runBarPlace(width, height) {
 // A guest's bar (step T): the same commands; Suggest B-roll and asks reach the host's agent, adding a shot stays the host's.
 async function runSlimGuest(width, height) {
   const tag = `${width} px guest`;
-  const { page, agent } = await openDemo(width, height);
+  const { page, agent } = await openDemo(1280, 800);
   await page.eval(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__link = t; } } })`);
   await page.click("#shareBtn");
   await page.until(`!!window.__link`, "the share link");
@@ -733,6 +791,7 @@ async function runSlimGuest(width, height) {
   await guest.send("Input.insertText", { text: "add b-roll" });
   await sleep(100);
   check(/host/.test(await guest.eval(`document.querySelector("#askGhost b").textContent`)) && (await guest.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: add b-roll says it is the host's`);
+  check(await guest.eval(`document.querySelector("#askGhost b").getBoundingClientRect().right <= document.querySelector("#askField").getBoundingClientRect().right`), `${tag}: the reason fits inside the input`);
   await guest.close();
   await page.close();
 }
@@ -1275,6 +1334,7 @@ try {
     await runBarPlace(1280, 420);
     await runBarPlace(390, 760);
     await runSlimGuest(1280, 800);
+    await runSlimGuest(390, 760);
   } else if (only === "look") {
     await runBoldLook(1280, 800);
   } else if (only === "exports") {
@@ -1294,6 +1354,7 @@ try {
     await runBarPlace(1280, 420);
     await runBarPlace(390, 760);
     await runSlimGuest(1280, 800);
+    await runSlimGuest(390, 760);
     await runBoldLook(1280, 800);
     await runBoldRefuses(1280, 800);
     await runBoldKinds(1280, 800);
