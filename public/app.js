@@ -9,7 +9,7 @@ import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
 import { startPress, HOLD_MS } from "./press.js";
-import { resolveTyped, suggestions, rememberAsk, barSpot, phoneDock } from "./edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1243,7 +1243,7 @@ function toggleCueHere() {
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
-  if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end) });
+  if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), plainAt: plainOffset(res.content, res.start) });
   renderBlock(b.id);
   const el = blockNode(b.id);
   if (el) {
@@ -1253,7 +1253,7 @@ function toggleCueHere() {
       sel.removeAllRanges();
       sel.addRange(range);
     }
-    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true };
+    barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true, plainAt: plainOffset(res.content, res.start) };
     cueBtnState(barSel);
     paintBarSel();
     renderAsk();
@@ -1357,6 +1357,7 @@ function showBar() {
   if (!s) { hideBar(); return; }
   barSel = s;
   barSel.spoken = spokenSelection(s.range).length > 0;
+  barSel.plainAt = plainOffset(D.contentOf(byId(s.id)), s.start);
   $("#boldBtn").hidden = byId(s.id)?.type !== "para" || !barSel.spoken;
   cueBtnState(s);
   const n = D.countWords(K.spokenWords(s.quote));
@@ -1391,9 +1392,11 @@ function keepBarSel(id) {
   const content = D.contentOf(b);
   let { start, end } = barSel;
   if (content.slice(start, end) !== barSel.quote) {
-    const r = D.reanchor({ start, quote: barSel.quote }, content);
+    const r = findWords(content, barSel.quote, barSel.plainAt ?? start);
     if (!r) return;
     ({ start, end } = r);
+    barSel.quote = r.quote;
+    barSel.plainAt = plainOffset(content, start);
   }
   Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end) });
   cueBtnState(barSel);
@@ -1478,8 +1481,9 @@ $("#askForm").addEventListener("submit", (e) => {
   if (plan.kind === "more") return void moreMenu.showPopover();
   if (plan.kind === "add") return addBrollHere();
   if (plan.kind === "act") return void makeAsk(plan.action);
-  store.set(ASK_HISTORY, rememberAsk(store.get(ASK_HISTORY), plan.text));
   makeAsk("ask", plan.text);
+  // Kept only when it went: the words may have gone since.
+  if (barSending) store.set(ASK_HISTORY, rememberAsk(store.get(ASK_HISTORY), plan.text));
 });
 // The ask is made at once and shows on its words; for this moment the input says so too, then the bar goes.
 const SENDING_MS = 700;
@@ -1570,7 +1574,7 @@ function makeAsk(action, typed = "") {
   const content = D.contentOf(b);
   let { start, end } = s;
   if (content.slice(start, end) !== s.quote) {
-    const r = D.reanchor({ start, quote: s.quote }, content);
+    const r = findWords(content, s.quote, s.plainAt ?? start);
     if (!r) return hideBar();
     ({ start, end } = r);
   }
