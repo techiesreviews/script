@@ -381,8 +381,6 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .bold-colours input { inline-size: 2.25rem; block-size: 2rem; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: none; cursor: pointer; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
-.menu-action[aria-pressed] > svg:last-child { margin-inline-start: auto; color: var(--accent-ink); }
-.menu-action[aria-pressed="false"] > svg:last-child { visibility: hidden; }
 @keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
 
 /* A note in place (check facts) */
