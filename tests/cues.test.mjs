@@ -986,21 +986,35 @@ test("a room edit inside a range, by offsets (textOpInside): inside or across it
 
 test("followRoomEdit: a host's ask goes through a guest's edit with bold on: closed when the edit fell inside, kept when it only spans its words", () => {
   const op = (at, del, ins = "") => ({ type: "text", blockId: "p", at, del, ins });
-  const ask = (start, end, quote) => ({ start, end, quote });
-  // The ask on "two" in "**one two three**" (offsets 8..11).
-  const two = ask(8, 11, "two");
-  assert.deepEqual(C.followRoomEdit(two, op(0, 0, "x")), { start: 9, end: 12 }, "typed before it");
-  assert.deepEqual(C.followRoomEdit(two, op(14, 0, "x")), { start: 8, end: 11 }, "typed after it");
-  assert.equal(C.followRoomEdit(two, op(9, 0, "x")), null, "typed inside it");
-  assert.equal(C.followRoomEdit(two, op(10, 3)), null, "deleted across its end");
-  assert.equal(C.followRoomEdit(two, { type: "split", blockId: "p", at: 9, newId: "q" }), null, "a split inside it");
-  assert.deepEqual(C.followRoomEdit(two, { type: "split", blockId: "p", at: 3, newId: "q" }), { start: 8, end: 11 }, "a split before it is for moveAsks");
+  const ask = (start, end) => ({ start, end });
+  // The ask on "two" in "**one two three**" (offsets 6..9).
+  const text = "**one two three**", two = ask(6, 9);
+  assert.deepEqual(C.followRoomEdit(two, op(0, 0, "x"), text), { start: 7, end: 10 }, "typed before it");
+  assert.deepEqual(C.followRoomEdit(two, op(12, 0, "x"), text), { start: 6, end: 9 }, "typed after it");
+  assert.equal(C.followRoomEdit(two, op(7, 0, "x"), text), null, "typed inside it");
+  assert.equal(C.followRoomEdit(two, op(8, 3), text), null, "deleted across its end");
+  assert.equal(C.followRoomEdit(two, { type: "split", blockId: "p", at: 7, newId: "q" }, text), null, "a split inside it");
+  assert.deepEqual(C.followRoomEdit(two, { type: "split", blockId: "p", at: 3, newId: "q" }, text), { start: 6, end: 9 }, "a split before it is for moveAsks");
   // One op from the first changed character to the last: "**one two three**" -> "one two three" (a guest deleted a "*").
-  assert.deepEqual(C.followRoomEdit(two, op(0, 17, "one two three")), { start: 4, end: 7 }, "the words stand once in the new text: follow them");
-  assert.equal(C.followRoomEdit(two, op(0, 17, "one and three")), null, "the words changed");
-  assert.equal(C.followRoomEdit(ask(3, 5, "no"), op(0, 14, "no and no more")), null, "the words stand twice: closed, never guessed");
+  assert.deepEqual(C.followRoomEdit(two, op(0, 17, "one two three"), text), { start: 4, end: 7 }, "its characters were kept side by side: follow them");
+  // Several edits sent as one: an edit before it and one after it, its own word untouched.
+  assert.deepEqual(C.followRoomEdit(ask(3, 5), op(0, 22, "we! no and then there"), "so no and then no more"), { start: 4, end: 6 }, "edits around an untouched word");
+  // Its own word gone, another copy of it later in the same edit: never moved onto the copy.
+  assert.equal(C.followRoomEdit(ask(3, 5), op(0, 22, "we and then no more!"), "so no and then no more"), null, "the ask's word was deleted");
+  assert.equal(C.followRoomEdit(ask(3, 5), op(0, 22, "we and then no more!"), null), null, "no text from before: closed");
+  assert.equal(C.followRoomEdit(two, op(0, 17, "one and three"), text), null, "the words changed");
+  // A whole line pasted over: the ask's letters turn up inside a longer word, which is not its word any more.
+  assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "take note"), "so no more"), null, "no grew into a longer word");
   // Bold off on the host: the old rules (followTextOp), and a null for an edit inside, which leaves the search to decide.
-  assert.equal(C.followTextOp(two, op(9, 0, "x")), null);
+  assert.equal(C.followTextOp(two, op(7, 0, "x")), null);
+});
+
+test("alignChars: where each character of the old text is in the new, by the longest run kept in order", () => {
+  assert.deepEqual(C.alignChars("abc", "abc"), [0, 1, 2]);
+  assert.deepEqual(C.alignChars("a**b**c", "abc"), [0, -1, -1, 1, -1, -1, 2]);
+  assert.deepEqual(C.alignChars("no x no", "x no"), [-1, -1, -1, 0, 1, 2, 3], "the end is kept first: the first copy is the one that went");
+  assert.deepEqual(C.alignChars("", "xy"), []);
+  assert.equal(C.alignChars("a".repeat(600) + "x", "b".repeat(600) + "y"), null, "too big to line up");
 });
 
 test("a lone stretch with spaces around it on its line also loses its marks with its last words (no rule line)", () => {

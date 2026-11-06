@@ -259,13 +259,15 @@ export function scriptAdapter(app, { busy = () => false } = {}) {
       const doc = app.doc();
       if (!doc) return;
       let sel = app.selection();
+      // The text of the blocks the edits change, as it was before: asks and marks follow through an edit by it.
+      const before = new Map(readBlocks(doc).filter((b) => ops.some((op) => op.type === "text" && op.blockId === b.id)).map((b) => [b.id, b.text]));
       applyToDoc(doc, ops, (op, joinAt) => {
         if (!sel) return;
         const f = movePoint({ blockId: sel.id, offset: sel.focus }, op, { joinAt });
         const a = movePoint({ blockId: sel.id, offset: sel.anchor }, op, { joinAt });
         sel = f ? { ...sel, id: f.blockId, focus: f.offset, anchor: a && a.blockId === f.blockId ? a.offset : f.offset } : null;
       });
-      app.applied(ops, sel);
+      app.applied(ops, sel, before);
     },
   };
 }
