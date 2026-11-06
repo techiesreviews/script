@@ -122,6 +122,9 @@ test("ping, unknown methods and unknown tools", async () => {
   assert.deepEqual((await rpc({ jsonrpc: "2.0", id: 1, method: "ping" })).body.result, {});
   assert.equal((await rpc({ jsonrpc: "2.0", id: 1, method: "resources/list" })).body.error.code, -32601);
   assert.equal((await call("delete_everything", {})).body.error.code, -32602);
+  // Bold's settings went on 2026-11-06: an older agent's call gets the same answer.
+  assert.equal((await call("get_cue_settings", {})).body.error.code, -32602);
+  assert.equal((await call("set_cue_settings", { on: false })).body.error.code, -32602);
 });
 
 test("401 without a valid Bearer token, or when the relay does not know it", async () => {
