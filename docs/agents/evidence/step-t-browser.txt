@@ -263,9 +263,12 @@ ok 1280x800: Enter with an empty input does nothing
 ok 1280x800: typing s: the ghost shows the rest of Shorter and the Tab key shows
 ok 1280x800: the Tab key doesn't change the input's size
 ok 1280x800: the ghost starts right after the typed letters
+ok 1280x800: the suggestion is read out
 ok 1280x800: Down switches the suggestion
+ok 1280x800: the new suggestion is read out
 ok 1280x800: Tab takes the ghost and stays in the input
 ok 1280x800: after Tab: no ghost, same size
+ok 1280x800: what Tab took is read out
 ok 1280x800: pressing the Tab key takes the ghost
 ok 1280x800: Escape closes and changes no text
 ok 1280x800: the input shows the sending, no toast
@@ -315,6 +318,10 @@ ok 1280x800: a redraw of the line while typing: the selected word stays marked
 ok 1280x800: words moved by a redraw: the mark stays on the selected word
 ok 1280x800: and what is typed stays
 ok 1280x800: the agent bolds the selected word: B shows pressed
+ok 1280x800: a pause in a drag: no bar yet
+ok 1280x800: the drag carries on over the lines below
+ok 1280x800: the bar comes on release
+ok 1280x800: right-to-left: no ghost
 ok 1280x800: typing: the selected word stays marked
 ok 1280x800: B from the input marks the word and keeps what is typed
 ok 1280x800: the word stays marked after B
@@ -328,9 +335,12 @@ ok 390x760: Enter with an empty input does nothing
 ok 390x760: typing s: the ghost shows the rest of Shorter and the Tab key shows
 ok 390x760: the Tab key doesn't change the input's size
 ok 390x760: the ghost starts right after the typed letters
+ok 390x760: the suggestion is read out
 ok 390x760: Down switches the suggestion
+ok 390x760: the new suggestion is read out
 ok 390x760: Tab takes the ghost and stays in the input
 ok 390x760: after Tab: no ghost, same size
+ok 390x760: what Tab took is read out
 ok 390x760: pressing the Tab key takes the ghost
 ok 390x760: Escape closes and changes no text
 ok 390x760: the input shows the sending, no toast
@@ -383,6 +393,7 @@ ok 390x760: a redraw of the line while typing: the selected word stays marked
 ok 390x760: words moved by a redraw: the mark stays on the selected word
 ok 390x760: and what is typed stays
 ok 390x760: the agent bolds the selected word: B shows pressed
+ok 390x760: right-to-left: no ghost
 ok 390x760: typing: the selected word stays marked
 ok 390x760: B from the input marks the word and keeps what is typed
 ok 390x760: the word stays marked after B
@@ -420,12 +431,28 @@ ok 1280 px guest: Say it warmer: reaches the host's agent as ask
 ok 1280 px guest: a free ask goes as typed
 ok 1280 px guest: add b-roll says it is the host's
 ok 1280 px guest: the reason fits inside the input
+ok 1280 px guest: the selected word deleted while typing: the input says so, Send is off
+ok 1280 px guest: what is typed stays, the bar stays
+ok 1280 px guest: a scroll doesn't lose the bar
+ok 1280 px guest: Enter sends nothing and remembers nothing
 ok 390 px guest: b-roll: reaches the host's agent as broll
 ok 390 px guest: shorter: reaches the host's agent as shorter
 ok 390 px guest: Say it warmer: reaches the host's agent as ask
 ok 390 px guest: a free ask goes as typed
 ok 390 px guest: add b-roll says it is the host's
 ok 390 px guest: the reason fits inside the input
+ok 320 px guest: b-roll: reaches the host's agent as broll
+ok 320 px guest: shorter: reaches the host's agent as shorter
+ok 320 px guest: Say it warmer: reaches the host's agent as ask
+ok 320 px guest: a free ask goes as typed
+ok 320 px guest: add b-roll says it is the host's
+ok 320 px guest: the reason fits inside the input
+ok 360x740: no sideways scroll
+ok 360x740: the field is wide enough
+ok 360x740: the longest reason fits
+ok 320x640: no sideways scroll
+ok 320x640: the field is wide enough
+ok 320x640: the longest reason fits
 ok 1280 px look: the old switches left in the browser are gone
 ok 1280 px look: another key with a like name stays
 ok 1280 px look: the word is bold
