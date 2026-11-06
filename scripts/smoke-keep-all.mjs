@@ -571,7 +571,12 @@ async function runBoldLook(width, height) {
   await sleep(150);
   check(light.color === lightOrange && light.weight === 800, `${tag}: light mode: a darker orange that reads on white`, `${JSON.stringify(light)} ${lightOrange}`);
   // A new title renames the script: its name changes and nothing on the page is redrawn.
-  const name = `document.querySelector(".doc__name").textContent`, before = await page.eval(name);
+  const name = `document.querySelector(".doc__name").textContent`, demoName = await page.eval(name);
+  await page.send("Page.bringToFront");
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", modifiers: 2, windowsVirtualKeyCode: 83 });
+  await page.until(`${name} !== ${JSON.stringify(demoName)}`, "the name after saving the demo into the browser", 10000);
+  await sleep(300);
+  const before = await page.eval(name);
   await page.eval(`scrollTo({ top: 0, behavior: "instant" }); window.__word = document.querySelector("#script [data-cue]");`);
   const titleAt = await page.eval(`(() => { const r = document.createRange(), w = document.createTreeWalker(document.querySelector("#script"), NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.textContent.includes("How to Write")) { r.selectNodeContents(n); const b = r.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; } return null; })()`);
   await clickAt(page, titleAt);
