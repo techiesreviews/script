@@ -456,8 +456,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .edit-bar__ask { flex: 1 1 auto; min-inline-size: 0; }
   .edit-bar__ask input, .edit-bar__ask input:focus { flex: 1; inline-size: 100%; min-inline-size: 0; font-size: 16px; }
 }
-/* With the B button showing (Bold marking on; the approved edit-bar mock-up), the Ask field stays at least 200 px wide
-   and the bar wraps when that does not fit. Bold marking off, the bar is as it was. */
+/* With the B button showing (spoken paragraphs; the approved edit-bar mock-up), the Ask field stays at least 200 px wide
+   and the bar wraps when that does not fit. On other lines the bar is as it was. */
 .edit-bar__controls:has(#boldBtn:not([hidden])) { flex-wrap: wrap; }
 .edit-bar__controls:has(#boldBtn:not([hidden])) .edit-bar__ask { flex: 1 1 200px; min-inline-size: 200px; margin-inline-start: 0; }
 .edit-bar__controls:has(#boldBtn:not([hidden])) .edit-bar__ask input { flex: 1; inline-size: 100%; min-inline-size: 0; }

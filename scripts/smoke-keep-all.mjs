@@ -504,14 +504,15 @@ async function runExports(width, height) {
 async function runBoldLook(width, height) {
   const tag = `${width} px look`;
   const { page, agent } = await openDemo(width, height);
-  await page.eval(`localStorage.setItem("script-editor:cues", JSON.stringify({ on: false, export: "show" }))`);
+  await page.eval(`(() => { for (const [k, v] of [["cues", { on: false, export: "show" }], ["cues:Some name.md", { on: false }], ["cuesish", { kept: true }], ["boldStyle", { own: false, color: "#112233" }]]) localStorage.setItem("script-editor:" + k, JSON.stringify(v)); })()`);
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
   await page.send("Page.reload");
   await sleep(300);
   await page.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen again");
   await page.click("#emptySample");
   await page.until(`!!document.querySelector("#script .block")`, "the script again");
-  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null, `${tag}: the old switch left in the browser is gone`);
+  check((await page.eval(`localStorage.getItem("script-editor:cues")`)) === null && (await page.eval(`localStorage.getItem("script-editor:cues:Some name.md")`)) === null, `${tag}: the old switches left in the browser are gone`);
+  check((await page.eval(`localStorage.getItem("script-editor:cuesish")`)) !== null, `${tag}: another key with a like name stays`);
   for (let i = 0; ; i++) { try { await agent("get_script", {}); break; } catch (e) { if (i > 40) throw e; await sleep(150); } }
   const words = `document.querySelector("#script [data-cue] .md-link__words")`;
   const look = () => page.eval(`(() => { const c = getComputedStyle(${words}); return { color: c.color, weight: Number(c.fontWeight), background: c.backgroundColor }; })()`);
@@ -523,8 +524,9 @@ async function runBoldLook(width, height) {
   await page.eval(`getSelection().removeAllRanges()`);
   await sleep(250);
   const dark = await look();
-  check(dark.weight >= 700, `${tag}: the word is bold`, JSON.stringify(dark));
-  const orange = await page.eval(`(() => { const a = document.createElement("span"); a.style.color = "oklch(65% 0.227 32.3)"; document.body.append(a); const c = getComputedStyle(a).color; a.remove(); return c; })()`);
+  check(dark.weight === 800, `${tag}: the word is bold`, JSON.stringify(dark));
+  const probe = (colour) => page.eval(`(() => { const a = document.createElement("span"); a.style.color = "${colour}"; document.body.append(a); const c = getComputedStyle(a).color; a.remove(); return c; })()`);
+  const orange = await probe("oklch(65% 0.227 32.3)");
   check(dark.color === orange, `${tag}: dark mode: the word has the prompter's orange`, `${dark.color} ${orange}`);
   check(dark.background === "rgba(0, 0, 0, 0)", `${tag}: no background by default`, dark.background);
   check((await page.eval(`document.querySelectorAll("#cueGroup .menu-action").length`)) === 0, `${tag}: the menu has no bold switches`);
@@ -545,9 +547,70 @@ async function runBoldLook(width, height) {
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await sleep(150);
   const light = await look();
-  check(light.color !== dark.color && light.weight >= 700, `${tag}: light mode: a darker orange that reads on white`, JSON.stringify(light));
+  const lightOrange = await probe("oklch(52% 0.17 37)");
+  check(light.color === lightOrange && light.weight === 800, `${tag}: light mode: a darker orange that reads on white`, `${JSON.stringify(light)} ${lightOrange}`);
   const said = await agent("get_script", {});
   check(JSON.parse(said).cues?.some((c) => c.quote === word), `${tag}: the agent sees the bold word`, word);
+  await page.close();
+  // A colour chosen before bold's settings went: it stays when "own" was on.
+  const { page: older } = await openDemo(width, height);
+  await older.eval(`localStorage.setItem("script-editor:boldStyle", JSON.stringify({ own: true, color: "#112233" }))`);
+  await older.send("Page.reload");
+  await sleep(300);
+  await older.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen");
+  await older.click("#emptySample");
+  await older.until(`!!document.querySelector("#script .block")`, "the script");
+  await doubleClick(older, await older.eval(wordSpot));
+  await older.until(`!document.querySelector("#boldBtn").hidden`, "the B button");
+  await older.click("#boldBtn");
+  await older.until(`!!document.querySelector("#script [data-cue]")`, "the bold word");
+  check((await older.eval(`getComputedStyle(document.querySelector("#script [data-cue] .md-link__words")).color`)) === "rgb(17, 34, 51)", `${tag}: an older colour choice stays when "own" was on`);
+  await older.close();
+}
+
+// Bold's own rules with real keys: an edit that would turn a bold line into another kind of block is refused and the marks stay
+// (the line keeps its words in the spoken text); a stretch alone on its line, its words deleted outer ones first, leaves no marks.
+async function runBoldRefuses(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const script = async () => JSON.parse(await agent("get_script", {}));
+  const press = async (key, code, vk, modifiers = 0, text) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers, ...(text && type === "keyDown" ? { text } : {}) }); await sleep(250); };
+  await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  const first = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
+  const addLine = async (line) => {
+    await page.eval(`(() => { const el = ${first}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+    await sleep(150);
+    await press("Enter", "Enter", 13, 0, "\r");
+    await page.send("Input.insertText", { text: line });
+    await sleep(350);
+  };
+  const pickIn = (holding, from, to) => `(() => { const el = [...document.querySelectorAll('#script .block')].find((x) => x.textContent.includes(${JSON.stringify(holding)})); if (!el) throw new Error("the line is not there: " + ${JSON.stringify(holding)}); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+  for (const [line, word, how] of [["**Note** - more", "Note", "Backspace"], ["**y**- z", "y", "Backspace"], ["**Memo** - less", "Memo", "paste"]]) {
+    await addLine(line);
+    const words = (await script()).words;
+    check((await script()).markdown.split("\n").includes(line), `${tag}: ${line}: it is in the script`);
+    const from = how === "paste" ? 0 : line.indexOf(word), to = line.indexOf(word) + word.length;
+    await page.eval(pickIn(word, from, to));
+    await sleep(250);
+    if (how === "paste") {
+      await page.eval(`(() => { const d = new DataTransfer(); d.setData("text/plain", "**"); document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
+      await sleep(300);
+    } else await press("Backspace", "Backspace", 8);
+    const now = await script();
+    check(now.markdown.split("\n").includes(line) && now.words === words, `${tag}: ${line}: ${how} over ${word} is refused, the line stays as it was`, now.markdown.split("\n").filter((l) => /more|less|- z/.test(l)).join(" | "));
+  }
+  await addLine("**one two three**");
+  const wordsBefore = (await script()).words;
+  for (const word of ["one", "three", "two"]) {
+    const line = (await script()).markdown.split("\n").find((l) => l.includes(word) && /^\s*\*\*/.test(l) && !/Note|Memo|\*\*y/.test(l));
+    const from = line.indexOf(word);
+    await page.eval(pickIn(word, from, from + word.length));
+    await sleep(250);
+    await press("Backspace", "Backspace", 8);
+  }
+  const after = await script();
+  check(!after.markdown.split("\n").some((l) => /^\s*\*\*\s*\*\*\s*$/.test(l) || /\*\*(one|two|three)/.test(l)), `${tag}: a stretch alone on its line, outer words deleted first: no marks left`, after.markdown.split("\n").filter((l) => /^\s*\*\*/.test(l)).join(" | "));
+  check(after.words === wordsBefore - 3, `${tag}: only those three words went`, `${after.words} ${wordsBefore}`);
   await page.close();
 }
 
@@ -931,6 +994,7 @@ try {
     await runMenuHeight(1280, 420);
     await runMenuHeight(390, 480);
   } else if (only === "refusals") {
+    await runBoldRefuses(1280, 800);
     await runBoldKinds(1280, 800);
   } else if (only === "look") {
     await runBoldLook(1280, 800);
@@ -946,6 +1010,7 @@ try {
     await runBoldKeys(1280, 800);
     await runBoldKeys(390, 760);
     await runBoldLook(1280, 800);
+    await runBoldRefuses(1280, 800);
     await runBoldKinds(1280, 800);
     await runMenuHeight(1280, 420);
     await runMenuHeight(390, 480);
