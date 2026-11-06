@@ -239,7 +239,8 @@ export function docFromSnapshot({ blocks, meta }) {
 
 /* ---------- The app side ---------- */
 /**
- * createTogether(app): app = { doc(), name(), me, held(), selection(), restore(sel), element(id), applied(ops, sel),
+ * createTogether(app): app = { doc(), name(), me, held(), selection(), restore(sel), element(id), applied(ops, sel, before),
+ *   (before: the text of each block the edits change, from before them),
  *   loadGuest(doc, name, broll), guestEnded(status), joinFailed(status), sharing(on), renderTop(), renderDots(),
  *   asks(), setRoomAsks(asks), guestAsk(spec, by), guestAct(id, act, askerId), askRefused(ask), brollShare(),
  *   setRoomBroll(b), undoAgent(askId), sheet, scriptEl, icon(name) }

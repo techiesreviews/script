@@ -248,3 +248,16 @@ test("shareAsks: guests get waiting pictures without the image (step K); the hos
   assert.deepEqual(shared[0].answer.done, {}, "the shot waits for its sketch again");
   assert.equal(JSON.stringify([sketch, add]), before);
 });
+
+// The host's asks follow a guest's edit by the text from before it (fleet #29): the adapter passes it.
+test("adapter: apply passes the text of the blocks the edits change, from before them", () => {
+  const doc = D.parse("# T\n\nFirst line.\n\nSecond line.\n");
+  const [first, second] = doc.blocks.filter((b) => b.type === "para");
+  const seen = [];
+  const adapter = scriptAdapter({ doc: () => doc, selection: () => null, applied: (ops, sel, before) => seen.push({ ops, before }) });
+  adapter.apply([{ type: "text", blockId: first.id, at: 0, del: 5, ins: "One" }, { type: "text", blockId: first.id, at: 3, del: 0, ins: "!" }]);
+  assert.equal(seen.length, 1);
+  assert.deepEqual([...seen[0].before], [[first.id, "First line."]], "the first block as it was, and nothing for the untouched one");
+  assert.equal(seen[0].before.has(second.id), false);
+  assert.equal(D.contentOf(D.blockById(doc, first.id)), "One! line.");
+});
