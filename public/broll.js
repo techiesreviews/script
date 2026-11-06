@@ -3,7 +3,7 @@
 // "## Sketches" section. Pure module: no DOM, no network. Imported by the app and by the tests.
 import { outline, contentOf, blockById } from "./doc.js";
 import { spokenText, textLinks } from "./links.js";
-import { spokenWords, textCues, withoutMarks } from "./cues.js";
+import { spokenWords, textCues, withoutMarks, plainView } from "./cues.js";
 
 export const SKETCH_MAX = 8 * 1024;
 // A picture as a sketch (step K): a PNG, JPEG or WebP data address, shrunk by the tab first.
@@ -868,14 +868,31 @@ export function quoteSelection(doc, quote) {
   const words = String(quote ?? "").trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const paras = outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para"));
-  let joined = "";
-  const spans = paras.map((b) => { const text = contentOf(b), start = joined.length ? joined.length + 2 : 0; joined += (joined.length ? "\n\n" : "") + text; return { id: b.id, start, end: start + text.length }; });
   // Whole words only: a quote may not start or end inside a word ("ackup", "spare ke").
   const edge = (w, side) => (/[\p{L}\p{N}]/u.test(side === "start" ? w[0] : w.at(-1)) ? (side === "start" ? "(?<![\\p{L}\\p{N}])" : "(?![\\p{L}\\p{N}])") : "");
-  const m = new RegExp(edge(words[0], "start") + words.map(escRe).join("\\s+") + edge(words.at(-1), "end"), "u").exec(joined);
-  if (!m) return [];
-  const a = m.index, z = m.index + m[0].length;
-  return spans.filter((p) => p.start < z && p.end > a).map((p) => ({ id: p.id, start: Math.max(a, p.start) - p.start, end: Math.min(z, p.end) - p.start }));
+  const re = new RegExp(edge(words[0], "start") + words.map(escRe).join("\\s+") + edge(words.at(-1), "end"), "u");
+  // texts: what is searched per para; map: where its characters are in the para's text (null: the same place).
+  const raw = paras.map((b) => contentOf(b));
+  const find = (texts, maps) => {
+    let joined = "";
+    const spans = paras.map((b, k) => { const text = texts[k], start = joined.length ? joined.length + 2 : 0; joined += (joined.length ? "\n\n" : "") + text; return { id: b.id, k, start, end: start + text.length }; });
+    const m = re.exec(joined);
+    if (!m) return [];
+    const a = m.index, z = m.index + m[0].length;
+    return spans.filter((p) => p.start < z && p.end > a).map((p) => {
+      const from = Math.max(a, p.start) - p.start, to = Math.min(z, p.end) - p.start, map = maps[p.k];
+      if (!map) return { id: p.id, start: from, end: to };
+      const start = map[from] ?? raw[p.k].length; // an empty para or nothing of it quoted: an empty range
+      return { id: p.id, start, end: to > from ? map[to - 1] + 1 : start };
+    });
+  };
+  const sel = find(raw, raw.map(() => null));
+  if (sel.length) return sel;
+  // The agent reads the spoken text without cue marks, so a quote may cross a bold edge: it is searched without the marks
+  // and mapped back (as quoteAcrossCues does), only as far as was quoted.
+  const views = raw.map((t) => plainView(t));
+  if (!views.some(Boolean)) return [];
+  return find(views.map((v, k) => (v ? v.plain : raw[k])), views.map((v) => v?.map ?? null));
 }
 
 /** Asks answer_broll may answer: "Suggest B-roll" on a selection, a free "Ask…" on a selection, and "Plan B-roll". */

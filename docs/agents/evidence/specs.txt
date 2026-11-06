@@ -143,6 +143,7 @@
 ✔ a quote read without the marks is only looked for across bold in paragraphs
 ✔ only settling that changes how the text reads is refused: a paste or edit that does it on purpose goes in
 ✔ the setting says it is experimental, with its known limits in one plain line
+✔ quoteSelection (B-roll): a quote across a bold edge is found, mapped back to the text with its marks
 ✔ round-trips both fixtures exactly
 ✔ round-trips edge cases exactly
 ✔ 3 blank lines are kept in the separator
@@ -354,9 +355,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 356
+ℹ tests 357
 ℹ suites 0
-ℹ pass 356
+ℹ pass 357
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

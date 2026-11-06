@@ -158,17 +158,24 @@ export function marksRange(from, to) {
  *  as far as was quoted, and the text there as it is now. A rewrite of it takes in the whole cue and keeps the cue's other
  *  words (widenOverCues), so no spoken word is lost and no lone "**" is left. null when not found. */
 export function quoteAcrossCues(content, quote) {
+  const view = plainView(content);
+  if (!view || !quote) return null;
+  const i = view.plain.indexOf(quote);
+  if (i < 0) return null;
+  const start = view.map[i], end = view.map[i + quote.length - 1] + 1;
+  return { start, end, quote: String(content).slice(start, end) };
+}
+/** The text without its cues' marks (as the setting reads them) and where each of its characters is in the text:
+ *  { plain, map } (map[i] is the offset in `content` of plain[i]), or null when there is no cue. */
+export function plainView(content) {
   const text = String(content ?? ""), cues = textCues(text);
-  if (!cues.length || !quote) return null;
+  if (!cues.length) return null;
   const map = [];
   let plain = "", at = 0;
   const copy = (from, to) => { for (let i = from; i < to; i++) { map.push(i); plain += text[i]; } };
   for (const c of cues) { copy(at, c.start); copy(c.words.start, c.words.end); at = c.end; }
   copy(at, text.length);
-  const i = plain.indexOf(quote);
-  if (i < 0) return null;
-  const start = map[i], end = map[i + quote.length - 1] + 1;
-  return { start, end, quote: text.slice(start, end) };
+  return { plain, map };
 }
 /** What is spoken (links.js spokenText) without the cue marks: for word counts and the camera script. */
 export const spokenWords = (content) => spokenText(stripCues(content));
