@@ -1339,7 +1339,9 @@ function placeBar(r) {
   }
   const at = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
   const line = parseFloat(getComputedStyle(at).lineHeight) || first.height;
-  const { x, y } = barSpot({ first, last, w: bar.offsetWidth, h: bar.offsetHeight, top, vw: document.documentElement.clientWidth, vh: innerHeight, line });
+  // What is really seen: on a tablet the on-screen keyboard covers the end of the window and may pan the page.
+  const v = window.visualViewport, seenEnd = v ? v.height + v.offsetTop : innerHeight, seenTop = Math.max(top, v?.offsetTop || 0);
+  const { x, y } = barSpot({ first, last, w: bar.offsetWidth, h: bar.offsetHeight, top: seenTop, vw: document.documentElement.clientWidth, vh: seenEnd, line });
   bar.style.setProperty("--bar-x", x + "px");
   bar.style.setProperty("--bar-y", y + "px");
 }
@@ -1384,13 +1386,18 @@ function hideBar() {
 }
 // A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
 // old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
+// Where the bar's words are now: a bold mark put inside them since (an agent's, a guest's) doesn't lose them.
+function barWordsIn(content, s) {
+  const r = D.reanchor({ start: s.start, quote: s.quote }, content);
+  return r ? { ...r, quote: s.quote } : K.quoteAcrossCues(content, s.quote);
+}
 function keepBarSel(id) {
   if ((!barSel?.range && !barSel?.gone) || barSel.id !== id || !bar.contains(document.activeElement)) return;
   const b = byId(id), el = blockNode(id);
   const content = b && el ? D.contentOf(b) : null;
   let { start, end } = barSel;
   if (content?.slice(start, end) !== barSel.quote) {
-    const r = content == null ? null : D.reanchor({ start, quote: barSel.quote }, content);
+    const r = content == null ? null : barWordsIn(content, barSel);
     if (!r) {
       // The words are gone: what is typed stays and the input says so; nothing can be sent or bolded here.
       Object.assign(barSel, { range: null, gone: true });
@@ -1400,6 +1407,7 @@ function keepBarSel(id) {
       return;
     }
     ({ start, end } = r);
+    barSel.quote = r.quote;
   }
   // Also when they came back (a guest's Undo): the input is ready again.
   Object.assign(barSel, { el, start, end, range: rangeAt(el, start, end), gone: false });
@@ -1585,7 +1593,7 @@ function makeAsk(action, typed = "") {
   const content = D.contentOf(b);
   let { start, end } = s;
   if (content.slice(start, end) !== s.quote) {
-    const r = D.reanchor({ start, quote: s.quote }, content);
+    const r = barWordsIn(content, s);
     if (!r) return hideBar();
     ({ start, end } = r);
   }

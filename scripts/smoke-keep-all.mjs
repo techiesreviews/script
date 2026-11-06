@@ -717,6 +717,35 @@ async function runSlimBar(width, height) {
     await closeBar();
   }
 
+  // A tablet: with the keyboard up the bar stays where it can be seen.
+  if (width >= 640) {
+    await selectWord();
+    await page.eval(`(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); scrollBy({ top: r.top - 380, behavior: "instant" }); Object.defineProperty(visualViewport, "height", { value: 420, configurable: true }); visualViewport.dispatchEvent(new Event("resize")); })()`);
+    await sleep(150);
+    const seen = await page.eval(`(() => { const b = document.querySelector("#editBar").getBoundingClientRect(), w = getSelection().getRangeAt(0).getBoundingClientRect(); return { fits: b.bottom <= 420, clear: b.bottom <= w.top || b.top >= w.bottom, top: b.top, bottom: b.bottom }; })()`);
+    check(seen.fits, `${tag}: keyboard up on a wide screen: the bar is above it`, JSON.stringify(seen));
+    check(seen.clear, `${tag}: and not on the words`, JSON.stringify(seen));
+    await page.eval(`(() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event("resize")); })()`);
+    await closeBar();
+  }
+
+  // Part of the selected words bolded while typing: they are still there, so the ask goes on them.
+  await page.eval(`getSelection().removeAllRanges()`);
+  await sleep(150);
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("Most of us")), w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), n = w.nextNode(), from = n.data.indexOf("Most"), r = document.createRange(); r.setStart(n, from); r.setEnd(n, from + 7); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  await page.until(barOpen, "the bar on two words");
+  await sleep(200);
+  await type("warmer");
+  await agent("mark_cue", { cues: [{ quote: "Most" }] });
+  await sleep(300);
+  check(!(await page.eval(ghost)).includes("gone") && !(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)), `${tag}: bold on part of the words: they aren't gone`, await page.eval(ghost));
+  await pressKey(page, "Enter", "Enter", 13, "\r");
+  const parted = await newAsks();
+  check(parted[0]?.instruction === "warmer" && parted[0]?.quote.includes("Most") && parted[0]?.quote.includes("of"), `${tag}: and the ask goes on them`, JSON.stringify(parted.map((x) => x.quote)));
+  await page.until(`document.querySelector("#editBar").hidden`, "the bar closing");
+  await agent("set_script", { markdown: start });
+  await sleep(300);
+
   // A redraw of the line while typing: the words stay marked.
   await selectWord();
   await type("x");
