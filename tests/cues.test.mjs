@@ -968,10 +968,10 @@ test("a stretch alone on its line, emptied outer words first: the last words goi
     // On a later line no rule can read, and a spaces-only line would split the block: the edit keeps every byte.
     assert.equal(Q.settleMarks("x\n** two **\ny", "x\n**  **\ny", 6), null, "alone on a later line");
     assert.equal(Q.settleMarks("x\n** two **\n- y", "x\n**  **\n- y", 6), null);
-    // On the first line with more lines after it: settled, and still one paragraph (no raw block).
-    const firstLine = Q.settleMarks("** two **\ny", "**  **\ny", 3);
-    assert.equal(firstLine?.content, "  \ny");
-    assert.equal(D.parse(firstLine.content).blocks.some((b) => b.type === "raw"), false);
+    // With more lines in the block the edit keeps every byte: a spaces-only first line could turn the next line into a list or heading.
+    assert.equal(Q.settleMarks("** two **\ny", "**  **\ny", 3), null);
+    assert.equal(Q.settleMarks("** two **\n- y", "**  **\n- y", 3), null);
+    assert.equal(Q.settleMarks("** two **\n# y", "**  **\n# y", 3), null);
 
   }
   Q.readCuesWhen(() => true);
@@ -1016,6 +1016,9 @@ test("followRoomEdit: a host's ask goes through a guest's edit with bold on: clo
   assert.equal(C.followRoomEdit(ask(4, 6), op(0, 20, "no more!"), "say no, then no more"), null, "the first copy went; the later copy is not its word");
   assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "no thanks"), "so no more"), null, "a line pasted over with another no");
   assert.deepEqual(C.followRoomEdit(ask(3, 5), op(0, 10, "so **no** more"), "so no more"), { start: 5, end: 7 }, "bold added around it: its marks do not count");
+  // The edit starts or ends at the ask's own neighbour: new text landed between them, so it is closed.
+  assert.equal(C.followRoomEdit(ask(3, 5), op(3, 7, "!no more"), "so no more"), null, "new text before the ask, left neighbour outside the edit");
+  assert.equal(C.followRoomEdit(ask(3, 5), op(0, 5, "so no!"), "so no more"), null, "new text after the ask, edit ending at its end");
   // A word that grew in front of it, and a split right at its edges (moveAsks' business, the ask stays).
   assert.equal(C.followRoomEdit(ask(3, 5), op(0, 10, "we ano more!"), "so no more"), null, "a letter grew in front");
   assert.deepEqual(C.followRoomEdit(two, { type: "split", blockId: "p", at: 6, newId: "q" }, text), { start: 6, end: 9 }, "a split at its start");
