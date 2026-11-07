@@ -24,14 +24,6 @@
       <div class="menu__divider"></div>
       <button class="menu-action" id="menuOpen" type="button"><span data-icon="open"></span><span class="menu-action__text">Open a script…</span></button>
       <button class="menu-action" id="menuNew" type="button"><span data-icon="plus"></span><span class="menu-action__text">New script</span></button>
-      <div class="menu__group" role="group" aria-labelledby="cuesHead" id="cueGroup" hidden>
-        <div class="menu__divider"></div>
-        <p class="menu__head" id="cuesHead">Bold style</p>
-        <div class="menu-row bold-colours">
-          <label>Font colour <input type="color" id="boldFg"></label>
-          <label>Background <input type="color" id="boldBg"></label>
-        </div>
-      </div>
     </div>
     <div class="view-switch" id="viewSwitch" role="group" aria-label="View" hidden>
       <button type="button" data-view="script" aria-pressed="true" aria-label="Script"><span data-icon="doc"></span><span class="lbl">Script</span></button>
@@ -110,7 +102,23 @@
 <div class="edit-bar" id="editBar" role="toolbar" aria-label="Edit selection" hidden>
   <span class="edit-bar__label" id="ebLabel">0 words</span>
   <div class="edit-bar__controls">
-    <button class="edit-bar__button edit-bar__button--bold" type="button" id="boldBtn" aria-label="Bold" aria-pressed="false" aria-keyshortcuts="Control+B Meta+B" hidden data-icon="bold"></button>
+    <button class="edit-bar__button edit-bar__button--bold" type="button" id="boldBtn" aria-label="Bold" aria-pressed="false" aria-keyshortcuts="Control+B Meta+B" aria-controls="boldPop" aria-expanded="false" hidden data-icon="bold"></button>
+    <div class="bold-pop" id="boldPop" popover="manual" role="group" aria-label="Bold colours">
+      <p class="bold-pop__head" id="boldFgHead">Bold text colour</p>
+      <div class="bold-pop__row" role="group" aria-labelledby="boldFgHead" data-kind="color">
+        <button class="bold-pop__swatch bold-pop__swatch--default" type="button" data-hex="" aria-label="Orange (default)" title="Orange (default)" aria-pressed="false"></button>
+        <label class="bold-pop__custom" title="Your own colour" data-on="false"><span aria-hidden="true">+</span><input type="color" id="boldFg" aria-label="Your own text colour"></label>
+      </div>
+      <p class="bold-pop__head" id="boldBgHead">Bold background</p>
+      <div class="bold-pop__row" role="group" aria-labelledby="boldBgHead" data-kind="background">
+        <button class="bold-pop__swatch bold-pop__swatch--none" type="button" data-hex="" aria-label="No background" title="No background" aria-pressed="false">None</button>
+        <label class="bold-pop__custom" title="Your own colour" data-on="false"><span aria-hidden="true">+</span><input type="color" id="boldBg" aria-label="Your own background colour"></label>
+      </div>
+      <div class="bold-pop__foot">
+        <span class="bold-pop__sample" id="boldSample">Looks like <b>this</b></span>
+        <button class="bold-pop__reset" type="button" id="boldReset">Reset</button>
+      </div>
+    </div>
     <form class="edit-bar__ask" id="askForm">
       <div class="edit-bar__field" id="askField" data-state="idle">
         <div class="edit-bar__ghost" id="askGhost" aria-hidden="true"><span></span><b></b></div>
