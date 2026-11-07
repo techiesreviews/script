@@ -68,6 +68,10 @@ test("B: bold words in a link, a whole link, a link inside bold; split at a link
   // Bold that half covers a link joins with the new words, split at the edge.
   const half = `Then **try the** free [WP Activity Log](${U}) plan`;
   assert.equal(K.toggleCue(half, half.indexOf("the"), half.indexOf("WP") + 2).content, `Then **try the free** [**WP** Activity Log](${U}) plan`);
+  // Words and all of a link's words, as the editor selects them (on the words, its Markdown hidden): one stretch holding it.
+  const c = `Then try the free plan of [WP Activity Log](${U}) yourself.`;
+  assert.equal(K.toggleCue(c, c.indexOf("of"), c.indexOf("Log") + 3).content, `Then try the free plan **of [WP Activity Log](${U})** yourself.`);
+  assert.equal(K.toggleCue(c, c.indexOf("WP"), c.indexOf("yourself") + 8).content, `Then try the free plan of **[WP Activity Log](${U}) yourself**.`);
   // A bold link inside bold words that are selected with more words: the inner marks merge into one stretch.
   const inner = `Try [a **b** c](${U}) now`;
   assert.equal(K.toggleCue(inner, 0, inner.length).content, `**Try [a b c](${U}) now**`);
@@ -188,9 +192,33 @@ test("agent: Find links goes inside bold, around bold and splits a bold edge; ma
   assert.equal(mk(`Read [the login page](${U}) now.`, "the login page").segments[0].content, `Read **[the login page](${U})** now.`);
   assert.equal(mk(`Read [the login page](${U}) now.`, "Read the login page now").segments[0].content, `**Read [the login page](${U}) now**.`);
   assert.equal(mk(`Read [the login page](${U}) now.`, "page now").segments[0].content, `Read [the login **page**](${U}) **now**.`);
+  assert.equal(mk(`Read [the login page](${U}) now.`, "Read the login page").segments[0].content, `**Read [the login page](${U})** now.`);
   // unmark_cue on a bold link: the link stays.
   const un = K.planCues(seg(`Read **[the login page](${U})** now.`), [{ quote: `[the login page](${U})` }], "unmark");
   assert.equal(un.segments[0].content, `Read [the login page](${U}) now.`);
+});
+
+test("anchors follow a link going in or out by its edits; others' carets show at a nested link's words", () => {
+  const c = "Then try the free plan of WP yourself.", ask = [c.indexOf("yourself"), c.indexOf("yourself") + 8];
+  const add = K.addLink(c, ...at(c, "free plan"), U);
+  const moved = K.opsRange(c, add.ops)(...ask);
+  assert.equal(add.content.slice(moved.start, moved.end), "yourself");
+  const words = K.opsRange(c, add.ops)(...at(c, "free plan"));
+  assert.equal(add.content.slice(words.start, words.end), "free plan");
+  const off = K.removeLink(add.content, ...at(add.content, "free"));
+  const back = K.opsRange(add.content, off.ops)(moved.start, moved.end);
+  assert.equal(off.content.slice(back.start, back.end), "yourself");
+  // Splitting bold at a link's edge moves an ask after it too.
+  const bold = "Then **try the free plan** of WP yourself.", b = K.addLink(bold, bold.indexOf("plan"), bold.indexOf("WP") + 2, U);
+  const after = K.opsRange(bold, b.ops)(bold.indexOf("yourself"), bold.indexOf("yourself") + 8);
+  assert.equal(b.content.slice(after.start, after.end), "yourself");
+  // **[a](u)**: an offset in either hidden opening shows at the inner words' start, in either hidden end at their end.
+  const nested = `x **[a](${U})** y`, closed = [...L.textLinks(nested), ...K.textCues(nested)];
+  const cue = K.textCues(nested)[0], link = L.textLinks(nested)[0];
+  for (const o of [cue.start + 1, cue.words.start, link.start + 1]) assert.equal(L.shownOffset(closed, o), link.words.start, String(o));
+  for (const o of [link.words.end + 1, link.end, cue.end - 1]) assert.equal(L.shownOffset(closed, o), link.words.end, String(o));
+  assert.equal(L.shownOffset(closed, cue.start), cue.start);
+  assert.equal(L.shownOffset(closed, cue.end), cue.end);
 });
 
 test("agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **", () => {
