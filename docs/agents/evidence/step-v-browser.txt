@@ -279,6 +279,8 @@ ok 1280 px link: a bold link shows bold and underlined
 ok 1280 px link: on a bold link both B and the link icon show on
 ok 1280 px link: part link, part plain: the link icon is grey
 ok 1280 px link: a link inside bold words
+ok 1280 px link: Ctrl+B in the address field bolds and keeps the address
+ok 1280 px link: Enter then links the bold words: a whole bold link
 ok 1280 px link: four Ctrl+Z go back to the plain line
 ok 390 px link: the test line is in
 ok 390 px link: selecting words shows the bar with the link icon
@@ -304,6 +306,8 @@ ok 390 px link: a bold link shows bold and underlined
 ok 390 px link: on a bold link both B and the link icon show on
 ok 390 px link: part link, part plain: the link icon is grey
 ok 390 px link: a link inside bold words
+ok 390 px link: Ctrl+B in the address field bolds and keeps the address
+ok 390 px link: Enter then links the bold words: a whole bold link
 ok 390 px link: four Ctrl+Z go back to the plain line
 ok 1280 px link guest: the guest sees the link icon
 ok 1280 px link guest: the guest's link reaches the host's script

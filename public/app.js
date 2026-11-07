@@ -1328,6 +1328,8 @@ function changeMarkup(s, kind, make) {
       sel.addRange(range);
     }
     barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true, plainAt: plainOffset(res.content, res.start) };
+    // B made the words part link, part not: the address field has nothing left to link.
+    if (linkMode && linkTry(barSel)?.state !== "off") leaveLinkMode();
     cueBtnState(barSel);
     linkBtnState(barSel);
     paintBarSel();

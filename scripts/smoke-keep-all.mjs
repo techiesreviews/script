@@ -386,6 +386,17 @@ async function runLinkIcon(width, height) {
   await page.send("Input.insertText", { text: "https://example.com/free" });
   await press("Enter", "Enter", 13);
   check((await lineOf()).includes("try **the [free](https://example.com/free) plan** of"), `${tag}: a link inside bold words`, (await lineOf()).slice(-120));
+  // Ctrl+B in the address field bolds the words and keeps what is typed; Enter then links the bold words.
+  await select("yourself");
+  await page.click("#linkBtn");
+  await sleep(150);
+  await page.send("Input.insertText", { text: "https://example.com/you" });
+  await sleep(100);
+  await press("b", "KeyB", 66, CTRL);
+  check((await lineOf()).includes("**yourself**") && await page.eval(`document.querySelector("#askInput").value === "https://example.com/you" && document.querySelector("#askInput").placeholder === "https://" && document.querySelector("#askField").dataset.mode === "link"`), `${tag}: Ctrl+B in the address field bolds and keeps the address`, (await lineOf()).slice(-60));
+  await press("Enter", "Enter", 13);
+  check((await lineOf()).includes("**[yourself](https://example.com/you)**"), `${tag}: Enter then links the bold words: a whole bold link`, (await lineOf()).slice(-60));
+  for (let i = 0; i < 2; i++) { await page.eval(`${paraOf}.focus()`); await press("z", "KeyZ", 90, CTRL); }
   // Undo walks back one change at a time, the words never change.
   for (let i = 0; i < 4; i++) { await page.eval(`${paraOf}.focus()`); await press("z", "KeyZ", 90, CTRL); }
   check((await lineOf()) === plain, `${tag}: four Ctrl+Z go back to the plain line`, (await lineOf()).slice(-80));
