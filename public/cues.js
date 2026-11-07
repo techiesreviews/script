@@ -24,6 +24,11 @@ export const boldStyle = (stored) => ({
   color: stored?.own !== false && HEX.test(stored?.color) ? stored.color : null,
   background: stored?.own !== false && HEX.test(stored?.background) ? stored.background : null,
 });
+// The ready-made colours by B (Lex 2026-11-07, Variant A); the default orange and "None" are the null of boldStyle.
+export const BOLD_SWATCHES = {
+  color: [{ name: "Yellow", hex: "#fbd530" }, { name: "White", hex: "#f3f4fc" }, { name: "Pink", hex: "#fb75bb" }, { name: "Cyan", hex: "#3adaf2" }, { name: "Green", hex: "#5edb81" }],
+  background: [{ name: "Yellow", hex: "#fbd530" }, { name: "Dark orange", hex: "#96290a" }, { name: "Indigo", hex: "#3c3990" }, { name: "Teal", hex: "#005b60" }, { name: "Red", hex: "#8d1a1e" }],
+};
 
 /* ---------- Reading cues ---------- */
 // Where cues may not be: text links and link lines ("- Label: https://…").
