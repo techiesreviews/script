@@ -1224,7 +1224,7 @@ for (const row of $$(".bold-pop__row", boldPop)) {
   const custom = $(".bold-pop__custom", row);
   for (const { hex } of K.BOLD_SWATCHES[row.dataset.kind]) custom.insertAdjacentHTML("beforebegin", `<button class="bold-pop__swatch" type="button" data-hex="${hex}" aria-pressed="false"></button>`);
 }
-// Each row is one Tab stop (the picked one), and the arrow keys move along it: B to the input is a few presses, not fifteen.
+// Each row is one Tab stop (the picked one, or the last one reached with the arrows), and the arrow keys move along it: B to the input is a few presses, not fifteen.
 const popRowItems = (row) => [...$$(".bold-pop__swatch", row), $(".bold-pop__custom input", row)];
 function renderBoldPop() {
   const bold = applyBoldStyle(), mode = boldMode(), seen = K.boldShown(bold, mode), fallback = BOLD_SHOWN[mode];
