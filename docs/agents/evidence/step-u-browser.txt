@@ -488,6 +488,8 @@ ok 1280x800 colours: the picked text colour is saved
 ok 1280x800 colours: the sample shows it at once
 ok 1280x800 colours: the swatch shows it is picked; Reset comes on
 ok 1280x800 colours: the colours and the bar stay open, the word stays selected
+ok 1280x800 colours: a picked swatch takes no focus
+ok 1280x800 colours: after a pick the pointer leaves: the colours close, the bar stays
 ok 1280x800 colours: clicking B bolds the word, in the picked colours
 ok 1280x800 colours: your own colour shows at once and marks the + circle
 ok 1280x800 colours: Reset clears the saved choice
@@ -510,6 +512,8 @@ ok 1280x420 colours: the picked text colour is saved
 ok 1280x420 colours: the sample shows it at once
 ok 1280x420 colours: the swatch shows it is picked; Reset comes on
 ok 1280x420 colours: the colours and the bar stay open, the word stays selected
+ok 1280x420 colours: a picked swatch takes no focus
+ok 1280x420 colours: after a pick the pointer leaves: the colours close, the bar stays
 ok 1280x420 colours: clicking B bolds the word, in the picked colours
 ok 1280x420 colours: your own colour shows at once and marks the + circle
 ok 1280x420 colours: Reset clears the saved choice

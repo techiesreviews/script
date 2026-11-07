@@ -1197,6 +1197,13 @@ async function runBoldPop(width, height) {
     check((await sampleLook()).color === "rgb(251, 213, 48)", `${tag}: the sample shows it at once`);
     check(await page.eval(`document.querySelector('#boldPop [data-hex="#fbd530"]').getAttribute("aria-pressed") === "true" && document.querySelector("#boldReset").disabled === false`), `${tag}: the swatch shows it is picked; Reset comes on`);
     check(await page.eval(`${popOpen} && !document.querySelector("#editBar").hidden && getSelection().toString().trim() === "deadline"`), `${tag}: the colours and the bar stay open, the word stays selected`, await page.eval(`getSelection().toString()`));
+    // Picking with the mouse takes no focus (the bar's presses never do), so the pointer leaving still closes them.
+    check(!(await page.eval(`document.querySelector("#boldPop").contains(document.activeElement)`)), `${tag}: a picked swatch takes no focus`, await page.eval(`document.activeElement?.outerHTML.slice(0, 80)`));
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
+    await page.until(`!${popOpen}`, "the colours closing when the pointer leaves after a pick", 1500);
+    check(await page.eval(`!document.querySelector("#editBar").hidden`), `${tag}: after a pick the pointer leaves: the colours close, the bar stays`);
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the colours again after the pick", 1500);
     await page.click(`#boldPop [data-kind="background"] [data-hex="#3c3990"]`);
     await sleep(120);
     // Clicking B still bolds, as before.

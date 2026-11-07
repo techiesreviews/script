@@ -1602,9 +1602,12 @@ function escapeBoldPop() {
   if (inside) { popQuietFocus = true; boldBtn.focus(); }
   return true;
 }
-// What keeps them open: the pointer over B or them, the focus in them (the keyboard, or a colour field's own picker),
-// keyboard focus on B, or a tap.
-const popHeld = () => popStuck || boldBtn.matches(":hover") || boldPop.matches(":hover") || boldPop.contains(document.activeElement) || boldBtn.matches(":focus-visible");
+// What keeps them open: the pointer over B or them, keyboard focus on B or in them, a colour field (its own picker may be
+// open), or a tap. A swatch some browser focused on a mouse click doesn't count: the pointer leaving still closes them.
+const popHeld = () => {
+  const f = document.activeElement, inside = boldPop.contains(f) && (f.matches(":focus-visible") || f.type === "color");
+  return popStuck || inside || boldBtn.matches(":hover") || boldPop.matches(":hover") || boldBtn.matches(":focus-visible");
+};
 function closeBoldPopSoon() {
   clearTimeout(popOpenTimer);
   clearTimeout(popCloseTimer);

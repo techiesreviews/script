@@ -197,6 +197,18 @@ test("bold colours: a phone with the bar docked at the bottom: at the top of the
   assert.equal(up.side, "above", "words high on the screen: right over the bar");
 });
 
+test("bold colours: the bar against the right edge with no room under or over it: on its left", () => {
+  const words = bx(150, 180, 900, 1200), s = pop({ vh: 420, bar: bx(188, 260, 860, 1272), x: 864, words });
+  assert.deepEqual(s, { side: "left", x: 860 - 6 - 280, y: 188 });
+  assert.ok(off(s, words));
+});
+
+test("bold colours: only the bottom of the window clear of the words: there", () => {
+  const words = bx(60, 330, 8, 1272), s = pop({ vh: 600, bar: bx(338, 410, 8, 1272), words });
+  assert.deepEqual(s, { side: "bottom", x: 60, y: 600 - 8 - 200 });
+  assert.ok(off(s, words));
+});
+
 test("bold colours: always on screen and never past the sides", () => {
   const tiny = pop({ vh: 300, bar: bx(120, 190, 8, 1270), words: bx(60, 300, 8, 1270) });
   assert.ok(tiny.y >= 58 && tiny.y + 200 <= 292, JSON.stringify(tiny));
