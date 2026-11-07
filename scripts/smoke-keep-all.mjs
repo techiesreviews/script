@@ -1194,7 +1194,7 @@ async function runBoldPop(width, height) {
     await page.click(`#boldPop [data-kind="color"] [data-hex="#fbd530"]`);
     await sleep(120);
     check((await stored())?.color === "#fbd530", `${tag}: the picked text colour is saved`, JSON.stringify(await stored()));
-    check((await sampleLook()).color === "rgb(251, 213, 48)", `${tag}: the sample shows it at once`);
+    check((await sampleLook()).color === "rgb(138, 101, 0)", `${tag}: the sample shows it at once, as its light-mode partner`);
     check(await page.eval(`document.querySelector('#boldPop [data-hex="#fbd530"]').getAttribute("aria-pressed") === "true" && document.querySelector("#boldReset").disabled === false`), `${tag}: the swatch shows it is picked; Reset comes on`);
     check(await page.eval(`${popOpen} && !document.querySelector("#editBar").hidden && getSelection().toString().trim() === "deadline"`), `${tag}: the colours and the bar stay open, the word stays selected`, await page.eval(`getSelection().toString()`));
     // Picking with the mouse takes no focus (the bar's presses never do), so the pointer leaving still closes them.
@@ -1204,18 +1204,30 @@ async function runBoldPop(width, height) {
     check(await page.eval(`!document.querySelector("#editBar").hidden`), `${tag}: after a pick the pointer leaves: the colours close, the bar stays`);
     await hoverOn(page, "#boldBtn");
     await page.until(popOpen, "the colours again after the pick", 1500);
-    await page.click(`#boldPop [data-kind="background"] [data-hex="#3c3990"]`);
+    await page.click(`#boldPop [data-kind="background"] [data-hex="#34317f"]`);
     await sleep(120);
     // Clicking B still bolds, as before.
     await page.click("#boldBtn");
     await page.until(`!!document.querySelector("#script [data-cue]")`, "the bold word after clicking B");
     const look = await cueLook();
-    check(look?.color === "rgb(251, 213, 48)" && look?.background === "rgb(60, 57, 144)", `${tag}: clicking B bolds the word, in the picked colours`, JSON.stringify(look));
+    check(look?.color === "rgb(138, 101, 0)" && look?.background === "rgb(222, 220, 255)", `${tag}: clicking B bolds the word, in the picked colours (light mode: their partners)`, JSON.stringify(look));
+    // Night: the same choice shows the night colours, so the words read in both modes.
+    await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+    await sleep(150);
+    const night = await cueLook();
+    check(night?.color === "rgb(251, 213, 48)" && night?.background === "rgb(52, 49, 127)", `${tag}: dark mode shows the night colours of the same choice`, JSON.stringify(night));
+    check(await page.eval(`document.querySelector('#boldPop [data-hex="#f3f4fc"]').getAttribute("aria-label") === "White"`), `${tag}: dark mode: the swatches carry their night names`);
+    await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+    await sleep(150);
+    check(await page.eval(`document.querySelector('#boldPop [data-hex="#f3f4fc"]').getAttribute("aria-label") === "Black"`), `${tag}: light mode: White's partner is Black, readable on white`);
     // The own colour field.
     await page.eval(`(() => { const e = document.querySelector("#boldFg"); e.value = "#112233"; e.dispatchEvent(new Event("input", { bubbles: true })); })()`);
     await sleep(80);
     check((await cueLook())?.color === "rgb(17, 34, 51)" && (await page.eval(`document.querySelector('#boldPop [data-kind="color"] .bold-pop__custom').dataset.on === "true"`)), `${tag}: your own colour shows at once and marks the + circle`);
     // Reset: back to orange, no background, nothing saved.
+    // Bolding can move the bar from under the pointer, which closes the colours: hover B again.
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the colours before Reset", 1500);
     await page.click("#boldReset");
     await sleep(120);
     check((await page.eval(`localStorage.getItem("script-editor:boldStyle")`)) === null, `${tag}: Reset clears the saved choice`);
@@ -1250,6 +1262,21 @@ async function runBoldPop(width, height) {
     await pressKey(page, "Tab", "Tab", 9);
     await sleep(100);
     check((await page.eval(`document.querySelector("#boldPop").contains(document.activeElement)`)) && (await page.eval(popOpen)), `${tag}: Tab goes into the colours, which stay open`, await focused());
+    await pressKey(page, "ArrowRight", "ArrowRight", 39);
+    await sleep(60);
+    check(await page.eval(`document.activeElement?.dataset.hex === "#fbd530" && document.activeElement.tabIndex === 0`), `${tag}: the arrow keys move along a row`, await focused());
+    // Each row is one stop: from B, Tab reaches the input in a few presses.
+    let presses = 1;
+    for (; presses < 10 && (await focused()) !== "askInput"; presses++) { await pressKey(page, "Tab", "Tab", 9); await sleep(40); }
+    check((await focused()) === "askInput" && presses <= 4, `${tag}: from B, Tab reaches the input in at most 4 presses`, presses);
+    await sleep(400);
+    check(!(await page.eval(popOpen)), `${tag}: the focus leaving closes the colours`);
+    await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+    await sleep(150);
+    check((await focused()) === "boldBtn" && (await page.eval(popOpen)), `${tag}: one Shift+Tab from the input lands on B and opens them`, await focused());
+    await pressKey(page, "Tab", "Tab", 9);
+    await sleep(100);
     await pressKey(page, "Escape", "Escape", 27);
     await sleep(100);
     check((await focused()) === "boldBtn" && !(await page.eval(popOpen)) && (await page.eval(`!document.querySelector("#editBar").hidden`)), `${tag}: Escape closes them, the focus goes back to B, the bar stays`, await focused());
@@ -1271,7 +1298,7 @@ async function runBoldPop(width, height) {
     const sw = await page.eval(`(() => { const r = document.querySelector("#boldPop .bold-pop__swatch").getBoundingClientRect(); return Math.min(r.width, r.height); })()`);
     check(sw >= 35, `${tag}: swatches big enough for a thumb`, sw);
     await tapAt(page, await centre(page, `#boldPop [data-kind="color"] [data-hex="#5edb81"]`));
-    check((await stored())?.color === "#5edb81" && (await cueLook())?.color === "rgb(94, 219, 129)", `${tag}: a tapped colour shows on the bold word at once`, JSON.stringify(await cueLook()));
+    check((await stored())?.color === "#5edb81" && (await cueLook())?.color === "rgb(31, 122, 60)", `${tag}: a tapped colour shows on the bold word at once (light mode: its partner)`, JSON.stringify(await cueLook()));
     check(await page.eval(popOpen), `${tag}: they stay open after picking`);
     await tapAt(page, await centre(page, "#boldReset"));
     check((await page.eval(`localStorage.getItem("script-editor:boldStyle")`)) === null && (await cueLook())?.color === orange, `${tag}: Reset by tap`);

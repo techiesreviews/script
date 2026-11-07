@@ -10,6 +10,8 @@ Lex (2026-11-07), on a prototype of two ways: "Can we hover the b and have optio
 - The popover never sits on the selected words: under the bar, over it, beside it, or at the top or bottom of what is seen, whichever comes first that keeps it on screen and off the words (`popSpot` in `public/edit-bar.js`). It is in the top layer, so the bar keeps its size.
 - The two colour fields left the file name's menu: the colours live only by B now.
 - The same saved setting: `script-editor:boldStyle` in this browser, per person (guests and hosts each keep their own). A colour chosen before keeps showing. The ready-made colours are `#rrggbb` (`BOLD_SWATCHES` in `public/cues.js`), so `boldStyle` keeps letting only those through. The default orange and None are "nothing chosen". **Reset** removes the saved setting: orange and bold, no background. (Step S had no Reset; Lex's approved prototype has one.)
+- Each ready-made colour reads in both modes (release review, 2026-11-07): it is saved as its night colour, and light mode shows a darker partner on white (White becomes Black, the dark backgrounds become pale ones; `boldShown` in `public/cues.js`). Every text colour has at least 3:1 against the page, and the default orange at least 3:1 on every background, in both modes. Your own colours show as picked in both modes.
+- The keyboard: each row of colours is one Tab stop and the arrow keys move along it, so from B the input is at most four Tab presses away.
 - Display only: no script text, prompter file or export changes.
 
 ## Checks

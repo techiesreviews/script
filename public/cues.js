@@ -24,11 +24,34 @@ export const boldStyle = (stored) => ({
   color: stored?.own !== false && HEX.test(stored?.color) ? stored.color : null,
   background: stored?.own !== false && HEX.test(stored?.background) ? stored.background : null,
 });
-// The ready-made colours by B (Lex 2026-11-07, Variant A); the default orange and "None" are the null of boldStyle.
+// The ready-made colours by B (Lex 2026-11-07, Variant A); the default orange and "None" are the null of boldStyle. Saved as
+// `hex` (the night look); light mode shows each one's `light` partner, so bold words stay readable on white.
 export const BOLD_SWATCHES = {
-  color: [{ name: "Yellow", hex: "#fbd530" }, { name: "White", hex: "#f3f4fc" }, { name: "Pink", hex: "#fb75bb" }, { name: "Cyan", hex: "#3adaf2" }, { name: "Green", hex: "#5edb81" }],
-  background: [{ name: "Yellow", hex: "#fbd530" }, { name: "Dark orange", hex: "#96290a" }, { name: "Indigo", hex: "#3c3990" }, { name: "Teal", hex: "#005b60" }, { name: "Red", hex: "#8d1a1e" }],
+  color: [
+    { name: "Yellow", hex: "#fbd530", light: { name: "Yellow", hex: "#8a6500" } },
+    { name: "White", hex: "#f3f4fc", light: { name: "Black", hex: "#26262e" } },
+    { name: "Pink", hex: "#fb75bb", light: { name: "Pink", hex: "#b8226e" } },
+    { name: "Cyan", hex: "#3adaf2", light: { name: "Cyan", hex: "#00708a" } },
+    { name: "Green", hex: "#5edb81", light: { name: "Green", hex: "#1f7a3c" } },
+  ],
+  background: [
+    { name: "Yellow", hex: "#fff3a0", light: { name: "Yellow", hex: "#fff3a0" } },
+    { name: "Dark orange", hex: "#6e1e07", light: { name: "Peach", hex: "#ffdccb" } },
+    { name: "Indigo", hex: "#34317f", light: { name: "Lavender", hex: "#dedcff" } },
+    { name: "Teal", hex: "#00434a", light: { name: "Mint", hex: "#c8efec" } },
+    { name: "Red", hex: "#731519", light: { name: "Rose", hex: "#ffd7d7" } },
+  ],
 };
+/** What the page shows for a boldStyle in a mode ("dark" or "light"): a ready-made colour as that mode's partner; your own
+ *  colours and nothing chosen as they are. */
+export function boldShown(style, mode) {
+  const shown = (kind) => {
+    const v = style[kind];
+    const s = v && BOLD_SWATCHES[kind].find((x) => x.hex === v.toLowerCase());
+    return s && mode === "light" ? s.light.hex : v;
+  };
+  return { color: shown("color"), background: shown("background") };
+}
 
 /* ---------- Reading cues ---------- */
 // Where cues may not be: text links and link lines ("- Label: https://…").
