@@ -332,10 +332,18 @@ export function toggleCue(content, start, end) {
  *  link } (all inside one link: it removes it; textLinks() shape), "mixed" (part link, part plain, or across lines: grey)
  *  or "none" (no words, or a link line). */
 export function linkState(content, start, end) {
-  const text = String(content ?? ""), [s, e] = trimRange(text, start, end);
+  const text = String(content ?? ""), links = textLinks(text);
+  let [s, e] = trimRange(text, start, end);
+  // An edge in a link's hidden Markdown (a drag that starts right after its last word, or ends right before its first)
+  // goes outside the link: only Markdown inside the selection counts.
+  for (const l of links) {
+    if (s >= l.words.end && s < l.end) s = l.end;
+    if (e > l.start && e <= l.words.start) e = l.start;
+  }
+  [s, e] = trimRange(text, s, Math.max(s, e));
   if (e <= s || overlaps(lineRanges(text), s, e)) return { state: "none" };
   if (text.slice(s, e).includes("\n")) return { state: "mixed" };
-  const links = textLinks(text), m = markup(text, textCues(text), links);
+  const m = markup(text, textCues(text), links);
   const seen = new Set();
   let plain = false, linkMarks = false;
   for (let i = s; i < e; i++) {
@@ -359,6 +367,10 @@ export function addLink(content, start, end, url) {
   if (!safeUrl(url) || linkState(text, start, end).state !== "off") return null;
   const cues = textCues(text), m = markup(text, cues);
   let [s, e] = trimRange(text, start, end);
+  for (const l of textLinks(text)) {
+    if (s >= l.words.end && s < l.end) s = l.end;
+    if (e > l.start && e <= l.words.start) e = l.start;
+  }
   while (s < e && (m[s] || /\s/.test(text[s]))) s++;
   while (e > s && (m[e - 1] || /\s/.test(text[e - 1]))) e--;
   if (e <= s) return null;

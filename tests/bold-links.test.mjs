@@ -102,6 +102,19 @@ test("the address field: a full https:// or http:// address with a dot in its ho
   for (const t of ["", "https://", "https://wordpress", "wordpress.org", "ftp://x.example", "javascript:alert(1)", "https://x.example/a b"]) assert.equal(L.typedAddress(t), null, t);
 });
 
+test("link state: a selection edge in a link's hidden Markdown counts as outside the link", () => {
+  const U2 = "https://example.com/two", c = `Then try [WP Activity Log](${U}) yourself today.`;
+  assert.equal(K.linkState(c, c.indexOf("]("), c.indexOf("today") + 5).state, "off");
+  assert.equal(K.addLink(c, c.indexOf("]("), c.indexOf("today") + 5, U2).content, `Then try [WP Activity Log](${U}) [yourself today](${U2}).`);
+  assert.equal(K.linkState(c, c.indexOf("Then"), c.indexOf("WP")).state, "off");
+  assert.equal(K.addLink(c, c.indexOf("Then"), c.indexOf("WP"), U2).content, `[Then try](${U2}) [WP Activity Log](${U}) yourself today.`);
+  // Two links in one paragraph, the later one splitting bold: the earlier offsets hold.
+  const two = L.planLinks([{ id: "p", content: "Try **alpha beta** gamma now.", from: 0, to: 29 }], [{ quote: "alpha", url: U }, { quote: "beta gamma", url: U2 }]);
+  assert.equal(two.segments[0].content, `Try **[alpha](${U})** [**beta** gamma](${U2}) now.`);
+  assert.deepEqual(two.skipped, []);
+  assert.equal(two.segments[0].delta, two.segments[0].content.length - 29);
+});
+
 test("link: plain words, words inside bold, bold words inside, split at a bold edge; remove keeps words and bold", () => {
   const plain = "Then try the free plan yourself.";
   const add = K.addLink(plain, ...at(plain, "the free plan"), U);
