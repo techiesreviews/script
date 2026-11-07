@@ -1355,7 +1355,7 @@ const bar = $("#editBar");
 const askInput = $("#askInput"), askField = $("#askField"), askTab = $("#askTab"), askSend = $("#askForm .edit-bar__send"), moreMenu = $("#moreMenu");
 let barSel = null, barSending = 0, askPick = 0, scriptPress = false, pressMoved = false, askSayTimer = 0, askSayWant = "";
 // The bold colours by B: open and close timers, kept open by a tap (until a tap elsewhere), focus B again without reopening.
-let popOpenTimer = 0, popCloseTimer = 0, popStuck = false, popTouch = false, popQuietFocus = false;
+let popOpenTimer = 0, popCloseTimer = 0, popStuck = false, popTouch = false, popQuietFocus = false, popByHover = false;
 // A selection across blocks is clamped to the first block where it covers at least one word.
 function currentSelection() {
   if (state.pendingDraft) return null;
@@ -1604,12 +1604,13 @@ function placeBoldPop() {
   boldPop.style.top = `${y}px`;
   boldPop.dataset.side = side;
 }
-function openBoldPop(stick = false) {
+// byHover: opened by the pointer resting on B; then, while they sit away from B, the pointer crossing the bar keeps them.
+function openBoldPop(stick = false, byHover = false) {
   clearTimeout(popOpenTimer);
   clearTimeout(popCloseTimer);
   if (bar.hidden || boldBtn.hidden || barSending) return;
   if (stick) popStuck = true;
-  if (!boldPop.matches(":popover-open")) { renderBoldPop(); boldPop.showPopover(); }
+  if (!boldPop.matches(":popover-open")) { renderBoldPop(); boldPop.showPopover(); popByHover = byHover; }
   boldBtn.setAttribute("aria-expanded", "true");
   placeBoldPop();
 }
@@ -1632,18 +1633,20 @@ function escapeBoldPop() {
 // open), or a tap. A swatch some browser focused on a mouse click doesn't count: the pointer leaving still closes them.
 const popHeld = () => {
   const f = document.activeElement, inside = boldPop.contains(f) && (f.matches(":focus-visible") || f.type === "color");
-  return popStuck || inside || boldBtn.matches(":hover") || boldPop.matches(":hover") || boldBtn.matches(":focus-visible");
+  return popStuck || inside || boldBtn.matches(":hover") || boldPop.matches(":hover") || boldBtn.matches(":focus-visible") || (popByHover && popFar() && bar.matches(":hover"));
 };
+// Beside the bar, or at the top or bottom of the window: the way there crosses the bar or the page, so it takes longer.
+const popFar = () => !["below", "above"].includes(boldPop.dataset.side);
 function closeBoldPopSoon() {
   clearTimeout(popOpenTimer);
   clearTimeout(popCloseTimer);
-  popCloseTimer = setTimeout(() => { if (!popHeld()) closeBoldPop(); }, 220);
+  popCloseTimer = setTimeout(() => { if (!popHeld()) closeBoldPop(); }, popFar() ? 700 : 220);
 }
 boldBtn.addEventListener("pointerenter", (e) => {
   if (e.pointerType !== "mouse") return;
   clearTimeout(popCloseTimer);
   clearTimeout(popOpenTimer);
-  popOpenTimer = setTimeout(() => openBoldPop(), 120);
+  popOpenTimer = setTimeout(() => openBoldPop(false, true), 120);
 });
 boldBtn.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") closeBoldPopSoon(); });
 boldPop.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") clearTimeout(popCloseTimer); });
