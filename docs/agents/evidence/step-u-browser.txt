@@ -485,12 +485,15 @@ ok 1280x800 colours: lined up with B when under or over the bar
 ok 1280x800 colours: the colours, None and a Reset that is off while nothing is chosen
 ok 1280x800 colours: the sample word shows the default orange and bold
 ok 1280x800 colours: the picked text colour is saved
-ok 1280x800 colours: the sample shows it at once
+ok 1280x800 colours: the sample shows it at once, as its light-mode partner
 ok 1280x800 colours: the swatch shows it is picked; Reset comes on
 ok 1280x800 colours: the colours and the bar stay open, the word stays selected
 ok 1280x800 colours: a picked swatch takes no focus
 ok 1280x800 colours: after a pick the pointer leaves: the colours close, the bar stays
-ok 1280x800 colours: clicking B bolds the word, in the picked colours
+ok 1280x800 colours: clicking B bolds the word, in the picked colours (light mode: their partners)
+ok 1280x800 colours: dark mode shows the night colours of the same choice
+ok 1280x800 colours: dark mode: the swatches carry their night names
+ok 1280x800 colours: light mode: White's partner is Black, readable on white
 ok 1280x800 colours: your own colour shows at once and marks the + circle
 ok 1280x800 colours: Reset clears the saved choice
 ok 1280x800 colours: Reset: orange again, no background
@@ -499,6 +502,10 @@ ok 1280x800 colours: the pointer leaves: the colours close, the bar stays
 ok 1280x800 colours: Escape closes the colours and keeps the bar
 ok 1280x800 colours: keyboard focus on B opens the colours
 ok 1280x800 colours: Tab goes into the colours, which stay open
+ok 1280x800 colours: the arrow keys move along a row
+ok 1280x800 colours: from B, Tab reaches the input in at most 4 presses
+ok 1280x800 colours: the focus leaving closes the colours
+ok 1280x800 colours: one Shift+Tab from the input lands on B and opens them
 ok 1280x800 colours: Escape closes them, the focus goes back to B, the bar stays
 ok 1280x420 colours: the colours are closed at first
 ok 1280x420 colours: B has no tooltip to sit on the colours
@@ -509,12 +516,15 @@ ok 1280x420 colours: lined up with B when under or over the bar
 ok 1280x420 colours: the colours, None and a Reset that is off while nothing is chosen
 ok 1280x420 colours: the sample word shows the default orange and bold
 ok 1280x420 colours: the picked text colour is saved
-ok 1280x420 colours: the sample shows it at once
+ok 1280x420 colours: the sample shows it at once, as its light-mode partner
 ok 1280x420 colours: the swatch shows it is picked; Reset comes on
 ok 1280x420 colours: the colours and the bar stay open, the word stays selected
 ok 1280x420 colours: a picked swatch takes no focus
 ok 1280x420 colours: after a pick the pointer leaves: the colours close, the bar stays
-ok 1280x420 colours: clicking B bolds the word, in the picked colours
+ok 1280x420 colours: clicking B bolds the word, in the picked colours (light mode: their partners)
+ok 1280x420 colours: dark mode shows the night colours of the same choice
+ok 1280x420 colours: dark mode: the swatches carry their night names
+ok 1280x420 colours: light mode: White's partner is Black, readable on white
 ok 1280x420 colours: your own colour shows at once and marks the + circle
 ok 1280x420 colours: Reset clears the saved choice
 ok 1280x420 colours: Reset: orange again, no background
@@ -523,6 +533,10 @@ ok 1280x420 colours: the pointer leaves: the colours close, the bar stays
 ok 1280x420 colours: Escape closes the colours and keeps the bar
 ok 1280x420 colours: keyboard focus on B opens the colours
 ok 1280x420 colours: Tab goes into the colours, which stay open
+ok 1280x420 colours: the arrow keys move along a row
+ok 1280x420 colours: from B, Tab reaches the input in at most 4 presses
+ok 1280x420 colours: the focus leaving closes the colours
+ok 1280x420 colours: one Shift+Tab from the input lands on B and opens them
 ok 1280x420 colours: Escape closes them, the focus goes back to B, the bar stays
 ok 390x760 colours: the colours are closed at first
 ok 390x760 colours: B has no tooltip to sit on the colours
@@ -530,7 +544,7 @@ ok 390x760 colours: the bar keeps its size and place
 ok 390x760 colours: the colours are on screen and off the selected words
 ok 390x760 colours: no sideways scroll
 ok 390x760 colours: swatches big enough for a thumb
-ok 390x760 colours: a tapped colour shows on the bold word at once
+ok 390x760 colours: a tapped colour shows on the bold word at once (light mode: its partner)
 ok 390x760 colours: they stay open after picking
 ok 390x760 colours: Reset by tap
 ok 390x760 colours: a tap elsewhere closes the colours
@@ -540,7 +554,7 @@ ok 320x640 colours: the bar keeps its size and place
 ok 320x640 colours: the colours are on screen and off the selected words
 ok 320x640 colours: no sideways scroll
 ok 320x640 colours: swatches big enough for a thumb
-ok 320x640 colours: a tapped colour shows on the bold word at once
+ok 320x640 colours: a tapped colour shows on the bold word at once (light mode: its partner)
 ok 320x640 colours: they stay open after picking
 ok 320x640 colours: Reset by tap
 ok 320x640 colours: a tap elsewhere closes the colours

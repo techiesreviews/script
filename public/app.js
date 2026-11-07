@@ -1204,9 +1204,11 @@ try { for (const k of Object.keys(localStorage)) if (k === `${LS}cues` || k.star
 // Bold style: orange and bold (app.css), or the person's own colours (K.boldStyle lets only "#rrggbb" through to the CSS).
 // Picked in the small popover by B on the selection bar (Lex 2026-11-07, Variant A); the popover's sample word follows too.
 const boldPop = $("#boldPop"), boldBtn = $("#boldBtn");
+const darkMode = matchMedia("(prefers-color-scheme: dark)");
+const boldMode = () => (darkMode.matches ? "dark" : "light");
 function applyBoldStyle() {
-  const b = K.boldStyle(store.get("boldStyle"));
-  for (const el of [scriptEl, boldPop]) for (const [prop, value] of [["--bold-fg", b.color], ["--bold-bg", b.background]]) {
+  const b = K.boldStyle(store.get("boldStyle")), shown = K.boldShown(b, boldMode());
+  for (const el of [scriptEl, boldPop]) for (const [prop, value] of [["--bold-fg", shown.color], ["--bold-bg", shown.background]]) {
     if (value) el.style.setProperty(prop, value);
     else el.style.removeProperty(prop);
   }
@@ -1220,28 +1222,48 @@ $("#boldFg").addEventListener("input", (e) => setBoldStyle({ color: e.target.val
 const BOLD_SHOWN = { light: { color: "#b53707", background: "#fafafa" }, dark: { color: "#fb401e", background: "#080721" } };
 for (const row of $$(".bold-pop__row", boldPop)) {
   const custom = $(".bold-pop__custom", row);
-  for (const { name, hex } of K.BOLD_SWATCHES[row.dataset.kind]) {
-    custom.insertAdjacentHTML("beforebegin", `<button class="bold-pop__swatch" type="button" data-hex="${hex}" style="--swatch-colour: ${hex}" aria-label="${esc(name)}" title="${esc(name)}" aria-pressed="false"></button>`);
-  }
+  for (const { hex } of K.BOLD_SWATCHES[row.dataset.kind]) custom.insertAdjacentHTML("beforebegin", `<button class="bold-pop__swatch" type="button" data-hex="${hex}" aria-pressed="false"></button>`);
 }
+// Each row is one Tab stop (the picked one), and the arrow keys move along it: B to the input is a few presses, not fifteen.
+const popRowItems = (row) => [...$$(".bold-pop__swatch", row), $(".bold-pop__custom input", row)];
 function renderBoldPop() {
-  const bold = applyBoldStyle(), shown = BOLD_SHOWN[matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"];
-  $("#boldFg").value = bold.color || shown.color;
-  $("#boldBg").value = bold.background || shown.background;
+  const bold = applyBoldStyle(), mode = boldMode(), seen = K.boldShown(bold, mode), fallback = BOLD_SHOWN[mode];
+  $("#boldFg").value = seen.color || fallback.color;
+  $("#boldBg").value = seen.background || fallback.background;
   for (const row of $$(".bold-pop__row", boldPop)) {
-    const now = bold[row.dataset.kind] || "";
-    let hit = false;
+    const kind = row.dataset.kind, now = (bold[kind] || "").toLowerCase();
+    let picked = null;
     for (const sw of $$(".bold-pop__swatch", row)) {
-      const on = sw.dataset.hex.toLowerCase() === now.toLowerCase();
-      hit ||= on;
+      const s = K.BOLD_SWATCHES[kind].find((x) => x.hex === sw.dataset.hex);
+      if (s) {
+        const look = mode === "light" ? s.light : s;
+        sw.style.setProperty("--swatch-colour", look.hex);
+        sw.setAttribute("aria-label", look.name);
+        sw.title = look.name;
+      }
+      const on = sw.dataset.hex === now;
+      if (on) picked = sw;
       sw.setAttribute("aria-pressed", String(on));
     }
     const custom = $(".bold-pop__custom", row);
-    custom.dataset.on = String(!hit);
-    custom.style.setProperty("--swatch-colour", hit ? "transparent" : now);
+    custom.dataset.on = String(!picked);
+    custom.style.setProperty("--swatch-colour", picked ? "transparent" : seen[kind]);
+    const stop = row.contains(document.activeElement) ? document.activeElement : picked || $("input", custom);
+    for (const el of popRowItems(row)) el.tabIndex = el === stop ? 0 : -1;
   }
   $("#boldReset").disabled = !bold.color && !bold.background;
 }
+boldPop.addEventListener("keydown", (e) => {
+  const row = e.target.closest(".bold-pop__row");
+  if (!row || !["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
+  const items = popRowItems(row), i = items.indexOf(e.target);
+  const to = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (i + (e.key === "ArrowRight" ? 1 : -1) + items.length) % items.length;
+  e.preventDefault();
+  for (const el of items) el.tabIndex = el === items[to] ? 0 : -1;
+  items[to].focus();
+});
+// The system switching between light and dark: the ready-made colours follow.
+darkMode.addEventListener("change", renderBoldPop);
 boldPop.addEventListener("click", (e) => {
   const sw = e.target.closest(".bold-pop__swatch");
   if (sw) setBoldStyle({ [sw.closest(".bold-pop__row").dataset.kind]: sw.dataset.hex || null });
@@ -1569,6 +1591,7 @@ moreMenu.addEventListener("keydown", (e) => {
    opens them too, until a tap elsewhere. Clicking B still only bolds. They close when the pointer leaves B and them, on
    Escape, or when the focus leaves them. Never on the selected words (popSpot); in the top layer, so the bar keeps its size. */
 function placeBoldPop() {
+  boldPop.style.setProperty("--pop-room", `${document.documentElement.clientWidth - 16}px`);
   const r = bar.getBoundingClientRect(), b = boldBtn.getBoundingClientRect();
   const rects = barSel?.range ? [...barSel.range.getClientRects()].filter((x) => x.width > 0) : [];
   const words = rects.length ? { top: Math.min(...rects.map((x) => x.top)), bottom: Math.max(...rects.map((x) => x.bottom)), left: Math.min(...rects.map((x) => x.left)), right: Math.max(...rects.map((x) => x.right)) } : { top: 0, bottom: 0, left: 0, right: 0 };
