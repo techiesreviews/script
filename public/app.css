@@ -385,9 +385,15 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__button--link { position: relative; }
 .edit-bar__button--link::after {
   content: attr(data-tip); position: absolute; inset-block-start: calc(100% + 6px); inset-inline-start: 0; z-index: 5;
-  max-inline-size: min(22rem, calc(100vw - 7rem)); overflow: hidden; text-overflow: ellipsis; padding: 0.2rem 0.5rem;
+  inline-size: max-content; max-inline-size: min(22rem, calc(100vw - 7rem)); overflow: hidden; padding: 0.2rem 0.5rem;
   border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: var(--raised); box-shadow: var(--shadow-small);
-  color: var(--text); font-size: 0.75rem; font-weight: 500; white-space: nowrap; pointer-events: none; opacity: 0; visibility: hidden;
+  color: var(--text); font-size: 0.75rem; font-weight: 500; overflow-wrap: anywhere; pointer-events: none; opacity: 0; visibility: hidden;
+  /* A long address wraps, up to three lines, so its path shows too. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+}
+/* Docked at the bottom on a phone: the address opens above the icon. */
+@media (width < 40rem) {
+  .edit-bar:not([data-dock="top"]) .edit-bar__button--link::after { inset-block: auto calc(100% + 6px); }
 }
 .edit-bar__button--link:not([data-tip])::after, .edit-bar__button--link[data-tip=""]::after { display: none; }
 .edit-bar__button--link:focus-visible::after { opacity: 1; visibility: visible; }
