@@ -40,3 +40,8 @@ Not checked: a real phone, Firefox and Safari. Headless Chrome has no hovering p
 ## Done
 
 Feature list: updated (`docs/features.md`).
+
+### Follow-ups
+
+- Validation gaps (gap): f66504f:public/app.js:1332: The new rule has no test. It closes the address field when B widens the words into something that is part link, part not. This happens because `toggleCue` returns a range that covers every bold stretch it merges (`public/cues.js:327`). The new browser check only covers the case where the field stays open. Concrete test to add to `runLinkIcon` in `scripts/smoke-keep-all.mjs`, at both widths: Start from a line holding `the [free](https://example.com/free) plan of`. Select "plan of", click `#linkBtn` and type an address. Press Ctrl+B. Check that the line reads `the [free](https://example.com/free) plan of`. Check that `#askField` no longer has `data-mode="link"`, that `#askInput` is empty and its placeholder is back to the asking text, and that `#linkBtn` is disabled because the words are part link. Add the new lines to `docs/agents/evidence/step-v-browser.txt`.
+
