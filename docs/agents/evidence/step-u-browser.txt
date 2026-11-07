@@ -482,6 +482,7 @@ ok 1280x800 colours: B says the colours are open
 ok 1280x800 colours: the bar keeps its size and place
 ok 1280x800 colours: the colours are on screen and off the selected words
 ok 1280x800 colours: lined up with B when under or over the bar
+ok 1280x800 colours: the pointer moving from B to the colours (below) reaches them open
 ok 1280x800 colours: the colours, None and a Reset that is off while nothing is chosen
 ok 1280x800 colours: the sample word shows the default orange and bold
 ok 1280x800 colours: the picked text colour is saved
@@ -517,6 +518,7 @@ ok 1280x420 colours: B says the colours are open
 ok 1280x420 colours: the bar keeps its size and place
 ok 1280x420 colours: the colours are on screen and off the selected words
 ok 1280x420 colours: lined up with B when under or over the bar
+ok 1280x420 colours: the pointer moving from B to the colours (right) reaches them open
 ok 1280x420 colours: large text in a short window: the colours fit what is seen and scroll inside
 ok 1280x420 colours: the colours, None and a Reset that is off while nothing is chosen
 ok 1280x420 colours: the sample word shows the default orange and bold
