@@ -1651,6 +1651,8 @@ boldBtn.addEventListener("pointerenter", (e) => {
 boldBtn.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") closeBoldPopSoon(); });
 boldPop.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") clearTimeout(popCloseTimer); });
 boldPop.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") closeBoldPopSoon(); });
+// The pointer leaving the bar after resting on it (they may have been held by the bar then); the colours are inside it.
+bar.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && boldPop.matches(":popover-open")) closeBoldPopSoon(); });
 boldBtn.addEventListener("pointerdown", (e) => { popTouch = e.pointerType !== "mouse"; });
 // After the bold: a tap opens the colours as well (no hover on a phone); keys and the mouse already have them.
 boldBtn.addEventListener("click", () => { if (popTouch) openBoldPop(true); popTouch = false; });

@@ -1193,6 +1193,13 @@ async function runBoldPop(width, height) {
       for (let i = 1; i <= 10; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x + ((to.x - from.x) * i) / 10, y: from.y + ((to.y - from.y) * i) / 10, button: "none" }); await sleep(50); }
       await sleep(300);
       check(await page.eval(popOpen), `${tag}: the pointer moving from B to the colours (${await page.eval(`document.querySelector("#boldPop").dataset.side`)}) reaches them open`);
+      // Resting on the input for a while, then off the bar into the page: they close.
+      await hoverOn(page, "#askInput");
+      await sleep(900);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
+      await page.until(`!${popOpen}`, "the colours closing after resting on the bar, then leaving it", 1500);
+      await hoverOn(page, "#boldBtn");
+      await page.until(popOpen, "the colours on B again", 1500);
     }
     if (height <= 420) {
       await page.eval(`document.documentElement.style.fontSize = "250%"`);
