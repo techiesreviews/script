@@ -281,6 +281,210 @@ async function runBoldKeys(width, height) {
   await page.close();
 }
 
+// The link icon and bold links (Lex 2026-11-07): right after B; on plain words it turns the input into an address field
+// (placeholder https://, no explainer, no Apply or Remove buttons); Enter links, Escape goes back; a full address shows the
+// words linked and the icon on; on a link it shows a broken chain with the address on hover, and a click removes it; one
+// Ctrl+Z each. Bold on a link and a link in bold. Part link, part plain: grey.
+async function runLinkIcon(width, height) {
+  const tag = `${width} px link`, S = "Then try the free plan of WP Activity Log yourself.", URL = "https://wordpress.org/plugins/";
+  const { page, agent } = await openDemo(width, height);
+  const lineOf = async () => JSON.parse(await agent("get_script", {})).markdown.split("\n").find((l) => l.includes("A blank page."));
+  const paraOf = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page."))`;
+  const pick = (from, to) => `(() => { const el = ${paraOf}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) nodes.push(n); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(${from})); r.setEnd(...point(${to})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event("selectionchange")); })()`;
+  const CTRL = 2;
+  const press = async (key, code, vk, modifiers = 0) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers, ...(type === "keyDown" && key === "Enter" ? { text: "\r" } : {}) }); await sleep(250); };
+  const select = async (words) => {
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(150);
+    const line = await lineOf(), i = line.lastIndexOf(words);
+    await page.eval(pick(i, i + words.length));
+    await sleep(350);
+    return page.until(`!document.querySelector("#editBar").hidden && !document.querySelector("#linkBtn").hidden`, `the bar over "${words}"`);
+  };
+  const btn = (expr) => page.eval(`(() => { const b = document.querySelector("#linkBtn"); return ${expr}; })()`);
+  await page.eval(`(() => { const el = ${paraOf}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: ` ${S}` });
+  await sleep(400);
+  const plain = await lineOf();
+  check(plain.endsWith(S), `${tag}: the test line is in`);
+
+  check(await select("WP Activity Log"), `${tag}: selecting words shows the bar with the link icon`);
+  const place = await page.eval(`(() => { const b = document.querySelector("#boldBtn").getBoundingClientRect(), l = document.querySelector("#linkBtn").getBoundingClientRect(); return { gap: l.left - b.right, top: Math.abs(l.top - b.top) }; })()`);
+  check(place.gap >= 0 && place.gap <= 8 && place.top < 2, `${tag}: the link icon sits right after B`, JSON.stringify(place));
+  check((await btn(`!b.disabled && b.getAttribute("aria-pressed") === "false" && b.dataset.icon === "link"`)), `${tag}: on plain words the icon is a chain, off`);
+  const buttonsBefore = await page.eval(`[...document.querySelectorAll("#editBar button")].filter((x) => x.offsetParent && !x.hidden).length`);
+  await page.click("#linkBtn");
+  await sleep(200);
+  check(await page.eval(`document.activeElement === document.querySelector("#askInput") && document.querySelector("#askInput").placeholder === "https://" && document.querySelector("#askInput").value === ""`), `${tag}: the input becomes an address field (https://)`);
+  check((await page.eval(`[...document.querySelectorAll("#editBar button")].filter((x) => x.offsetParent && !x.hidden).length`)) === buttonsBefore, `${tag}: no Apply or Remove buttons appear`);
+  check(!(await page.eval(`[...document.querySelectorAll("#editBar :not(.edit-bar__sr)")].filter((x) => x.offsetParent && !x.closest(".edit-bar__sr")).map((x) => [...x.childNodes].filter((n) => n.nodeType === 3).map((n) => n.data).join("")).join(" ")`)).match(/enter|escape|apply|remove|paste|address/i), `${tag}: no explainer text`);
+  await page.send("Input.insertText", { text: "https://wordpress" });
+  await sleep(150);
+  check((await btn(`b.getAttribute("aria-pressed") === "false"`)) && !(await page.eval(`!!CSS.highlights?.has("link-preview")`)), `${tag}: half an address: not linked yet`);
+  await page.send("Input.insertText", { text: ".org/plugins/" });
+  await sleep(150);
+  check(await btn(`b.getAttribute("aria-pressed") === "true"`), `${tag}: a full address: the icon shows on`);
+  check(await page.eval(`!!CSS.highlights?.has("link-preview")`), `${tag}: a full address: the words show linked`);
+  await page.shot(`link-${width}-typing`);
+  check((await lineOf()) === plain, `${tag}: nothing is in the text before Enter`);
+  await press("Escape", "Escape", 27);
+  check((await lineOf()) === plain, `${tag}: Escape cancels: the text is unchanged`);
+  check(await page.eval(`!document.querySelector("#editBar").hidden && document.querySelector("#askInput").placeholder !== "https://" && !CSS.highlights?.has("link-preview")`), `${tag}: Escape goes back to asking, the bar stays`);
+  await page.click("#linkBtn");
+  await sleep(150);
+  await page.send("Input.insertText", { text: URL });
+  await sleep(100);
+  await press("Enter", "Enter", 13);
+  const linked = await lineOf();
+  check(linked.endsWith(`Then try the free plan of [WP Activity Log](${URL}) yourself.`), `${tag}: Enter links the words`, linked.slice(-90));
+  check(await btn(`b.dataset.icon === "unlink" && b.getAttribute("aria-pressed") === "true" && b.dataset.tip === ${JSON.stringify(URL)}`), `${tag}: on a link the icon is a broken chain holding the address`);
+  check(await page.eval(`document.querySelector("#askInput").placeholder !== "https://"`), `${tag}: after Enter the input asks again`);
+  // The address on hover: headless Chrome has no hovering pointer, so the hover rule is read from the styles, and the same
+  // look is checked for real on keyboard focus.
+  const hoverRule = await page.eval(`[...document.styleSheets].flatMap((sh) => [...sh.cssRules]).some((r) => r.media && /hover: hover/.test(r.media.mediaText) && [...r.cssRules].some((x) => /edit-bar__button--link:hover::after/.test(x.selectorText) && x.style.visibility === "visible"))`);
+  await page.eval(`document.querySelector("#linkBtn").focus()`);
+  await sleep(100);
+  const tip = await page.eval(`(() => { const s = getComputedStyle(document.querySelector("#linkBtn"), "::after"); return { v: s.visibility, c: s.content, f: document.querySelector("#linkBtn").matches(":focus-visible") }; })()`);
+  check(hoverRule && tip.v === "visible" && tip.c.includes("wordpress.org"), `${tag}: the address shows on hover and on keyboard focus`, JSON.stringify({ hoverRule, ...tip }));
+  await page.shot(`link-${width}-linked`);
+  await page.eval(`document.querySelector("#askInput").focus()`);
+  // A click removes the link: words stay; Ctrl+Z brings it back.
+  await page.click("#linkBtn");
+  await sleep(250);
+  check((await lineOf()) === plain, `${tag}: a click on the broken chain removes the link, the words stay`);
+  await page.eval(`${paraOf}.focus()`);
+  await press("z", "KeyZ", 90, CTRL);
+  check((await lineOf()) === linked, `${tag}: Ctrl+Z brings the link back`);
+  // Bold on the whole link: a whole bold link; it shows bold and keeps its underline.
+  await select("WP Activity Log");
+  await page.click("#boldBtn");
+  await sleep(250);
+  check((await lineOf()).endsWith(`of **[WP Activity Log](${URL})** yourself.`), `${tag}: B on a link's words makes a whole bold link`, (await lineOf()).slice(-80));
+  await page.eval(`getSelection().removeAllRanges()`);
+  await sleep(200);
+  const look = await page.eval(`(() => { const w = ${paraOf}.querySelector("[data-cue] .md-link[data-href] .md-link__words"); if (!w) return null; const s = getComputedStyle(w); return { weight: Number(s.fontWeight), line: getComputedStyle(w).textDecorationLine }; })()`);
+  check(!!look && look.weight >= 600 && look.line.includes("underline"), `${tag}: a bold link shows bold and underlined`, JSON.stringify(look));
+  await page.shot(`link-${width}-bold-link`);
+  // Typing inside a whole bold link keeps its Markdown.
+  {
+    const line = await lineOf(), i = line.lastIndexOf("Activity") + 4;
+    await page.eval(pick(i, i));
+    await sleep(200);
+    await page.send("Input.insertText", { text: "x" });
+    await sleep(300);
+    check((await lineOf()).endsWith(`of **[WP Actixvity Log](${URL})** yourself.`), `${tag}: typing inside a bold link keeps its marks`, (await lineOf()).slice(-80));
+    await page.eval(`${paraOf}.focus()`);
+    await press("z", "KeyZ", 90, CTRL);
+    check((await lineOf()).endsWith(`of **[WP Activity Log](${URL})** yourself.`), `${tag}: Ctrl+Z takes the typing back`, (await lineOf()).slice(-80));
+  }
+  check(await select("WP Activity Log") && await btn(`b.dataset.icon === "unlink"`) && await page.eval(`document.querySelector("#boldBtn").getAttribute("aria-pressed") === "true"`), `${tag}: on a bold link both B and the link icon show on`);
+  // Part link, part plain: grey.
+  {
+    const line = await lineOf(), i = line.lastIndexOf("of **["), j = line.indexOf("WP", i) + 2;
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(150);
+    await page.eval(pick(i, j));
+    await sleep(350);
+    await page.until(`!document.querySelector("#editBar").hidden`, "the bar over part link, part plain");
+  }
+  check(await btn(`b.disabled`), `${tag}: part link, part plain: the link icon is grey`);
+  // A link inside bold words.
+  await select("the free plan");
+  await page.click("#boldBtn");
+  await sleep(250);
+  await select("free");
+  await page.click("#linkBtn");
+  await sleep(150);
+  await page.send("Input.insertText", { text: "https://example.com/free" });
+  await press("Enter", "Enter", 13);
+  check((await lineOf()).includes("try **the [free](https://example.com/free) plan** of"), `${tag}: a link inside bold words`, (await lineOf()).slice(-120));
+  // B in the address field that makes the words part link, part not: the field has nothing left to link and closes.
+  {
+    const line = await lineOf(), i = line.lastIndexOf("plan**"), j = line.indexOf(" of", i) + 3;
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(150);
+    await page.eval(pick(i, j));
+    await sleep(350);
+    await page.until(`!document.querySelector("#editBar").hidden && !document.querySelector("#linkBtn").disabled`, "the bar over plan of");
+  }
+  await page.click("#linkBtn");
+  await sleep(150);
+  await page.send("Input.insertText", { text: "https://example.com/plan" });
+  await press("b", "KeyB", 66, CTRL);
+  check((await lineOf()).includes("try **the [free](https://example.com/free) plan of** "), `${tag}: Ctrl+B joins the bold over the link`, (await lineOf()).slice(-120));
+  check(await page.eval(`document.querySelector("#askField").dataset.mode !== "link" && document.querySelector("#askInput").value === "" && document.querySelector("#askInput").placeholder !== "https://" && document.querySelector("#linkBtn").disabled`), `${tag}: the words are part link now: the address field closes, the icon is grey`);
+  await page.eval(`${paraOf}.focus()`);
+  await press("z", "KeyZ", 90, CTRL);
+  check((await lineOf()).includes("try **the [free](https://example.com/free) plan** of"), `${tag}: Ctrl+Z takes that bold back`, (await lineOf()).slice(-120));
+  // A long address goes in whole (the asking input stops at 500 characters).
+  {
+    const long = "https://example.com/?q=" + "a".repeat(577);
+    await select("yourself");
+    await page.click("#linkBtn");
+    await sleep(150);
+    await page.send("Input.insertText", { text: long });
+    await sleep(100);
+    check((await page.eval(`document.querySelector("#askInput").value.length`)) === 600, `${tag}: a 600-character address fits in the field`);
+    await press("Enter", "Enter", 13);
+    check((await lineOf()).includes(`[yourself](${long})`), `${tag}: the whole long address goes in`);
+    check(await page.eval(`document.querySelector("#askInput").maxLength === 500`), `${tag}: the asking input is back to 500 characters`);
+    await page.eval(`${paraOf}.focus()`);
+    await press("z", "KeyZ", 90, CTRL);
+  }
+  // Ctrl+B in the address field bolds the words and keeps what is typed; Enter then links the bold words.
+  await select("yourself");
+  await page.click("#linkBtn");
+  await sleep(150);
+  await page.send("Input.insertText", { text: "https://example.com/you" });
+  await sleep(100);
+  await press("b", "KeyB", 66, CTRL);
+  check((await lineOf()).includes("**yourself**") && await page.eval(`document.querySelector("#askInput").value === "https://example.com/you" && document.querySelector("#askInput").placeholder === "https://" && document.querySelector("#askField").dataset.mode === "link"`), `${tag}: Ctrl+B in the address field bolds and keeps the address`, (await lineOf()).slice(-60));
+  await press("Enter", "Enter", 13);
+  check((await lineOf()).includes("**[yourself](https://example.com/you)**"), `${tag}: Enter then links the bold words: a whole bold link`, (await lineOf()).slice(-60));
+  for (let i = 0; i < 2; i++) { await page.eval(`${paraOf}.focus()`); await press("z", "KeyZ", 90, CTRL); }
+  // Undo walks back one change at a time, the words never change.
+  for (let i = 0; i < 4; i++) { await page.eval(`${paraOf}.focus()`); await press("z", "KeyZ", 90, CTRL); }
+  check((await lineOf()) === plain, `${tag}: the last four Ctrl+Z go back to the plain line`, (await lineOf()).slice(-80));
+  await page.close();
+}
+
+// A guest links and unlinks words too; the host's script has it, and the guest's own Ctrl+Z brings it back.
+async function runLinkGuest(width, height) {
+  const tag = `${width} px link guest`, URL = "https://example.com/deadline";
+  const { page, agent } = await openDemo(1280, 800);
+  await page.eval(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__link = t; } } })`);
+  await page.click("#shareBtn");
+  await page.until(`!!window.__link`, "the share link");
+  const guest = await openPage(width, height);
+  await guest.send("Page.navigate", { url: await page.eval(`window.__link`) });
+  await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+  await guest.eval(`document.querySelector("#joinName").value = "Guest"`);
+  await guest.click("#joinForm button");
+  await guest.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the guest's script", 12000);
+  await guest.send("Page.bringToFront");
+  const md = async () => JSON.parse(await agent("get_script", {})).markdown;
+  const before = await md();
+  await guest.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  await doubleClick(guest, await guest.eval(wordSpot));
+  check(await guest.until(`!document.querySelector("#editBar").hidden && !document.querySelector("#linkBtn").hidden`, "the guest's bar"), `${tag}: the guest sees the link icon`);
+  await guest.click("#linkBtn");
+  await sleep(150);
+  await guest.send("Input.insertText", { text: URL });
+  await pressKey(guest, "Enter", "Enter", 13, "\r");
+  let now = "";
+  for (let i = 0; i < 40 && !now.includes(`[deadline](${URL})`); i++) { now = await md(); await sleep(100); }
+  check(now.includes(`[deadline](${URL})`), `${tag}: the guest's link reaches the host's script`);
+  await guest.click("#linkBtn");
+  for (let i = 0; i < 40 && now !== before; i++) { now = await md(); await sleep(100); }
+  check(now === before, `${tag}: the guest's click on the broken chain removes it everywhere`);
+  await guest.eval(`[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page.")).focus()`);
+  for (const type of ["keyDown", "keyUp"]) await guest.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
+  for (let i = 0; i < 40 && !now.includes(`[deadline](${URL})`); i++) { now = await md(); await sleep(100); }
+  check(now.includes(`[deadline](${URL})`), `${tag}: the guest's Ctrl+Z brings the link back`);
+  await guest.close();
+  await page.close();
+}
+
 // The file name's menu on a short window (fleet #31 item 2): with a long recent list it is taller than the
 // window, so it scrolls inside itself and its last row (the colours) can be reached; it never runs off the bottom.
 async function runMenuHeight(width, height) {
@@ -536,8 +740,9 @@ async function runSlimBar(width, height) {
 
   await selectWord();
   check((await page.eval(`document.querySelector("#ebLabel").textContent`)) === "1 word", `${tag}: one word selected: the bar says 1 word`);
-  check(await page.eval(`[...document.querySelectorAll(".edit-bar__controls > button")].map((b) => b.id).join() === "boldBtn"`), `${tag}: the bar's only button outside the input is B`);
-  check(await page.eval(`document.querySelector("#askForm").getBoundingClientRect().left > document.querySelector("#boldBtn").getBoundingClientRect().left`), `${tag}: B sits before the input`);
+  check(await page.eval(`[...document.querySelectorAll(".edit-bar__controls > button")].map((b) => b.id).join() === "boldBtn,linkBtn"`), `${tag}: the bar's only buttons outside the input are B and the link icon (step V)`);
+  // Before the input in reading order: on its left, or (on a phone, where the field keeps its 200 px) on the row above.
+  check(await page.eval(`(() => { const f = document.querySelector("#askForm").getBoundingClientRect(), b = document.querySelector("#boldBtn").getBoundingClientRect(), l = document.querySelector("#linkBtn").getBoundingClientRect(); const before = (x) => f.left > x.left || f.top >= x.bottom; return before(b) && before(l) && l.left > b.left; })()`), `${tag}: B, then the link icon, sit before the input`);
   check(await page.eval(`document.documentElement.scrollWidth <= document.documentElement.clientWidth`), `${tag}: no sideways scroll`);
 
   // The ghost, and the Tab key that never changes the input's size.
@@ -1307,10 +1512,12 @@ async function runBoldPop(width, height) {
     check((await focused()) === "askInput" && presses <= 4, `${tag}: from B, Tab reaches the input in at most 4 presses`, presses);
     await sleep(900); // 700 ms when they sit away from B
     check(!(await page.eval(popOpen)), `${tag}: the focus leaving closes the colours`);
-    await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
-    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
-    await sleep(150);
-    check((await focused()) === "boldBtn" && (await page.eval(popOpen)), `${tag}: one Shift+Tab from the input lands on B and opens them`, await focused());
+    // The link icon sits between B and the input (step V): Shift+Tab reaches it first, then B.
+    const backTab = async () => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 }); await sleep(150); };
+    await backTab();
+    check((await focused()) === "linkBtn" && !(await page.eval(popOpen)), `${tag}: one Shift+Tab from the input lands on the link icon`, await focused());
+    await backTab();
+    check((await focused()) === "boldBtn" && (await page.eval(popOpen)), `${tag}: a second Shift+Tab lands on B and opens them`, await focused());
     await pressKey(page, "Tab", "Tab", 9);
     await sleep(100);
     await pressKey(page, "Escape", "Escape", 27);
@@ -1788,6 +1995,13 @@ try {
     await runBoldPop(1280, 420);
     await runBoldPop(390, 760);
     await runBoldPop(320, 640);
+  } else if (only === "linkguest") {
+    await runLinkGuest(1280, 800);
+  } else if (only === "link") {
+    await runLinkIcon(1280, 800);
+    await runLinkIcon(390, 760);
+    await runLinkGuest(1280, 800);
+    await runLinkGuest(390, 760);
   } else if (only === "exports") {
     await runExports(1280, 800);
     await runExports(390, 760);
@@ -1799,6 +2013,10 @@ try {
     await runBold(390, 760);
     await runBoldKeys(1280, 800);
     await runBoldKeys(390, 760);
+    await runLinkIcon(1280, 800);
+    await runLinkIcon(390, 760);
+    await runLinkGuest(1280, 800);
+    await runLinkGuest(390, 760);
     await runSlimBar(1280, 800);
     await runSlimBar(390, 760);
     await runBarPlace(1280, 800);

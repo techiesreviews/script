@@ -50,6 +50,7 @@ const ICONS = {
   suggest: '<rect x="3" y="7" width="14" height="13" rx="2"/><path d="M7 7v13M3 11.5h4M3 15.5h4"/><path d="M19.5 2.5v5M17 5h5"/>',
   share: '<path d="M16 5l3 3-3 3"/><path d="M19 8h-6a6 6 0 0 0-6 6v4"/>',
   link: '<path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/>',
+  unlink: '<path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-.12-7.07 5 5 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 .12 7.07 5 5 0 0 0 6.95 0l1.71-1.71"/><path d="M8 2v3M2 8h3M16 19v3M19 16h3"/>',
   agent: '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/>', // the old agent mark, kept as a fallback
   // The agent's logo in its caret, avatar and button (agent-brand.js), filled in one colour like the other icons.
   // Phosphor Icons (MIT): OpenAI logo and sparkle, drawn on 256 units. Simple Icons (CC0): Claude, Gemini, Cursor, Copilot.
@@ -287,22 +288,32 @@ function decorationsFor(id) {
    offsets, asks, carets and the room are unchanged. A link cut by a decoration's edge shows as plain Markdown. */
 /* Cues (fleet issue #14, Lex 2026-11-04): a "**words**" in a para is drawn with the same trick: the "**" marks are hidden
    while the caret is outside it, and the words show orange and bold (.md-cue in app.css). */
+/* Bold links (Lex 2026-11-07): a link may hold bold words and bold may hold whole links; each is drawn inside the
+   other's words, and each opens and closes on its own. */
 const linksOf = (b) => {
   if (b.type !== "para") return [];
   const content = D.contentOf(b), links = L.textLinks(content);
-  return [...links, ...K.textCues(content)].sort((x, y) => x.start - y.start);
+  return [...links, ...K.textCues(content)].sort((x, y) => x.start - y.start || y.end - x.end);
 };
 function linkNodes(content, from, to, links) {
   const nodes = [];
   let at = from;
-  for (const l of links) {
-    if (l.start < at || l.end > to) continue;
+  const list = links.filter((l) => l.start >= from && l.end <= to);
+  for (let k = 0; k < list.length; k++) {
+    const l = list[k];
+    if (l.start < at) continue;
+    // The ones inside this one's words are drawn there; one that only starts inside it is not drawn.
+    const inner = [];
+    while (k + 1 < list.length && list[k + 1].start < l.end) {
+      k++;
+      if (list[k].start >= l.words.start && list[k].end <= l.words.end) inner.push(list[k]);
+    }
     if (l.start > at) nodes.push(document.createTextNode(content.slice(at, l.start)));
     const a = l.cue ? h("span", "md-link md-cue", { "data-link": "", "data-cue": "" }) : h("span", "md-link", { "data-link": "", title: l.url });
     if (!l.cue) a.dataset.href = l.url;
     const head = h("span", "md-link__mark"), words = h("span", "md-link__words"), tail = h("span", "md-link__mark");
     head.textContent = content.slice(l.start, l.words.start);
-    words.textContent = content.slice(l.words.start, l.words.end);
+    words.append(...linkNodes(content, l.words.start, l.words.end, inner));
     tail.textContent = content.slice(l.words.end, l.end);
     a.append(head, words, tail);
     nodes.push(a);
@@ -351,8 +362,11 @@ function refreshLinks(snap = false) {
   for (const el of scriptEl.querySelectorAll(".block:has(.md-link)")) {
     const s = r && r.intersectsNode(el) ? selectionIn(el) : null;
     const opened = openLinks(el, s ? s.start : -1, s ? s.end : -1);
-    if (!snap || composingLinks || !s || s.start !== s.end || !sel.isCollapsed || opened.length !== 1) continue;
-    const to = L.edgeSnap(shownLink(opened[0]), s.start);
+    if (!snap || composingLinks || !s || s.start !== s.end || !sel.isCollapsed || !opened.length) continue;
+    // A link inside another's words (bold links): from the inner one out, each edge to just outside it.
+    const chain = opened.map(shownLink).sort((x, y) => (x.end - x.start) - (y.end - y.start));
+    if (!chain.every((l, i) => i === 0 || (l.start <= chain[i - 1].start && l.end >= chain[i - 1].end))) continue;
+    const to = chain.reduce((at, l) => L.edgeSnap(l, at), s.start);
     if (to !== s.start) setCaretAt(el, to);
   }
 }
@@ -360,7 +374,7 @@ scriptEl.addEventListener("compositionstart", () => { composingLinks = true; });
 scriptEl.addEventListener("compositionend", () => { composingLinks = false; });
 // Ctrl/Cmd+click opens a link in a new tab; a plain click only places the caret.
 scriptEl.addEventListener("click", (e) => {
-  const a = e.target.closest?.(".md-link");
+  const a = e.target.closest?.(".md-link[data-href]");
   if (!a || !(e.ctrlKey || e.metaKey) || !L.safeUrl(a.dataset.href)) return;
   e.preventDefault();
   window.open(a.dataset.href, "_blank", "noopener,noreferrer");
@@ -1274,24 +1288,36 @@ $("#boldReset").addEventListener("click", () => { store.del("boldStyle"); render
 addEventListener("storage", (e) => { if (e.key === `${LS}boldStyle` || e.key === null) renderBoldPop(); });
 renderBoldPop();
 // Ctrl/Cmd+B and the B button: toggle a cue (the person sees it as bold words) on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
-// Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
+// Anything else (across paragraphs, a heading, a reminder, a link line) changes nothing, quietly.
 function toggleCueHere() {
-  if (state.locked || state.pendingDraft) return;
-  // Focus in the bar (the input, or the B button by keyboard) takes the page's selection away: the bar's saved
-  // selection is what it acts on, as makeAsk does.
+  const s = markupSel();
+  if (s) changeMarkup(s, "cue", (content) => K.toggleCue(content, s.start, s.end));
+}
+// The selection B or the link icon acts on: the bar's saved one while the focus is in the bar (input, B or the link icon by
+// keyboard: the browser takes the page's selection away then), as makeAsk does; else the page's. Only spoken paragraphs.
+function markupSel() {
+  if (state.locked || state.pendingDraft) return null;
   const inBar = bar.contains(document.activeElement);
   const s = (inBar && barSel) || currentSelection();
   const b = s && byId(s.id);
-  if (!b || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return;
-  if (!B.spokenBlocks(state.doc).some((x) => x.id === b.id)) return;
-  const res = cueTry(s);
+  if (!b || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return null;
+  return B.spokenBlocks(state.doc).some((x) => x.id === b.id) ? s : null;
+}
+// Put a change of marks in (K.toggleCue, K.addLink, K.removeLink): one Ctrl/Cmd+Z step; the words stay selected and the
+// bar shows their new state. Anything that can't work there (a link line, open work in the way) changes nothing, quietly.
+function changeMarkup(s, kind, make) {
+  const b = byId(s.id), old = D.contentOf(b), inBar = bar.contains(document.activeElement);
+  if (!s.el.contains(s.range.startContainer) || !s.el.contains(s.range.endContainer)) return;
+  const res = make(old);
   if (!C.canToggleCue(state.asks, b.id, b.type, res)) return;
-  checkpoint("cue", b.id);
-  followAnchors(b.id, res.content, marksMoved(D.contentOf(b), res.content));
+  checkpoint(kind, b.id);
+  followAnchors(b.id, res.content, res.ops ? K.opsRange(old, res.ops) : marksMoved(old, res.content));
   const r = D.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
   if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), plainAt: plainOffset(res.content, res.start) });
+  // A link put in or taken out ends the address field; B pressed while it is open keeps what is typed there.
+  if (kind === "link") leaveLinkMode();
   renderBlock(b.id);
   const el = blockNode(b.id);
   if (el) {
@@ -1302,7 +1328,10 @@ function toggleCueHere() {
       sel.addRange(range);
     }
     barSel = { id: b.id, el, start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), range: range.cloneRange(), spoken: true, plainAt: plainOffset(res.content, res.start) };
+    // B made the words part link, part not: the address field has nothing left to link.
+    if (linkMode && linkTry(barSel)?.state !== "off") leaveLinkMode();
     cueBtnState(barSel);
+    linkBtnState(barSel);
     paintBarSel();
     renderAsk();
   }
@@ -1321,6 +1350,78 @@ function cueBtnState(s) {
 }
 // No title tooltip: hovering B opens the colours, and a tooltip would sit on them. The keys stay in aria-keyshortcuts.
 $("#boldBtn").addEventListener("click", toggleCueHere);
+
+/* The link icon (Lex 2026-11-07), right after B: on words that aren't a link it turns the input into an address field
+   (placeholder https://; Enter links, Escape goes back to asking). While a full address is typed, the words show linked
+   and the icon on. On a link it shows a broken chain, the address on hover, and a click removes the link (its words and
+   their bold stay; Ctrl/Cmd+Z brings it back). Grey when the words are part link, part not. */
+const linkBtn = $("#linkBtn");
+const ASK_PLACEHOLDER = askInputDefaults();
+let linkMode = false;
+function askInputDefaults() { const i = $("#askInput"); return { placeholder: i.placeholder, label: i.getAttribute("aria-label"), hint: i.getAttribute("enterkeyhint"), max: i.maxLength, describedBy: i.getAttribute("aria-describedby") }; }
+const typedLink = () => (linkMode ? L.typedAddress($("#askInput").value) : null);
+function linkTry(s) {
+  const b = s && byId(s.id);
+  return b && s.el.contains(s.range.startContainer) && s.el.contains(s.range.endContainer) ? K.linkState(D.contentOf(b), s.start, s.end) : null;
+}
+function linkBtnState(s) {
+  const b = s && byId(s.id), st = s && !linkBtn.hidden ? linkTry(s) : null, on = st?.state === "on";
+  // Off: the stretch a link would change (its address doesn't matter for that) must be free of open work.
+  const res = !b || !st ? null : on ? K.removeLink(D.contentOf(b), s.start, s.end) : st.state === "off" ? K.addLink(D.contentOf(b), s.start, s.end, "https://example.com") : null;
+  linkBtn.disabled = barSending > 0 || !C.canToggleCue(state.asks, b?.id, b?.type, res);
+  linkBtn.setAttribute("aria-pressed", String(on || !!typedLink()));
+  const name = on ? "unlink" : "link";
+  if (linkBtn.dataset.icon !== name) { linkBtn.dataset.icon = name; linkBtn.innerHTML = icon(name); }
+  linkBtn.dataset.tip = on ? st.link.url : "";
+  // One name for the toggle; pressed says it is a link, and the address is its description.
+  if (on) linkBtn.setAttribute("aria-description", st.link.url);
+  else linkBtn.removeAttribute("aria-description");
+}
+// While a full address is typed, the selected words show linked.
+function paintLinkPreview() {
+  if (!window.Highlight || !CSS.highlights) return;
+  if (typedLink() && barSel?.range) CSS.highlights.set("link-preview", new Highlight(barSel.range));
+  else CSS.highlights.delete("link-preview");
+}
+function enterLinkMode() {
+  linkMode = true;
+  closeBarMenus();
+  askInput.value = "";
+  askPick = 0;
+  askInput.placeholder = "https://";
+  askInput.inputMode = "url";
+  askInput.setAttribute("enterkeyhint", "done");
+  askInput.setAttribute("aria-label", "Link address");
+  askInput.removeAttribute("aria-describedby");
+  askInput.maxLength = L.LINK_LIMITS.url;
+  askField.dataset.mode = "link";
+  askInput.focus({ preventScroll: true });
+  renderAsk();
+}
+function leaveLinkMode() {
+  if (!linkMode) return;
+  linkMode = false;
+  askInput.value = "";
+  askInput.placeholder = ASK_PLACEHOLDER.placeholder;
+  askInput.inputMode = "text";
+  askInput.setAttribute("enterkeyhint", ASK_PLACEHOLDER.hint);
+  askInput.setAttribute("aria-label", ASK_PLACEHOLDER.label);
+  if (ASK_PLACEHOLDER.describedBy) askInput.setAttribute("aria-describedby", ASK_PLACEHOLDER.describedBy);
+  askInput.maxLength = ASK_PLACEHOLDER.max;
+  delete askField.dataset.mode;
+  renderAsk();
+  paintLinkPreview();
+  if (barSel) linkBtnState(barSel);
+}
+linkBtn.addEventListener("click", () => {
+  const s = markupSel(), st = s && linkTry(s);
+  if (st?.state === "on") changeMarkup(s, "link", (content) => K.removeLink(content, s.start, s.end));
+  else if (st?.state === "off") { if (linkMode) { leaveLinkMode(); askInput.focus({ preventScroll: true }); } else enterLinkMode(); }
+});
+function applyLink() {
+  const url = typedLink(), s = url && markupSel();
+  if (s) changeMarkup(s, "link", (content) => K.addLink(content, s.start, s.end, url));
+}
 // The agent's mark_cue and unmark_cue: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script),
 // a marked change with Undo on the agent's name tag per paragraph (C.landCues). Returns how many cues changed.
 function landAgentCues(plan, mode, by) {
@@ -1407,8 +1508,10 @@ function showBar() {
   barSel = s;
   barSel.spoken = spokenSelection(s.range).length > 0;
   barSel.plainAt = plainOffset(D.contentOf(byId(s.id)), s.start);
-  $("#boldBtn").hidden = byId(s.id)?.type !== "para" || !barSel.spoken;
+  $("#boldBtn").hidden = linkBtn.hidden = byId(s.id)?.type !== "para" || !barSel.spoken;
+  leaveLinkMode();
   cueBtnState(s);
+  linkBtnState(s);
   const n = D.countWords(K.spokenWords(s.quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
   closeCard();
@@ -1418,6 +1521,7 @@ function showBar() {
   else if (boldPop.matches(":popover-open")) placeBoldPop();
 }
 function hideBar() {
+  leaveLinkMode();
   closeBarMenus();
   clearTimeout(barSending);
   clearTimeout(askSayTimer);
@@ -1447,6 +1551,7 @@ function keepBarSel(id) {
   const { start, end } = r;
   Object.assign(barSel, { el, start, end, quote: r.quote, plainAt: plainOffset(content, start), range: rangeAt(el, start, end) });
   cueBtnState(barSel);
+  linkBtnState(barSel);
   paintBarSel();
   placeBar(barSel.range);
 }
@@ -1455,6 +1560,7 @@ function paintBarSel() {
   if (!window.Highlight || !CSS.highlights) return;
   if (barSel?.range && bar.contains(document.activeElement)) CSS.highlights.set("bar-selection", new Highlight(barSel.range));
   else CSS.highlights.delete("bar-selection");
+  paintLinkPreview();
 }
 bar.addEventListener("focusin", paintBarSel);
 bar.addEventListener("focusout", (e) => { if (!bar.contains(e.relatedTarget)) CSS.highlights?.delete("bar-selection"); });
@@ -1471,7 +1577,7 @@ function sayAsk(text, wait = 0) {
 // The suggestion on offer, with the caret at the end of the typed words only.
 function askGhostNow() {
   const end = askInput.value.length;
-  if (barSending || askInput.selectionStart !== end || askInput.selectionEnd !== end) return null;
+  if (barSending || linkMode || askInput.selectionStart !== end || askInput.selectionEnd !== end) return null;
   if (resolveTyped(askInput.value, askCan())?.kind === "blocked") return null;
   const list = suggestions(askInput.value, { can: askCan(), earlier: store.get(ASK_HISTORY) });
   if (!list.length) return null;
@@ -1479,6 +1585,7 @@ function askGhostNow() {
   return { text: list[at], at, count: list.length };
 }
 function renderAsk() {
+  if (linkMode) return renderLinkField();
   const typed = askInput.value, g = askGhostNow(), plan = resolveTyped(typed, askCan()), blocked = plan?.kind === "blocked";
   $("#askGhost span").textContent = typed;
   $("#askGhost b").textContent = g ? g.text.slice(typed.length) : "";
@@ -1490,6 +1597,17 @@ function renderAsk() {
   askSend.disabled = !!barSending || !plan || blocked;
   if (blocked) askInput.setAttribute("aria-invalid", "true");
   else askInput.removeAttribute("aria-invalid");
+}
+// The address field: no ghost or Tab key; Enter (or Send) links once a full address is typed.
+function renderLinkField() {
+  $("#askGhost span").textContent = "";
+  $("#askGhost b").textContent = "";
+  askTab.dataset.on = "false";
+  askTab.title = "";
+  askSend.disabled = !typedLink();
+  askInput.removeAttribute("aria-invalid");
+  if (barSel) linkBtnState(barSel);
+  paintLinkPreview();
 }
 function acceptGhost() {
   const g = askGhostNow();
@@ -1510,6 +1628,8 @@ askInput.addEventListener("keydown", (e) => {
   // Enter that ends a composition (some browsers send it after the composition): never a send.
   if (e.isComposing || e.keyCode === 229) { if (e.key === "Enter") e.preventDefault(); return; }
   if (e.key === "Escape") {
+    // The address field: back to asking, the bar stays.
+    if (linkMode) { e.preventDefault(); e.stopPropagation(); leaveLinkMode(); return; }
     // The menu that "more" opens closes alone and keeps what is typed.
     if (closeBarMenu() || escapeBoldPop()) { e.preventDefault(); e.stopPropagation(); return; }
     hideBar();
@@ -1523,6 +1643,7 @@ askInput.addEventListener("keydown", (e) => {
 $("#askForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (barSending) return;
+  if (linkMode) return applyLink();
   const plan = resolveTyped(askInput.value, askCan());
   if (!plan || plan.kind === "blocked") return;
   if (plan.kind === "more") return void moreMenu.showPopover();
@@ -1542,7 +1663,7 @@ function showSending() {
   askInput.readOnly = true;
   askInput.setAttribute("aria-busy", "true");
   askField.dataset.state = "sending";
-  $("#boldBtn").disabled = true;
+  $("#boldBtn").disabled = linkBtn.disabled = true;
   clearTimeout(askSayTimer);
   $("#askLive").textContent = "Sending";
   barSending = setTimeout(hideBar, SENDING_MS);
