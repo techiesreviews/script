@@ -1593,6 +1593,9 @@ moreMenu.addEventListener("keydown", (e) => {
 function placeBoldPop() {
   boldPop.style.setProperty("--pop-room", `${document.documentElement.clientWidth - 16}px`);
   const r = bar.getBoundingClientRect(), b = boldBtn.getBoundingClientRect();
+  // A short window or large text: no taller than what is seen below the top bar; it scrolls inside itself.
+  const seen = window.visualViewport, seenTop = Math.max($(".top").getBoundingClientRect().bottom, seen?.offsetTop || 0);
+  boldPop.style.setProperty("--pop-room-y", `${(seen ? seen.height + seen.offsetTop : innerHeight) - seenTop - 16}px`);
   const rects = barSel?.range ? [...barSel.range.getClientRects()].filter((x) => x.width > 0) : [];
   const words = rects.length ? { top: Math.min(...rects.map((x) => x.top)), bottom: Math.max(...rects.map((x) => x.bottom)), left: Math.min(...rects.map((x) => x.left)), right: Math.max(...rects.map((x) => x.right)) } : { top: 0, bottom: 0, left: 0, right: 0 };
   const v = window.visualViewport, top = Math.max($(".top").getBoundingClientRect().bottom, v?.offsetTop || 0);
