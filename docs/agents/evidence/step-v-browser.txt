@@ -276,12 +276,20 @@ ok 1280 px link: a click on the broken chain removes the link, the words stay
 ok 1280 px link: Ctrl+Z brings the link back
 ok 1280 px link: B on a link's words makes a whole bold link
 ok 1280 px link: a bold link shows bold and underlined
+ok 1280 px link: typing inside a bold link keeps its marks
+ok 1280 px link: Ctrl+Z takes the typing back
 ok 1280 px link: on a bold link both B and the link icon show on
 ok 1280 px link: part link, part plain: the link icon is grey
 ok 1280 px link: a link inside bold words
+ok 1280 px link: Ctrl+B joins the bold over the link
+ok 1280 px link: the words are part link now: the address field closes, the icon is grey
+ok 1280 px link: Ctrl+Z takes that bold back
+ok 1280 px link: a 600-character address fits in the field
+ok 1280 px link: the whole long address goes in
+ok 1280 px link: the asking input is back to 500 characters
 ok 1280 px link: Ctrl+B in the address field bolds and keeps the address
 ok 1280 px link: Enter then links the bold words: a whole bold link
-ok 1280 px link: four Ctrl+Z go back to the plain line
+ok 1280 px link: the last four Ctrl+Z go back to the plain line
 ok 390 px link: the test line is in
 ok 390 px link: selecting words shows the bar with the link icon
 ok 390 px link: the link icon sits right after B
@@ -303,12 +311,20 @@ ok 390 px link: a click on the broken chain removes the link, the words stay
 ok 390 px link: Ctrl+Z brings the link back
 ok 390 px link: B on a link's words makes a whole bold link
 ok 390 px link: a bold link shows bold and underlined
+ok 390 px link: typing inside a bold link keeps its marks
+ok 390 px link: Ctrl+Z takes the typing back
 ok 390 px link: on a bold link both B and the link icon show on
 ok 390 px link: part link, part plain: the link icon is grey
 ok 390 px link: a link inside bold words
+ok 390 px link: Ctrl+B joins the bold over the link
+ok 390 px link: the words are part link now: the address field closes, the icon is grey
+ok 390 px link: Ctrl+Z takes that bold back
+ok 390 px link: a 600-character address fits in the field
+ok 390 px link: the whole long address goes in
+ok 390 px link: the asking input is back to 500 characters
 ok 390 px link: Ctrl+B in the address field bolds and keeps the address
 ok 390 px link: Enter then links the bold words: a whole bold link
-ok 390 px link: four Ctrl+Z go back to the plain line
+ok 390 px link: the last four Ctrl+Z go back to the plain line
 ok 1280 px link guest: the guest sees the link icon
 ok 1280 px link guest: the guest's link reaches the host's script
 ok 1280 px link guest: the guest's click on the broken chain removes it everywhere

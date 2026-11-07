@@ -6,8 +6,9 @@ Lex (2026-11-07): "I am missing the possibility to bold links or have bold links
 
 - **The link icon** sits right after B on the selection bar, for spoken paragraphs (where B shows).
   - On words that aren't a link it is a chain. A click turns the input into an address field (placeholder `https://`). Enter links the words, Escape goes back to asking (the bar stays). No Apply or Remove buttons and no explainer text; Send does what Enter does.
+  - The field takes addresses up to 2,000 characters (the asking input keeps its 500).
   - While a full `https://` or `http://` address is in the field (a dot in its host name: `L.typedAddress`), the selected words show linked (a dotted underline, the `link-preview` highlight) and the icon shows on.
-  - On a link it is a broken chain, shown on. Hover (or keyboard focus) shows the address under it. A click removes the link: its words stay, and so does their bold. Ctrl/Cmd+Z brings it back, one step per change.
+  - On a link it is a broken chain, shown on. Hover (or keyboard focus) shows the address under it (screen readers hear it as the icon's description). A click removes the link: its words stay, and so does their bold. Ctrl/Cmd+Z brings it back, one step per change.
   - Part link, part plain words (or words across a line break): the icon is grey. Over open work (an ask, a marked change) it is grey too, as B is.
   - The field keeps at least 200 px (step T): under about 430 px (most phones) B and the link icon take a row of their own above the input; before, B did that only under about 378 px.
   - Guests link and unlink too; it reaches everyone and the guest's own Ctrl/Cmd+Z undoes it.
@@ -43,5 +44,4 @@ Feature list: updated (`docs/features.md`).
 
 ### Follow-ups
 
-- Validation gaps (gap): f66504f:public/app.js:1332: The new rule has no test. It closes the address field when B widens the words into something that is part link, part not. This happens because `toggleCue` returns a range that covers every bold stretch it merges (`public/cues.js:327`). The new browser check only covers the case where the field stays open. Concrete test to add to `runLinkIcon` in `scripts/smoke-keep-all.mjs`, at both widths: Start from a line holding `the [free](https://example.com/free) plan of`. Select "plan of", click `#linkBtn` and type an address. Press Ctrl+B. Check that the line reads `the [free](https://example.com/free) plan of`. Check that `#askField` no longer has `data-mode="link"`, that `#askInput` is empty and its placeholder is back to the asking text, and that `#linkBtn` is disabled because the words are part link. Add the new lines to `docs/agents/evidence/step-v-browser.txt`.
 
