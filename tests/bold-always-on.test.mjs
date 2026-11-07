@@ -29,11 +29,27 @@ test("colours: by default none of the person's own; only #rrggbb gets through; a
   assert.deepEqual(Q.boldStyle({ own: false, color: "#112233", background: "#445566" }), { color: null, background: null });
 });
 
-test("the menu keeps only the colours", () => {
+test("the colours live by B on the selection bar, not in the file name's menu", () => {
   const html = file("public/index.html");
-  for (const gone of ["data-cue-set", 'id="boldOwn"', "Bold marking", "Camera action", "Bold words in the prompter file", "experimental"]) assert.ok(!html.includes(gone), gone);
-  for (const kept of ['id="boldFg"', 'id="boldBg"', "Bold style"]) assert.ok(html.includes(kept), kept);
-  assert.doesNotMatch(file("public/app.js"), /cues\(\)|data-cue-set|set_cue_settings|get_cue_settings/);
+  for (const gone of ["data-cue-set", 'id="boldOwn"', "Bold marking", "Camera action", "Bold words in the prompter file", "experimental", 'id="cueGroup"', "Bold style"]) assert.ok(!html.includes(gone), gone);
+  const menu = html.slice(html.indexOf('id="scriptMenu"'), html.indexOf('id="viewSwitch"'));
+  assert.ok(!menu.includes('type="color"'), "no colour fields in the menu");
+  const bar = html.slice(html.indexOf('<div class="edit-bar" id="editBar"'), html.indexOf('<div class="slash-menu"'));
+  const pop = bar.slice(bar.indexOf('id="boldPop"'), bar.indexOf('id="askForm"'));
+  for (const kept of ['id="boldFg"', 'id="boldBg"', 'id="boldReset"', 'id="boldSample"', 'popover="manual"']) assert.ok(pop.includes(kept), kept);
+  assert.match(bar, /id="boldBtn"[^>]*aria-controls="boldPop"/);
+  assert.match(bar, /id="boldBtn"[^>]*aria-expanded="false"/);
+  assert.doesNotMatch(file("public/app.js"), /cues\(\)|data-cue-set|set_cue_settings|get_cue_settings|cueGroup/);
+});
+
+test("the ready-made colours are all #rrggbb, so each one is saved and shown", () => {
+  for (const kind of ["color", "background"]) {
+    assert.ok(Q.BOLD_SWATCHES[kind].length >= 4, kind);
+    for (const s of Q.BOLD_SWATCHES[kind]) {
+      assert.ok(s.name, `${kind} ${s.hex} has a name for screen readers`);
+      assert.deepEqual(Q.boldStyle({ [kind]: s.hex })[kind], s.hex, s.name);
+    }
+  }
 });
 
 test("by default the words are orange and bold, in the prompter's orange in dark mode", () => {

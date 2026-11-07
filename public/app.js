@@ -9,7 +9,7 @@ import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
 import { startPress, HOLD_MS } from "./press.js";
-import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock } from "./edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1202,29 +1202,55 @@ scriptEl.addEventListener("paste", (e) => {
 // The on/off and export settings saved before 2026-11-06 mean nothing now: they go from this browser.
 try { for (const k of Object.keys(localStorage)) if (k === `${LS}cues` || k.startsWith(`${LS}cues:`)) localStorage.removeItem(k); } catch { /* storage off */ }
 // Bold style: orange and bold (app.css), or the person's own colours (K.boldStyle lets only "#rrggbb" through to the CSS).
+// Picked in the small popover by B on the selection bar (Lex 2026-11-07, Variant A); the popover's sample word follows too.
+const boldPop = $("#boldPop"), boldBtn = $("#boldBtn");
 function applyBoldStyle() {
   const b = K.boldStyle(store.get("boldStyle"));
-  for (const [prop, value] of [["--bold-fg", b.color], ["--bold-bg", b.background]]) {
-    if (value) scriptEl.style.setProperty(prop, value);
-    else scriptEl.style.removeProperty(prop);
+  for (const el of [scriptEl, boldPop]) for (const [prop, value] of [["--bold-fg", b.color], ["--bold-bg", b.background]]) {
+    if (value) el.style.setProperty(prop, value);
+    else el.style.removeProperty(prop);
   }
   return b;
 }
 applyBoldStyle();
-const setBoldStyle = (patch) => { store.set("boldStyle", { ...K.boldStyle(store.get("boldStyle")), ...patch }); renderCueMenu(); };
+const setBoldStyle = (patch) => { store.set("boldStyle", { ...K.boldStyle(store.get("boldStyle")), ...patch }); renderBoldPop(); };
 $("#boldBg").addEventListener("input", (e) => setBoldStyle({ background: e.target.value }));
 $("#boldFg").addEventListener("input", (e) => setBoldStyle({ color: e.target.value }));
 // What the colour fields show while nothing is chosen: the default orange (as sRGB) and the page's own colour (--bg).
 const BOLD_SHOWN = { light: { color: "#b53707", background: "#fafafa" }, dark: { color: "#fb401e", background: "#080721" } };
-function renderCueMenu() {
+for (const row of $$(".bold-pop__row", boldPop)) {
+  const custom = $(".bold-pop__custom", row);
+  for (const { name, hex } of K.BOLD_SWATCHES[row.dataset.kind]) {
+    custom.insertAdjacentHTML("beforebegin", `<button class="bold-pop__swatch" type="button" data-hex="${hex}" style="--swatch-colour: ${hex}" aria-label="${esc(name)}" title="${esc(name)}" aria-pressed="false"></button>`);
+  }
+}
+function renderBoldPop() {
   const bold = applyBoldStyle(), shown = BOLD_SHOWN[matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"];
   $("#boldFg").value = bold.color || shown.color;
   $("#boldBg").value = bold.background || shown.background;
-  $("#cueGroup").hidden = !state.doc;
+  for (const row of $$(".bold-pop__row", boldPop)) {
+    const now = bold[row.dataset.kind] || "";
+    let hit = false;
+    for (const sw of $$(".bold-pop__swatch", row)) {
+      const on = sw.dataset.hex.toLowerCase() === now.toLowerCase();
+      hit ||= on;
+      sw.setAttribute("aria-pressed", String(on));
+    }
+    const custom = $(".bold-pop__custom", row);
+    custom.dataset.on = String(!hit);
+    custom.style.setProperty("--swatch-colour", hit ? "transparent" : now);
+  }
+  $("#boldReset").disabled = !bold.color && !bold.background;
 }
-$("#scriptMenu").addEventListener("toggle", renderCueMenu);
+boldPop.addEventListener("click", (e) => {
+  const sw = e.target.closest(".bold-pop__swatch");
+  if (sw) setBoldStyle({ [sw.closest(".bold-pop__row").dataset.kind]: sw.dataset.hex || null });
+});
+// Reset: the default orange and no background, and nothing saved.
+$("#boldReset").addEventListener("click", () => { store.del("boldStyle"); renderBoldPop(); });
 // Colours changed in another tab of this browser.
-addEventListener("storage", (e) => { if (e.key === `${LS}boldStyle`) renderCueMenu(); });
+addEventListener("storage", (e) => { if (e.key === `${LS}boldStyle` || e.key === null) renderBoldPop(); });
+renderBoldPop();
 // Ctrl/Cmd+B and the B button: toggle a cue (the person sees it as bold words) on the selected words of one spoken paragraph. One Ctrl/Cmd+Z step.
 // Anything else (across paragraphs, a heading, a reminder, a link in the way) changes nothing, quietly.
 function toggleCueHere() {
@@ -1271,8 +1297,7 @@ function cueBtnState(s) {
   btn.setAttribute("aria-pressed", String(!!b && K.cueSelected(D.contentOf(b), s.start, s.end)));
   btn.disabled = !res || !C.canToggleCue(state.asks, b.id, b.type, res);
 }
-const cueKeys = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘B" : "Ctrl+B";
-$("#boldBtn").title = `Bold (${cueKeys})`;
+// No title tooltip: hovering B opens the colours, and a tooltip would sit on them. The keys stay in aria-keyshortcuts.
 $("#boldBtn").addEventListener("click", toggleCueHere);
 // The agent's mark_cue and unmark_cue: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script),
 // a marked change with Undo on the agent's name tag per paragraph (C.landCues). Returns how many cues changed.
@@ -1307,6 +1332,8 @@ const cueDrops = new Map();
 const bar = $("#editBar");
 const askInput = $("#askInput"), askField = $("#askField"), askTab = $("#askTab"), askSend = $("#askForm .edit-bar__send"), moreMenu = $("#moreMenu");
 let barSel = null, barSending = 0, askPick = 0, scriptPress = false, pressMoved = false, askSayTimer = 0, askSayWant = "";
+// The bold colours by B: open and close timers, kept open by a tap (until a tap elsewhere), focus B again without reopening.
+let popOpenTimer = 0, popCloseTimer = 0, popStuck = false, popTouch = false, popQuietFocus = false;
 // A selection across blocks is clamped to the first block where it covers at least one word.
 function currentSelection() {
   if (state.pendingDraft) return null;
@@ -1365,6 +1392,8 @@ function showBar() {
   closeCard();
   renderAsk();
   placeBar(s.range);
+  if ($("#boldBtn").hidden) closeBoldPop();
+  else if (boldPop.matches(":popover-open")) placeBoldPop();
 }
 function hideBar() {
   closeBarMenus();
@@ -1460,7 +1489,7 @@ askInput.addEventListener("keydown", (e) => {
   if (e.isComposing || e.keyCode === 229) { if (e.key === "Enter") e.preventDefault(); return; }
   if (e.key === "Escape") {
     // The menu that "more" opens closes alone and keeps what is typed.
-    if (closeBarMenu()) { e.preventDefault(); e.stopPropagation(); return; }
+    if (closeBarMenu() || escapeBoldPop()) { e.preventDefault(); e.stopPropagation(); return; }
     hideBar();
     return;
   }
@@ -1501,7 +1530,7 @@ function showSending() {
 /* What the old More button held: the typed command "more" opens it. It never takes the text selection (barSel keeps it),
    opens below the input or above it, whichever fits, and works with the keyboard: the arrow keys move, Escape and Tab
    go back to the input. */
-function closeBarMenus() { if (moreMenu.matches(":popover-open")) moreMenu.hidePopover(); }
+function closeBarMenus() { if (moreMenu.matches(":popover-open")) moreMenu.hidePopover(); closeBoldPop(); }
 // Escape: close the menu and give the input the focus. Returns false when it was not open.
 function closeBarMenu() {
   if (!moreMenu.matches(":popover-open")) return false;
@@ -1535,6 +1564,78 @@ moreMenu.addEventListener("keydown", (e) => {
   e.preventDefault();
   to?.focus();
 });
+
+/* The bold colours by B (Lex 2026-11-07, Variant A): hovering B, or keyboard focus on it, opens them; a tap on B bolds and
+   opens them too, until a tap elsewhere. Clicking B still only bolds. They close when the pointer leaves B and them, on
+   Escape, or when the focus leaves them. Never on the selected words (popSpot); in the top layer, so the bar keeps its size. */
+function placeBoldPop() {
+  const r = bar.getBoundingClientRect(), b = boldBtn.getBoundingClientRect();
+  const rects = barSel?.range ? [...barSel.range.getClientRects()].filter((x) => x.width > 0) : [];
+  const words = rects.length ? { top: Math.min(...rects.map((x) => x.top)), bottom: Math.max(...rects.map((x) => x.bottom)), left: Math.min(...rects.map((x) => x.left)), right: Math.max(...rects.map((x) => x.right)) } : { top: 0, bottom: 0, left: 0, right: 0 };
+  const v = window.visualViewport, top = Math.max($(".top").getBoundingClientRect().bottom, v?.offsetTop || 0);
+  const { x, y, side } = popSpot({ bar: r, x: b.left, words, w: boldPop.offsetWidth, h: boldPop.offsetHeight, top, vw: document.documentElement.clientWidth, vh: v ? v.height + v.offsetTop : innerHeight });
+  boldPop.style.left = `${x}px`;
+  boldPop.style.top = `${y}px`;
+  boldPop.dataset.side = side;
+}
+function openBoldPop(stick = false) {
+  clearTimeout(popOpenTimer);
+  clearTimeout(popCloseTimer);
+  if (bar.hidden || boldBtn.hidden || barSending) return;
+  if (stick) popStuck = true;
+  if (!boldPop.matches(":popover-open")) { renderBoldPop(); boldPop.showPopover(); }
+  boldBtn.setAttribute("aria-expanded", "true");
+  placeBoldPop();
+}
+function closeBoldPop() {
+  clearTimeout(popOpenTimer);
+  clearTimeout(popCloseTimer);
+  popStuck = false;
+  if (boldPop.matches(":popover-open")) boldPop.hidePopover();
+  boldBtn.setAttribute("aria-expanded", "false");
+}
+// Escape: the colours close and the focus, if it was in them, goes back to B. Returns false when they were not open.
+function escapeBoldPop() {
+  if (!boldPop.matches(":popover-open")) return false;
+  const inside = boldPop.contains(document.activeElement);
+  closeBoldPop();
+  if (inside) { popQuietFocus = true; boldBtn.focus(); }
+  return true;
+}
+// What keeps them open: the pointer over B or them, the focus in them (the keyboard, or a colour field's own picker),
+// keyboard focus on B, or a tap.
+const popHeld = () => popStuck || boldBtn.matches(":hover") || boldPop.matches(":hover") || boldPop.contains(document.activeElement) || boldBtn.matches(":focus-visible");
+function closeBoldPopSoon() {
+  clearTimeout(popOpenTimer);
+  clearTimeout(popCloseTimer);
+  popCloseTimer = setTimeout(() => { if (!popHeld()) closeBoldPop(); }, 220);
+}
+boldBtn.addEventListener("pointerenter", (e) => {
+  if (e.pointerType !== "mouse") return;
+  clearTimeout(popCloseTimer);
+  clearTimeout(popOpenTimer);
+  popOpenTimer = setTimeout(() => openBoldPop(), 120);
+});
+boldBtn.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") closeBoldPopSoon(); });
+boldPop.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") clearTimeout(popCloseTimer); });
+boldPop.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") closeBoldPopSoon(); });
+boldBtn.addEventListener("pointerdown", (e) => { popTouch = e.pointerType !== "mouse"; });
+// After the bold: a tap opens the colours as well (no hover on a phone); keys and the mouse already have them.
+boldBtn.addEventListener("click", () => { if (popTouch) openBoldPop(true); popTouch = false; });
+boldBtn.addEventListener("focus", () => {
+  if (popQuietFocus) { popQuietFocus = false; return; }
+  if (boldBtn.matches(":focus-visible")) openBoldPop();
+});
+for (const el of [boldBtn, boldPop]) el.addEventListener("focusout", (e) => {
+  if (e.relatedTarget && (boldPop.contains(e.relatedTarget) || e.relatedTarget === boldBtn)) return;
+  closeBoldPopSoon();
+});
+// A colour field's picker closed: the pointer may have left meanwhile.
+for (const id of ["#boldFg", "#boldBg"]) $(id).addEventListener("change", closeBoldPopSoon);
+// A press anywhere else closes them.
+document.addEventListener("pointerdown", (e) => {
+  if (boldPop.matches(":popover-open") && !boldPop.contains(e.target) && !boldBtn.contains(e.target)) closeBoldPop();
+}, { capture: true });
 let selTimer = 0;
 // Started anywhere but in the bar: a drag can start in the page's margin and run into the text.
 document.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse" && e.button === 0 && !bar.contains(e.target)) { scriptPress = true; pressMoved = false; } }, { capture: true });
@@ -1553,7 +1654,7 @@ addEventListener("blur", scriptReleased);
 addEventListener("pointermove", (e) => { if (!e.buttons) scriptReleased(); }, { passive: true, capture: true });
 document.addEventListener("selectionchange", () => { if (scriptPress) pressMoved = true; refreshLinks(true); clearTimeout(selTimer); selTimer = setTimeout(showBar, 120); together?.caret(); });
 // What floats over the text follows it: on a scroll, and when the Keep all row moves the text without one (step Q).
-function placeBarAgain() { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); if (moreMenu.matches(":popover-open")) placeBarMenu(); } }
+function placeBarAgain() { if (!bar.hidden && barSel?.range) { placeBar(barSel.range); if (moreMenu.matches(":popover-open")) placeBarMenu(); if (boldPop.matches(":popover-open")) placeBoldPop(); } }
 function placeOverText() { placeBarAgain(); if (!card.hidden && cardFor) positionCard(cardFor); positionShotCard(); }
 addEventListener("scroll", placeOverText, { passive: true });
 addEventListener("resize", () => { placeBarAgain(); positionShotCard(); });
@@ -2741,7 +2842,7 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   // The menu that "more" opens closes alone; the bar stays.
-  if (closeBarMenu()) { e.preventDefault(); return; }
+  if (closeBarMenu() || escapeBoldPop()) { e.preventDefault(); return; }
   hideBar(); closeCard(); closeShotCard(); if (broll.lit) lightShot(broll.lit, false);
 });
 addEventListener("beforeunload", (e) => {
