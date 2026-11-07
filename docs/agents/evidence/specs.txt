@@ -17,6 +17,7 @@
 ✔ B: bold words in a link, a whole link, a link inside bold; split at a link's edge; B is on only when every word is bold
 ✔ link state: off on plain or bold words, on inside one link, grey when part link part plain
 ✔ the address field: a full https:// or http:// address with a dot in its host name, as typed so far
+✔ link state: a selection edge in a link's hidden Markdown counts as outside the link
 ✔ link: plain words, words inside bold, bold words inside, split at a bold edge; remove keeps words and bold
 ✔ text safety: random selections, B and links never change or lose a spoken word or a bold word
 ✔ agent: Find links goes inside bold, around bold and splits a bold edge; mark_cue works inside and around links
@@ -399,9 +400,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 401
+ℹ tests 402
 ℹ suites 0
-ℹ pass 401
+ℹ pass 402
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
