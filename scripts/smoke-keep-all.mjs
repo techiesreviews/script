@@ -365,6 +365,18 @@ async function runLinkIcon(width, height) {
   const look = await page.eval(`(() => { const w = ${paraOf}.querySelector("[data-cue] .md-link[data-href] .md-link__words"); if (!w) return null; const s = getComputedStyle(w); return { weight: Number(s.fontWeight), line: getComputedStyle(w).textDecorationLine }; })()`);
   check(!!look && look.weight >= 600 && look.line.includes("underline"), `${tag}: a bold link shows bold and underlined`, JSON.stringify(look));
   await page.shot(`link-${width}-bold-link`);
+  // Typing inside a whole bold link keeps its Markdown.
+  {
+    const line = await lineOf(), i = line.lastIndexOf("Activity") + 4;
+    await page.eval(pick(i, i));
+    await sleep(200);
+    await page.send("Input.insertText", { text: "x" });
+    await sleep(300);
+    check((await lineOf()).endsWith(`of **[WP Actixvity Log](${URL})** yourself.`), `${tag}: typing inside a bold link keeps its marks`, (await lineOf()).slice(-80));
+    await page.eval(`${paraOf}.focus()`);
+    await press("z", "KeyZ", 90, CTRL);
+    check((await lineOf()).endsWith(`of **[WP Activity Log](${URL})** yourself.`), `${tag}: Ctrl+Z takes the typing back`, (await lineOf()).slice(-80));
+  }
   check(await select("WP Activity Log") && await btn(`b.dataset.icon === "unlink"`) && await page.eval(`document.querySelector("#boldBtn").getAttribute("aria-pressed") === "true"`), `${tag}: on a bold link both B and the link icon show on`);
   // Part link, part plain: grey.
   {
@@ -386,6 +398,39 @@ async function runLinkIcon(width, height) {
   await page.send("Input.insertText", { text: "https://example.com/free" });
   await press("Enter", "Enter", 13);
   check((await lineOf()).includes("try **the [free](https://example.com/free) plan** of"), `${tag}: a link inside bold words`, (await lineOf()).slice(-120));
+  // B in the address field that makes the words part link, part not: the field has nothing left to link and closes.
+  {
+    const line = await lineOf(), i = line.lastIndexOf("plan**"), j = line.indexOf(" of", i) + 3;
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(150);
+    await page.eval(pick(i, j));
+    await sleep(350);
+    await page.until(`!document.querySelector("#editBar").hidden && !document.querySelector("#linkBtn").disabled`, "the bar over plan of");
+  }
+  await page.click("#linkBtn");
+  await sleep(150);
+  await page.send("Input.insertText", { text: "https://example.com/plan" });
+  await press("b", "KeyB", 66, CTRL);
+  check((await lineOf()).includes("try **the [free](https://example.com/free) plan of** "), `${tag}: Ctrl+B joins the bold over the link`, (await lineOf()).slice(-120));
+  check(await page.eval(`document.querySelector("#askField").dataset.mode !== "link" && document.querySelector("#askInput").value === "" && document.querySelector("#askInput").placeholder !== "https://" && document.querySelector("#linkBtn").disabled`), `${tag}: the words are part link now: the address field closes, the icon is grey`);
+  await page.eval(`${paraOf}.focus()`);
+  await press("z", "KeyZ", 90, CTRL);
+  check((await lineOf()).includes("try **the [free](https://example.com/free) plan** of"), `${tag}: Ctrl+Z takes that bold back`, (await lineOf()).slice(-120));
+  // A long address goes in whole (the asking input stops at 500 characters).
+  {
+    const long = "https://example.com/?q=" + "a".repeat(577);
+    await select("yourself");
+    await page.click("#linkBtn");
+    await sleep(150);
+    await page.send("Input.insertText", { text: long });
+    await sleep(100);
+    check((await page.eval(`document.querySelector("#askInput").value.length`)) === 600, `${tag}: a 600-character address fits in the field`);
+    await press("Enter", "Enter", 13);
+    check((await lineOf()).includes(`[yourself](${long})`), `${tag}: the whole long address goes in`);
+    check(await page.eval(`document.querySelector("#askInput").maxLength === 500`), `${tag}: the asking input is back to 500 characters`);
+    await page.eval(`${paraOf}.focus()`);
+    await press("z", "KeyZ", 90, CTRL);
+  }
   // Ctrl+B in the address field bolds the words and keeps what is typed; Enter then links the bold words.
   await select("yourself");
   await page.click("#linkBtn");
@@ -399,7 +444,7 @@ async function runLinkIcon(width, height) {
   for (let i = 0; i < 2; i++) { await page.eval(`${paraOf}.focus()`); await press("z", "KeyZ", 90, CTRL); }
   // Undo walks back one change at a time, the words never change.
   for (let i = 0; i < 4; i++) { await page.eval(`${paraOf}.focus()`); await press("z", "KeyZ", 90, CTRL); }
-  check((await lineOf()) === plain, `${tag}: four Ctrl+Z go back to the plain line`, (await lineOf()).slice(-80));
+  check((await lineOf()) === plain, `${tag}: the last four Ctrl+Z go back to the plain line`, (await lineOf()).slice(-80));
   await page.close();
 }
 

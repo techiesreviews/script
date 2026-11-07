@@ -1358,7 +1358,7 @@ $("#boldBtn").addEventListener("click", toggleCueHere);
 const linkBtn = $("#linkBtn");
 const ASK_PLACEHOLDER = askInputDefaults();
 let linkMode = false;
-function askInputDefaults() { const i = $("#askInput"); return { placeholder: i.placeholder, label: i.getAttribute("aria-label"), hint: i.getAttribute("enterkeyhint") }; }
+function askInputDefaults() { const i = $("#askInput"); return { placeholder: i.placeholder, label: i.getAttribute("aria-label"), hint: i.getAttribute("enterkeyhint"), max: i.maxLength, describedBy: i.getAttribute("aria-describedby") }; }
 const typedLink = () => (linkMode ? L.typedAddress($("#askInput").value) : null);
 function linkTry(s) {
   const b = s && byId(s.id);
@@ -1373,7 +1373,9 @@ function linkBtnState(s) {
   const name = on ? "unlink" : "link";
   if (linkBtn.dataset.icon !== name) { linkBtn.dataset.icon = name; linkBtn.innerHTML = icon(name); }
   linkBtn.dataset.tip = on ? st.link.url : "";
-  linkBtn.setAttribute("aria-label", on ? `Remove link ${st.link.url}` : "Link");
+  // One name for the toggle; pressed says it is a link, and the address is its description.
+  if (on) linkBtn.setAttribute("aria-description", st.link.url);
+  else linkBtn.removeAttribute("aria-description");
 }
 // While a full address is typed, the selected words show linked.
 function paintLinkPreview() {
@@ -1390,6 +1392,8 @@ function enterLinkMode() {
   askInput.inputMode = "url";
   askInput.setAttribute("enterkeyhint", "done");
   askInput.setAttribute("aria-label", "Link address");
+  askInput.removeAttribute("aria-describedby");
+  askInput.maxLength = L.LINK_LIMITS.url;
   askField.dataset.mode = "link";
   askInput.focus({ preventScroll: true });
   renderAsk();
@@ -1402,6 +1406,8 @@ function leaveLinkMode() {
   askInput.inputMode = "text";
   askInput.setAttribute("enterkeyhint", ASK_PLACEHOLDER.hint);
   askInput.setAttribute("aria-label", ASK_PLACEHOLDER.label);
+  if (ASK_PLACEHOLDER.describedBy) askInput.setAttribute("aria-describedby", ASK_PLACEHOLDER.describedBy);
+  askInput.maxLength = ASK_PLACEHOLDER.max;
   delete askField.dataset.mode;
   renderAsk();
   paintLinkPreview();
