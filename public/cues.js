@@ -286,6 +286,13 @@ export function toggleCue(content, start, end) {
     if (to > l.start && to <= l.words.start) to = l.start;
     else if (to > l.words.end && to < l.end) to = l.end;
   }
+  // All of a link's words and more: the bold holds the whole link. The editor hides the Markdown, so a selection ends on the
+  // link's last word (its words' end), not after its address, and starts on its first word.
+  for (const l of textLinks(text)) {
+    const [ws, we] = trimRange(text, l.words.start, l.words.end);
+    if (from >= l.words.start && from <= ws && to >= l.end) from = l.start;
+    if (to <= l.words.end && to >= we && from <= l.start) to = l.end;
+  }
   if (to <= from) return null;
   // The touched cues' marks go; the new marks go around the pieces.
   const gone = new Uint8Array(text.length);
