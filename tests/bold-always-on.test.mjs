@@ -79,6 +79,15 @@ test("only the ready-made colours change with the mode; your own colours and not
   assert.deepEqual(Q.boldShown({ color: null, background: null }, "light"), { color: null, background: null });
 });
 
+test("a background saved by the first build of step U counts as its swatch now", () => {
+  assert.equal(Q.boldShown({ color: null, background: "#3c3990" }, "light").background, "#dedcff");
+  assert.equal(Q.boldShown({ color: null, background: "#3C3990" }, "dark").background, "#34317f");
+  for (const s of Q.BOLD_SWATCHES.background) for (const old of s.was ?? []) {
+    assert.equal(Q.boldSwatch("background", old), s, old);
+    assert.ok(contrast(Q.boldShown({ color: null, background: old }, "light").background, ORANGE.light) >= 3, old);
+  }
+});
+
 test("by default the words are orange and bold, in the prompter's orange in dark mode", () => {
   const css = file("public/app.css");
   assert.match(css, /--bold-ink: light-dark\(oklch\(52% 0\.17 37\), oklch\(65% 0\.227 32\.3\)\);/);

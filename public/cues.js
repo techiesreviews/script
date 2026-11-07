@@ -25,7 +25,8 @@ export const boldStyle = (stored) => ({
   background: stored?.own !== false && HEX.test(stored?.background) ? stored.background : null,
 });
 // The ready-made colours by B (Lex 2026-11-07, Variant A); the default orange and "None" are the null of boldStyle. Saved as
-// `hex` (the night look); light mode shows each one's `light` partner, so bold words stay readable on white.
+// `hex` (the night look); light mode shows each one's `light` partner, so bold words stay readable on white. `was`: the
+// values the first build of step U saved, before the release review made them readable; they count as the same swatch.
 export const BOLD_SWATCHES = {
   color: [
     { name: "Yellow", hex: "#fbd530", light: { name: "Yellow", hex: "#8a6500" } },
@@ -35,20 +36,24 @@ export const BOLD_SWATCHES = {
     { name: "Green", hex: "#5edb81", light: { name: "Green", hex: "#1f7a3c" } },
   ],
   background: [
-    { name: "Yellow", hex: "#fff3a0", light: { name: "Yellow", hex: "#fff3a0" } },
-    { name: "Dark orange", hex: "#6e1e07", light: { name: "Peach", hex: "#ffdccb" } },
-    { name: "Indigo", hex: "#34317f", light: { name: "Lavender", hex: "#dedcff" } },
-    { name: "Teal", hex: "#00434a", light: { name: "Mint", hex: "#c8efec" } },
-    { name: "Red", hex: "#731519", light: { name: "Rose", hex: "#ffd7d7" } },
+    { name: "Yellow", hex: "#fff3a0", was: ["#fbd530"], light: { name: "Yellow", hex: "#fff3a0" } },
+    { name: "Dark orange", hex: "#6e1e07", was: ["#96290a"], light: { name: "Peach", hex: "#ffdccb" } },
+    { name: "Indigo", hex: "#34317f", was: ["#3c3990"], light: { name: "Lavender", hex: "#dedcff" } },
+    { name: "Teal", hex: "#00434a", was: ["#005b60"], light: { name: "Mint", hex: "#c8efec" } },
+    { name: "Red", hex: "#731519", was: ["#8d1a1e"], light: { name: "Rose", hex: "#ffd7d7" } },
   ],
 };
-/** What the page shows for a boldStyle in a mode ("dark" or "light"): a ready-made colour as that mode's partner; your own
+/** The ready-made colour a saved value is (its own hex or one it `was`), or undefined for your own colour or none. */
+export const boldSwatch = (kind, value) => {
+  const v = value?.toLowerCase();
+  return v ? BOLD_SWATCHES[kind].find((x) => x.hex === v || x.was?.includes(v)) : undefined;
+};
+/** What the page shows for a boldStyle in a mode ("dark" or "light"): a ready-made colour as that mode's look; your own
  *  colours and nothing chosen as they are. */
 export function boldShown(style, mode) {
   const shown = (kind) => {
-    const v = style[kind];
-    const s = v && BOLD_SWATCHES[kind].find((x) => x.hex === v.toLowerCase());
-    return s && mode === "light" ? s.light.hex : v;
+    const s = boldSwatch(kind, style[kind]);
+    return s ? (mode === "light" ? s.light.hex : s.hex) : style[kind];
   };
   return { color: shown("color"), background: shown("background") };
 }
