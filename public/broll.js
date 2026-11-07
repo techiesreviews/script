@@ -782,8 +782,9 @@ export function overFor(doc, selection) {
   // Quotes are of the spoken words: a link counts as its words (step G), as the matcher reads it. A selection that
   // starts or ends inside a link or a cue takes the whole of it, so its Markdown is never cut in half.
   const links = [...textLinks(first), ...textCues(first)];
-  const start = links.find((l) => sel[0].start > l.start && sel[0].start < l.end)?.start ?? sel[0].start;
-  const end = links.find((l) => sel[0].end > l.start && sel[0].end < l.end)?.end ?? sel[0].end;
+  // A link inside bold (or bold inside a link) takes the outer one whole.
+  const start = Math.min(sel[0].start, ...links.filter((l) => sel[0].start > l.start && sel[0].start < l.end).map((l) => l.start));
+  const end = Math.max(sel[0].end, ...links.filter((l) => sel[0].end > l.start && sel[0].end < l.end).map((l) => l.end));
   const fromWords = spokenWords(first.slice(start)).match(/\S+/g) || [];
   // One block: "…" when fewer words than selected are quoted (or, past the selection, fewer than the line has).
   const selected = z > a ? fromWords.length : (spokenWords(first.slice(start, end)).match(/\S+/g) || []).length;

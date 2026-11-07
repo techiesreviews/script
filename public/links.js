@@ -3,6 +3,7 @@
 //   "- Label: https://full-address"  a link line of its own (the first one under a heading opens with the section)
 // The editor keeps the Markdown as it is; these find the links in a block's content, give the spoken words without
 // them, and put the agent's links (answer kind "links") into the text. Pure: no DOM.
+import { addLink, spokenView } from "./cues.js";
 
 // The prompter's own patterns: link words hold no brackets and at least one letter that is not a space; the address
 // may hold one level of brackets, as Wikipedia addresses do.
@@ -39,6 +40,13 @@ export function safeUrl(url) {
   } catch { return false; }
 }
 
+/** What the link icon's address field holds, when it is a full https:// or http:// address with a dot in its host name
+ *  (as typed so far: "https://wordpress" is not one yet): the address, else null. */
+export function typedAddress(text) {
+  const url = String(text ?? "").trim();
+  return safeUrl(url) && new URL(url).hostname.includes(".") ? url : null;
+}
+
 // Ranges a new link may not touch: the text links already there and the link lines.
 function taken(content) {
   const out = textLinks(content).map((l) => [l.start, l.end]);
@@ -60,16 +68,17 @@ const oneSpace = (text) => text.replace(/\s+/g, " ");
 /**
  * Put the agent's links into the asked text: each quote's first unlinked occurrence becomes "[quote](url)".
  * segments: [{ id, content, from, to, avoid? }] in reading order (the asked text in each block: a selection is one
- * segment, the whole script one per spoken paragraph). `cues`: [[start, end]] of the cues there (cues.js; a link never
- * goes inside a cue, whose words hold no brackets). `avoid`: [[start, end]] in the content that other open work
- * points at (open asks, "Sounds like me" marks, the agent's marked changes): a segment's change (from its first new
- * link to its last) never reaches into them. others: the content of the blocks where links don't go (headings,
- * reminders), only to say why a quote found there was skipped.
+ * segment, the whole script one per spoken paragraph). A quote is read in the spoken words, without bold marks
+ * (cues.js): inside bold words the link goes inside them, bold words it covers go inside the link, and bold half
+ * covered is split at the link's edge (cues.js addLink, Lex 2026-11-07). `avoid`: [[start, end]] in the content that
+ * other open work points at (open asks, "Sounds like me" marks, the agent's marked changes): a segment's change (from
+ * its first new link to its last) never reaches into them. others: the content of the blocks where links don't go
+ * (headings, reminders), only to say why a quote found there was skipped.
  * Returns { segments: [{ id, content, links: [{ quote, url }], from, to, delta }] (only the ones that changed;
  * from…to is the changed stretch in the old content, delta the change in length), skipped: [{ quote, why }] }.
  */
 export function planLinks(segments, links, { others = [] } = {}) {
-  const state = segments.map((s) => ({ ...s, taken: taken(s.content), cues: s.cues || [], avoid: s.avoid || [], picks: [] }));
+  const state = segments.map((s) => ({ ...s, view: spokenView(s.content, { lines: true }), taken: taken(s.content), avoid: s.avoid || [], picks: [] }));
   const skipped = [], seen = new Set();
   for (const link of links || []) {
     const quote = String(link?.quote ?? "").trim(), url = link?.url;
@@ -79,19 +88,23 @@ export function planLinks(segments, links, { others = [] } = {}) {
     if (seen.has(oneSpace(quote))) { skip("already linked in this answer"); continue; }
     if (/[[\]]/.test(quote)) { skip("not found word for word in the asked text"); continue; }
     const re = quoteRe(quote);
-    let found = false, linked = false, busy = false, across = false, cued = false;
+    let found = false, linked = false, busy = false, across = false, odd = false;
     for (const s of state) {
-      re.lastIndex = s.from;
-      for (let m = re.exec(s.content); m && m.index + m[0].length <= s.to; re.lastIndex = m.index + 1, m = re.exec(s.content)) {
-        const i = m.index, e = i + m[0].length;
-        if (!wholeWords(s.content, i, e)) continue;
+      const { text, map } = s.view;
+      re.lastIndex = 0;
+      for (let m = re.exec(text); m; re.lastIndex = m.index + 1, m = re.exec(text)) {
+        const i = map[m.index], e = map[m.index + m[0].length - 1] + 1;
+        if (i < s.from) continue;
+        if (e > s.to) break;
+        if (!wholeWords(text, m.index, m.index + m[0].length)) continue;
         if (overlaps(s.taken, i, e)) { linked = true; continue; }
-        if (overlaps(s.cues, i, e)) { cued = true; continue; }
         if (overlaps(s.avoid, i, e)) { busy = true; continue; }
+        const pick = { start: i, end: e, quote, url };
+        const tried = put(s.content, [...s.picks, pick]);
+        if (!tried) { odd = true; continue; }
         // The segment's change runs from its first link to its last: it must not take in other open work.
-        const from = Math.min(i, ...s.picks.map((p) => p.start)), to = Math.max(e, ...s.picks.map((p) => p.end));
-        if (overlaps(s.avoid, from, to)) { across = true; continue; }
-        s.picks.push({ start: i, end: e, words: oneSpace(m[0]), quote, url });
+        if (overlaps(s.avoid, tried.from, tried.to)) { across = true; continue; }
+        s.picks.push(pick);
         s.taken.push([i, e]);
         found = true;
         break;
@@ -102,20 +115,35 @@ export function planLinks(segments, links, { others = [] } = {}) {
     if (busy) skip("under an open ask or change");
     else if (across) skip("an open ask or change sits between it and another link in its paragraph");
     else if (linked) skip("already linked");
-    else if (cued) skip("inside a cue, where links don't go");
+    else if (odd) skip("would not read as a link there");
     else if (others.some((c) => { re.lastIndex = 0; return re.test(String(c)); })) skip("in a heading or reminder, where links don't go");
     else skip("not found word for word in the asked text");
   }
   const out = [];
   for (const s of state) {
     if (!s.picks.length) continue;
+    const r = put(s.content, s.picks);
     s.picks.sort((a, b) => a.start - b.start);
-    let content = "", at = 0;
-    for (const p of s.picks) { content += s.content.slice(at, p.start) + `[${p.words}](${p.url})`; at = p.end; }
-    content += s.content.slice(at);
-    out.push({ id: s.id, content, links: s.picks.map(({ quote, url }) => ({ quote, url })), from: s.picks[0].start, to: s.picks.at(-1).end, delta: content.length - s.content.length });
+    out.push({ id: s.id, content: r.content, links: s.picks.map(({ quote, url }) => ({ quote, url })), from: r.from, to: r.to, delta: r.content.length - s.content.length });
   }
   return { segments: out, skipped };
+}
+// The links put into a paragraph's content, the last first so the earlier offsets hold: { content, from, to } (from…to:
+// the changed stretch of the old content) or null when one would not read as a link.
+function put(content, picks) {
+  let next = content;
+  for (const p of [...picks].sort((a, b) => b.start - a.start)) {
+    // The agent read one space for each run of spaces and line breaks: the link's words get one space.
+    const words = next.slice(p.start, p.end), one = words.replace(/\s+/g, " ");
+    next = next.slice(0, p.start) + one + next.slice(p.end);
+    const r = addLink(next, p.start, p.start + one.length, p.url);
+    if (!r) return null;
+    next = r.content;
+  }
+  let from = 0, end = 0;
+  while (from < content.length && from < next.length && content[from] === next[from]) from++;
+  while (end < content.length - from && end < next.length - from && content[content.length - 1 - end] === next[next.length - 1 - end]) end++;
+  return { content: next, from, to: content.length - end };
 }
 
 /* Closed links in the editor (app.js): a link shows only its words while the caret is outside it. `link` is one of
@@ -128,11 +156,16 @@ export function edgeSnap(link, offset) {
   return offset;
 }
 /** Where an offset shows while these links are closed: inside a hidden "[" at the words' start, inside a hidden
- *  "](address)" at the words' end (others' carets and selections are drawn there). */
+ *  "](address)" at the words' end (others' carets and selections are drawn there). A link drawn inside another's words
+ *  (bold links) hides its edge too when it is the other's edge. */
 export function shownOffset(links, offset) {
-  for (const l of links) {
-    if (offset > l.start && offset < l.words.start) return l.words.start;
-    if (offset > l.words.end && offset < l.end) return l.words.end;
+  const nested = (l, edge) => links.some((o) => o !== l && (edge === "start" ? o.words.start === l.start : o.words.end === l.end));
+  for (let moved = true; moved;) {
+    moved = false;
+    for (const l of links) {
+      if ((offset > l.start || (offset === l.start && nested(l, "start"))) && offset < l.words.start) { offset = l.words.start; moved = true; }
+      else if (offset > l.words.end && (offset < l.end || (offset === l.end && nested(l, "end")))) { offset = l.words.end; moved = true; }
+    }
   }
   return offset;
 }

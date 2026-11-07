@@ -14,10 +14,10 @@ import { checkArgs, TOOLS, INSTRUCTIONS } from "../worker/mcp.js";
 const sel = (content, words) => { const s = content.indexOf(words); return [s, s + words.length]; };
 
 const keptText = (...args) => { const r = L.keepHidden(...args); return r && { content: r.content, caret: r.caret }; };
-test("format: **words** in a line; no brackets, * or line breaks inside; a letter or digit; not inside a link", () => {
+test("format: **words** in a line; no brackets, * or line breaks inside; a letter or digit; inside a link's words too (Lex 2026-11-07)", () => {
   const c = "We **start here** and [**go**](https://example.com) a ** b ** c, ===x=== and ** **.";
   const cues = Q.textCues(c);
-  assert.deepEqual(cues.map((x) => x.label), ["start here"]);
+  assert.deepEqual(cues.map((x) => x.label), ["start here", "go"]);
   assert.deepEqual(cues[0], { start: 3, end: 17, words: { start: 5, end: 15 }, label: "start here", cue: true });
   assert.deepEqual(Q.textCues("**a\nb** **[x]** **1**").map((x) => x.label), ["1"]);
   assert.equal(Q.stripCues("We **start here** now."), "We start here now.");
@@ -42,7 +42,7 @@ test("toggle: marks the selected words, a second toggle takes the marks off, the
   assert.equal(Q.toggleCue(c, 2, 13).content, "We **start here**. Then we go on.");
 });
 
-test("toggle: half a cue or across two joins into one cue; refuses links, line breaks and no words", () => {
+test("toggle: half a cue or across two joins into one cue; holds whole links; refuses line breaks and no words", () => {
   const c = "We **start** here and **go** on.";
   // From inside one cue to past it: one cue over both.
   const half = Q.toggleCue(c, c.indexOf("tart"), c.indexOf("here") + 4);
@@ -50,9 +50,9 @@ test("toggle: half a cue or across two joins into one cue; refuses links, line b
   assert.equal(half.cue, true);
   // Across two cues.
   assert.equal(Q.toggleCue(c, c.indexOf("start"), c.indexOf("go") + 2).content, "We **start here and go** on.");
-  // A link in the way: nothing changes (null).
+  // A whole link inside the selection: the bold holds it (Lex 2026-11-07, bold links).
   const l = "Use [Claude](https://claude.ai) today.";
-  assert.equal(Q.toggleCue(l, 0, l.length), null);
+  assert.equal(Q.toggleCue(l, 0, l.length).content, "**Use [Claude](https://claude.ai) today.**");
   assert.equal(Q.toggleCue("one\ntwo", 0, 7), null);
   assert.equal(Q.toggleCue("a , b", 2, 3), null);
   assert.equal(Q.toggleCue("a * b", 0, 5), null);
@@ -154,8 +154,9 @@ test("MCP: list_cues, mark_cue and unmark_cue, with their checks", () => {
   assert.match(INSTRUCTIONS, /\*\*words\*\*/);
 });
 
-test("review: links never land inside a cue; a rewrite whose cues would change the block keeps the text without them", () => {
-  assert.deepEqual(L.planLinks([{ id: "p", content: "We **go** now", from: 0, to: 13, cues: [[3, 9]] }], [{ quote: "go", url: "https://example.com" }]).skipped, [{ quote: "go", why: "inside a cue, where links don't go" }]);
+test("review: a link on bold words makes a whole bold link (Lex 2026-11-07); a rewrite whose cues would change the block keeps the text without them", () => {
+  const bold = L.planLinks([{ id: "p", content: "We **go** now", from: 0, to: 13, cues: [[3, 9]] }], [{ quote: "go", url: "https://example.com" }]);
+  assert.deepEqual([bold.segments[0].content, bold.skipped], ["We **[go](https://example.com)** now", []]);
   const doc = D.parse("# T\n\n## A\n\nWe **start** now and **go** on.\n");
   const p = paras(doc)[0];
   const ask = D.makeAsk(doc, { blockId: p.id, start: 0, end: D.contentOf(p).length, action: "simpler", by: { id: "lex", name: "Lex" } });
@@ -276,7 +277,7 @@ test("PR 8 fixes: link lines are off limits for mark_cue and Ctrl+B; a closed cu
   const text = "Read this.\n- Docs: https://example.com/guide";
   const doc = D.parse(`# T\n\n## A\n\n${text}\n`);
   const plan = C.planCues(doc, "mark", [{ quote: "guide" }]);
-  assert.deepEqual(plan, { segments: [], skipped: [{ quote: "guide", why: "inside a link" }] });
+  assert.deepEqual(plan, { segments: [], skipped: [{ quote: "guide", why: "inside a link line" }] });
   const i = text.indexOf("guide");
   assert.equal(Q.toggleCue(text, i, i + 5), null);
   assert.deepEqual(Q.textCues("Read.\n- Docs: https://example.com/**guide**"), []);
@@ -568,9 +569,11 @@ test("emptying a stretch over several selections leaves no **** either", () => {
   // Only spaces left between the marks: nothing to empty, so it stays as it is.
   assert.equal(Q.settleMarks("We ** ** now", "We **** now", 5), null);
   // Text that was never one: no words at an edge on either side, or a word or * outside the marks, or a link.
-  for (const [old, now, caret] of [["a ** b ** c", "a **** c", 4], ["x**two ** y", "x**** y", 3], ["We **two **y", "We ****y", 5], ["We ***two ** y", "We ***** y", 6], ["We **[a](https://x.example)** y", "We **** y", 5]]) {
+  for (const [old, now, caret] of [["a ** b ** c", "a **** c", 4], ["x**two ** y", "x**** y", 3], ["We **two **y", "We ****y", 5], ["We ***two ** y", "We ***** y", 6]]) {
     assert.equal(Q.settleMarks(old, now, caret), null, old);
   }
+  // A whole bold link is bold (Lex 2026-11-07): its link going takes its marks too.
+  assert.equal(Q.settleMarks("We **[a](https://x.example)** y", "We **** y", 5)?.content, "We  y");
   // With other bold words in the paragraph, it reads the same.
   assert.equal(Q.settleMarks("**x** and **two ** now", "**x** and **** now", 12)?.content, "**x** and  now");
 });
