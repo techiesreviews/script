@@ -385,6 +385,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .bold-pop {
   --swatch: 1.75rem;
   position: fixed; inset: auto; margin: 0; inline-size: min(17.5rem, var(--pop-room, calc(100vw - 1rem)));
+  max-block-size: var(--pop-room-y, calc(100dvh - 1rem)); overflow-y: auto; overscroll-behavior: contain;
   padding: 0.6rem 0.75rem 0.75rem; border: 0; border-radius: var(--radius-panel);
   background: var(--surface); color: var(--text); box-shadow: var(--shadow), 0 0 0 1px var(--line);
 }

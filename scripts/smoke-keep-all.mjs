@@ -1187,6 +1187,16 @@ async function runBoldPop(width, height) {
     const at = await popPlace(page);
     check(at.onScreen && at.offWords, `${tag}: the colours are on screen and off the selected words`, JSON.stringify(at));
     check(await page.eval(`(() => { const p = document.querySelector("#boldPop").getBoundingClientRect(), b = document.querySelector("#boldBtn").getBoundingClientRect(); return !["below", "above"].includes(document.querySelector("#boldPop").dataset.side) || Math.abs(p.left - b.left) <= 1; })()`), `${tag}: lined up with B when under or over the bar`);
+    if (height <= 420) {
+      await page.eval(`document.documentElement.style.fontSize = "250%"`);
+      await page.eval(`dispatchEvent(new Event("resize"))`);
+      await sleep(100);
+      const tall = await page.eval(`(() => { const p = document.querySelector("#boldPop"), r = p.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight, scrolls: p.scrollHeight > p.clientHeight }; })()`);
+      check(tall.top >= 0 && tall.bottom <= tall.h + 0.5 && tall.scrolls, `${tag}: large text in a short window: the colours fit what is seen and scroll inside`, JSON.stringify(tall));
+      await page.eval(`document.documentElement.style.fontSize = ""`);
+      await page.eval(`dispatchEvent(new Event("resize"))`);
+      await sleep(100);
+    }
     check((await page.eval(`document.querySelectorAll("#boldPop .bold-pop__swatch").length`)) === 12 && (await page.eval(`document.querySelector("#boldReset").disabled`)), `${tag}: the colours, None and a Reset that is off while nothing is chosen`);
     const sample = await sampleLook();
     check(sample.color === orange && sample.weight === 800, `${tag}: the sample word shows the default orange and bold`, JSON.stringify(sample));
@@ -1272,9 +1282,11 @@ async function runBoldPop(width, height) {
     await sleep(40);
     check(await page.eval(`document.activeElement?.classList.contains("bold-pop__swatch--default")`), `${tag}: past the end the arrows wrap to the row's start`, await focused());
     await pressKey(page, "ArrowLeft", "ArrowLeft", 37);
+    await sleep(40);
+    check((await focused()) === "boldFg", `${tag}: ArrowLeft at the start wraps to the row's end`, await focused());
     await pressKey(page, "Home", "Home", 36);
     await sleep(40);
-    check(await page.eval(`document.activeElement?.classList.contains("bold-pop__swatch--default") && document.activeElement.tabIndex === 0`), `${tag}: ArrowLeft wraps back and Home returns to the start`, await focused());
+    check(await page.eval(`document.activeElement?.classList.contains("bold-pop__swatch--default") && document.activeElement.tabIndex === 0`), `${tag}: Home returns to the start`, await focused());
     // Each row is one stop: from B, Tab reaches the input in a few presses.
     let presses = 1;
     for (; presses < 10 && (await focused()) !== "askInput"; presses++) { await pressKey(page, "Tab", "Tab", 9); await sleep(40); }

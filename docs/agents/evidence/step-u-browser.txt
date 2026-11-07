@@ -503,6 +503,10 @@ ok 1280x800 colours: Escape closes the colours and keeps the bar
 ok 1280x800 colours: keyboard focus on B opens the colours
 ok 1280x800 colours: Tab goes into the colours, which stay open
 ok 1280x800 colours: the arrow keys move along a row
+ok 1280x800 colours: End goes to the row's own colour field
+ok 1280x800 colours: past the end the arrows wrap to the row's start
+ok 1280x800 colours: ArrowLeft at the start wraps to the row's end
+ok 1280x800 colours: Home returns to the start
 ok 1280x800 colours: from B, Tab reaches the input in at most 4 presses
 ok 1280x800 colours: the focus leaving closes the colours
 ok 1280x800 colours: one Shift+Tab from the input lands on B and opens them
@@ -513,6 +517,7 @@ ok 1280x420 colours: B says the colours are open
 ok 1280x420 colours: the bar keeps its size and place
 ok 1280x420 colours: the colours are on screen and off the selected words
 ok 1280x420 colours: lined up with B when under or over the bar
+ok 1280x420 colours: large text in a short window: the colours fit what is seen and scroll inside
 ok 1280x420 colours: the colours, None and a Reset that is off while nothing is chosen
 ok 1280x420 colours: the sample word shows the default orange and bold
 ok 1280x420 colours: the picked text colour is saved
@@ -534,6 +539,10 @@ ok 1280x420 colours: Escape closes the colours and keeps the bar
 ok 1280x420 colours: keyboard focus on B opens the colours
 ok 1280x420 colours: Tab goes into the colours, which stay open
 ok 1280x420 colours: the arrow keys move along a row
+ok 1280x420 colours: End goes to the row's own colour field
+ok 1280x420 colours: past the end the arrows wrap to the row's start
+ok 1280x420 colours: ArrowLeft at the start wraps to the row's end
+ok 1280x420 colours: Home returns to the start
 ok 1280x420 colours: from B, Tab reaches the input in at most 4 presses
 ok 1280x420 colours: the focus leaving closes the colours
 ok 1280x420 colours: one Shift+Tab from the input lands on B and opens them
