@@ -198,6 +198,12 @@ test("agent: Find links goes inside bold, around bold and splits a bold edge; ma
   assert.equal(mk(`Read [the login page](${U}) now.`, "Read the login page now").segments[0].content, `**Read [the login page](${U}) now**.`);
   assert.equal(mk(`Read [the login page](${U}) now.`, "page now").segments[0].content, `Read [the login **page**](${U}) **now**.`);
   assert.equal(mk(`Read [the login page](${U}) now.`, "Read the login page").segments[0].content, `**Read [the login page](${U})** now.`);
+  // unmark_cue on two bold stretches, one inside the other through a link: each one's marks go, no word is copied.
+  const nested = `**try [WP **Activity** Log](${U}) today**`, cues = K.textCues(nested);
+  const both = K.planCues(seg(nested), [{ cueId: `p:1:${cues[0].label}` }, { cueId: "p:2:Activity" }], "unmark");
+  assert.equal(both.segments[0].content, `try [WP Activity Log](${U}) today`);
+  assert.equal(K.spokenWords(both.segments[0].content), K.spokenWords(nested));
+  assert.deepEqual([both.segments[0].from, both.segments[0].to], [0, nested.length]);
   // unmark_cue on a bold link: the link stays.
   const un = K.planCues(seg(`Read **[the login page](${U})** now.`), [{ quote: `[the login page](${U})` }], "unmark");
   assert.equal(un.segments[0].content, `Read [the login page](${U}) now.`);

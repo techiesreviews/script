@@ -669,12 +669,13 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
     let r;
     if (mode === "mark") r = boldAll(s.content, s.picks);
     else {
-      let content = "", at = 0;
-      for (const p of s.picks) { content += s.content.slice(at, p.start) + p.put; at = p.end; }
-      r = { content: content + s.content.slice(at), from: s.picks[0].start, to: s.picks.at(-1).end };
+      // Exactly the picked stretches' marks go (one may sit inside another, through a link: bold links).
+      const gone = new Uint8Array(s.content.length);
+      for (const p of s.picks) gone.fill(1, p.start, p.start + 2).fill(1, p.end - 2, p.end);
+      r = { content: without(s.content, gone).text, from: Math.min(...s.picks.map((p) => p.start)), to: Math.max(...s.picks.map((p) => p.end)) };
     }
-    // Safety net: every new cue must read back as one (else the paragraph would show stray "**").
-    if (!r || (mode === "mark" && textCues(r.content).length < s.cues.length + s.picks.length)) {
+    // Safety net: every new cue must read back as one (else the paragraph would show stray "**"), and no word changes.
+    if (!r || (mode === "mark" && textCues(r.content).length < s.cues.length + s.picks.length) || !sameWords(s.content, r.content)) {
       for (const p of s.picks) skipped.push({ quote: p.quote.slice(0, 80), why: "would not read as a cue there" });
       continue;
     }
