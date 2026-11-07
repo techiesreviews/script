@@ -1231,7 +1231,7 @@ function renderBoldPop() {
   $("#boldFg").value = seen.color || fallback.color;
   $("#boldBg").value = seen.background || fallback.background;
   for (const row of $$(".bold-pop__row", boldPop)) {
-    const kind = row.dataset.kind, now = (bold[kind] || "").toLowerCase();
+    const kind = row.dataset.kind, now = K.boldSwatch(kind, bold[kind])?.hex || (bold[kind] || "").toLowerCase();
     let picked = null;
     for (const sw of $$(".bold-pop__swatch", row)) {
       const s = K.BOLD_SWATCHES[kind].find((x) => x.hex === sw.dataset.hex);

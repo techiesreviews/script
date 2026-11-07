@@ -1265,6 +1265,16 @@ async function runBoldPop(width, height) {
     await pressKey(page, "ArrowRight", "ArrowRight", 39);
     await sleep(60);
     check(await page.eval(`document.activeElement?.dataset.hex === "#fbd530" && document.activeElement.tabIndex === 0`), `${tag}: the arrow keys move along a row`, await focused());
+    await pressKey(page, "End", "End", 35);
+    await sleep(40);
+    check((await focused()) === "boldFg", `${tag}: End goes to the row's own colour field`, await focused());
+    await pressKey(page, "ArrowRight", "ArrowRight", 39);
+    await sleep(40);
+    check(await page.eval(`document.activeElement?.classList.contains("bold-pop__swatch--default")`), `${tag}: past the end the arrows wrap to the row's start`, await focused());
+    await pressKey(page, "ArrowLeft", "ArrowLeft", 37);
+    await pressKey(page, "Home", "Home", 36);
+    await sleep(40);
+    check(await page.eval(`document.activeElement?.classList.contains("bold-pop__swatch--default") && document.activeElement.tabIndex === 0`), `${tag}: ArrowLeft wraps back and Home returns to the start`, await focused());
     // Each row is one stop: from B, Tab reaches the input in a few presses.
     let presses = 1;
     for (; presses < 10 && (await focused()) !== "askInput"; presses++) { await pressKey(page, "Tab", "Tab", 9); await sleep(40); }
