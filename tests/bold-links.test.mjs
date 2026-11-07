@@ -72,6 +72,11 @@ test("B: bold words in a link, a whole link, a link inside bold; split at a link
   const c = `Then try the free plan of [WP Activity Log](${U}) yourself.`;
   assert.equal(K.toggleCue(c, c.indexOf("of"), c.indexOf("Log") + 3).content, `Then try the free plan **of [WP Activity Log](${U})** yourself.`);
   assert.equal(K.toggleCue(c, c.indexOf("WP"), c.indexOf("yourself") + 8).content, `Then try the free plan of **[WP Activity Log](${U}) yourself**.`);
+  // The same when the link's first or last word is already bold inside it.
+  const first = `Then try [**WP** Activity Log](${U}) yourself.`;
+  assert.equal(K.toggleCue(first, first.indexOf("WP"), first.indexOf("yourself") + 8).content, `Then try **[WP Activity Log](${U}) yourself**.`);
+  const last = `Then try [WP Activity **Log**](${U}) yourself.`;
+  assert.equal(K.toggleCue(last, last.indexOf("try"), last.indexOf("Log") + 3).content, `Then **try [WP Activity Log](${U})** yourself.`);
   // A bold link inside bold words that are selected with more words: the inner marks merge into one stretch.
   const inner = `Try [a **b** c](${U}) now`;
   assert.equal(K.toggleCue(inner, 0, inner.length).content, `**Try [a b c](${U}) now**`);
