@@ -20,6 +20,7 @@
 ✔ link: plain words, words inside bold, bold words inside, split at a bold edge; remove keeps words and bold
 ✔ text safety: random selections, B and links never change or lose a spoken word or a bold word
 ✔ agent: Find links goes inside bold, around bold and splits a bold edge; mark_cue works inside and around links
+✔ anchors follow a link going in or out by its edits; others' carets show at a nested link's words
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
@@ -398,9 +399,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 400
+ℹ tests 401
 ℹ suites 0
-ℹ pass 400
+ℹ pass 401
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

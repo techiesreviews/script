@@ -1316,7 +1316,8 @@ function changeMarkup(s, kind, make) {
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
   if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), plainAt: plainOffset(res.content, res.start) });
-  leaveLinkMode();
+  // A link put in or taken out ends the address field; B pressed while it is open keeps what is typed there.
+  if (kind === "link") leaveLinkMode();
   renderBlock(b.id);
   const el = blockNode(b.id);
   if (el) {
