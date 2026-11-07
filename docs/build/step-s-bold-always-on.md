@@ -13,7 +13,7 @@ Lex (2026-11-06), with a screenshot of the Bold menu: "remove the bold settings.
 
 ## What to watch
 
-- (Step U moved the colours to a popover by B, with a Reset, as in Lex's approved prototype of 2026-11-07.) No Reset: Lex asked for only the colour settings and nothing extra (2026-11-06), so there is no button back to the default. A person can pick the colours again by hand; "no background" can only be matched by picking the page's colour. Lex is asked whether he wants a Reset.
+- No Reset in step S: Lex asked for only the colour settings and nothing extra (2026-11-06). Step U (2026-11-07) moved the colours to a popover by B and added a Reset, as in Lex's approved prototype.
 
 - With bold on for everyone, a `**pair**` in an older script now shows as bold where it showed as text before, and an edit that would turn a bold line into another kind of block is refused. That is what "on" always did; before it was opt-in.
 
