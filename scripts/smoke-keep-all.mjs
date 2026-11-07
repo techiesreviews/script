@@ -298,18 +298,23 @@ async function runMenuHeight(width, height) {
   const b = await box();
   check(b.bottom <= b.h + 0.5 && b.top >= -0.5, `${tag}: the menu stays inside the window`, JSON.stringify(b));
   check(await page.eval(`${menu}.scrollWidth <= ${menu}.clientWidth`), `${tag}: it never scrolls sideways`);
-  check(b.scrolls && b.overflowY === "auto", `${tag}: it scrolls inside itself when it is taller than the window`, JSON.stringify(b));
+  // Without the bold colours (step U) the menu can fit a short phone window whole: then nothing needs to scroll.
+  const fitsWhole = !b.scrolls && (await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#menuNew").getBoundingClientRect(); return r.bottom <= m.bottom + 0.5 && r.height > 0; })()`));
+  check(b.overflowY === "auto" && (b.scrolls || fitsWhole), `${tag}: it scrolls inside itself when it is taller than the window, or shows all of it`, JSON.stringify(b));
+  if (fitsWhole) { await pressKey(page, "Escape", "Escape", 27); await page.close(); return; }
   // With the pointer over the recent list, the wheel carries on to the menu once the list ends.
   await page.eval(`${menu}.scrollTop = 0`);
   const over = await page.eval(`(() => { const r = document.querySelector("#scriptList").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + Math.min(r.height, innerHeight - r.y) / 2 }; })()`);
   for (let i = 0; i < 14; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: over.x, y: over.y, deltaX: 0, deltaY: 300 }); await sleep(120); }
   await sleep(300);
-  const wheeled = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#boldFg").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, top: ${menu}.scrollTop }; })()`);
-  check(wheeled.top > 0 && wheeled.fgBottom <= wheeled.menuBottom + 0.5, `${tag}: the wheel over the recent list reaches the colours below it`, JSON.stringify(wheeled));
+  // The bold colours moved to B on the selection bar (Lex 2026-11-07): New script is the menu's last item now.
+  const wheeled = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#menuNew").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, top: ${menu}.scrollTop }; })()`);
+  check(wheeled.top > 0 && wheeled.fgBottom <= wheeled.menuBottom + 0.5, `${tag}: the wheel over the recent list reaches New script below it`, JSON.stringify(wheeled));
   await page.eval(`${menu}.scrollTop = ${menu}.scrollHeight`);
   await sleep(200);
-  const last = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#boldFg").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, fgTop: r.top, menuTop: m.top, h: r.height }; })()`);
-  check(last.fgBottom <= last.menuBottom + 0.5 && last.fgTop >= last.menuTop && last.h > 0, `${tag}: scrolled down, the font colour input is in view`, JSON.stringify(last));
+  const last = await page.eval(`(() => { const m = ${menu}.getBoundingClientRect(), r = document.querySelector("#menuNew").getBoundingClientRect(); return { fgBottom: r.bottom, menuBottom: m.bottom, fgTop: r.top, menuTop: m.top, h: r.height }; })()`);
+  check(last.fgBottom <= last.menuBottom + 0.5 && last.fgTop >= last.menuTop && last.h > 0, `${tag}: scrolled down, New script is in view`, JSON.stringify(last));
+  check(await page.eval(`${menu}.querySelectorAll('input[type="color"]').length === 0`), `${tag}: the menu holds no colour fields`);
   await pressKey(page, "Escape", "Escape", 27);
   await page.close();
 }
@@ -909,6 +914,11 @@ async function runSlimBar(width, height) {
   await sleep(200);
   check((await script()).includes("**deadline**") && (await page.eval(value)) === "x" && (await page.eval(barOpen)), `${tag}: B from the input marks the word and keeps what is typed`);
   check(await page.eval(`[...CSS.highlights.get("bar-selection")][0].toString().includes("deadline")`), `${tag}: the word stays marked after B`);
+  // The pointer is still on B, so its colours are open (step U): the first Escape closes them, the next the bar.
+  if (await page.eval(popOpen)) {
+    await closeBar();
+    check((await page.eval(barOpen)) && !(await page.eval(popOpen)), `${tag}: Escape closes B's colours first and keeps the bar`);
+  }
   await closeBar();
   check(!(await page.eval(`CSS.highlights.has("bar-selection")`)), `${tag}: closing the bar takes the mark away`);
   await page.close();
@@ -1053,24 +1063,32 @@ async function runBoldLook(width, height) {
   check(dark.background === "rgba(0, 0, 0, 0)", `${tag}: no background by default`, dark.background);
   const said = await agent("get_script", {});
   check(JSON.parse(said).cues?.some((c) => c.quote === word), `${tag}: the agent sees the bold word`, word);
-  check((await page.eval(`document.querySelectorAll("#cueGroup .menu-action").length`)) === 0, `${tag}: the menu has no bold switches`);
   await page.click("#docInfo");
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await sleep(400);
-  await page.shot("bold-menu");
-  check(await page.eval(`!!document.querySelector("#boldFg").offsetParent && !!document.querySelector("#boldBg").offsetParent`), `${tag}: the menu shows the two colours`);
+  check(await page.eval(`document.querySelectorAll('#scriptMenu input[type="color"]').length === 0 && !document.querySelector("#cueGroup")`), `${tag}: the menu has no bold colours or switches`);
+  await pressKey(page, "Escape", "Escape", 27);
   const shown = () => page.eval(`document.querySelector("#boldFg").value + " " + document.querySelector("#boldBg").value`);
+  const hoverOpen = async () => {
+    await doubleClick(page, await page.eval(wordSpot));
+    await page.until(`!document.querySelector("#editBar").hidden && !document.querySelector("#boldBtn").hidden`, "the B button");
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the bold colours on hover");
+  };
+  await hoverOpen();
+  await page.shot("bold-pop-dark");
   check((await shown()) === "#fb401e #080721", `${tag}: dark mode: the fields show the orange and the page's colour`, await shown());
   await pressKey(page, "Escape", "Escape", 27);
+  await pressKey(page, "Escape", "Escape", 27);
+  await page.eval(`getSelection().removeAllRanges()`);
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await sleep(150);
   const light = await look();
   const lightOrange = await probe("oklch(52% 0.17 37)");
-  await page.click("#docInfo");
-  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await sleep(300);
+  await hoverOpen();
   check((await shown()) === "#b53707 #fafafa", `${tag}: light mode: the fields show the orange and the page's colour`, await shown());
   await pressKey(page, "Escape", "Escape", 27);
+  await pressKey(page, "Escape", "Escape", 27);
+  await page.eval(`getSelection().removeAllRanges()`);
   await sleep(150);
   check(light.color === lightOrange && light.weight === 800, `${tag}: light mode: a darker orange that reads on white`, `${JSON.stringify(light)} ${lightOrange}`);
   await page.eval(`(() => { const set = (id, v) => { const e = document.querySelector(id); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); }; set("#boldFg", "#112233"); set("#boldBg", "#ddeeff"); })()`);
@@ -1120,6 +1138,213 @@ async function runBoldLook(width, height) {
 
 // Bold's own rules with real keys: an edit that would turn a bold line into another kind of block is refused and the marks stay
 // (the line keeps its words in the spoken text); a stretch alone on its line, its words deleted outer ones first, leaves no marks.
+/* ---------- The bold colours by B (Lex 2026-11-07, Variant A) ---------- */
+const popOpen = `document.querySelector("#boldPop").matches(":popover-open")`;
+// The mouse over an element's middle, with no button held: a hover.
+async function hoverOn(page, selector) {
+  const at = await page.eval(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at, button: "none" });
+  return at;
+}
+const tapAt = async (page, { x, y }) => {
+  await page.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+  await page.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await sleep(120);
+};
+const centre = (page, selector) => page.eval(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+// The popover: on screen, and off the selected words (the bar keeps their range while the page's selection may be gone).
+const popPlace = (page) => page.eval(`(() => { const p = document.querySelector("#boldPop").getBoundingClientRect(), s = getSelection(), r = s.rangeCount ? [...s.getRangeAt(0).getClientRects()].filter((x) => x.width > 0) : []; const v = visualViewport; return { onScreen: p.top >= 0 && p.left >= 0 && p.bottom <= v.height + v.offsetTop + 0.5 && p.right <= document.documentElement.clientWidth + 0.5, offWords: r.length > 0 && r.every((w) => p.bottom <= w.top || p.top >= w.bottom || p.right <= w.left || p.left >= w.right), words: r.length, pop: [p.top, p.bottom, p.left, p.right].map(Math.round) }; })()`);
+const barBox = (page) => page.eval(`(() => { const r = document.querySelector("#editBar").getBoundingClientRect(); return [r.top, r.left, r.width, r.height].map(Math.round).join(); })()`);
+
+async function runBoldPop(width, height) {
+  const tag = `${width}x${height} colours`;
+  const { page } = await openDemo(width, height);
+  const phone = width < 640;
+  const stored = () => page.eval(`JSON.parse(localStorage.getItem("script-editor:boldStyle"))`);
+  const cueLook = () => page.eval(`(() => { const w = document.querySelector("#script [data-cue] .md-link__words"); if (!w) return null; const c = getComputedStyle(w); return { color: c.color, background: c.backgroundColor }; })()`);
+  const sampleLook = () => page.eval(`(() => { const c = getComputedStyle(document.querySelector("#boldSample b")); return { color: c.color, background: c.backgroundColor, weight: Number(c.fontWeight) }; })()`);
+  const orange = await page.eval(`(() => { const a = document.createElement("span"); a.style.color = "oklch(52% 0.17 37)"; document.body.append(a); const c = getComputedStyle(a).color; a.remove(); return c; })()`);
+  const selectWord = async () => {
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(200);
+    await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+    await doubleClick(page, await page.eval(wordSpot));
+    await page.until(`!document.querySelector("#editBar").hidden && !document.querySelector("#boldBtn").hidden`, "the selection bar with B");
+    await sleep(250);
+  };
+  check(await page.eval(`!${popOpen} && document.querySelector("#boldBtn").getAttribute("aria-expanded") === "false"`), `${tag}: the colours are closed at first`);
+  check(await page.eval(`!document.querySelector("#boldBtn").title`), `${tag}: B has no tooltip to sit on the colours`);
+
+  if (!phone) {
+    await selectWord();
+    const before = await barBox(page);
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the colours on hovering B", 1500);
+    await sleep(200);
+    await page.shot(`${width}-bold-pop`);
+    check(await page.eval(`document.querySelector("#boldBtn").getAttribute("aria-expanded") === "true"`), `${tag}: B says the colours are open`);
+    check((await barBox(page)) === before, `${tag}: the bar keeps its size and place`, `${before} ${await barBox(page)}`);
+    const at = await popPlace(page);
+    check(at.onScreen && at.offWords, `${tag}: the colours are on screen and off the selected words`, JSON.stringify(at));
+    check(await page.eval(`(() => { const p = document.querySelector("#boldPop").getBoundingClientRect(), b = document.querySelector("#boldBtn").getBoundingClientRect(); return !["below", "above"].includes(document.querySelector("#boldPop").dataset.side) || Math.abs(p.left - b.left) <= 1; })()`), `${tag}: lined up with B when under or over the bar`);
+    // A real hand: the pointer moves from B to the middle of the colours in steps, over half a second.
+    {
+      const from = await centre(page, "#boldBtn"), to = await centre(page, "#boldPop");
+      for (let i = 1; i <= 10; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x + ((to.x - from.x) * i) / 10, y: from.y + ((to.y - from.y) * i) / 10, button: "none" }); await sleep(50); }
+      await sleep(300);
+      check(await page.eval(popOpen), `${tag}: the pointer moving from B to the colours (${await page.eval(`document.querySelector("#boldPop").dataset.side`)}) reaches them open`);
+      // Resting on the input for a while, then off the bar into the page: they close.
+      await hoverOn(page, "#askInput");
+      await sleep(900);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
+      await page.until(`!${popOpen}`, "the colours closing after resting on the bar, then leaving it", 1500);
+      await hoverOn(page, "#boldBtn");
+      await page.until(popOpen, "the colours on B again", 1500);
+    }
+    if (height <= 420) {
+      await page.eval(`document.documentElement.style.fontSize = "250%"`);
+      await page.eval(`dispatchEvent(new Event("resize"))`);
+      await sleep(100);
+      const tall = await page.eval(`(() => { const p = document.querySelector("#boldPop"), r = p.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight, scrolls: p.scrollHeight > p.clientHeight }; })()`);
+      check(tall.top >= 0 && tall.bottom <= tall.h + 0.5 && tall.scrolls, `${tag}: large text in a short window: the colours fit what is seen and scroll inside`, JSON.stringify(tall));
+      await page.eval(`document.documentElement.style.fontSize = ""`);
+      await page.eval(`dispatchEvent(new Event("resize"))`);
+      await sleep(100);
+    }
+    check((await page.eval(`document.querySelectorAll("#boldPop .bold-pop__swatch").length`)) === 12 && (await page.eval(`document.querySelector("#boldReset").disabled`)), `${tag}: the colours, None and a Reset that is off while nothing is chosen`);
+    const sample = await sampleLook();
+    check(sample.color === orange && sample.weight === 800, `${tag}: the sample word shows the default orange and bold`, JSON.stringify(sample));
+    // A colour from the row: saved, shown on the sample at once; the words stay selected.
+    await page.click(`#boldPop [data-kind="color"] [data-hex="#fbd530"]`);
+    await sleep(120);
+    check((await stored())?.color === "#fbd530", `${tag}: the picked text colour is saved`, JSON.stringify(await stored()));
+    check((await sampleLook()).color === "rgb(138, 101, 0)", `${tag}: the sample shows it at once, as its light-mode partner`);
+    check(await page.eval(`document.querySelector('#boldPop [data-hex="#fbd530"]').getAttribute("aria-pressed") === "true" && document.querySelector("#boldReset").disabled === false`), `${tag}: the swatch shows it is picked; Reset comes on`);
+    check(await page.eval(`${popOpen} && !document.querySelector("#editBar").hidden && getSelection().toString().trim() === "deadline"`), `${tag}: the colours and the bar stay open, the word stays selected`, await page.eval(`getSelection().toString()`));
+    // Picking with the mouse takes no focus (the bar's presses never do), so the pointer leaving still closes them.
+    check(!(await page.eval(`document.querySelector("#boldPop").contains(document.activeElement)`)), `${tag}: a picked swatch takes no focus`, await page.eval(`document.activeElement?.outerHTML.slice(0, 80)`));
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
+    await page.until(`!${popOpen}`, "the colours closing when the pointer leaves after a pick", 1500);
+    check(await page.eval(`!document.querySelector("#editBar").hidden`), `${tag}: after a pick the pointer leaves: the colours close, the bar stays`);
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the colours again after the pick", 1500);
+    await page.click(`#boldPop [data-kind="background"] [data-hex="#34317f"]`);
+    await sleep(120);
+    // Clicking B still bolds, as before.
+    await page.click("#boldBtn");
+    await page.until(`!!document.querySelector("#script [data-cue]")`, "the bold word after clicking B");
+    const look = await cueLook();
+    check(look?.color === "rgb(138, 101, 0)" && look?.background === "rgb(222, 220, 255)", `${tag}: clicking B bolds the word, in the picked colours (light mode: their partners)`, JSON.stringify(look));
+    // Night: the same choice shows the night colours, so the words read in both modes.
+    await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+    await sleep(150);
+    const night = await cueLook();
+    check(night?.color === "rgb(251, 213, 48)" && night?.background === "rgb(52, 49, 127)", `${tag}: dark mode shows the night colours of the same choice`, JSON.stringify(night));
+    check(await page.eval(`document.querySelector('#boldPop [data-hex="#f3f4fc"]').getAttribute("aria-label") === "White"`), `${tag}: dark mode: the swatches carry their night names`);
+    await page.send("Emulation.setEmulatedMedia", { features: [] });
+    await sleep(150);
+    check(await page.eval(`document.querySelector('#boldPop [data-hex="#f3f4fc"]').getAttribute("aria-label") === "Black"`), `${tag}: light mode: White's partner is Black, readable on white`);
+    // The own colour field.
+    await page.eval(`(() => { const e = document.querySelector("#boldFg"); e.value = "#112233"; e.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+    await sleep(80);
+    check((await cueLook())?.color === "rgb(17, 34, 51)" && (await page.eval(`document.querySelector('#boldPop [data-kind="color"] .bold-pop__custom').dataset.on === "true"`)), `${tag}: your own colour shows at once and marks the + circle`);
+    // Reset: back to orange, no background, nothing saved.
+    // Bolding can move the bar from under the pointer, which closes the colours: hover B again.
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the colours before Reset", 1500);
+    await page.click("#boldReset");
+    await sleep(120);
+    check((await page.eval(`localStorage.getItem("script-editor:boldStyle")`)) === null, `${tag}: Reset clears the saved choice`);
+    const reset = await cueLook();
+    check(reset?.color === orange && reset?.background === "rgba(0, 0, 0, 0)", `${tag}: Reset: orange again, no background`, JSON.stringify(reset));
+    check(await page.eval(`document.querySelector("#boldReset").disabled && document.querySelector('#boldPop [data-kind="color"] .bold-pop__swatch--default').getAttribute("aria-pressed") === "true"`), `${tag}: Reset goes off; the default orange shows as picked`);
+    // The pointer leaves: they close; the bar stays.
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
+    await page.until(`!${popOpen}`, "the colours closing when the pointer leaves", 1500);
+    check(await page.eval(`!document.querySelector("#editBar").hidden && document.querySelector("#boldBtn").getAttribute("aria-expanded") === "false"`), `${tag}: the pointer leaves: the colours close, the bar stays`);
+    // Escape closes them first, then the bar.
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the colours again", 1500);
+    await pressKey(page, "Escape", "Escape", 27);
+    await sleep(100);
+    check(await page.eval(`!${popOpen} && !document.querySelector("#editBar").hidden`), `${tag}: Escape closes the colours and keeps the bar`);
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
+    // The keyboard: Shift+Tab from the input onto B opens them; Tab goes into them; Escape goes back to B.
+    await selectWord();
+    await page.click("#askInput");
+    await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+    await sleep(100);
+    // Shift+Tab from the input lands on Reset, the popover's last item, before B: back once more to B.
+    const focused = () => page.eval(`document.activeElement?.id || document.activeElement?.className || ""`);
+    if ((await focused()) !== "boldBtn") for (let i = 0; i < 16 && (await focused()) !== "boldBtn"; i++) {
+      await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+      await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+    }
+    await sleep(150);
+    check((await focused()) === "boldBtn" && (await page.eval(popOpen)), `${tag}: keyboard focus on B opens the colours`, await focused());
+    await pressKey(page, "Tab", "Tab", 9);
+    await sleep(100);
+    check((await page.eval(`document.querySelector("#boldPop").contains(document.activeElement)`)) && (await page.eval(popOpen)), `${tag}: Tab goes into the colours, which stay open`, await focused());
+    await pressKey(page, "ArrowRight", "ArrowRight", 39);
+    await sleep(60);
+    check(await page.eval(`document.activeElement?.dataset.hex === "#fbd530" && document.activeElement.tabIndex === 0`), `${tag}: the arrow keys move along a row`, await focused());
+    await pressKey(page, "End", "End", 35);
+    await sleep(40);
+    check((await focused()) === "boldFg", `${tag}: End goes to the row's own colour field`, await focused());
+    await pressKey(page, "ArrowRight", "ArrowRight", 39);
+    await sleep(40);
+    check(await page.eval(`document.activeElement?.classList.contains("bold-pop__swatch--default")`), `${tag}: past the end the arrows wrap to the row's start`, await focused());
+    await pressKey(page, "ArrowLeft", "ArrowLeft", 37);
+    await sleep(40);
+    check((await focused()) === "boldFg", `${tag}: ArrowLeft at the start wraps to the row's end`, await focused());
+    await pressKey(page, "Home", "Home", 36);
+    await sleep(40);
+    check(await page.eval(`document.activeElement?.classList.contains("bold-pop__swatch--default") && document.activeElement.tabIndex === 0`), `${tag}: Home returns to the start`, await focused());
+    // Each row is one stop: from B, Tab reaches the input in a few presses.
+    let presses = 1;
+    for (; presses < 10 && (await focused()) !== "askInput"; presses++) { await pressKey(page, "Tab", "Tab", 9); await sleep(40); }
+    check((await focused()) === "askInput" && presses <= 4, `${tag}: from B, Tab reaches the input in at most 4 presses`, presses);
+    await sleep(900); // 700 ms when they sit away from B
+    check(!(await page.eval(popOpen)), `${tag}: the focus leaving closes the colours`);
+    await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
+    await sleep(150);
+    check((await focused()) === "boldBtn" && (await page.eval(popOpen)), `${tag}: one Shift+Tab from the input lands on B and opens them`, await focused());
+    await pressKey(page, "Tab", "Tab", 9);
+    await sleep(100);
+    await pressKey(page, "Escape", "Escape", 27);
+    await sleep(100);
+    check((await focused()) === "boldBtn" && !(await page.eval(popOpen)) && (await page.eval(`!document.querySelector("#editBar").hidden`)), `${tag}: Escape closes them, the focus goes back to B, the bar stays`, await focused());
+    await pressKey(page, "Escape", "Escape", 27);
+  } else {
+    // A phone: a tap on B bolds and opens the colours; a tap elsewhere closes them.
+    await selectWord();
+    await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+    const before = await barBox(page);
+    await tapAt(page, await centre(page, "#boldBtn"));
+    await page.until(`!!document.querySelector("#script [data-cue]")`, "the bold word after a tap on B");
+    await page.until(popOpen, "the colours after a tap on B", 1500);
+    await sleep(200);
+    await page.shot(`${width}-bold-pop`);
+    check((await barBox(page)) === before, `${tag}: the bar keeps its size and place`, `${before} ${await barBox(page)}`);
+    const at = await popPlace(page);
+    check(at.onScreen && at.offWords, `${tag}: the colours are on screen and off the selected words`, JSON.stringify(at));
+    check(await page.eval(`document.documentElement.scrollWidth <= document.documentElement.clientWidth`), `${tag}: no sideways scroll`);
+    const sw = await page.eval(`(() => { const r = document.querySelector("#boldPop .bold-pop__swatch").getBoundingClientRect(); return Math.min(r.width, r.height); })()`);
+    check(sw >= 35, `${tag}: swatches big enough for a thumb`, sw);
+    await tapAt(page, await centre(page, `#boldPop [data-kind="color"] [data-hex="#5edb81"]`));
+    check((await stored())?.color === "#5edb81" && (await cueLook())?.color === "rgb(31, 122, 60)", `${tag}: a tapped colour shows on the bold word at once (light mode: its partner)`, JSON.stringify(await cueLook()));
+    check(await page.eval(popOpen), `${tag}: they stay open after picking`);
+    await tapAt(page, await centre(page, "#boldReset"));
+    check((await page.eval(`localStorage.getItem("script-editor:boldStyle")`)) === null && (await cueLook())?.color === orange, `${tag}: Reset by tap`);
+    await tapAt(page, await centre(page, "#askInput"));
+    check(!(await page.eval(popOpen)), `${tag}: a tap elsewhere closes the colours`);
+    await page.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  }
+  await page.close();
+}
+
 async function runBoldRefuses(width, height) {
   const tag = `${width} px`;
   const { page, agent } = await openDemo(width, height);
@@ -1559,6 +1784,10 @@ try {
     await runNarrowBar(320, 640);
   } else if (only === "look") {
     await runBoldLook(1280, 800);
+    await runBoldPop(1280, 800);
+    await runBoldPop(1280, 420);
+    await runBoldPop(390, 760);
+    await runBoldPop(320, 640);
   } else if (only === "exports") {
     await runExports(1280, 800);
     await runExports(390, 760);
@@ -1581,6 +1810,10 @@ try {
     await runNarrowBar(360, 740);
     await runNarrowBar(320, 640);
     await runBoldLook(1280, 800);
+    await runBoldPop(1280, 800);
+    await runBoldPop(1280, 420);
+    await runBoldPop(390, 760);
+    await runBoldPop(320, 640);
     await runBoldRefuses(1280, 800);
     await runBoldKinds(1280, 800);
     await runMenuHeight(1280, 420);

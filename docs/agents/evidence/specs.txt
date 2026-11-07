@@ -5,7 +5,11 @@
 ✔ bold words are read from the start, with no switch
 ✔ the prompter file holds plain words: it can't show ** yet
 ✔ colours: by default none of the person's own; only #rrggbb gets through; an older choice stays
-✔ the menu keeps only the colours
+✔ the colours live by B on the selection bar, not in the file name's menu
+✔ the ready-made colours are all #rrggbb, so each one is saved and shown
+✔ a ready-made colour reads in both modes: each mode shows its own partner of it
+✔ only the ready-made colours change with the mode; your own colours and nothing chosen stay as they are
+✔ a background saved by the first build of step U counts as its swatch now
 ✔ by default the words are orange and bold, in the prompter's orange in dark mode
 ✔ the agent has no bold settings and hears that bold is always on
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
@@ -221,6 +225,14 @@
 ✔ words scrolled out of the window: the bar stays on screen and reachable
 ✔ never past the sides of the window
 ✔ phone: docked at the bottom, at the top when it would sit on the words and they are clear of the top
+✔ bold colours: below the bar when the bar is below the words, lined up with B
+✔ bold colours: above the bar when the bar is above the words, so they stay readable
+✔ bold colours: no room under the bar: over it only if that stays off the words, else beside it
+✔ bold colours: a short window: beside the bar, off the words
+✔ bold colours: a phone with the bar docked at the bottom: at the top of the screen when over the bar would cover the words
+✔ bold colours: the bar against the right edge with no room under or over it: on its left
+✔ bold colours: only the bottom of the window clear of the words: there
+✔ bold colours: always on screen and never past the sides
 ✔ the bar's markup: the word count, B, then the input with its ghost, Tab key and Send; no old buttons
 ✔ every command is named for screen readers
 ✔ the Tab key takes its room all the time, so showing it never changes the input's size
@@ -376,9 +388,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 378
+ℹ tests 390
 ℹ suites 0
-ℹ pass 378
+ℹ pass 390
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

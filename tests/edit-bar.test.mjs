@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock } from "../public/edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot } from "../public/edit-bar.js";
 import { ACTIONS } from "../public/doc.js";
 import { GUEST_ACTIONS } from "../public/together-adapter.js";
 
@@ -157,10 +157,69 @@ test("phone: docked at the bottom, at the top when it would sit on the words and
   assert.equal(dock(500, 530, { lift: 400 }), "bottom", "words under the keyboard: nothing to clear");
 });
 
+// The bold colours (Lex 2026-11-07, Variant A): a small popover by B, never on the selected words, always on screen.
+const bx = (top, bottom, left = 56, right = 472) => ({ top, bottom, left, right });
+const pop = (o) => popSpot({ bar: bx(338, 410), x: 60, words: bx(300, 330, 60, 400), w: 280, h: 200, top: 50, vw: 1280, vh: 800, ...o });
+const off = (s, words, w = 280, h = 200) => s.y + h <= words.top || s.y >= words.bottom || s.x + w <= words.left || s.x >= words.right;
+
+test("bold colours: below the bar when the bar is below the words, lined up with B", () => {
+  const s = pop({});
+  assert.deepEqual(s, { side: "below", x: 60, y: 416 });
+  assert.ok(off(s, bx(300, 330, 60, 400)));
+});
+
+test("bold colours: above the bar when the bar is above the words, so they stay readable", () => {
+  const words = bx(480, 510, 60, 400), s = pop({ bar: bx(400, 472), words });
+  assert.deepEqual(s, { side: "above", x: 60, y: 400 - 6 - 200 });
+  assert.ok(off(s, words));
+});
+
+test("bold colours: no room under the bar: over it only if that stays off the words, else beside it", () => {
+  const s = pop({ vh: 560 });
+  assert.equal(s.side, "right", "below would leave the window; over the bar would cover the words just above it");
+  const far = pop({ vh: 560, words: bx(80, 110, 60, 400) });
+  assert.deepEqual(far, { side: "above", x: 60, y: 338 - 6 - 200 }, "words higher up: right over the bar");
+});
+
+test("bold colours: a short window: beside the bar, off the words", () => {
+  const words = bx(150, 180, 60, 400), s = pop({ vh: 420, bar: bx(188, 260), words });
+  assert.equal(s.side, "right");
+  assert.equal(s.x, 472 + 6);
+  assert.ok(off(s, words));
+});
+
+test("bold colours: a phone with the bar docked at the bottom: at the top of the screen when over the bar would cover the words", () => {
+  const words = bx(420, 446, 20, 300), s = pop({ vw: 390, vh: 760, w: 374, h: 290, bar: bx(660, 750, 8, 382), x: 16, words });
+  assert.equal(s.side, "top");
+  assert.equal(s.y, 58);
+  assert.ok(off(s, words, 374, 290));
+  const low = bx(200, 226, 20, 300), up = pop({ vw: 390, vh: 760, w: 374, h: 290, bar: bx(660, 750, 8, 382), x: 16, words: low });
+  assert.equal(up.side, "above", "words high on the screen: right over the bar");
+});
+
+test("bold colours: the bar against the right edge with no room under or over it: on its left", () => {
+  const words = bx(150, 180, 900, 1200), s = pop({ vh: 420, bar: bx(188, 260, 860, 1272), x: 864, words });
+  assert.deepEqual(s, { side: "left", x: 860 - 6 - 280, y: 188 });
+  assert.ok(off(s, words));
+});
+
+test("bold colours: only the bottom of the window clear of the words: there", () => {
+  const words = bx(60, 330, 8, 1272), s = pop({ vh: 600, bar: bx(338, 410, 8, 1272), words });
+  assert.deepEqual(s, { side: "bottom", x: 60, y: 600 - 8 - 200 });
+  assert.ok(off(s, words));
+});
+
+test("bold colours: always on screen and never past the sides", () => {
+  const tiny = pop({ vh: 300, bar: bx(120, 190, 8, 1270), words: bx(60, 300, 8, 1270) });
+  assert.ok(tiny.y >= 58 && tiny.y + 200 <= 292, JSON.stringify(tiny));
+  assert.equal(pop({ x: 1200 }).x, 1280 - 280 - 8);
+  assert.equal(pop({ x: -40 }).x, 8);
+});
+
 test("the bar's markup: the word count, B, then the input with its ghost, Tab key and Send; no old buttons", () => {
   const html = file("public/index.html");
   const bar = html.slice(html.indexOf('<div class="edit-bar" id="editBar"'), html.indexOf('<div class="slash-menu"'));
-  const order = ['id="ebLabel"', 'id="boldBtn"', 'id="askForm"', 'id="askGhost"', 'id="askInput"', 'id="askSending"', 'id="askTab"', 'type="submit"'].map((k) => bar.indexOf(k));
+  const order = ['id="ebLabel"', 'id="boldBtn"', 'id="boldPop"', 'id="askForm"', 'id="askGhost"', 'id="askInput"', 'id="askSending"', 'id="askTab"', 'type="submit"'].map((k) => bar.indexOf(k));
   assert.ok(order.every((i, n) => i >= 0 && (n === 0 || i > order[n - 1])), `order: ${order}`);
   for (const gone of ["edit-bar__button--voice", 'id="brollBtn"', 'id="moreBtn"', 'id="suggestBroll"', 'id="brollMenu"', 'id="addBroll"', 'data-act="shorter"', 'data-act="simpler"', 'data-act="like"']) assert.ok(!bar.includes(gone), gone);
   assert.match(bar, /<input id="askInput"[^>]*maxlength="500"/);

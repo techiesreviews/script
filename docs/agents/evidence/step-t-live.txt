@@ -1,0 +1,6 @@
+# Steps S and T, the live site, https://script.techies.tools, Worker version fcdfd893-5a06-40d6-8030-551b9c2c219c, deployed from main 457e549 on 2026-11-06 with `kit deploy` (RESULT: ok deploy).
+# The browser checks ran against the live site with `SMOKE_ONLY=<group> node scripts/smoke-keep-all.mjs https://script.techies.tools <Chrome port>`, one group at a time.
+slim: 206 ok, RESULT: ok
+look: 15 ok, RESULT: ok
+refusals: 201 ok, RESULT: ok
+menu: 10 ok, RESULT: ok

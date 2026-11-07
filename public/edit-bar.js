@@ -124,3 +124,25 @@ export function phoneDock({ first, last, h, top, vh, lift = 0 }) {
   const onWords = last.bottom > barTop && first.top < vh - lift;
   return onWords && first.top >= top + EDGE + h + EDGE ? "top" : "bottom";
 }
+
+/* ---------- The bold colours by B (Lex 2026-11-07, Variant A) ----------
+   A small popover by the bar: under it, over it, beside it, or at the top or the bottom of what is seen, whichever comes
+   first that keeps it off the selected words and on screen. */
+const POP_GAP = 6;
+/** The popover's place in window pixels, and its side. bar: the bar's box; x: where B starts; words: the selected words'
+ *  box ({ top, bottom, left, right }); w, h: the popover; top: where the top bar ends; vw, vh: the window. */
+export function popSpot({ bar, x, words, w, h, top, vw, vh }) {
+  const low = top + EDGE, high = Math.max(low, vh - EDGE - h), left = Math.max(EDGE, Math.min(x, vw - w - EDGE));
+  const spots = [
+    { side: "below", x: left, y: bar.bottom + POP_GAP },
+    { side: "above", x: left, y: bar.top - POP_GAP - h },
+    { side: "right", x: bar.right + POP_GAP, y: clamp(bar.top, low, high) },
+    { side: "left", x: bar.left - POP_GAP - w, y: clamp(bar.top, low, high) },
+    { side: "top", x: left, y: low },
+    { side: "bottom", x: left, y: high },
+  ];
+  const fits = (s) => s.y >= low && s.y <= high && s.x >= EDGE && s.x + w <= vw - EDGE;
+  const offWords = (s) => s.y >= words.bottom || s.y + h <= words.top || s.x >= words.right || s.x + w <= words.left;
+  const spot = spots.find((s) => fits(s) && offWords(s)) || spots.slice(0, 2).find(fits) || (vh - bar.bottom >= bar.top - top ? spots[0] : spots[1]);
+  return { side: spot.side, x: spot.x, y: clamp(spot.y, low, high) };
+}
