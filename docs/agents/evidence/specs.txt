@@ -227,6 +227,8 @@
 ✔ bold colours: no room under the bar: over it only if that stays off the words, else beside it
 ✔ bold colours: a short window: beside the bar, off the words
 ✔ bold colours: a phone with the bar docked at the bottom: at the top of the screen when over the bar would cover the words
+✔ bold colours: the bar against the right edge with no room under or over it: on its left
+✔ bold colours: only the bottom of the window clear of the words: there
 ✔ bold colours: always on screen and never past the sides
 ✔ the bar's markup: the word count, B, then the input with its ghost, Tab key and Send; no old buttons
 ✔ every command is named for screen readers
@@ -383,9 +385,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 385
+ℹ tests 387
 ℹ suites 0
-ℹ pass 385
+ℹ pass 387
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
