@@ -1217,7 +1217,7 @@ async function runBoldPop(width, height) {
     const night = await cueLook();
     check(night?.color === "rgb(251, 213, 48)" && night?.background === "rgb(52, 49, 127)", `${tag}: dark mode shows the night colours of the same choice`, JSON.stringify(night));
     check(await page.eval(`document.querySelector('#boldPop [data-hex="#f3f4fc"]').getAttribute("aria-label") === "White"`), `${tag}: dark mode: the swatches carry their night names`);
-    await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+    await page.send("Emulation.setEmulatedMedia", { features: [] });
     await sleep(150);
     check(await page.eval(`document.querySelector('#boldPop [data-hex="#f3f4fc"]').getAttribute("aria-label") === "Black"`), `${tag}: light mode: White's partner is Black, readable on white`);
     // The own colour field.
