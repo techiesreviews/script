@@ -1,11 +1,14 @@
 // Cues in the script (fleet issue #14, Lex 2026-11-04), shown as bold: "**words**" in a spoken line, the standard Markdown
 // bold (the fleet lead's decision after the release review; first built as "==words==", never released, so no script
 // holds that). Always on (Lex, 2026-11-06). The prompter shows "**" as literal asterisks today, so its export strips them.
-// Rules like links (links.js): words on one line, no brackets or "*" inside, at least one letter or digit, never inside a
-// link. A pair starts and ends at word boundaries: no letter, digit or "*" outside it, no space inside its edges, so
-// a**b, **kwargs, 2**3 and a ** b are plain text.
+// Rules like links (links.js): words on one line, no brackets or "*" inside, at least one letter or digit. A pair starts
+// and ends at word boundaries: no letter, digit or "*" outside it, no space inside its edges, so a**b, **kwargs, 2**3 and
+// a ** b are plain text.
+// Bold links (Lex 2026-11-07): bold may sit inside a link's words ("[a **b** c](url)") or hold whole links ("**[a](url)**",
+// "**a [b](url) c**"), never cut across a link's edge; B and the link icon split a bold stretch at a link's edge so the
+// marks nest. Link lines ("- Label: https://…") stay off limits.
 // Pure: no DOM. app.js draws cues with the links' show/hide trick; changes.js plans the agent's cue changes.
-import { textLinks, isLinkLine, spokenText, quoteRe, overlaps } from "./links.js";
+import { textLinks, isLinkLine, spokenText, quoteRe, overlaps, safeUrl } from "./links.js";
 
 export const CUE_LIMITS = { cues: 30 };
 const CUE = /(?<![\p{L}\p{N}\p{M}*])\*\*([^\s*[\]](?:[^*[\]\n]*[^\s*[\]])?)\*\*(?![\p{L}\p{N}\p{M}*])/gu;
@@ -59,9 +62,9 @@ export function boldShown(style, mode) {
 }
 
 /* ---------- Reading cues ---------- */
-// Where cues may not be: text links and link lines ("- Label: https://…").
-function linkRanges(text) {
-  const out = textLinks(text).map((l) => [l.start, l.end]);
+// The link lines ("- Label: https://…"), where cues may not be.
+function lineRanges(text) {
+  const out = [];
   let at = 0;
   for (const line of text.split("\n")) {
     if (isLinkLine(line)) out.push([at, at + line.length]);
@@ -69,19 +72,54 @@ function linkRanges(text) {
   }
   return out;
 }
-/** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
- *  same shape as textLinks() so the editor draws both alike). A "**…**" inside or across a link is not a cue. */
-export function textCues(content) {
-  const text = String(content ?? "");
-  const links = linkRanges(text);
-  const out = [];
-  for (const m of text.matchAll(CUE)) {
-    const start = m.index, end = start + m[0].length;
-    if (!WORDY.test(m[1]) || overlaps(links, start, end)) continue;
-    out.push({ start, end, words: { start: start + 2, end: end - 2 }, label: m[1], cue: true });
-  }
-  return out;
+// Text links and link lines.
+const linkRanges = (text) => [...textLinks(text).map((l) => [l.start, l.end]), ...lineRanges(text)];
+// The text with each text link made one run of a sign that is no letter, digit, space, "*" or bracket: a bold stretch may
+// hold whole links, and its own rules read the rest.
+const MASK = "\uE000";
+function maskLinks(text, links = textLinks(text)) {
+  let out = "", at = 0;
+  for (const l of links) { out += text.slice(at, l.start) + MASK.repeat(l.end - l.start); at = l.end; }
+  return out + text.slice(at);
 }
+// Bold words: no "*", bracket or line break outside the links they hold, and a letter or digit among what is spoken.
+const badWords = (s) => BAD_WORDS.test(maskLinks(s));
+const wordy = (s) => WORDY.test(spokenText(s));
+/** The cues in a block's content: [{ start, end, words: { start, end }, label, cue: true }] (content offsets, the
+ *  same shape as textLinks() so the editor draws both alike), by where they start. A cue may sit inside a link's words or
+ *  hold whole links; a "**…**" across a link's edge, or in a link line, is not a cue. */
+export function textCues(content) {
+  const text = String(content ?? ""), links = textLinks(text), lines = lineRanges(text);
+  const out = [];
+  const read = (src, base) => {
+    for (const m of src.matchAll(CUE)) {
+      const start = base + m.index, end = start + m[0].length, label = text.slice(start + 2, end - 2);
+      if (!wordy(label) || overlaps(lines, start, end)) continue;
+      out.push({ start, end, words: { start: start + 2, end: end - 2 }, label, cue: true });
+    }
+  };
+  read(maskLinks(text, links), 0);
+  for (const l of links) read(text.slice(l.words.start, l.words.end), l.words.start);
+  return out.sort((x, y) => x.start - y.start || y.end - x.end);
+}
+// Which characters are not spoken: the cues' "**", each link's "[" and "](address)", and the link lines.
+function markup(text, cues = textCues(text), links = textLinks(text)) {
+  const m = new Uint8Array(text.length);
+  for (const c of cues) m.fill(1, c.start, c.words.start).fill(1, c.words.end, c.end);
+  for (const l of links) m.fill(2, l.start, l.words.start).fill(2, l.words.end, l.end);
+  for (const [a, b] of lineRanges(text)) m.fill(3, a, b);
+  return m;
+}
+// The text without some characters (gone[i] set) and where each kept one is: { text, map } (map[i]: the offset in `text`
+// of out[i]; map[out.length] is text.length).
+function without(text, gone) {
+  let out = "";
+  const map = [];
+  for (let i = 0; i < text.length; i++) if (!gone[i]) { map.push(i); out += text[i]; }
+  map.push(text.length);
+  return { text: out, map };
+}
+const cueMarks = (text, cues = textCues(text)) => markup(text, cues, []).map((x) => (x === 1 ? 1 : 0));
 /** An AI's new text, when the text it was asked about held marks: a "**" it copied that makes no cue goes. Ordinary text
  *  stays: a letter or digit on both sides (a**b), or spaces on both sides (a ** b). */
 export function dropLoneMarks(text) {
@@ -96,12 +134,10 @@ export function dropLoneMarks(text) {
   }
   return out + t.slice(at);
 }
-/** The text with each cue replaced by its words. */
+/** The text with each cue replaced by its words (also cues inside links and around them). */
 export function stripCues(text) {
   const t = String(text ?? "");
-  let out = "", at = 0;
-  for (const c of textCues(t)) { out += t.slice(at, c.start) + c.label; at = c.end; }
-  return out + t.slice(at);
+  return without(t, cueMarks(t)).text;
 }
 // Where each character of `from` is in `to` (when only "*" marks differ), and which ones stayed.
 function marksAlign(from, to) {
@@ -148,12 +184,24 @@ export function quoteAcrossCues(content, quote) {
 export function plainView(content) {
   const text = String(content ?? ""), cues = textCues(text);
   if (!cues.length) return null;
-  const map = [];
-  let plain = "", at = 0;
-  const copy = (from, to) => { for (let i = from; i < to; i++) { map.push(i); plain += text[i]; } };
-  for (const c of cues) { copy(at, c.start); copy(c.words.start, c.words.end); at = c.end; }
-  copy(at, text.length);
-  return { plain, map };
+  const v = without(text, cueMarks(text, cues));
+  return { plain: v.text, map: v.map.slice(0, -1) };
+}
+/** What is spoken, for finding the agent's quotes: the text without the cues' marks, the links' "[" and "](address)" and
+ *  the link lines (kept with `lines`, so a quote found there can be named): { text, map } (map[i]: the offset in `content`
+ *  of text[i]; map[text.length] is content.length). */
+export function spokenView(content, { lines = false } = {}) {
+  const text = String(content ?? ""), m = markup(text);
+  return without(text, lines ? m.map((x) => (x === 3 ? 0 : x)) : m);
+}
+/** The spoken letters and digits in order, each with whether it is bold: [{ ch, bold }] (the safety check that a change
+ *  of marks never changes, loses or un-bolds a word). */
+export function boldWords(content) {
+  const text = String(content ?? ""), cues = textCues(text), m = markup(text, cues), bold = new Uint8Array(text.length);
+  for (const c of cues) bold.fill(1, c.words.start, c.words.end);
+  const out = [];
+  for (let i = 0; i < text.length; i++) if (!m[i] && WORD_CHAR.test(text[i])) out.push({ ch: text[i], bold: !!bold[i] });
+  return out;
 }
 /** What is spoken (links.js spokenText) without the cue marks: for word counts and the camera script. */
 export const spokenWords = (content) => spokenText(stripCues(content));
@@ -166,37 +214,190 @@ function trimRange(content, start, end) {
   while (e > s && /\s/.test(content[e - 1])) e--;
   return [s, e];
 }
-const inside = (c, s, e) => s >= c.start && e <= c.end;
-/** Is the selection inside one cue (the button shows pressed, a toggle takes the cue off)? */
+// Apply edits made against `text`: [{ at, del, ins, order }] (order: which goes first of the insertions at one place).
+function applyOps(text, ops) {
+  const list = [...ops].sort((x, y) => x.at - y.at || (x.order ?? 0) - (y.order ?? 0));
+  let out = "", at = 0;
+  for (const o of list) { out += text.slice(at, o.at) + (o.ins || ""); at = Math.max(at, o.at + (o.del || 0)); }
+  return out + text.slice(at);
+}
+/** Where a range of the text goes through these edits (addLink's or removeLink's `ops`): from its first character to
+ *  just after its last one that stays, as marksRange does; text put in where a range starts goes before it. */
+export function opsRange(text, ops) {
+  const n = String(text ?? "").length, stayed = new Array(n).fill(true), put = new Map(), at = new Array(n + 1);
+  for (const o of ops) {
+    for (let i = o.at; i < o.at + (o.del || 0); i++) stayed[i] = false;
+    if (o.ins) put.set(o.at, (put.get(o.at) || 0) + o.ins.length);
+  }
+  let j = 0;
+  for (let i = 0; i <= n; i++) { j += put.get(i) || 0; at[i] = j; if (i < n && stayed[i]) j++; }
+  return (start, end) => {
+    let last = end - 1;
+    while (last >= start && !stayed[last]) last--;
+    return { start: at[start], end: last >= start ? at[last] + 1 : at[start] };
+  };
+}
+// A change of marks only: the same spoken words, and the same of them bold (`sameBold`).
+const sameWords = (a, b) => spokenWords(a) === spokenWords(b);
+const sameBold = (a, b) => JSON.stringify(boldWords(a)) === JSON.stringify(boldWords(b));
+// The spoken characters of start…end that are not spaces.
+function spokenIn(text, s, e, m) {
+  const out = [];
+  for (let i = s; i < e; i++) if (!m[i] && !/\s/.test(text[i])) out.push(i);
+  return out;
+}
+
+/** Is every selected word bold (the button shows pressed, a toggle takes the bold off)? */
 export function cueSelected(content, start, end) {
-  const [s, e] = trimRange(String(content ?? ""), start, end);
-  return e > s && textCues(content).some((c) => inside(c, s, e));
+  const text = String(content ?? ""), [s, e] = trimRange(text, start, end);
+  if (e <= s) return false;
+  const cues = textCues(text), at = spokenIn(text, s, e, markup(text, cues));
+  return at.length > 0 && at.every((i) => cues.some((c) => i >= c.words.start && i < c.words.end));
 }
 /**
- * Toggle a cue on the selected words (start…end, content offsets, already snapped to whole words):
- * inside one cue: that cue's marks go, its words stay; otherwise the selection and every cue it touches become one
- * cue (half a cue or across two joins into one). Returns { content, start, end, cue } (start…end: the words, to
- * select again; cue: whether they are a cue now; from…to: the stretch of the old content it changes) or null when nothing can change (no words, a line break, a
- * bracket or "*" in the way, a link touched).
+ * Toggle bold on the selected words (start…end, content offsets, already snapped to whole words):
+ * every selected word bold: the marks of the bold stretches they are in go, their words stay; otherwise the selection and
+ * every cue it touches become one cue (half a cue or across two joins into one), holding the links it covers whole and
+ * split at the edge of a link it half covers ("**a** [**b** c](url)"); the whole words of one link make the whole link bold.
+ * Returns { content, start, end, cue } (start…end: the words, to select again; cue: whether they are bold now; from…to:
+ * the stretch of the old content it changes) or null when nothing can change (no words, a line break, a bracket or "*"
+ * in the way, a link line).
  */
 export function toggleCue(content, start, end) {
   const text = String(content ?? "");
   const [s, e] = trimRange(text, start, end);
-  if (e <= s) return null;
-  const cues = textCues(text);
-  const own = cues.find((c) => inside(c, s, e));
-  if (own) {
-    return { content: text.slice(0, own.start) + own.label + text.slice(own.end), start: own.start, end: own.start + own.label.length, cue: false, from: own.start, to: own.end };
+  if (e <= s || overlaps(lineRanges(text), s, e)) return null;
+  const cues = textCues(text), m = markup(text, cues);
+  if (cueSelected(text, s, e)) {
+    const at = spokenIn(text, s, e, m);
+    const touched = cues.filter((c) => at.some((i) => i >= c.words.start && i < c.words.end));
+    const gone = new Uint8Array(text.length);
+    for (const c of touched) gone.fill(1, c.start, c.words.start).fill(1, c.words.end, c.end);
+    const v = without(text, gone), pos = (x) => { let n = 0; while (n < v.map.length - 1 && v.map[n] < x) n++; return n; };
+    const from = Math.min(...touched.map((c) => c.start)), to = Math.max(...touched.map((c) => c.end));
+    return { content: v.text, start: pos(touched[0].words.start), end: pos(Math.max(...touched.map((c) => c.words.end))), cue: false, from, to };
   }
   const touched = cues.filter((c) => s < c.end && e > c.start);
-  const from = Math.min(s, ...touched.map((c) => c.start)), to = Math.max(e, ...touched.map((c) => c.end));
-  if (overlaps(linkRanges(text), from, to)) return null;
-  const words = stripCues(text.slice(from, to));
-  if (!WORDY.test(words) || BAD_WORDS.test(words) || words !== words.trim()) return null;
-  const next = `${text.slice(0, from)}**${words}**${text.slice(to)}`;
-  // The new marks must read back as one cue (not next to a word or a "*"), with every other cue still there.
-  if (!textCues(next).some((c) => c.start === from && c.label === words) || textCues(next).length !== cues.length - touched.length + 1) return null;
-  return { content: next, start: from + 2, end: from + 2 + words.length, cue: true, from, to };
+  let from = Math.min(s, ...touched.map((c) => c.start)), to = Math.max(e, ...touched.map((c) => c.end));
+  // An edge in a link's hidden Markdown goes to the link's edge.
+  for (const l of textLinks(text)) {
+    if (from > l.start && from < l.words.start) from = l.start;
+    else if (from >= l.words.end && from < l.end) from = l.end;
+    if (to > l.start && to <= l.words.start) to = l.start;
+    else if (to > l.words.end && to < l.end) to = l.end;
+  }
+  if (to <= from) return null;
+  // The touched cues' marks go; the new marks go around the pieces.
+  const gone = new Uint8Array(text.length);
+  for (const c of touched) gone.fill(1, c.start, c.words.start).fill(1, c.words.end, c.end);
+  const v = without(text, gone), t = v.text;
+  const pos = (x) => { let n = 0; while (n < v.map.length - 1 && v.map[n] < x) n++; return n; };
+  let pieces = [[pos(from), pos(to)]];
+  const links = textLinks(t);
+  for (const l of links) {
+    const next = [];
+    for (const [a, b] of pieces) {
+      if (b <= l.start || a >= l.end || (a <= l.start && b >= l.end) || (a >= l.words.start && b <= l.words.end)) { next.push([a, b]); continue; }
+      if (a < l.start) next.push([a, l.start]);
+      next.push([Math.max(a, l.words.start), Math.min(b, l.words.end)]);
+      if (b > l.end) next.push([l.end, b]);
+    }
+    pieces = next;
+  }
+  pieces = pieces.map(([a, b]) => trimRange(t, a, b)).filter(([a, b]) => b > a && wordy(t.slice(a, b)));
+  if (!pieces.length || pieces.some(([a, b]) => badWords(t.slice(a, b)))) return null;
+  // All of one link's words: the whole link goes bold, marks outside it (when nothing that makes them plain is next to it).
+  pieces = pieces.map(([a, b]) => {
+    const l = links.find((x) => a >= x.words.start && b <= x.words.end);
+    if (!l) return [a, b];
+    const [ws, we] = trimRange(t, l.words.start, l.words.end), out = (ch) => !WORD_CHAR.test(ch ?? "") && ch !== "*";
+    return ws === a && we === b && out(t[l.start - 1]) && out(t[l.end]) ? [l.start, l.end] : [a, b];
+  });
+  const next = applyOps(t, pieces.flatMap(([a, b]) => [{ at: a, ins: "**", order: 1 }, { at: b, ins: "**", order: 0 }]));
+  const after = textCues(next), placed = pieces.map(([a, b], k) => [a + 4 * k, b + 4 * k + 4]);
+  if (after.length !== cues.length - touched.length + pieces.length || !placed.every(([a, b]) => after.some((c) => c.start === a && c.end === b))) return null;
+  if (!sameWords(text, next)) return null;
+  return { content: next, start: placed[0][0] + 2, end: placed.at(-1)[1] - 2, cue: true, from, to };
+}
+
+/* ---------- The link icon (Lex 2026-11-07) ---------- */
+/** What the link icon does on the selected words: { state: "off" } (plain or bold words: it can link them), { state: "on",
+ *  link } (all inside one link: it removes it; textLinks() shape), "mixed" (part link, part plain, or across lines: grey)
+ *  or "none" (no words, or a link line). */
+export function linkState(content, start, end) {
+  const text = String(content ?? ""), [s, e] = trimRange(text, start, end);
+  if (e <= s || overlaps(lineRanges(text), s, e)) return { state: "none" };
+  if (text.slice(s, e).includes("\n")) return { state: "mixed" };
+  const links = textLinks(text), m = markup(text, textCues(text), links);
+  const seen = new Set();
+  let plain = false, linkMarks = false;
+  for (let i = s; i < e; i++) {
+    const l = links.find((x) => i >= x.start && i < x.end);
+    if (m[i] === 2) { linkMarks = true; continue; }
+    if (m[i] || /\s/.test(text[i])) continue;
+    if (l) seen.add(l); else plain = true;
+  }
+  if (!plain && seen.size === 1) return { state: "on", link: [...seen][0] };
+  if (plain && !seen.size && !linkMarks) return { state: "off" };
+  return { state: plain || seen.size ? "mixed" : "none" };
+}
+/**
+ * Link the selected words (linkState "off") to a full https:// or http:// address: "[words](url)". Inside bold words the
+ * link goes inside them (all of them: a whole bold link "**[words](url)**"); bold words wholly inside go inside the link;
+ * bold half covered is split at the link's edge. Returns { content, start, end, from, to, ops } (start…end: the link's
+ * words now; from…to: the stretch of the old content it changes; ops: the edits, for opsRange) or null.
+ */
+export function addLink(content, start, end, url) {
+  const text = String(content ?? "");
+  if (!safeUrl(url) || linkState(text, start, end).state !== "off") return null;
+  const cues = textCues(text), m = markup(text, cues);
+  let [s, e] = trimRange(text, start, end);
+  while (s < e && (m[s] || /\s/.test(text[s]))) s++;
+  while (e > s && (m[e - 1] || /\s/.test(text[e - 1]))) e--;
+  if (e <= s) return null;
+  const ops = [];
+  const holder = cues.find((c) => c.words.start <= s && e <= c.words.end);
+  if (!holder) {
+    // A cue whose words begin or end with the link's: its marks go inside the link.
+    for (const c of cues) {
+      if (c.words.start === s && c.words.end <= e) s = c.start;
+      if (c.words.end === e && c.words.start >= s) e = c.end;
+    }
+    for (const c of cues) {
+      if (c.words.end <= s || c.words.start >= e || (c.start >= s && c.end <= e)) continue;
+      if (c.words.start < s) {
+        // Starts before the link: close it before the link, open it again inside.
+        let p = s;
+        while (p > c.words.start && /\s/.test(text[p - 1])) p--;
+        if (wordy(text.slice(c.words.start, p))) ops.push({ at: p, ins: "**", order: 0 });
+        else ops.push({ at: c.start, del: 2 });
+        ops.push({ at: s, ins: "**", order: 2 });
+      } else {
+        // Ends after the link: close it inside, open it again after.
+        let q = e;
+        while (q < c.words.end && /\s/.test(text[q])) q++;
+        ops.push({ at: e, ins: "**", order: 0 });
+        if (wordy(text.slice(q, c.words.end))) ops.push({ at: q, ins: "**", order: 2 });
+        else ops.push({ at: c.words.end, del: 2 });
+      }
+    }
+  }
+  ops.push({ at: s, ins: "[", order: 1 }, { at: e, ins: `](${url})`, order: 1 });
+  const next = applyOps(text, ops);
+  const placed = opsRange(text, ops)(s, e);
+  const link = textLinks(next).find((l) => l.url === url && l.start <= placed.start && l.end >= placed.end);
+  if (!link || !sameWords(text, next) || !sameBold(text, next)) return null;
+  return { content: next, start: link.words.start, end: link.words.end, from: Math.min(...ops.map((o) => o.at)), to: Math.max(...ops.map((o) => o.at + (o.del || 0))), ops };
+}
+/** Remove the link the selected words are in (linkState "on"): its words stay, and so does their bold. Returns
+ *  { content, start, end, from, to, ops } (start…end: the words now) or null. */
+export function removeLink(content, start, end) {
+  const text = String(content ?? ""), st = linkState(text, start, end);
+  if (st.state !== "on") return null;
+  const l = st.link, ops = [{ at: l.start, del: l.words.start - l.start }, { at: l.words.end, del: l.end - l.words.end }];
+  const next = applyOps(text, ops);
+  if (!sameWords(text, next) || !sameBold(text, next)) return null;
+  return { content: next, start: l.start, end: l.start + l.words.end - l.words.start, from: l.start, to: l.end, ops };
 }
 
 /* ---------- The person's edits ---------- */
@@ -238,7 +439,7 @@ function emptied(old, now, p, oe, ne) {
   // spaced on both edges. With more lines in the block, a spaces-only first line could turn the next line into a list,
   // heading or raw block, so those stay byte for byte.
   const alone = /^[ \t]*$/.test(old.slice(0, open - 2)) && /^[ \t]*$/.test(old.slice(close + 2));
-  if (BAD_WORDS.test(inner) || !WORDY.test(inner) || (!alone && /\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
+  if (badWords(inner) || !wordy(inner) || (!alone && /\s/.test(inner[0]) && /\s/.test(inner.at(-1)))) return null;
   if (WORD_CHAR.test(before) || before === "*" || WORD_CHAR.test(after) || after === "*" || overlaps(linkRanges(old), open - 2, close + 2)) return null;
   // A mark that belongs to a real stretch the edit didn't touch isn't this one's to take.
   if (textCues(old).some((c) => c.end === open || c.start === close)) return null;
@@ -281,7 +482,7 @@ export function settleMarks(old, now, caret = null, { typedBefore = null, delete
     let start = open, finish = close + 2;
     if (!lead) while (start > 0 && WORD_CHAR.test(now[start - 1])) start--;
     if (!trail) while (finish < now.length && WORD_CHAR.test(now[finish])) finish++;
-    if (!WORDY.test(words) || BAD_WORDS.test(words) || now[close + 2] === "*" || now[finish] === "*" || now[open - 1] === "*" || now[start - 1] === "*") {
+    if (!wordy(words) || badWords(words) || now[close + 2] === "*" || now[finish] === "*" || now[open - 1] === "*" || now[start - 1] === "*") {
       take(open, 2);
       take(close, 2);
       continue;
@@ -313,6 +514,8 @@ export function settleMarks(old, now, caret = null, { typedBefore = null, delete
 }
 
 /* ---------- The agent's rewrites ---------- */
+// Does start…end cut a link (neither holding it whole nor inside its words)?
+const cuts = (l, start, end) => start < l.end && end > l.start && !(start <= l.start && end >= l.end) && !(start >= l.words.start && end <= l.words.end);
 /**
  * A replace by the agent over text that held cues: each cue whose words are still in the new text (whole words,
  * outside links and cues already there) is marked on them again; the others are dropped. Cues the agent kept itself
@@ -326,12 +529,12 @@ export function keepCues(removed, text) {
   for (const x of textCues(out)) already.set(x.label, (already.get(x.label) || 0) + 1);
   for (const c of old) {
     if (already.get(c.label) > 0) { already.set(c.label, already.get(c.label) - 1); continue; }
-    const taken = [...textCues(out).map((x) => [x.start, x.end]), ...linkRanges(out)];
+    const taken = [...textCues(out).map((x) => [x.start, x.end]), ...lineRanges(out)], links = textLinks(out);
     const re = quoteRe(c.label);
     let hit = null;
     for (let m = re.exec(out); m; re.lastIndex = m.index + 1, m = re.exec(out)) {
       const i = m.index, j = i + m[0].length;
-      if (!wholeWords(out, i, j) || overlaps(taken, i, j) || m[0].includes("\n")) continue;
+      if (!wholeWords(out, i, j) || overlaps(taken, i, j) || m[0].includes("\n") || links.some((l) => cuts(l, i, j))) continue;
       // It must read back as a cue there (not right next to a "*", say).
       if (textCues(`${out.slice(0, i)}**${m[0]}**${out.slice(j)}`).some((x) => x.start === i)) { hit = [i, j]; break; }
     }
@@ -347,16 +550,35 @@ export function keepCues(removed, text) {
 export function widenOverCues(content, start, end) {
   const text = String(content ?? "");
   let s = start, e = end;
+  const cut = [];
   for (const c of textCues(text)) {
     const startIn = start > c.start && start < c.end, endIn = end > c.start && end < c.end;
-    if (startIn || endIn) { s = Math.min(s, c.start); e = Math.max(e, c.end); }
+    if (startIn || endIn) { s = Math.min(s, c.start); e = Math.max(e, c.end); cut.push(c); }
   }
   if (s === start && e === end) return null;
-  // Cue words hold no "*", so dropping every "*" outside the old range takes exactly the cut cue's marks away.
-  return { start: s, end: e, before: text.slice(s, start).replace(/\*/g, ""), after: text.slice(end, e).replace(/\*/g, "") };
+  // Exactly the cut cues' marks go (an address in a link they hold may have a "*" of its own).
+  const gone = new Uint8Array(text.length);
+  for (const c of cut) gone.fill(1, c.start, c.words.start).fill(1, c.words.end, c.end);
+  const keep = (a, b) => { let out = ""; for (let i = a; i < b; i++) if (!gone[i]) out += text[i]; return out; };
+  return { start: s, end: e, before: keep(s, start), after: keep(end, e) };
 }
 
 /* ---------- The agent's mark_cue and unmark_cue ---------- */
+// New bold on these ranges of a paragraph, the last first so the earlier offsets hold: { content, from, to } (from…to: the
+// changed stretch of the old content) or null when one would not read as bold there.
+function boldAll(content, picks) {
+  let next = content;
+  for (const p of [...picks].sort((a, b) => b.start - a.start)) {
+    if (cueSelected(next, p.start, p.end)) return null;
+    const r = toggleCue(next, p.start, p.end);
+    if (!r?.cue) return null;
+    next = r.content;
+  }
+  let from = 0, end = 0;
+  while (from < content.length && from < next.length && content[from] === next[from]) from++;
+  while (end < content.length - from && end < next.length - from && content[content.length - 1 - end] === next[next.length - 1 - end]) end++;
+  return { content: next, from, to: content.length - end };
+}
 /**
  * Plan the agent's cue changes in the spoken paragraphs. segments: [{ id, content, avoid? }] in reading order
  * (`avoid`: [[start, end]] other open work points at, as for links). mode "mark": items [{ quote, occurrence? }]:
@@ -367,7 +589,7 @@ export function widenOverCues(content, start, end) {
  * changed stretch in the old content), skipped: [{ quote, why }] }.
  */
 export function planCues(segments, items, mode, { others = [] } = {}) {
-  const state = segments.map((s) => ({ ...s, cues: textCues(s.content), links: linkRanges(s.content), avoid: s.avoid || [], picks: [] }));
+  const state = segments.map((s) => ({ ...s, cues: textCues(s.content), view: spokenView(s.content), avoid: s.avoid || [], picks: [] }));
   const skipped = [], seen = new Set();
   const span = (s, i, e) => [Math.min(i, ...s.picks.map((p) => p.start)), Math.max(e, ...s.picks.map((p) => p.end))];
   for (const item of items || []) {
@@ -385,7 +607,8 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
         found = { s, c };
       } else {
         const key = quote.split(/\s+/).join(" ");
-        for (const s of state) { const c = s.cues.find((x) => x.label.split(/\s+/).join(" ") === key && !s.picks.some((p) => p.start === x.start)); if (c) { found = { s, c }; break; } }
+        const same = (x) => x.label.split(/\s+/).join(" ") === key || spokenText(x.label).split(/\s+/).join(" ") === key;
+        for (const s of state) { const c = s.cues.find((x) => same(x) && !s.picks.some((p) => p.start === x.start)); if (c) { found = { s, c }; break; } }
         if (!found) { skip(quote ? "no cue with these words" : "empty quote"); continue; }
       }
       const { s, c } = found;
@@ -404,22 +627,22 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
     const re = quoteRe(quote);
     let n = 0, done = false, why = "";
     for (const s of state) {
+      const { text, map } = s.view;
       re.lastIndex = 0;
-      for (let m = re.exec(s.content); m; re.lastIndex = m.index + 1, m = re.exec(s.content)) {
-        const i = m.index, e = i + m[0].length;
-        if (!wholeWords(s.content, i, e)) continue;
+      for (let m = re.exec(text); m; re.lastIndex = m.index + 1, m = re.exec(text)) {
+        if (!wholeWords(text, m.index, m.index + m[0].length)) continue;
+        const i = map[m.index], e = map[m.index + m[0].length - 1] + 1;
         n++;
         if (occurrence && n !== occurrence) continue;
         const cueHere = overlaps(s.cues.map((c) => [c.start, c.end]), i, e) || s.picks.some((p) => i < p.end && e > p.start);
-        let problem = "";
+        let problem = "", tried = null;
         if (cueHere) problem = "already a cue";
         else if (m[0].includes("\n")) problem = "spans a line break";
-        else if (overlaps(s.links, i, e)) problem = "inside a link";
-        else if (!textCues(`${s.content.slice(0, i)}**${m[0]}**${s.content.slice(e)}`).some((c) => c.start === i)) problem = "would not read as a cue there";
+        else if (!(tried = boldAll(s.content, [...s.picks, { start: i, end: e }]))) problem = "would not read as a cue there";
         else if (overlaps(s.avoid, i, e)) problem = "under an open ask or change";
-        else if (overlaps(s.avoid, ...span(s, i, e))) problem = "an open ask or change sits between it and another cue in its paragraph";
+        else if (overlaps(s.avoid, tried.from, tried.to)) problem = "an open ask or change sits between it and another cue in its paragraph";
         if (problem) { why ||= problem; if (occurrence) break; continue; }
-        s.picks.push({ start: i, end: e, put: `**${m[0]}**`, quote });
+        s.picks.push({ start: i, end: e, quote });
         done = true;
         break;
       }
@@ -428,6 +651,7 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
     if (done) { seen.add(key); continue; }
     if (why) skip(why);
     else if (occurrence && n) skip(`only ${n} ${n === 1 ? "occurrence" : "occurrences"} in the spoken text`);
+    else if (state.some((s) => lineRanges(s.content).some(([a, b]) => { re.lastIndex = 0; return re.test(s.content.slice(a, b)); }))) skip("inside a link line");
     else if (others.some((c) => { re.lastIndex = 0; return re.test(String(c)); })) skip("in a heading or reminder, where cues don't go");
     else skip("not found word for word in the spoken text");
   }
@@ -435,15 +659,19 @@ export function planCues(segments, items, mode, { others = [] } = {}) {
   for (const s of state) {
     if (!s.picks.length) continue;
     s.picks.sort((a, b) => a.start - b.start);
-    let content = "", at = 0;
-    for (const p of s.picks) { content += s.content.slice(at, p.start) + p.put; at = p.end; }
-    content += s.content.slice(at);
+    let r;
+    if (mode === "mark") r = boldAll(s.content, s.picks);
+    else {
+      let content = "", at = 0;
+      for (const p of s.picks) { content += s.content.slice(at, p.start) + p.put; at = p.end; }
+      r = { content: content + s.content.slice(at), from: s.picks[0].start, to: s.picks.at(-1).end };
+    }
     // Safety net: every new cue must read back as one (else the paragraph would show stray "**").
-    if (mode === "mark" && textCues(content).length !== s.cues.length + s.picks.length) {
+    if (!r || (mode === "mark" && textCues(r.content).length < s.cues.length + s.picks.length)) {
       for (const p of s.picks) skipped.push({ quote: p.quote.slice(0, 80), why: "would not read as a cue there" });
       continue;
     }
-    out.push({ id: s.id, content, cues: s.picks.map(({ quote }) => ({ quote })), from: s.picks[0].start, to: s.picks.at(-1).end, delta: content.length - s.content.length });
+    out.push({ id: s.id, content: r.content, cues: s.picks.map(({ quote }) => ({ quote })), from: r.from, to: r.to, delta: r.content.length - s.content.length });
   }
   return { segments: out, skipped };
 }
