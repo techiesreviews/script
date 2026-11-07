@@ -384,7 +384,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
    places it under or over the bar, off the selected words. */
 .bold-pop {
   --swatch: 1.75rem;
-  position: fixed; inset: auto; margin: 0; inline-size: min(17.5rem, calc(100vw - 1rem));
+  position: fixed; inset: auto; margin: 0; inline-size: min(17.5rem, var(--pop-room, calc(100vw - 1rem)));
   padding: 0.6rem 0.75rem 0.75rem; border: 0; border-radius: var(--radius-panel);
   background: var(--surface); color: var(--text); box-shadow: var(--shadow), 0 0 0 1px var(--line);
 }
@@ -413,7 +413,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 }
 .bold-pop__reset:disabled { color: var(--faint); text-decoration: none; cursor: default; }
 @media (pointer: coarse) { .bold-pop { --swatch: 2.25rem; --swatch-gap: 4px; } .bold-pop__reset { padding-block: 0.6rem; } }
-@media (width < 40rem) { .bold-pop { inline-size: calc(100vw - 1rem); } }
+@media (width < 40rem) { .bold-pop { inline-size: var(--pop-room, calc(100vw - 1rem)); } }
 @media (prefers-reduced-motion: no-preference) { .bold-pop:popover-open { animation: lift-in 140ms var(--ease-out); } }
 @keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
 

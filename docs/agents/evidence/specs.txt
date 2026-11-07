@@ -7,6 +7,8 @@
 ✔ colours: by default none of the person's own; only #rrggbb gets through; an older choice stays
 ✔ the colours live by B on the selection bar, not in the file name's menu
 ✔ the ready-made colours are all #rrggbb, so each one is saved and shown
+✔ a ready-made colour reads in both modes: each mode shows its own partner of it
+✔ only the ready-made colours change with the mode; your own colours and nothing chosen stay as they are
 ✔ by default the words are orange and bold, in the prompter's orange in dark mode
 ✔ the agent has no bold settings and hears that bold is always on
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
@@ -385,9 +387,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 387
+ℹ tests 389
 ℹ suites 0
-ℹ pass 387
+ℹ pass 389
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
