@@ -374,7 +374,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .script[data-mod] .md-link:not(.md-cue) .md-link__words { cursor: pointer; }
 }
 /* Cues, shown as bold (fleet issue #14; Lex 2026-11-06): the "**" marks hide and show like a link's Markdown. The look
-   lives only in this rule: orange and bold like the prompter's own (--bold-ink), or the person's colours (Bold style). */
+   lives only in this rule: orange and bold like the prompter's own (--bold-ink), or the person's colours (the colours by B, step U). */
 .md-cue .md-link__words { text-decoration: none; font-weight: 800; color: var(--bold-fg, var(--bold-ink)); background: var(--bold-bg, transparent); box-decoration-break: clone; }
 .edit-bar__button--bold svg { stroke-width: 2.8; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }

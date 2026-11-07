@@ -1187,6 +1187,13 @@ async function runBoldPop(width, height) {
     const at = await popPlace(page);
     check(at.onScreen && at.offWords, `${tag}: the colours are on screen and off the selected words`, JSON.stringify(at));
     check(await page.eval(`(() => { const p = document.querySelector("#boldPop").getBoundingClientRect(), b = document.querySelector("#boldBtn").getBoundingClientRect(); return !["below", "above"].includes(document.querySelector("#boldPop").dataset.side) || Math.abs(p.left - b.left) <= 1; })()`), `${tag}: lined up with B when under or over the bar`);
+    // A real hand: the pointer moves from B to the middle of the colours in steps, over half a second.
+    {
+      const from = await centre(page, "#boldBtn"), to = await centre(page, "#boldPop");
+      for (let i = 1; i <= 10; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x + ((to.x - from.x) * i) / 10, y: from.y + ((to.y - from.y) * i) / 10, button: "none" }); await sleep(50); }
+      await sleep(300);
+      check(await page.eval(popOpen), `${tag}: the pointer moving from B to the colours (${await page.eval(`document.querySelector("#boldPop").dataset.side`)}) reaches them open`);
+    }
     if (height <= 420) {
       await page.eval(`document.documentElement.style.fontSize = "250%"`);
       await page.eval(`dispatchEvent(new Event("resize"))`);
@@ -1291,7 +1298,7 @@ async function runBoldPop(width, height) {
     let presses = 1;
     for (; presses < 10 && (await focused()) !== "askInput"; presses++) { await pressKey(page, "Tab", "Tab", 9); await sleep(40); }
     check((await focused()) === "askInput" && presses <= 4, `${tag}: from B, Tab reaches the input in at most 4 presses`, presses);
-    await sleep(400);
+    await sleep(900); // 700 ms when they sit away from B
     check(!(await page.eval(popOpen)), `${tag}: the focus leaving closes the colours`);
     await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
     await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, modifiers: 8 });
