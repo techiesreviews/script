@@ -91,7 +91,8 @@ test("a background saved by the first build of step U counts as its swatch now",
 test("by default the words are orange and bold, in the prompter's orange in dark mode", () => {
   const css = file("public/app.css");
   assert.match(css, /--bold-ink: light-dark\(oklch\(52% 0\.17 37\), oklch\(65% 0\.227 32\.3\)\);/);
-  const rule = css.match(/\.md-cue \.md-link__words \{[^}]*\}/)?.[0] ?? "";
+  // Only the bold words themselves: a link inside bold keeps its own dotted underline (Lex 2026-11-07).
+  const rule = css.match(/\.md-cue > \.md-link__words \{[^}]*\}/)?.[0] ?? "";
   assert.match(rule, /color: var\(--bold-fg, var\(--bold-ink\)\)/);
   assert.match(rule, /background: var\(--bold-bg, transparent\)/);
   assert.match(rule, /font-weight: 800/);

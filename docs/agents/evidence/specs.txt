@@ -12,6 +12,16 @@
 ✔ a background saved by the first build of step U counts as its swatch now
 ✔ by default the words are orange and bold, in the prompter's orange in dark mode
 ✔ the agent has no bold settings and hears that bold is always on
+✔ reading: bold inside a link, a whole bold link and a link inside bold are bold; a bold piece across a link's edge is not
+✔ prompter file: the words and the [words](url) links stay, the ** go; camera script and counts read only the words
+✔ B: bold words in a link, a whole link, a link inside bold; split at a link's edge; B is on only when every word is bold
+✔ link state: off on plain or bold words, on inside one link, grey when part link part plain
+✔ the address field: a full https:// or http:// address with a dot in its host name, as typed so far
+✔ link: plain words, words inside bold, bold words inside, split at a bold edge; remove keeps words and bold
+✔ text safety: random selections, B and links never change or lose a spoken word or a bold word
+✔ agent: Find links goes inside bold, around bold and splits a bold edge; mark_cue works inside and around links
+✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
+✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
@@ -100,9 +110,9 @@
 ✔ connection prompt: it names the prompt and the tools that answer asks
 ✔ top bar: no "Saved" time is shown (Lex, 2026-10-29); unsaved, saving and not saved still are
 ✔ top bar (Lex, 2026-10-29): Export last and primary with Export all first; Share icon-only; the MCP mark until connected
-✔ format: **words** in a line; no brackets, * or line breaks inside; a letter or digit; not inside a link
+✔ format: **words** in a line; no brackets, * or line breaks inside; a letter or digit; inside a link's words too (Lex 2026-11-07)
 ✔ toggle: marks the selected words, a second toggle takes the marks off, the words stay
-✔ toggle: half a cue or across two joins into one cue; refuses links, line breaks and no words
+✔ toggle: half a cue or across two joins into one cue; holds whole links; refuses line breaks and no words
 ✔ export: the prompter file strips cues
 ✔ agent: list_cues lists each cue with its id, section and the words around it
 ✔ agent: mark_cue marks the first free whole-word occurrence; skips what it can't mark, with the reason
@@ -110,7 +120,7 @@
 ✔ agent: landed cues are marked changes with Undo on the agent's name tag; Undo puts the text back
 ✔ rewrite: a cue stays when its words survive the agent's new text; else it is dropped and the agent is told
 ✔ MCP: list_cues, mark_cue and unmark_cue, with their checks
-✔ review: links never land inside a cue; a rewrite whose cues would change the block keeps the text without them
+✔ review: a link on bold words makes a whole bold link (Lex 2026-11-07); a rewrite whose cues would change the block keeps the text without them
 ✔ review 2: Ctrl+B never cuts into an open ask; the toggle says which stretch it changes
 ✔ review 2: a rewrite over half a cue takes the whole cue in, so no stray ** is left; duplicates count
 ✔ Lex's decision 6: a rewrite reaching into a cue keeps it only if its words survive, and the agent is told
@@ -388,9 +398,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 390
+ℹ tests 400
 ℹ suites 0
-ℹ pass 390
+ℹ pass 400
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
