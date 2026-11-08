@@ -333,7 +333,7 @@ function plainNodes(content, from, to, cuts) {
     for (const [a, b, kind] of [[c.start, c.words.start, "mark"], [c.words.start, c.words.end, "words"], [c.words.end, c.end, "mark"]]) {
       const x = Math.max(a, at), y = Math.min(b, to);
       if (y <= x) continue;
-      const piece = h("span", `md-cut${kind === "mark" ? "__mark" : ""}`, { "data-link": "" });
+      const piece = h("span", `md-cut${kind === "mark" ? "__mark" : ""}`, { "data-link": "", "data-cut": String(c.start), "data-cut-at": `${c.start},${c.end},${c.words.start},${c.words.end}` });
       piece.textContent = content.slice(x, y);
       nodes.push(piece);
     }
@@ -362,7 +362,24 @@ function shownLink({ a, start }) {
   const words = readContent(a.querySelector(".md-link__words")).length, head = readContent(a.querySelector(".md-link__mark")).length;
   return { start, end: start + readContent(a).length, words: { start: start + head, end: start + head + words } };
 }
-const closedLinks = (el) => [...el.querySelectorAll(".md-link:not([data-open])")].map((a) => shownLink({ a, start: linkStart(el, a) }));
+// The bold stretches an ask cuts through, drawn in pieces (plainNodes): [{ link: { start, end, words }, els }], one per stretch.
+// Like a whole stretch, its "**" show only while the selection touches it (data-open on its mark pieces).
+function cutGroups(el) {
+  const groups = new Map();
+  for (const p of el.querySelectorAll("[data-cut]")) {
+    if (!groups.has(p.dataset.cut)) {
+      const [start, end, ws, we] = p.dataset.cutAt.split(",").map(Number);
+      groups.set(p.dataset.cut, { link: { start, end, words: { start: ws, end: we } }, els: [] });
+    }
+    groups.get(p.dataset.cut).els.push(p);
+  }
+  return [...groups.values()];
+}
+const cutOpen = (g) => g.els.some((p) => p.hasAttribute("data-open"));
+const closedLinks = (el) => [
+  ...[...el.querySelectorAll(".md-link:not([data-open])")].map((a) => shownLink({ a, start: linkStart(el, a) })),
+  ...cutGroups(el).filter((g) => !cutOpen(g)).map((g) => g.link),
+].sort((x, y) => x.start - y.start || y.end - x.end);
 // Open the links in `el` that touch start…end (content offsets); close the others (start < 0: close all).
 // Returns the links that were closed and are open now, with their place: [{ a, start, end }].
 function openLinks(el, start, end) {
@@ -373,6 +390,11 @@ function openLinks(el, start, end) {
     if (open && !a.hasAttribute("data-open")) opened.push({ a, start: s, end: e });
     a.toggleAttribute("data-open", open);
   }
+  for (const g of cutGroups(el)) {
+    const { start: s, end: e } = g.link, open = start >= 0 && start <= e && end >= s;
+    if (open && !cutOpen(g)) opened.push({ link: g.link, start: s, end: e });
+    for (const p of g.els) if (p.classList.contains("md-cut__mark")) p.toggleAttribute("data-open", open);
+  }
   return opened;
 }
 // After the selection moved: open the links it touches. A caret the person put on the edge of a closed link (where
@@ -381,12 +403,12 @@ let composingLinks = false;
 function refreshLinks(snap = false) {
   const sel = getSelection();
   const r = sel.rangeCount ? sel.getRangeAt(0) : null;
-  for (const el of scriptEl.querySelectorAll(".block:has(.md-link)")) {
+  for (const el of scriptEl.querySelectorAll(".block:has(.md-link, [data-cut])")) {
     const s = r && r.intersectsNode(el) ? selectionIn(el) : null;
     const opened = openLinks(el, s ? s.start : -1, s ? s.end : -1);
     if (!snap || composingLinks || !s || s.start !== s.end || !sel.isCollapsed || !opened.length) continue;
     // A link inside another's words (bold links): from the inner one out, each edge to just outside it.
-    const chain = opened.map(shownLink).sort((x, y) => (x.end - x.start) - (y.end - y.start));
+    const chain = opened.map((o) => o.link || shownLink(o)).sort((x, y) => (x.end - x.start) - (y.end - y.start));
     if (!chain.every((l, i) => i === 0 || (l.start <= chain[i - 1].start && l.end >= chain[i - 1].end))) continue;
     const to = chain.reduce((at, l) => L.edgeSnap(l, at), s.start);
     if (to !== s.start) setCaretAt(el, to);
@@ -1207,7 +1229,7 @@ scriptEl.addEventListener("beforeinput", (e) => {
   const el = blockOf(e.target);
   if (!el) return;
   if (!state.preCaret) state.preCaret = getCaret();
-  if (e.inputType.startsWith("delete") && !e.isComposing) linksBefore = el.querySelector(".md-link:not([data-open])") ? { id: el.dataset.id, content: readContent(el), closed: closedLinks(el) } : null;
+  if (e.inputType.startsWith("delete") && !e.isComposing) linksBefore = el.querySelector(".md-link:not([data-open]), .md-cut__mark:not([data-open])") ? { id: el.dataset.id, content: readContent(el), closed: closedLinks(el) } : null;
   if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
     e.preventDefault();
     e.inputType === "historyUndo" ? undo() : redo();
@@ -1560,13 +1582,13 @@ function hideBar() {
   paintBarSel();
   renderAsk();
 }
-// A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
-// old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
 // The bar's word count, for the words it holds (also after B widened them over a bold edge).
 function barLabel(quote) {
   const n = D.countWords(K.spokenWords(quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
 }
+// A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
+// old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
 function keepBarSel(id) {
   if (!barSel?.range || barSel.id !== id || !bar.contains(document.activeElement)) return;
   const b = byId(id), el = blockNode(id);
