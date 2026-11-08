@@ -13,7 +13,7 @@ Both rare cases were fixed in step R, PR C (`step-r-bold-follow-ups.md`) and are
 ## TOOLS-52 (fleet #31): items 1-4 were fixed in step R; item 5 and 6 now
 
 - **`unmark_cue` over about 550 characters:** `list_cues` puts a stretch's words in its `cueId`, and the check refused a `cueId` over 560 characters, while the words are also over the 500 of `quote`, so the stretch could not be removed at all. A `cueId` now takes up to the longest script plus its block id (`CUE_ID_MAX` in `worker/mcp.js`). Test: `tests/cues.test.mjs`.
-- **An open ask on part of a bold stretch showed its `**`:** a bold stretch cut by an ask's (or note's, or mark's) edge was drawn as plain Markdown. It is now drawn in pieces (`plainNodes` in `public/app.js`, `.md-cut` in `public/app.css`): the words keep the bold look, the `**` are hidden. The text nodes are still the block's exact content, so offsets, asks, carets and the room are unchanged. Not changed: a link inside such a stretch is drawn as before, without the bold look.
+- **An open ask on part of a bold stretch showed its `**`:** a bold stretch cut by an ask's (or note's, or mark's) edge was drawn as plain Markdown. It is now drawn in pieces (`plainNodes` in `public/app.js`, `.md-cut` in `public/app.css`): the words keep the bold look, the `**` are hidden. Like a whole stretch, the `**` show while the selection touches it and a caret put on its edge goes just outside (`cutGroups`, `openLinks`, `closedLinks` in `public/app.js`), so other people's carets are drawn on the words too. The text nodes are still the block's exact content, so offsets, asks and the room are unchanged. Not changed: a link inside such a stretch is drawn as before, without the bold look.
 - **The colour inputs were small touch targets:** on a touch screen the colours and both "+" buttons are 44 px (`2.75rem`, the bar's own buttons), they were 36 px.
 - **A guest's selection dropped when a host's ask arrived on that line (item 6):** `setRoomAsks` draws the line again; it now puts the selection back (the text is the same), so the guest's selection and bar stay.
 - The Firefox and Safari hand check of Ctrl+B and ⌘B stays Lex's (Due 2026-11-10). A headless Firefox 155 was run on synthetic text as far as scripted keys go (below); WebKit would not start here.
@@ -27,7 +27,7 @@ Both rare cases were fixed in step R, PR C (`step-r-bold-follow-ups.md`) and are
 
 ## Checks
 
-`tests/cues.test.mjs` (the long `cueId`), `tests/edit-bar.test.mjs` (`seenFrom`). In a real browser `scripts/smoke-keep-all.mjs` with `SMOKE_ONLY=followups`: `runAskInBold` (1280 and 390 px), `runGuestSelection`, `runBarPanned` (390 px, a faked visual viewport); and in `SMOKE_ONLY=look` the 44 px colours and the "+" by mouse; in `SMOKE_ONLY=slim` the word count over a bold edge. Evidence: `docs/agents/evidence/step-w-browser.txt`. Each new check failed before its change.
+`tests/cues.test.mjs` (the long `cueId`), `tests/edit-bar.test.mjs` (`seenFrom`). In a real browser `scripts/smoke-keep-all.mjs` with `SMOKE_ONLY=followups`: `runAskInBold` and `runAskInBoldEdges` (the caret next to a cut stretch, an ask across its marks, a link inside it; 1280 and 390 px), `runGuestSelection` (1280 and 390 px), `runBarPanned` (390 px, a faked visual viewport); and in `SMOKE_ONLY=look` the 44 px colours and the "+" by mouse; in `SMOKE_ONLY=slim` the word count over a bold edge. Evidence: `docs/agents/evidence/step-w-browser.txt`. Each new check failed before its change.
 
 ## Left
 

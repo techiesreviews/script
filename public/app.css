@@ -379,7 +379,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .md-cue > .md-link__words { text-decoration: none; font-weight: 800; color: var(--bold-fg, var(--bold-ink)); background: var(--bold-bg, transparent); box-decoration-break: clone; }
 /* A bold stretch an ask, note or mark cuts through is drawn in pieces: the same look, its "**" hidden (TOOLS-52 item 5). */
 .md-cut { font-weight: 800; color: var(--bold-fg, var(--bold-ink)); background: var(--bold-bg, transparent); box-decoration-break: clone; }
-.md-cut__mark { display: none; }
+.md-cut__mark:not([data-open]) { display: none; }
+.md-cut__mark { color: var(--faint); overflow-wrap: anywhere; }
 .edit-bar__button--bold svg { stroke-width: 2.8; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }

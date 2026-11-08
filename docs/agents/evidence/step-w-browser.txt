@@ -871,12 +871,44 @@ ok 390 px: with an ask on part of a bold stretch no ** shows
 ok 390 px: and all its words still show bold
 ok 390 px: the text keeps its marks
 ok 390 px: typing after it works
+ok 1280 px: the last bold word of the cut stretch is drawn
+ok 1280 px: typing at the end of a cut stretch's last word goes outside it
+ok 1280 px: the caret in a cut stretch shows its ** marks
+ok 1280 px: the caret away from it: the marks hide again
+ok 1280 px: the text keeps its marks
+ok 1280 px: an ask across the opening marks
+ok 1280 px: with an ask across the opening marks no ** shows
+ok 1280 px: big, word and now still show bold, and only they
+ok 1280 px: the text keeps its marks
+ok 1280 px: an ask on the first word of a bold stretch holding a link
+ok 1280 px: the link inside it is still a link
+ok 1280 px: no ** shows
+ok 1280 px: the text keeps its marks and its link
+ok 390 px: the last bold word of the cut stretch is drawn
+ok 390 px: typing at the end of a cut stretch's last word goes outside it
+ok 390 px: the caret in a cut stretch shows its ** marks
+ok 390 px: the caret away from it: the marks hide again
+ok 390 px: the text keeps its marks
+ok 390 px: an ask across the opening marks
+ok 390 px: with an ask across the opening marks no ** shows
+ok 390 px: big, word and now still show bold, and only they
+ok 390 px: the text keeps its marks
+ok 390 px: an ask on the first word of a bold stretch holding a link
+ok 390 px: the link inside it is still a link
+ok 390 px: no ** shows
+ok 390 px: the text keeps its marks and its link
 ok 1280 px: the guest selects a word and the bar opens
 ok 1280 px: the host asks about other words on the line
 ok 1280 px: the host's ask reaches the guest
 ok 1280 px: the guest's selection is still there after the host's ask arrived
 ok 1280 px: and the guest's bar is still open
 ok 1280 px: the guest's ask on its own words reaches the agent
+ok 390 px: the guest selects a word and the bar opens
+ok 390 px: the host asks about other words on the line
+ok 390 px: the host's ask reaches the guest
+ok 390 px: the guest's selection is still there after the host's ask arrived
+ok 390 px: and the guest's bar is still open
+ok 390 px: the guest's ask on its own words reaches the agent
 ok 390x760 panned: panned 30px: the bar's first spot is 8 px under the lower of the top bar (52) and the pan
 ok 390x760 panned: panned 100px: the bar's first spot is 8 px under the lower of the top bar (52) and the pan
 ok 1280x420: the menu stays inside the window

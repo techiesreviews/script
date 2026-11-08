@@ -1271,6 +1271,72 @@ async function runAskInBold(width, height) {
   await page.close();
 }
 
+// The caret next to a bold stretch an ask cuts: typing after its last word stays outside it, its "**" show while the caret is
+// in it, an ask whose edge crosses the marks, and a link inside such a stretch.
+async function runAskInBoldEdges(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  const script = async () => JSON.parse(await agent("get_script", {})).markdown;
+  await typeAtEnd(page, " Say **big word now** okay.");
+  await page.eval(selectWords("word"));
+  await sleep(300);
+  await barSend(page, "shorter");
+  await page.until(`!!${firstPara}.querySelector("[data-ask]")`, "an ask on part of the bold stretch");
+  await sleep(200);
+  // A click at the end of "now", from a caret outside the stretch: the caret goes just outside the hidden marks, so a mark typed there is not bold.
+  await page.eval(`(() => { const el = ${firstPara}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToStart(); })()`);
+  await sleep(250);
+  const endOfNow = await page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.data.trim() === "now") { const r = document.createRange(); r.setStart(n, n.data.length); r.setEnd(n, n.data.length); const b = n.parentElement.getBoundingClientRect(); return { x: b.right + 2, y: b.top + b.height / 2 }; } return null; })()`);
+  check(!!endOfNow, `${tag}: the last bold word of the cut stretch is drawn`);
+  await clickAt(page, endOfNow);
+  await sleep(250);
+  await page.send("Input.insertText", { text: "!" });
+  await sleep(300);
+  check((await script()).includes("Say **big word now**! okay."), `${tag}: typing at the end of a cut stretch's last word goes outside it`, (await script()).split("\n").find((l) => l.includes("Say **")));
+  await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "z", code: "KeyZ", modifiers: 2, windowsVirtualKeyCode: 90 });
+  await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "z", code: "KeyZ", modifiers: 2, windowsVirtualKeyCode: 90 });
+  await sleep(250);
+  // The caret in the stretch shows its marks; away from it they hide again.
+  const inBig = await page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.data.trim() === "big") { const r = document.createRange(); r.setStart(n, 2); r.setEnd(n, 2); const b = r.getBoundingClientRect(); return { x: b.left, y: b.top + b.height / 2 }; } return null; })()`);
+  await clickAt(page, inBig);
+  await sleep(250);
+  check(await page.eval(`${firstPara}.querySelectorAll(".md-cut__mark[data-open]").length === 2 && ${firstPara}.innerText.includes("**big")`), `${tag}: the caret in a cut stretch shows its ** marks`);
+  await page.eval(`(() => { const el = ${firstPara}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToStart(); })()`);
+  await sleep(250);
+  check(await page.eval(`!${firstPara}.innerText.includes("**")`), `${tag}: the caret away from it: the marks hide again`);
+  check((await script()).includes("Say **big word now** okay."), `${tag}: the text keeps its marks`);
+  await page.close();
+
+  // An ask whose edge crosses the opening marks: no ** shows, all the words stay bold, the text is as it was.
+  {
+    const { page, agent } = await openDemo(width, height);
+    await typeAtEnd(page, " Say **big word now** okay.");
+    await page.eval(selectWords("Say **big"));
+    await sleep(300);
+    await barSend(page, "shorter");
+    check(await page.until(`!!${firstPara}.querySelector("[data-ask]")`, "an ask across the opening marks"), `${tag}: an ask across the opening marks`);
+    await sleep(200);
+    check(await page.eval(`!${firstPara}.innerText.includes("**")`), `${tag}: with an ask across the opening marks no ** shows`);
+    check(await page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT); let n, bold = ""; while ((n = w.nextNode())) if (Number(getComputedStyle(n.parentElement).fontWeight) >= 600 && !n.parentElement.closest("[data-skip]")) bold += n.data; return bold.trim() === "big word now"; })()`), `${tag}: big, word and now still show bold, and only they`);
+    check(JSON.parse(await agent("get_script", {})).markdown.includes("Say **big word now** okay."), `${tag}: the text keeps its marks`, JSON.parse(await agent("get_script", {})).markdown.split("\n").find((l) => l.includes("Say")));
+    await page.close();
+  }
+  // A link inside the cut stretch is still a link, and the text is as it was.
+  {
+    const { page, agent } = await openDemo(width, height);
+    await typeAtEnd(page, " Say **big [word](https://example.com) now** okay.");
+    await page.eval(selectWords("big"));
+    await sleep(300);
+    await barSend(page, "shorter");
+    check(await page.until(`!!${firstPara}.querySelector("[data-ask]")`, "an ask on big"), `${tag}: an ask on the first word of a bold stretch holding a link`);
+    await sleep(200);
+    check(await page.eval(`(() => { const a = ${firstPara}.querySelector(".md-link[data-href]"); return !!a && a.dataset.href === "https://example.com" && a.textContent.includes("word"); })()`), `${tag}: the link inside it is still a link`);
+    check(await page.eval(`!${firstPara}.innerText.includes("**")`), `${tag}: no ** shows`);
+    check(JSON.parse(await agent("get_script", {})).markdown.includes("Say **big [word](https://example.com) now** okay."), `${tag}: the text keeps its marks and its link`);
+    await page.close();
+  }
+}
+
 async function runGuestSelection(width, height) {
   const tag = `${width} px`;
   const { page, agent } = await openDemo(1280, 800);
@@ -1307,7 +1373,8 @@ async function runGuestSelection(width, height) {
 }
 
 // A phone page panned by the on-screen keyboard (step T follow-up): the bar's first free spot below the top bar is the lower of
-// the top bar's end and the pan, not their sum. The visual viewport is faked, so a pan the keyboard would make can be tried here.
+// the top bar's end and the pan, not their sum. The visual viewport is faked, so a pan the keyboard would make can be tried here;
+// the fake stays for the page's whole life, so put no other check after it.
 async function runBarPanned(width, height) {
   const tag = `${width}x${height} panned`;
   const { page } = await openDemo(width, height);
@@ -2084,7 +2151,10 @@ try {
   } else if (only === "followups") {
     await runAskInBold(1280, 800);
     await runAskInBold(390, 760);
+    await runAskInBoldEdges(1280, 800);
+    await runAskInBoldEdges(390, 760);
     await runGuestSelection(1280, 800);
+    await runGuestSelection(390, 760);
     await runBarPanned(390, 760);
   } else if (only === "menu") {
     await runMenuHeight(1280, 420);
@@ -2150,7 +2220,10 @@ try {
     await runBoldKinds(1280, 800);
     await runAskInBold(1280, 800);
     await runAskInBold(390, 760);
+    await runAskInBoldEdges(1280, 800);
+    await runAskInBoldEdges(390, 760);
     await runGuestSelection(1280, 800);
+    await runGuestSelection(390, 760);
     await runBarPanned(390, 760);
     await runMenuHeight(1280, 420);
     await runMenuHeight(390, 480);
