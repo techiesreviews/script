@@ -122,6 +122,7 @@
 ✔ agent: landed cues are marked changes with Undo on the agent's name tag; Undo puts the text back
 ✔ rewrite: a cue stays when its words survive the agent's new text; else it is dropped and the agent is told
 ✔ MCP: list_cues, mark_cue and unmark_cue, with their checks
+✔ MCP: unmark_cue takes the cueId list_cues gives for a bold stretch of any length (fleet #31 item 5)
 ✔ review: a link on bold words makes a whole bold link (Lex 2026-11-07); a rewrite whose cues would change the block keeps the text without them
 ✔ review 2: Ctrl+B never cuts into an open ask; the toggle says which stretch it changes
 ✔ review 2: a rewrite over half a cue takes the whole cue in, so no stray ** is left; duplicates count
@@ -249,6 +250,7 @@
 ✔ every command is named for screen readers
 ✔ the Tab key takes its room all the time, so showing it never changes the input's size
 ✔ phone: no zoom on focus, room for the thumb, and the bar clear of the home bar
+✔ a panned phone page: the first free spot is the lower of the top bar's end and the pan, not their sum (TOOLS-52, step T follow-up)
 ✔ kit.json lands on dev, releases to main, and the docs agree
 ✔ kit deploy stops before wrangler when kit release-check fails
 ✔ kit deploy reaches wrangler when kit release-check passes
@@ -400,9 +402,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 402
+ℹ tests 404
 ℹ suites 0
-ℹ pass 402
+ℹ pass 404
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
