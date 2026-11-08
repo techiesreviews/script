@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot } from "../public/edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "../public/edit-bar.js";
 import { ACTIONS } from "../public/doc.js";
 import { GUEST_ACTIONS } from "../public/together-adapter.js";
 
@@ -254,4 +254,16 @@ test("phone: no zoom on focus, room for the thumb, and the bar clear of the home
   assert.match(phone, /--ask-fs: 16px/);
   assert.match(phone, /min-block-size: 2\.75rem/);
   assert.match(phone, /env\(safe-area-inset-bottom/);
+});
+
+test("a panned phone page: the first free spot is the lower of the top bar's end and the pan, not their sum (TOOLS-52, step T follow-up)", () => {
+  // The top bar is sticky, so it already sits inside what is seen; only a pan lower than its end moves the spot down.
+  assert.equal(seenFrom(56, 0), 56);
+  assert.equal(seenFrom(56, 30), 56, "a pan of 30 is under the top bar: 86 would leave a gap");
+  assert.equal(seenFrom(56, 100), 100);
+  assert.equal(seenFrom(56, undefined), 56);
+  // The words just below that spot get the top dock, and the sum would have sent them to the bottom.
+  const words = { first: { top: 170 }, last: { bottom: 190 } };
+  assert.equal(phoneDock({ ...words, h: 90, top: seenFrom(56, 30), vh: 200 }), "top");
+  assert.equal(phoneDock({ ...words, h: 90, top: 56 + 30, vh: 200 }), "bottom", "what the sum did");
 });

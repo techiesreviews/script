@@ -117,6 +117,9 @@ export function barSpot({ first, last, w, h, top, vw, vh, line = 0 }) {
   else y = vh - last.bottom >= first.top - top ? high : low;
   return { x: Math.max(EDGE, Math.min(from.left - 4, vw - w - EDGE)), y: clamp(y, low, high) };
 }
+/** Where what is seen starts, below the top bar: the top bar is sticky (inside what is seen), so a pan of the page only moves it
+ *  down when it is lower than the bar's end; the two are never added. */
+export const seenFrom = (top, panned = 0) => Math.max(top, panned || 0);
 /** On a phone the bar is docked at the bottom, so the system's selection handles stay free; at the top when it would sit
  *  on the words and they are clear of the top. lift: what the on-screen keyboard covers. */
 export function phoneDock({ first, last, h, top, vh, lift = 0 }) {

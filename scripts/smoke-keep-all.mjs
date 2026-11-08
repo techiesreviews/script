@@ -1101,9 +1101,11 @@ async function runSlimBar(width, height) {
   await page.until(barOpen, "the bar over a bold edge");
   await sleep(200);
   await type("say it warmer");
+  check((await page.eval(`document.querySelector("#ebLabel").textContent`)) === "2 words", `${tag}: the bar counts the 2 words selected over a bold edge`);
   await page.click("#boldBtn");
   await sleep(250);
   check((await script()).includes("**big word now**"), `${tag}: B over a bold edge joins it`);
+  check((await page.eval(`document.querySelector("#ebLabel").textContent`)) === "3 words", `${tag}: and the bar counts the 3 words B marked`, await page.eval(`document.querySelector("#ebLabel").textContent`));
   check(!(await page.eval(`document.querySelector("#askForm .edit-bar__send").disabled`)) && (await page.eval(value)) === "say it warmer", `${tag}: and the input stays ready`);
   await closeBar();
   await agent("set_script", { markdown: start });
@@ -1233,6 +1235,101 @@ async function runSlimGuest(width, height) {
     check((await page.eval(`localStorage.getItem("script-editor:askHistory")`)) === history, `${tag}: and it isn't kept as an earlier ask`);
   }
   await guest.close();
+  await page.close();
+}
+
+// Follow-ups of the bold work (TOOLS-50, TOOLS-52): an open ask on part of a bold stretch (no "**" shows), and a guest's
+// selection while a host's ask arrives on the same line.
+const firstPara = `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank"))`;
+// A selection of a word's letters in the first paragraph, by its text offsets (the text pieces an ask cuts it into do not matter).
+const selectWords = (words, nth = 0) => `(() => { const el = ${firstPara}, w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n, text = ""; while ((n = w.nextNode())) if (!n.parentElement.closest("[data-skip], [contenteditable='false']")) { nodes.push(n); text += n.data; } let from = -1; for (let i = 0; i <= ${nth}; i++) from = text.indexOf(${JSON.stringify(words)}, from + 1); if (from < 0) throw new Error("not in the line: ${words}"); const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(from)); r.setEnd(...point(from + ${words.length})); el.focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+const typeAtEnd = async (page, text) => {
+  await page.eval(`(() => { const el = ${firstPara}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text });
+  await sleep(300);
+};
+async function runAskInBold(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(width, height);
+  await typeAtEnd(page, " Say **big word now** okay.");
+  const shown = () => page.eval(`${firstPara}.innerText`);
+  check((await shown()).includes("Say big word now okay.") && !(await shown()).includes("**"), `${tag}: a bold stretch shows no ** to start with`);
+  await page.eval(selectWords("word"));
+  await sleep(300);
+  await barSend(page, "shorter");
+  check(await page.until(`!!${firstPara}.querySelector("[data-ask]")`, "an ask on part of the bold stretch"), `${tag}: an ask sits on part of a bold stretch`);
+  await sleep(200);
+  const seen = await shown();
+  check(!seen.includes("**"), `${tag}: with an ask on part of a bold stretch no ** shows`, seen.slice(-60));
+  check(await page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT), seen = []; let n; while ((n = w.nextNode())) if (["big", "word", "now"].includes(n.data.trim())) seen.push(Number(getComputedStyle(n.parentElement).fontWeight)); return seen.length === 3 && seen.every((x) => x >= 600); })()`), `${tag}: and all its words still show bold`);
+  check((await agent("get_script", {}).then((t) => JSON.parse(t).markdown)).includes("Say **big word now** okay."), `${tag}: the text keeps its marks`);
+  // Typing in the line and a click in it leave the text as it was.
+  await page.eval(`(() => { const el = ${firstPara}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: "!" });
+  await sleep(300);
+  check((await agent("get_script", {}).then((t) => JSON.parse(t).markdown)).includes("Say **big word now** okay.!"), `${tag}: typing after it works`);
+  await page.close();
+}
+
+async function runGuestSelection(width, height) {
+  const tag = `${width} px`;
+  const { page, agent } = await openDemo(1280, 800);
+  await page.eval(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__link = t; } } })`);
+  await page.click("#shareBtn");
+  await page.until(`!!window.__link`, "the share link");
+  const guest = await openPage(width, height);
+  await guest.send("Page.navigate", { url: await page.eval(`window.__link`) });
+  await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+  await guest.eval(`document.querySelector("#joinName").value = "Guest"`);
+  await guest.click("#joinForm button");
+  await guest.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the guest's script", 12000);
+  await guest.send("Page.bringToFront");
+  await guest.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+  await doubleClick(guest, await guest.eval(wordSpot));
+  check(await guest.until(`!document.querySelector("#editBar").hidden`, "the guest's bar"), `${tag}: the guest selects a word and the bar opens`);
+  const mine = await guest.eval(`getSelection().toString().trim()`);
+  // The host asks about other words on that same line; the ask reaches the guest and redraws the line.
+  await page.eval(selectWords("blank"));
+  await sleep(300);
+  await barSend(page, "shorter");
+  check(await page.until(`!!${firstPara}.querySelector("[data-ask]")`, "the host's ask"), `${tag}: the host asks about other words on the line`);
+  check(await guest.until(`!!${firstPara}.querySelector("[data-ask]")`, "the ask reaches the guest", 12000), `${tag}: the host's ask reaches the guest`);
+  await sleep(400);
+  check((await guest.eval(`getSelection().toString().trim()`)) === mine && mine.length > 0, `${tag}: the guest's selection is still there after the host's ask arrived`, await guest.eval(`getSelection().toString()`));
+  check(await guest.eval(`!document.querySelector("#editBar").hidden`), `${tag}: and the guest's bar is still open`);
+  // Typing the ask still goes through for the guest.
+  await barSend(guest, "warmer");
+  let asks = [];
+  for (let i = 0; i < 40 && asks.length < 2; i++) { asks = JSON.parse(await agent("wait_for_asks", { waitSeconds: 0 })).asks; if (asks.length < 2) await sleep(100); }
+  check(asks.some((a) => a.instruction === "warmer" && a.quote === mine), `${tag}: the guest's ask on its own words reaches the agent`, JSON.stringify(asks.map((a) => [a.instruction, a.quote])));
+  await guest.close();
+  await page.close();
+}
+
+// A phone page panned by the on-screen keyboard (step T follow-up): the bar's first free spot below the top bar is the lower of
+// the top bar's end and the pan, not their sum. The visual viewport is faked, so a pan the keyboard would make can be tried here.
+async function runBarPanned(width, height) {
+  const tag = `${width}x${height} panned`;
+  const { page } = await openDemo(width, height);
+  const spot = (offsetTop) => page.eval(`(() => {
+    const fake = Object.assign(new EventTarget(), { offsetTop: ${offsetTop}, offsetLeft: 0, height: ${height} - ${offsetTop}, width: ${width}, scale: 1 });
+    Object.defineProperty(window, "visualViewport", { configurable: true, get: () => fake });
+    const top = document.querySelector(".top").getBoundingClientRect().bottom;
+    getSelection().removeAllRanges();
+    return top;
+  })()`);
+  for (const pan of [30, 100]) {
+    const top = await spot(pan);
+    await page.eval(`scrollTo({ top: 0, behavior: "instant" })`);
+    await sleep(150);
+    await doubleClick(page, await page.eval(wordSpot));
+    await page.until(`!document.querySelector("#editBar").hidden`, "the bar");
+    await sleep(250);
+    const got = await page.eval(`parseFloat(document.querySelector("#editBar").style.getPropertyValue("--bar-y"))`);
+    check(got === Math.max(top, pan) + 8, `${tag}: panned ${pan}px: the bar's first spot is 8 px under the lower of the top bar (${Math.round(top)}) and the pan`, got);
+    await page.eval(`getSelection().removeAllRanges()`);
+    await sleep(250);
+  }
   await page.close();
 }
 
@@ -1463,6 +1560,17 @@ async function runBoldPop(width, height) {
     const reset = await cueLook();
     check(reset?.color === orange && reset?.background === "rgba(0, 0, 0, 0)", `${tag}: Reset: orange again, no background`, JSON.stringify(reset));
     check(await page.eval(`document.querySelector("#boldReset").disabled && document.querySelector('#boldPop [data-kind="color"] .bold-pop__swatch--default').getAttribute("aria-pressed") === "true"`), `${tag}: Reset goes off; the default orange shows as picked`);
+    // The + by mouse (step U follow-up): a pick through it leaves the focus on the colour field, which must not hold the
+    // colours open once its picker is closed: the pointer leaving still closes them.
+    await page.click("#boldFg");
+    await page.eval(`(() => { const e = document.querySelector("#boldFg"); e.value = "#334455"; e.dispatchEvent(new Event("input", { bubbles: true })); e.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
+    check(await page.until(`!${popOpen}`, "the colours closing after a pick through the + by mouse", 1500), `${tag}: after a mouse pick through the +, the pointer leaving closes the colours`);
+    check(await page.eval(`!document.querySelector("#editBar").hidden`), `${tag}: and the bar stays open`);
+    await hoverOn(page, "#boldBtn");
+    await page.until(popOpen, "the colours before Reset", 1500);
+    await page.click("#boldReset");
+    await sleep(120);
     // The pointer leaves: they close; the bar stays.
     await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 4, y: height - 4, button: "none" });
     await page.until(`!${popOpen}`, "the colours closing when the pointer leaves", 1500);
@@ -1538,8 +1646,9 @@ async function runBoldPop(width, height) {
     const at = await popPlace(page);
     check(at.onScreen && at.offWords, `${tag}: the colours are on screen and off the selected words`, JSON.stringify(at));
     check(await page.eval(`document.documentElement.scrollWidth <= document.documentElement.clientWidth`), `${tag}: no sideways scroll`);
-    const sw = await page.eval(`(() => { const r = document.querySelector("#boldPop .bold-pop__swatch").getBoundingClientRect(); return Math.min(r.width, r.height); })()`);
-    check(sw >= 35, `${tag}: swatches big enough for a thumb`, sw);
+    // Every colour, "None" and the + (the colour input) is at least as big as the bar's own buttons on a touch screen: 44 px.
+    const sw = await page.eval(`(() => { const sizes = [...document.querySelectorAll("#boldPop .bold-pop__swatch, #boldPop .bold-pop__custom")].map((e) => { const r = e.getBoundingClientRect(); return Math.min(r.width, r.height); }); return { n: sizes.length, least: Math.min(...sizes) }; })()`);
+    check(sw.n === 14 && sw.least >= 43.5, `${tag}: all ${sw.n} colours and both + buttons are big enough for a thumb`, JSON.stringify(sw));
     await tapAt(page, await centre(page, `#boldPop [data-kind="color"] [data-hex="#5edb81"]`));
     check((await stored())?.color === "#5edb81" && (await cueLook())?.color === "rgb(31, 122, 60)", `${tag}: a tapped colour shows on the bold word at once (light mode: its partner)`, JSON.stringify(await cueLook()));
     check(await page.eval(popOpen), `${tag}: they stay open after picking`);
@@ -1972,6 +2081,11 @@ const only = process.env.SMOKE_ONLY;
 try {
   if (only === "guest") {
     await run(1280, 800);
+  } else if (only === "followups") {
+    await runAskInBold(1280, 800);
+    await runAskInBold(390, 760);
+    await runGuestSelection(1280, 800);
+    await runBarPanned(390, 760);
   } else if (only === "menu") {
     await runMenuHeight(1280, 420);
     await runMenuHeight(390, 480);
@@ -2034,6 +2148,10 @@ try {
     await runBoldPop(320, 640);
     await runBoldRefuses(1280, 800);
     await runBoldKinds(1280, 800);
+    await runAskInBold(1280, 800);
+    await runAskInBold(390, 760);
+    await runGuestSelection(1280, 800);
+    await runBarPanned(390, 760);
     await runMenuHeight(1280, 420);
     await runMenuHeight(390, 480);
     await runExports(1280, 800);
