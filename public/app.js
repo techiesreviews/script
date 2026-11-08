@@ -9,7 +9,7 @@ import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
 import { startPress, HOLD_MS } from "./press.js";
-import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot } from "./edit-bar.js";
+import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -295,7 +295,7 @@ const linksOf = (b) => {
   const content = D.contentOf(b), links = L.textLinks(content);
   return [...links, ...K.textCues(content)].sort((x, y) => x.start - y.start || y.end - x.end);
 };
-function linkNodes(content, from, to, links) {
+function linkNodes(content, from, to, links, cuts = []) {
   const nodes = [];
   let at = from;
   const list = links.filter((l) => l.start >= from && l.end <= to);
@@ -308,27 +308,49 @@ function linkNodes(content, from, to, links) {
       k++;
       if (list[k].start >= l.words.start && list[k].end <= l.words.end) inner.push(list[k]);
     }
-    if (l.start > at) nodes.push(document.createTextNode(content.slice(at, l.start)));
+    if (l.start > at) nodes.push(...plainNodes(content, at, l.start, cuts));
     const a = l.cue ? h("span", "md-link md-cue", { "data-link": "", "data-cue": "" }) : h("span", "md-link", { "data-link": "", title: l.url });
     if (!l.cue) a.dataset.href = l.url;
     const head = h("span", "md-link__mark"), words = h("span", "md-link__words"), tail = h("span", "md-link__mark");
     head.textContent = content.slice(l.start, l.words.start);
-    words.append(...linkNodes(content, l.words.start, l.words.end, inner));
+    words.append(...linkNodes(content, l.words.start, l.words.end, inner, cuts));
     tail.textContent = content.slice(l.words.end, l.end);
     a.append(head, words, tail);
     nodes.push(a);
     at = l.end;
   }
-  if (to > at) nodes.push(document.createTextNode(content.slice(at, to)));
+  if (to > at) nodes.push(...plainNodes(content, at, to, cuts));
+  return nodes;
+}
+// Plain text from…to, where a bold stretch cut by an ask's edge (TOOLS-52 item 5) has its "**" hidden and its words bold:
+// the same words as one stretch drawn whole, in pieces (.md-cut), each a [data-link] so the line still reads as drawn.
+function plainNodes(content, from, to, cuts) {
+  const nodes = [], text = (a, b) => { if (b > a) nodes.push(document.createTextNode(content.slice(a, b))); };
+  let at = from;
+  for (const c of cuts) {
+    if (c.end <= at || c.start >= to) continue;
+    text(at, Math.max(at, c.start));
+    for (const [a, b, kind] of [[c.start, c.words.start, "mark"], [c.words.start, c.words.end, "words"], [c.words.end, c.end, "mark"]]) {
+      const x = Math.max(a, at), y = Math.min(b, to);
+      if (y <= x) continue;
+      const piece = h("span", `md-cut${kind === "mark" ? "__mark" : ""}`, { "data-link": "", "data-cut": String(c.start) });
+      piece.textContent = content.slice(x, y);
+      nodes.push(piece);
+    }
+    at = Math.min(c.end, to);
+  }
+  text(at, to);
   return nodes;
 }
 // The links as drawn: the ones inside one stretch of plain text or one decoration (an old before/after has none).
 function shownLinks(content, links, decos) {
   const cuts = [0, content.length];
   for (const d of decos) cuts.push(d.start, d.end);
-  const inChange = (l) => decos.some((d) => d.kind === "ask" && d.ask.status === "answered" && d.ask.answer.kind !== "note" && l.start < d.end && l.end > d.start);
-  return links.filter((l) => !cuts.some((c) => c > l.start && c < l.end) && !inChange(l));
+  return links.filter((l) => !cuts.some((c) => c > l.start && c < l.end) && !inChange(l, decos));
 }
+const inChange = (l, decos) => decos.some((d) => d.kind === "ask" && d.ask.status === "answered" && d.ask.answer.kind !== "note" && l.start < d.end && l.end > d.start);
+// The bold stretches an ask, note or mark cuts through (not shown whole): drawn in pieces with their "**" hidden.
+const cutCues = (links, shown, decos) => links.filter((l) => l.cue && !shown.includes(l) && !inChange(l, decos));
 // Where a link element starts in its block's content.
 function linkStart(el, a) {
   const r = document.createRange();
@@ -340,7 +362,27 @@ function shownLink({ a, start }) {
   const words = readContent(a.querySelector(".md-link__words")).length, head = readContent(a.querySelector(".md-link__mark")).length;
   return { start, end: start + readContent(a).length, words: { start: start + head, end: start + head + words } };
 }
-const closedLinks = (el) => [...el.querySelectorAll(".md-link:not([data-open])")].map((a) => shownLink({ a, start: linkStart(el, a) }));
+// The bold stretches an ask cuts through, drawn in pieces (plainNodes): [{ link: { start, end, words }, els }], one per stretch,
+// read from the pieces as they are now (typing inside a stretch needs no redraw, so nothing is saved on them). Like a whole
+// stretch, its "**" show only while the selection touches it (data-open on its mark pieces).
+function cutGroups(el) {
+  const groups = new Map();
+  for (const p of el.querySelectorAll("[data-cut]")) {
+    const start = linkStart(el, p), end = start + readContent(p).length;
+    let g = groups.get(p.dataset.cut);
+    if (!g) groups.set(p.dataset.cut, g = { els: [], start, end, ws: null, we: null });
+    g.els.push(p);
+    g.start = Math.min(g.start, start);
+    g.end = Math.max(g.end, end);
+    if (!p.classList.contains("md-cut__mark")) { g.ws ??= start; g.we = end; }
+  }
+  return [...groups.values()].map((g) => ({ els: g.els, link: { start: g.start, end: g.end, words: { start: g.ws ?? g.start, end: g.we ?? g.end } } }));
+}
+const cutOpen = (g) => g.els.some((p) => p.hasAttribute("data-open"));
+const closedLinks = (el) => [
+  ...[...el.querySelectorAll(".md-link:not([data-open])")].map((a) => shownLink({ a, start: linkStart(el, a) })),
+  ...cutGroups(el).filter((g) => !cutOpen(g)).map((g) => g.link),
+].sort((x, y) => x.start - y.start || y.end - x.end);
 // Open the links in `el` that touch start…end (content offsets); close the others (start < 0: close all).
 // Returns the links that were closed and are open now, with their place: [{ a, start, end }].
 function openLinks(el, start, end) {
@@ -351,6 +393,11 @@ function openLinks(el, start, end) {
     if (open && !a.hasAttribute("data-open")) opened.push({ a, start: s, end: e });
     a.toggleAttribute("data-open", open);
   }
+  for (const g of cutGroups(el)) {
+    const { start: s, end: e } = g.link, open = start >= 0 && start <= e && end >= s;
+    if (open && !cutOpen(g)) opened.push({ link: g.link, start: s, end: e });
+    for (const p of g.els) if (p.classList.contains("md-cut__mark")) p.toggleAttribute("data-open", open);
+  }
   return opened;
 }
 // After the selection moved: open the links it touches. A caret the person put on the edge of a closed link (where
@@ -359,12 +406,12 @@ let composingLinks = false;
 function refreshLinks(snap = false) {
   const sel = getSelection();
   const r = sel.rangeCount ? sel.getRangeAt(0) : null;
-  for (const el of scriptEl.querySelectorAll(".block:has(.md-link)")) {
+  for (const el of scriptEl.querySelectorAll(".block:has(.md-link, [data-cut])")) {
     const s = r && r.intersectsNode(el) ? selectionIn(el) : null;
     const opened = openLinks(el, s ? s.start : -1, s ? s.end : -1);
     if (!snap || composingLinks || !s || s.start !== s.end || !sel.isCollapsed || !opened.length) continue;
     // A link inside another's words (bold links): from the inner one out, each edge to just outside it.
-    const chain = opened.map(shownLink).sort((x, y) => (x.end - x.start) - (y.end - y.start));
+    const chain = opened.map((o) => o.link || shownLink(o)).sort((x, y) => (x.end - x.start) - (y.end - y.start));
     if (!chain.every((l, i) => i === 0 || (l.start <= chain[i - 1].start && l.end >= chain[i - 1].end))) continue;
     const to = chain.reduce((at, l) => L.edgeSnap(l, at), s.start);
     if (to !== s.start) setCaretAt(el, to);
@@ -496,11 +543,11 @@ const may = (ask) => !state.guest || !!together?.may(ask);
 function fillBlock(el, b) {
   const content = D.contentOf(b);
   const decos = decorationsFor(b.id);
-  const links = shownLinks(content, linksOf(b), decos);
+  const all = linksOf(b), links = shownLinks(content, all, decos), cuts = cutCues(all, links, decos);
   const nodes = [];
   let at = 0, chips = 0;
-  const text = (from, to) => nodes.push(...linkNodes(content, from, to, links));
-  const words = (m, d) => m.append(...linkNodes(content, d.start, d.end, links));
+  const text = (from, to) => nodes.push(...linkNodes(content, from, to, links, cuts));
+  const words = (m, d) => m.append(...linkNodes(content, d.start, d.end, links, cuts));
   for (const d of decos) {
     text(at, d.start);
     const quote = content.slice(d.start, d.end);
@@ -1185,7 +1232,7 @@ scriptEl.addEventListener("beforeinput", (e) => {
   const el = blockOf(e.target);
   if (!el) return;
   if (!state.preCaret) state.preCaret = getCaret();
-  if (e.inputType.startsWith("delete") && !e.isComposing) linksBefore = el.querySelector(".md-link:not([data-open])") ? { id: el.dataset.id, content: readContent(el), closed: closedLinks(el) } : null;
+  if (e.inputType.startsWith("delete") && !e.isComposing) linksBefore = el.querySelector(".md-link:not([data-open]), .md-cut__mark:not([data-open])") ? { id: el.dataset.id, content: readContent(el), closed: closedLinks(el) } : null;
   if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
     e.preventDefault();
     e.inputType === "historyUndo" ? undo() : redo();
@@ -1332,6 +1379,7 @@ function changeMarkup(s, kind, make) {
     if (linkMode && linkTry(barSel)?.state !== "off") leaveLinkMode();
     cueBtnState(barSel);
     linkBtnState(barSel);
+    barLabel(barSel.quote);
     paintBarSel();
     renderAsk();
   }
@@ -1480,15 +1528,15 @@ function placeBar(r) {
   if (matchMedia("(width < 40rem)").matches) {
     const v = window.visualViewport, lift = v ? Math.max(0, innerHeight - v.height - v.offsetTop) : 0;
     bar.style.setProperty("--bar-lift", lift + "px");
-    const panned = v?.offsetTop || 0; // a keyboard can pan the page up: the top of what is seen is lower down
-    bar.style.setProperty("--bar-y", top + panned + 8 + "px");
-    bar.dataset.dock = phoneDock({ first, last, h: bar.offsetHeight, top: top + panned, vh: innerHeight, lift });
+    const clear = seenFrom(top, v?.offsetTop); // a keyboard can pan the page up: the top of what is seen is lower down
+    bar.style.setProperty("--bar-y", clear + 8 + "px");
+    bar.dataset.dock = phoneDock({ first, last, h: bar.offsetHeight, top: clear, vh: innerHeight, lift });
     return;
   }
   const at = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
   const line = parseFloat(getComputedStyle(at).lineHeight) || first.height;
   // What is really seen: on a tablet the on-screen keyboard covers the end of the window and may pan the page.
-  const v = window.visualViewport, seenEnd = v ? v.height + v.offsetTop : innerHeight, seenTop = Math.max(top, v?.offsetTop || 0);
+  const v = window.visualViewport, seenEnd = v ? v.height + v.offsetTop : innerHeight, seenTop = seenFrom(top, v?.offsetTop);
   const { x, y } = barSpot({ first, last, w: bar.offsetWidth, h: bar.offsetHeight, top: seenTop, vw: document.documentElement.clientWidth, vh: seenEnd, line });
   bar.style.setProperty("--bar-x", x + "px");
   bar.style.setProperty("--bar-y", y + "px");
@@ -1512,8 +1560,7 @@ function showBar() {
   leaveLinkMode();
   cueBtnState(s);
   linkBtnState(s);
-  const n = D.countWords(K.spokenWords(s.quote));
-  $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
+  barLabel(s.quote);
   closeCard();
   renderAsk();
   placeBar(s.range);
@@ -1537,6 +1584,11 @@ function hideBar() {
   $("#askLive").textContent = "";
   paintBarSel();
   renderAsk();
+}
+// The bar's word count, for the words it holds (also after B widened them over a bold edge).
+function barLabel(quote) {
+  const n = D.countWords(K.spokenWords(quote));
+  $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
 }
 // A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
 // old nodes, so it is made again on the same words. If they are gone the ask stops at makeAsk, as before.
@@ -1714,13 +1766,13 @@ moreMenu.addEventListener("keydown", (e) => {
 function placeBoldPop() {
   boldPop.style.setProperty("--pop-room", `${document.documentElement.clientWidth - 16}px`);
   const r = bar.getBoundingClientRect(), b = boldBtn.getBoundingClientRect();
-  // A short window or large text: no taller than what is seen below the top bar; it scrolls inside itself.
-  const seen = window.visualViewport, seenTop = Math.max($(".top").getBoundingClientRect().bottom, seen?.offsetTop || 0);
-  boldPop.style.setProperty("--pop-room-y", `${(seen ? seen.height + seen.offsetTop : innerHeight) - seenTop - 16}px`);
+  // What is seen: below the top bar (and a pan), down to the end of the visual viewport. A short window or large text: the
+  // colours are no taller than that; they scroll inside themselves.
+  const v = window.visualViewport, top = seenFrom($(".top").getBoundingClientRect().bottom, v?.offsetTop), vh = v ? v.height + v.offsetTop : innerHeight;
+  boldPop.style.setProperty("--pop-room-y", `${vh - top - 16}px`);
   const rects = barSel?.range ? [...barSel.range.getClientRects()].filter((x) => x.width > 0) : [];
   const words = rects.length ? { top: Math.min(...rects.map((x) => x.top)), bottom: Math.max(...rects.map((x) => x.bottom)), left: Math.min(...rects.map((x) => x.left)), right: Math.max(...rects.map((x) => x.right)) } : { top: 0, bottom: 0, left: 0, right: 0 };
-  const v = window.visualViewport, top = Math.max($(".top").getBoundingClientRect().bottom, v?.offsetTop || 0);
-  const { x, y, side } = popSpot({ bar: r, x: b.left, words, w: boldPop.offsetWidth, h: boldPop.offsetHeight, top, vw: document.documentElement.clientWidth, vh: v ? v.height + v.offsetTop : innerHeight });
+  const { x, y, side } = popSpot({ bar: r, x: b.left, words, w: boldPop.offsetWidth, h: boldPop.offsetHeight, top, vw: document.documentElement.clientWidth, vh });
   boldPop.style.left = `${x}px`;
   boldPop.style.top = `${y}px`;
   boldPop.dataset.side = side;
@@ -1785,8 +1837,12 @@ for (const el of [boldBtn, boldPop]) el.addEventListener("focusout", (e) => {
   if (e.relatedTarget && (boldPop.contains(e.relatedTarget) || e.relatedTarget === boldBtn)) return;
   closeBoldPopSoon();
 });
-// A colour field's picker closed: the pointer may have left meanwhile.
-for (const id of ["#boldFg", "#boldBg"]) $(id).addEventListener("change", closeBoldPopSoon);
+// A colour field's picker closed: the pointer may have left meanwhile. A mouse pick leaves the focus on the field, which
+// would keep the colours open (popHeld), so it goes, unless the keyboard is there (:focus-visible).
+for (const id of ["#boldFg", "#boldBg"]) $(id).addEventListener("change", (e) => {
+  if (!e.target.matches(":focus-visible")) e.target.blur();
+  closeBoldPopSoon();
+});
 // A press anywhere else closes them.
 document.addEventListener("pointerdown", (e) => {
   if (boldPop.matches(":popover-open") && !boldPop.contains(e.target) && !boldBtn.contains(e.target)) closeBoldPop();
@@ -5283,8 +5339,11 @@ function setRoomAsks(asks) {
   for (const a of asks) if (C.isMarked(a) && was.has(a.id) && was.get(a.id).status !== "kept") arrived.set(a.id, Date.now());
   state.asks = asks;
   markBase();
-  const caret = getCaret();
+  // The text is the same, only the asks drawn on it changed: a selection in a line that is drawn again stays selected
+  // (TOOLS-52 item 6), as for a mark that ends (endMarks).
+  const caret = getCaret(), sel = localSelection();
   for (const id of new Set([...before.keys(), ...after.keys()])) if (before.get(id) !== after.get(id) && byId(id)) renderBlock(id, caret);
+  if (sel && before.get(sel.id) !== after.get(sel.id)) restoreSelection(sel);
   renderTocDots();
   renderVoice();
   if (brollSig(asks) !== brollBefore) renderBroll();

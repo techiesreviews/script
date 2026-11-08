@@ -1,0 +1,80 @@
+# Step V live run: SMOKE_ONLY=link node scripts/smoke-keep-all.mjs https://script.techies.tools, headless Chrome, 2026-11-07, Worker version 26f1e169-e6f3-4d61-80fe-270445dba4ef
+ok 1280 px link: the test line is in
+ok 1280 px link: selecting words shows the bar with the link icon
+ok 1280 px link: the link icon sits right after B
+ok 1280 px link: on plain words the icon is a chain, off
+ok 1280 px link: the input becomes an address field (https://)
+ok 1280 px link: no Apply or Remove buttons appear
+ok 1280 px link: no explainer text
+ok 1280 px link: half an address: not linked yet
+ok 1280 px link: a full address: the icon shows on
+ok 1280 px link: a full address: the words show linked
+ok 1280 px link: nothing is in the text before Enter
+ok 1280 px link: Escape cancels: the text is unchanged
+ok 1280 px link: Escape goes back to asking, the bar stays
+ok 1280 px link: Enter links the words
+ok 1280 px link: on a link the icon is a broken chain holding the address
+ok 1280 px link: after Enter the input asks again
+ok 1280 px link: the address shows on hover and on keyboard focus
+ok 1280 px link: a click on the broken chain removes the link, the words stay
+ok 1280 px link: Ctrl+Z brings the link back
+ok 1280 px link: B on a link's words makes a whole bold link
+ok 1280 px link: a bold link shows bold and underlined
+ok 1280 px link: typing inside a bold link keeps its marks
+ok 1280 px link: Ctrl+Z takes the typing back
+ok 1280 px link: on a bold link both B and the link icon show on
+ok 1280 px link: part link, part plain: the link icon is grey
+ok 1280 px link: a link inside bold words
+ok 1280 px link: Ctrl+B joins the bold over the link
+ok 1280 px link: the words are part link now: the address field closes, the icon is grey
+ok 1280 px link: Ctrl+Z takes that bold back
+ok 1280 px link: a 600-character address fits in the field
+ok 1280 px link: the whole long address goes in
+ok 1280 px link: the asking input is back to 500 characters
+ok 1280 px link: Ctrl+B in the address field bolds and keeps the address
+ok 1280 px link: Enter then links the bold words: a whole bold link
+ok 1280 px link: the last four Ctrl+Z go back to the plain line
+ok 390 px link: the test line is in
+ok 390 px link: selecting words shows the bar with the link icon
+ok 390 px link: the link icon sits right after B
+ok 390 px link: on plain words the icon is a chain, off
+ok 390 px link: the input becomes an address field (https://)
+ok 390 px link: no Apply or Remove buttons appear
+ok 390 px link: no explainer text
+ok 390 px link: half an address: not linked yet
+ok 390 px link: a full address: the icon shows on
+ok 390 px link: a full address: the words show linked
+ok 390 px link: nothing is in the text before Enter
+ok 390 px link: Escape cancels: the text is unchanged
+ok 390 px link: Escape goes back to asking, the bar stays
+ok 390 px link: Enter links the words
+ok 390 px link: on a link the icon is a broken chain holding the address
+ok 390 px link: after Enter the input asks again
+ok 390 px link: the address shows on hover and on keyboard focus
+ok 390 px link: a click on the broken chain removes the link, the words stay
+ok 390 px link: Ctrl+Z brings the link back
+ok 390 px link: B on a link's words makes a whole bold link
+ok 390 px link: a bold link shows bold and underlined
+ok 390 px link: typing inside a bold link keeps its marks
+ok 390 px link: Ctrl+Z takes the typing back
+ok 390 px link: on a bold link both B and the link icon show on
+ok 390 px link: part link, part plain: the link icon is grey
+ok 390 px link: a link inside bold words
+ok 390 px link: Ctrl+B joins the bold over the link
+ok 390 px link: the words are part link now: the address field closes, the icon is grey
+ok 390 px link: Ctrl+Z takes that bold back
+ok 390 px link: a 600-character address fits in the field
+ok 390 px link: the whole long address goes in
+ok 390 px link: the asking input is back to 500 characters
+ok 390 px link: Ctrl+B in the address field bolds and keeps the address
+ok 390 px link: Enter then links the bold words: a whole bold link
+ok 390 px link: the last four Ctrl+Z go back to the plain line
+ok 1280 px link guest: the guest sees the link icon
+ok 1280 px link guest: the guest's link reaches the host's script
+ok 1280 px link guest: the guest's click on the broken chain removes it everywhere
+ok 1280 px link guest: the guest's Ctrl+Z brings the link back
+ok 390 px link guest: the guest sees the link icon
+ok 390 px link guest: the guest's link reaches the host's script
+ok 390 px link guest: the guest's click on the broken chain removes it everywhere
+ok 390 px link guest: the guest's Ctrl+Z brings the link back
+RESULT: ok

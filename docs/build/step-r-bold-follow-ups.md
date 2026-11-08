@@ -29,7 +29,7 @@ Lex (2026-11-06): fix the follow-ups listed in fleet issues #29, #30 and #31, on
 
 ## Not in the first release (left, in this order)
 
-- PR D: fleet #31 item 5 (an open ask on part of a bold stretch shows its `**`; `unmark_cue` can't remove a stretch over about 550 characters; the colour inputs are small touch targets) and item 6 (a guest's selection is dropped when a host's ask arrives on that line) only if cheap, else they stay on the ticket.
+- PR D (done in step W, `step-w-bold-follow-ups-2.md`): fleet #31 item 5 (an open ask on part of a bold stretch shows its `**`; `unmark_cue` can't remove a stretch over about 550 characters; the colour inputs are small touch targets) and item 6 (a guest's selection is dropped when a host's ask arrives on that line) only if cheap, else they stay on the ticket.
 - Still open from #29, no fix planned here: a stretch with more lines in its block (`** two **\ny`, `x\n** two **\ny`) keeps its marks as text; two spaced stretches on one line (`** a ** ** b **`, `a` then `b` deleted) still end as a rule line; a lone stretch emptied leaves a line of spaces with the caret between them; deleting outer words first leaves `** two **`, which reads like `a ** b ** c` (documented limit); the Prompter doesn't draw inline `**`.
 
 Due 2026-11-10: Lex's Firefox and Safari hand check of Ctrl+B and ⌘B (fleet #29); it blocks nothing.

@@ -377,6 +377,10 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
    lives only in this rule: orange and bold like the prompter's own (--bold-ink), or the person's colours (the colours by B, step U).
    Only the bold words themselves: a link inside bold keeps its own dotted underline (step V). */
 .md-cue > .md-link__words { text-decoration: none; font-weight: 800; color: var(--bold-fg, var(--bold-ink)); background: var(--bold-bg, transparent); box-decoration-break: clone; }
+/* A bold stretch an ask, note or mark cuts through is drawn in pieces: the same look, its "**" hidden (TOOLS-52 item 5). */
+.md-cut { font-weight: 800; color: var(--bold-fg, var(--bold-ink)); background: var(--bold-bg, transparent); box-decoration-break: clone; }
+.md-cut__mark:not([data-open]) { display: none; }
+.md-cut__mark { color: var(--faint); overflow-wrap: anywhere; }
 .edit-bar__button--bold svg { stroke-width: 2.8; }
 .edit-bar__button[aria-pressed="true"] { background: var(--accent-soft); }
 .edit-bar__button[aria-pressed="true"] svg { color: var(--accent-ink); }
@@ -435,7 +439,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   text-decoration: underline; text-underline-offset: 3px;
 }
 .bold-pop__reset:disabled { color: var(--faint); text-decoration: none; cursor: default; }
-@media (pointer: coarse) { .bold-pop { --swatch: 2.25rem; --swatch-gap: 4px; } .bold-pop__reset { padding-block: 0.6rem; } }
+@media (pointer: coarse) { .bold-pop { --swatch: 2.75rem; --swatch-gap: 4px; } .bold-pop__reset { padding-block: 0.6rem; } } /* 2.75rem: the bar's own touch size */
 @media (width < 40rem) { .bold-pop { inline-size: var(--pop-room, calc(100vw - 1rem)); } }
 @media (prefers-reduced-motion: no-preference) { .bold-pop:popover-open { animation: lift-in 140ms var(--ease-out); } }
 @keyframes agent-in { from { background: color-mix(in oklch, var(--agent) 34%, transparent); } }
