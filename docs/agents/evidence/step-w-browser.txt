@@ -876,6 +876,7 @@ ok 1280 px: typing at the end of a cut stretch's last word goes outside it
 ok 1280 px: the caret in a cut stretch shows its ** marks
 ok 1280 px: the caret away from it: the marks hide again
 ok 1280 px: the text keeps its marks
+ok 1280 px: after typing inside a cut stretch, the caret on its edge still goes outside
 ok 1280 px: an ask across the opening marks
 ok 1280 px: with an ask across the opening marks no ** shows
 ok 1280 px: big, word and now still show bold, and only they
@@ -889,6 +890,7 @@ ok 390 px: typing at the end of a cut stretch's last word goes outside it
 ok 390 px: the caret in a cut stretch shows its ** marks
 ok 390 px: the caret away from it: the marks hide again
 ok 390 px: the text keeps its marks
+ok 390 px: after typing inside a cut stretch, the caret on its edge still goes outside
 ok 390 px: an ask across the opening marks
 ok 390 px: with an ask across the opening marks no ** shows
 ok 390 px: big, word and now still show bold, and only they
