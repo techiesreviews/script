@@ -1286,7 +1286,9 @@ async function runAskInBoldEdges(width, height) {
   // A click at the end of "now", from a caret outside the stretch: the caret goes just outside the hidden marks, so a mark typed there is not bold.
   await page.eval(`(() => { const el = ${firstPara}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToStart(); })()`);
   await sleep(250);
-  const endOfNow = await page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.data.trim() === "now") { const r = document.createRange(); r.setStart(n, n.data.length); r.setEnd(n, n.data.length); const b = n.parentElement.getBoundingClientRect(); return { x: b.right + 2, y: b.top + b.height / 2 }; } return null; })()`);
+  const spotAfter = (word) => page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.data.trim() === ${JSON.stringify(word)}) { const b = n.parentElement.getBoundingClientRect(); return { x: b.right + 2, y: b.top + b.height / 2 }; } return null; })()`);
+  const toStart = async () => { await page.eval(`(() => { const el = ${firstPara}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToStart(); })()`); await sleep(250); };
+  const endOfNow = await spotAfter("now");
   check(!!endOfNow, `${tag}: the last bold word of the cut stretch is drawn`);
   await clickAt(page, endOfNow);
   await sleep(250);
@@ -1297,14 +1299,26 @@ async function runAskInBoldEdges(width, height) {
   await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "z", code: "KeyZ", modifiers: 2, windowsVirtualKeyCode: 90 });
   await sleep(250);
   // The caret in the stretch shows its marks; away from it they hide again.
-  const inBig = await page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.data.trim() === "big") { const r = document.createRange(); r.setStart(n, 2); r.setEnd(n, 2); const b = r.getBoundingClientRect(); return { x: b.left, y: b.top + b.height / 2 }; } return null; })()`);
-  await clickAt(page, inBig);
+  const caretIn = (word, at) => page.eval(`(() => { const w = document.createTreeWalker(${firstPara}, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (n.data.trim() === ${JSON.stringify(word)}) { const r = document.createRange(), from = n.data.indexOf(${JSON.stringify(word)}) + ${at}; r.setStart(n, from); r.setEnd(n, from); const b = r.getBoundingClientRect(); return { x: b.left, y: b.top + b.height / 2 }; } return null; })()`);
+  await clickAt(page, await caretIn("big", 2));
   await sleep(250);
   check(await page.eval(`${firstPara}.querySelectorAll(".md-cut__mark[data-open]").length === 2 && ${firstPara}.innerText.includes("**big")`), `${tag}: the caret in a cut stretch shows its ** marks`);
   await page.eval(`(() => { const el = ${firstPara}; el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToStart(); })()`);
   await sleep(250);
   check(await page.eval(`!${firstPara}.innerText.includes("**")`), `${tag}: the caret away from it: the marks hide again`);
   check((await script()).includes("Say **big word now** okay."), `${tag}: the text keeps its marks`);
+  // Typing inside the stretch needs no redraw, and the caret on its edge still goes outside afterwards.
+  await toStart();
+  await clickAt(page, await caretIn("big", 2));
+  await sleep(250);
+  await page.send("Input.insertText", { text: "g" });
+  await sleep(300);
+  await toStart();
+  await clickAt(page, await spotAfter("now"));
+  await sleep(250);
+  await page.send("Input.insertText", { text: "!" });
+  await sleep(300);
+  check((await script()).includes("Say **bigg word now**! okay."), `${tag}: after typing inside a cut stretch, the caret on its edge still goes outside`, (await script()).split("\n").find((l) => l.includes("Say **")));
   await page.close();
 
   // An ask whose edge crosses the opening marks: no ** shows, all the words stay bold, the text is as it was.

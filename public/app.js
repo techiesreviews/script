@@ -333,7 +333,7 @@ function plainNodes(content, from, to, cuts) {
     for (const [a, b, kind] of [[c.start, c.words.start, "mark"], [c.words.start, c.words.end, "words"], [c.words.end, c.end, "mark"]]) {
       const x = Math.max(a, at), y = Math.min(b, to);
       if (y <= x) continue;
-      const piece = h("span", `md-cut${kind === "mark" ? "__mark" : ""}`, { "data-link": "", "data-cut": String(c.start), "data-cut-at": `${c.start},${c.end},${c.words.start},${c.words.end}` });
+      const piece = h("span", `md-cut${kind === "mark" ? "__mark" : ""}`, { "data-link": "", "data-cut": String(c.start) });
       piece.textContent = content.slice(x, y);
       nodes.push(piece);
     }
@@ -362,18 +362,21 @@ function shownLink({ a, start }) {
   const words = readContent(a.querySelector(".md-link__words")).length, head = readContent(a.querySelector(".md-link__mark")).length;
   return { start, end: start + readContent(a).length, words: { start: start + head, end: start + head + words } };
 }
-// The bold stretches an ask cuts through, drawn in pieces (plainNodes): [{ link: { start, end, words }, els }], one per stretch.
-// Like a whole stretch, its "**" show only while the selection touches it (data-open on its mark pieces).
+// The bold stretches an ask cuts through, drawn in pieces (plainNodes): [{ link: { start, end, words }, els }], one per stretch,
+// read from the pieces as they are now (typing inside a stretch needs no redraw, so nothing is saved on them). Like a whole
+// stretch, its "**" show only while the selection touches it (data-open on its mark pieces).
 function cutGroups(el) {
   const groups = new Map();
   for (const p of el.querySelectorAll("[data-cut]")) {
-    if (!groups.has(p.dataset.cut)) {
-      const [start, end, ws, we] = p.dataset.cutAt.split(",").map(Number);
-      groups.set(p.dataset.cut, { link: { start, end, words: { start: ws, end: we } }, els: [] });
-    }
-    groups.get(p.dataset.cut).els.push(p);
+    const start = linkStart(el, p), end = start + readContent(p).length;
+    let g = groups.get(p.dataset.cut);
+    if (!g) groups.set(p.dataset.cut, g = { els: [], start, end, ws: null, we: null });
+    g.els.push(p);
+    g.start = Math.min(g.start, start);
+    g.end = Math.max(g.end, end);
+    if (!p.classList.contains("md-cut__mark")) { g.ws ??= start; g.we = end; }
   }
-  return [...groups.values()];
+  return [...groups.values()].map((g) => ({ els: g.els, link: { start: g.start, end: g.end, words: { start: g.ws ?? g.start, end: g.we ?? g.end } } }));
 }
 const cutOpen = (g) => g.els.some((p) => p.hasAttribute("data-open"));
 const closedLinks = (el) => [
