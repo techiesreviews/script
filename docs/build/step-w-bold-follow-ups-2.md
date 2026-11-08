@@ -37,3 +37,10 @@ Both rare cases were fixed in step R, PR C (`step-r-bold-follow-ups.md`) and are
 ## Done
 
 Feature list: updated (`docs/features.md`).
+
+### Follow-ups
+
+- Spec (P3): 3e9fe85:docs/build/step-u-bold-colours-by-b.md:29 — P3 ticket: this commit deleted the step U follow-up "Spec (P3) 5a8f408 … the Follow-ups list still says the ArrowLeft wrap is not really checked … Fix: remove that follow-up". But it kept the line that note asked to remove: "Validation gaps (gap): The ArrowLeft wrap is not really checked…", which is now line 29. So the list still claims a check is missing when the smoke script already has it ("ArrowLeft at the start wraps to the row's end", at both sizes, in the evidence). Fix: delete line 29, or mark it done in 5a8f408.
+- Validation gaps (gap): Deleting next to a cut stretch's hidden marks has no check. `public/app.js:1235` now sets `linksBefore` when there is a `.md-cutmark:not([data-open])`. Through `closedLinks`, it also passes the cut groups to `L.keepHidden`. Nothing tests this path. Test to add in `runAskInBoldEdges`, after the ask on "word": put the caret just after "Say " with the stretch's marks hidden, press Delete, and assert that `get_script` still holds `big word now` with both marks whole. Then do the same with Backspace just after "now".
+- Validation gaps (gap): `cutGroups` reads a stretch from its pieces. When typing or a deletion removes the whole first or last words piece (for example, select "big" in a stretch cut on "word" and delete it), `ws`/`we` fall back to the stretch's outer edges, so the hidden `` would count as words. Test to add in `runAskInBoldEdges`: select "big " inside the cut stretch, delete it, and assert the script reads `Say word now okay.` with no stray `*`.
+
