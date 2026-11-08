@@ -154,6 +154,23 @@ test("MCP: list_cues, mark_cue and unmark_cue, with their checks", () => {
   assert.match(INSTRUCTIONS, /\*\*words\*\*/);
 });
 
+test("MCP: unmark_cue takes the cueId list_cues gives for a bold stretch of any length (fleet #31 item 5)", () => {
+  // list_cues puts the stretch's words in the cueId, so a stretch over about 550 characters made an id the check refused;
+  // and its words are over the 500-character limit of `quote`, so the cueId was the only way to remove it.
+  const words = `${"long bold words ".repeat(60)}end`;
+  assert.ok(words.length > 900);
+  const doc = D.parse(`# T\n\n## A\n\nBefore **${words}** after.\n`);
+  const [cue] = C.listCues(doc);
+  assert.equal(cue.quote, words);
+  assert.equal(checkArgs("unmark_cue", { cues: [{ cueId: cue.cueId }] }), "");
+  assert.match(checkArgs("unmark_cue", { cues: [{ quote: words }] }), /quote must be text of at most 500/);
+  const plan = C.planCues(doc, "unmark", [{ cueId: cue.cueId }]);
+  assert.deepEqual(plan.skipped, []);
+  assert.deepEqual(plan.segments.map((s) => s.content), [`Before ${words} after.`]);
+  // A cueId can still be too long to be real: nothing longer than a whole script is taken.
+  assert.match(checkArgs("unmark_cue", { cues: [{ cueId: "x".repeat(200_061) }] }), /cueId must be a cueId/);
+});
+
 test("review: a link on bold words makes a whole bold link (Lex 2026-11-07); a rewrite whose cues would change the block keeps the text without them", () => {
   const bold = L.planLinks([{ id: "p", content: "We **go** now", from: 0, to: 13, cues: [[3, 9]] }], [{ quote: "go", url: "https://example.com" }]);
   assert.deepEqual([bold.segments[0].content, bold.skipped], ["We **[go](https://example.com)** now", []]);
