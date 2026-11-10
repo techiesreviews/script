@@ -147,7 +147,7 @@ function fakeFolder(start = {}) {
       const path = prefix + name;
       if (!files.has(path) && !create) throw Object.assign(new Error("not found"), { name: "NotFoundError" });
       return {
-        async getFile() { const d = files.get(path); return { async text() { return typeof d === "string" ? d : new TextDecoder().decode(d); }, lastModified: 0 }; },
+        async getFile() { const d = files.get(path); return { async text() { return typeof d === "string" ? d : new TextDecoder().decode(d); } }; },
         async createWritable() { let data; return { async write(d) { data = d; }, async close() { files.set(path, data); } }; },
       };
     },
