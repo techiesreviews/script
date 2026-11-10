@@ -23,3 +23,9 @@ Lex (2026-11-10, Orbit TOOLS-194, weekly flow step 7b): when a script is final, 
 ## Done
 
 Feature list: updated (`docs/features.md`).
+
+### Follow-ups
+
+- Validation gaps (gap): R1-3 still open: The new unit test shows `settleFolder` keeps a "Saved …" result while the list is "loading". No browser step checks that the app shows the "Saved …" note while the list is read again. The app side is the `for === state.name` check together with the reread in `loadBroll`/`readBrollNow`, which sets "l…
+- Validation gaps (gap): Carried over from R1-3: add a browser step at the end of `runListNotReady` in scripts/smoke-video-folder.mjs, right after "then a save works". Steps: Run `paused.length = 0`. Open the demo again with `#emptySample` (this goes through the open path that calls `loadBroll()`, public/app.js:2369). The script name stays the same, and the Fetch pattern holds back the demo list again. Wait for `paused.length === 1`. Check that `#folderNote` still matches `/^Saved /` and is not hidden while the list is loading. Run `Fetch.continueRequest`, wait for `.shot-frame`, and check the "Saved …" note one more time. Add the new ok lines to docs/agents/evidence/step-x-browser.txt. If reopening the demo shows a confirm step or resets the note in some other way, use another path that reads the list again for the same script. The B-roll "allow" action at public/app.js:3546 is one option.
+
