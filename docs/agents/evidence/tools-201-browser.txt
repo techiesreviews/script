@@ -1,4 +1,4 @@
-# TOOLS-201 browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system; prompter-link.txt checked at 1280 and 390 px, and after a hand-written cue file is kept; the zip's content is checked in tests/video-folder.test.mjs).
+# TOOLS-201 browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system; prompter-link.txt checked at 1280, 390 and 320 px, and after a hand-written cue file is kept; the zip's content is checked in tests/video-folder.test.mjs).
 ok 1280 px: Save to video folder is second, after Export all
 ok 1280 px: no note before a save
 ok 1280 px: the menu fits the width
