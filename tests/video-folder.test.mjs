@@ -356,10 +356,27 @@ test("prompter-link.txt: the day is the script file's own day; never guessed whe
   assert.equal(fileDay(0), null);
   assert.equal(fileDay(NaN), null);
   const now = new Date(2026, 10, 10, 9, 30);
-  assert.equal(scriptDay({ file: true, modified, dirty: false, now }), "2026-11-05", "a saved script: its file's day");
-  assert.equal(scriptDay({ file: true, modified, dirty: true, now }), "2026-11-10", "changes not in the file yet: the folder gets them today");
-  assert.equal(scriptDay({ file: false, modified: 0, dirty: false, now }), "2026-11-10", "no file of its own: the day of this save");
-  assert.equal(scriptDay({ file: true, modified: 0, dirty: false, now }), "2026-11-10", "a file with no date: the day of this save");
+  assert.equal(scriptDay({ modified, dirty: false, now }), "2026-11-05", "a script with a file date and no changes: its file's day, with a handle or from the file input");
+  assert.equal(scriptDay({ modified, dirty: true, now }), "2026-11-10", "changes not in the file yet: the folder gets them today");
+  assert.equal(scriptDay({ modified: 0, dirty: false, now }), "2026-11-10", "no file date (the demo, a new script): the day of this save");
+});
+
+test("prompter-link.txt: a kept prompter.md that can't be read costs only the link; a link too long leaves the older one", async () => {
+  const r = videoFolder(build());
+  const broken = fakeFolder({ "prompter.md": "cues" });
+  const real = broken.dir.getFileHandle;
+  broken.dir.getFileHandle = async (name, o) => {
+    const h = await real(name, o);
+    return name === "prompter.md" && !o?.create && broken.reads++ > 0 ? { ...h, getFile: async () => { throw new Error("gone"); } } : h;
+  };
+  broken.reads = 0;
+  const out = await writeFolder(broken.dir, r.files, { saved: "2026-11-05" });
+  assert.equal(out.noLink, true);
+  assert.equal(broken.files.get("script.md"), text(byName(r, "script.md")), "the other files were saved");
+  assert.ok(!broken.files.has("prompter-link.txt"));
+  const long = fakeFolder({ "prompter.md": "a".repeat(PROMPTER_MAX_CHARS + 1), "prompter-link.txt": "older link\n" });
+  assert.equal((await writeFolder(long.dir, r.files, { saved: "2026-11-05" })).noLink, true);
+  assert.equal(long.files.get("prompter-link.txt"), "older link\n", "the older link stays; nothing is deleted");
 });
 
 test("prompter-link.txt: the note on the control says when the link could not be made", () => {

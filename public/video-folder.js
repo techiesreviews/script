@@ -91,10 +91,10 @@ export function videoFolder({ doc, scriptText, shots = [], sketches = {}, title 
 /** A file's last-saved time as a day on this device (YYYY-MM-DD); null when the browser gives none. */
 export const fileDay = (ms) => (Number.isFinite(ms) && ms > 0 ? day(new Date(ms)) : null);
 
-/** The day the script was saved, for the prompter link: its own file's day when the file holds what is on screen;
- *  otherwise the day of this save, as the folder's copy is written now. Never a day nobody read. */
-export function scriptDay({ file, modified, dirty, now = new Date() }) {
-  return (file && !dirty && fileDay(modified)) || day(now);
+/** The day the script was saved, for the prompter link: its own file's day (when it has one, handle or not) while the
+ *  file holds what is on screen; otherwise the day of this save, as the folder's copy is written now. Never a day nobody read. */
+export function scriptDay({ modified, dirty, now = new Date() }) {
+  return (!dirty && fileDay(modified)) || day(now);
 }
 
 /** The prompter-link.txt file for a prompter text, or null when the text is longer than the prompter accepts. */
