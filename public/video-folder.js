@@ -114,12 +114,19 @@ export async function writeFolder(dir, files, { keep = FOLDER_KEEP } = {}) {
 // What a linked list that is not ready needs, by the editor's status for it.
 const WAIT_NOTE = { loading: "B-roll list still loading", permission: "Allow the B-roll list first", error: "B-roll list can't be read" };
 
+/** A save the B-roll list stopped is over once the list is ready (`null`), so a later reload of the list brings no
+ *  note back; any other result stays as it is. */
+export const settleFolder = (r, status) => (r?.wait && listState(status) !== "wait" ? null : r);
+
 /** The short note under "Save to video folder": what the last save did, or "". A save the B-roll list stopped follows
  *  the list's status now (`status`, when given): it says what the list needs, and nothing once the list is ready. */
 export function folderNote(r, status) {
   if (!r) return "";
-  if (r.error && r.wait && status !== undefined) return listState(status) === "wait" ? WAIT_NOTE[status] || WAIT_NOTE.error : "";
-  if (r.error) return r.wait ? WAIT_NOTE[r.wait] || WAIT_NOTE.error : "Could not save";
+  if (r.error && r.wait) {
+    const now = status ?? r.wait;
+    return listState(now) === "wait" ? WAIT_NOTE[now] || WAIT_NOTE.error : "";
+  }
+  if (r.error) return "Could not save";
   if (r.saving) return "Saving…";
   return `${r.zip ? "Downloaded" : "Saved"} ${r.date} · ${plural(r.words, "word")}${r.kept?.length ? " · cue files kept" : ""}`;
 }
