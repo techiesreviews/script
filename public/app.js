@@ -2740,15 +2740,15 @@ async function saveToFolder() {
       return renderFolderNote();
     }
   }
-  // Read after the picker closes: it is the script on screen now that is saved.
-  const doc = state.doc, name = state.name;
-  if (!doc) return;
+  // Read after the picker closes: it is the script on screen now that is saved (an open "/" command is not part of it).
+  if (!state.doc) return;
+  const doc = slash.open ? D.withoutCommand(state.doc, slash) : state.doc, name = state.name;
   const linked = broll.status === "ok";
-  const { files, receipt } = V.videoFolder({
-    doc, scriptText: saveText(), linked, sketches: broll.sketches, title: D.titleOf(doc) || baseName(),
-    shots: linked ? B.scriptOrder(doc, broll.shots) : [],
-  });
   try {
+    const { files, receipt } = V.videoFolder({
+      doc, scriptText: saveText(), linked, sketches: broll.sketches, title: D.titleOf(doc) || baseName(),
+      shots: linked ? B.scriptOrder(doc, broll.shots) : [],
+    });
     if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files)) };
     else {
       download(makeZip(files), `${baseName()}-video-folder.zip`, "application/zip");

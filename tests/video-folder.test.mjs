@@ -82,8 +82,25 @@ test("video folder: picture file names are plain, never twice, and the shot's id
   const pics = names(r).filter((n) => n.startsWith("pictures/"));
   assert.equal(pics.length, 3);
   assert.equal(new Set(pics.map((p) => p.toLowerCase())).size, 3);
-  for (const p of pics) assert.match(p, /^pictures\/[A-Za-z0-9][A-Za-z0-9._-]*$/);
+  for (const p of pics) assert.match(p, /^pictures\/[A-Za-z][A-Za-z0-9._-]*$/);
+  assert.ok(pics.includes("pictures/shot-1.png"), "an id that starts with a symbol gets shot- in front");
+  // Every picture file is linked from b-roll.md, also a shot whose id has a space (no fence could carry it).
+  const md = text(byName(r, "b-roll.md"));
+  for (const p of pics) assert.ok(md.includes(`](${p})`), `${p} is linked`);
+  assert.ok(!md.includes("data:image"));
   assert.deepEqual(JSON.parse(text(byName(r, "b-roll.json"))).shots.map((s) => s.id), ["#1", "B 2", "b-2"]);
+});
+
+test("video folder: a sketch of no shot is not written into b-roll.md as an embedded picture, and gets no file", () => {
+  const { shots } = parseBroll(LIST);
+  const r = videoFolder(build({ sketches: { [shots[0].id]: PNG, ORPHAN: PNG } }));
+  assert.ok(!text(byName(r, "b-roll.md")).includes("data:image"));
+  assert.equal(names(r).filter((n) => n.startsWith("pictures/")).length, 1);
+});
+
+test("video folder: accents in a shot id are dropped, not turned into dashes", () => {
+  const shots = [{ id: "Crème", kind: "broll", what: "x", over: "", how: "", blockIds: [] }];
+  assert.ok(names(videoFolder(build({ shots, sketches: { Crème: PNG } }))).includes("pictures/Creme.png"));
 });
 
 test("video folder: without a B-roll list there is no B-roll file, and the receipt says so", () => {
@@ -159,6 +176,11 @@ test("video folder: an existing cue file stays as it is; the script and B-roll f
   assert.equal(files.get("b-roll.md"), text(byName(r, "b-roll.md")));
   assert.deepEqual(out.kept.sort(), ["prompter.md", "recording-notes.md"]);
   assert.ok(!out.written.includes("prompter.md"));
+});
+
+test("video folder: a failed write rejects, so the app can say it could not save", async () => {
+  const dir = { async getFileHandle() { return { async createWritable() { throw new Error("disk full"); } }; }, async getDirectoryHandle() { return dir; } };
+  await assert.rejects(writeFolder(dir, videoFolder(build()).files), /disk full/);
 });
 
 test("video folder: the note on the control says what happened, in a few words", () => {

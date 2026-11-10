@@ -132,7 +132,36 @@ async function run(width, height) {
   await page.close();
 }
 
+// The picker cancelled, the picker refused, and a browser with no folder picker (a zip with the same names).
+async function runFallbacks() {
+  const tag = "1280 px:";
+  const page = await openPage(1280, 800);
+  await page.send("Page.navigate", { url: `${BASE}/` });
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen");
+  await page.click("#emptySample");
+  await page.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the demo's shots");
+  const open = async () => { await page.click("#exportBtn"); await page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu opens"); };
+  await page.eval(`window.showDirectoryPicker = async () => { throw new DOMException("", "AbortError"); }; true`);
+  await open();
+  await page.click(`[data-export="folder"]`);
+  await sleep(400);
+  check(await page.eval(`document.querySelector("#folderNote").hidden`), `${tag} a cancelled picker leaves the item as it was`);
+  await open();
+  await page.eval(`window.showDirectoryPicker = async () => { throw new DOMException("", "NotAllowedError"); }; true`);
+  await page.click(`[data-export="folder"]`);
+  await page.until(`document.querySelector("#folderNote").textContent === "Could not save"`, "a refused picker says so on the item");
+  await page.eval(`delete window.showDirectoryPicker; window.__downloads = []; const click = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { window.__downloads.push(this.download); }; true`);
+  await page.eval(`document.querySelector("#exportMenu").hidePopover(); true`);
+  await open();
+  await page.click(`[data-export="folder"]`);
+  await page.until(`/^Downloaded \\d{4}-\\d{2}-\\d{2}/.test(document.querySelector("#folderNote").textContent)`, "the item says it downloaded");
+  check(await page.eval(`document.querySelector("#folderLabel").textContent === "Save to video folder (.zip)"`), `${tag} the label says it is a zip here`);
+  check(await page.eval(`window.__downloads.length === 1 && /-video-folder\\.zip$/.test(window.__downloads[0])`), `${tag} a zip named video-folder.zip is downloaded`, await page.eval(`JSON.stringify(window.__downloads)`));
+  await page.close();
+}
+
 await run(1280, 800);
+await runFallbacks();
 await run(390, 800);
 cdp.close();
 console.log(failures ? `${failures} FAILED` : "all ok");

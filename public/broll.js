@@ -451,12 +451,12 @@ export function exportBroll(shots, sketches = {}, { title = "", paths = {} } = {
   const rows = shots.map((s) => `| ${[s.id, KIND_NAME[s.kind] || KIND_NAME.broll, s.what, s.over, s.how, s.check ? "Check" : ""].map(cell).join(" | ")} |`);
   const out = [`# ${cell(title) ? `${cell(title)} · ` : ""}B-roll list`, "",
     "| # | Kind | What to show | Over (A-roll line) | How to make it | Check |", "| --- | --- | --- | --- | --- | --- |", ...rows];
-  const ids = sketchOrder(shots, sketches).filter((id) => /^[^\s\]]+$/.test(id) && cleanSketch(sketches[id]));
+  const ids = sketchOrder(shots, sketches).filter((id) => (paths[id] || /^[^\s\]]+$/.test(id)) && cleanSketch(sketches[id]));
   if (ids.length) {
     out.push("", "## Sketches");
     for (const id of ids) {
       const v = cleanSketch(sketches[id]);
-      if (paths[id]) out.push("", `![${id}](${paths[id]})`);
+      if (paths[id]) out.push("", `![${id.replace(/[\s\[\]]+/g, "-")}](${paths[id]})`);
       else if (isImage(v)) out.push("", `![${id}](${v})`);
       else out.push("", `\`\`\`svg ${id}`, sketchLines(v), "```");
     }

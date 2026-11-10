@@ -15,9 +15,9 @@ const pad = (n) => String(n).padStart(2, "0");
 const day = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
 
-// A shot's id as a file name: letters, digits, dot, dash and underscore, starting with a letter or digit, never twice.
+// A shot's id as a file name: letters, digits, dot, dash and underscore, starting with a letter (`shot-` is put in front otherwise), never twice.
 function fileStem(id, taken) {
-  let stem = String(id).normalize("NFKD").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "");
+  let stem = String(id).normalize("NFKD").replace(/\p{M}+/gu, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "");
   if (!/^[A-Za-z]/.test(stem)) stem = `shot-${stem || "x"}`;
   let name = stem;
   for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${stem}-${n}`;
@@ -65,7 +65,9 @@ export function videoFolder({ doc, scriptText, shots = [], sketches = {}, title 
       }
     }
     pictures = pictureFiles.length;
-    files.push({ name: "b-roll.md", text: exportBroll(shots, sketches, { title, paths }) });
+    // Only the shots' pictures: a sketch of no shot has no file, so it must not come along as an embedded picture.
+    const own = Object.fromEntries(Object.keys(paths).map((id) => [id, sketches[id]]));
+    files.push({ name: "b-roll.md", text: exportBroll(shots, own, { title, paths }) });
     files.push({
       name: "b-roll.json",
       text: JSON.stringify({ title, shots: shots.map((s) => ({ id: s.id, kind: s.kind, what: s.what, over: s.over, how: s.how, check: !!s.check, picture: paths[s.id] || null })) }, null, 2) + "\n",
