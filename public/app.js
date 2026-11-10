@@ -2731,18 +2731,25 @@ function renderFolderNote() {
   $("#folderLabel").textContent = "showDirectoryPicker" in window ? "Save to video folder" : "Save to video folder (.zip)";
 }
 async function saveToFolder() {
+  if (folderSaved?.saving) return; // one save at a time: a second click would race the first one's writes
+  const list = V.listState(broll.status);
+  if (list === "wait") { folderSaved = { for: state.name, error: true, wait: true }; return renderFolderNote(); }
+  const mine = (folderSaved = { for: state.name, saving: true });
   let dir = null;
-  if ("showDirectoryPicker" in window) {
-    try { dir = await window.showDirectoryPicker({ id: "video-folder", mode: "readwrite" }); }
-    catch (e) {
-      if (e?.name === "AbortError") return;
-      folderSaved = { for: state.name, error: true };
-      return renderFolderNote();
+  try {
+    if ("showDirectoryPicker" in window) {
+      renderFolderNote();
+      dir = await window.showDirectoryPicker({ id: "video-folder", mode: "readwrite" });
     }
+  } catch (e) {
+    folderSaved = e?.name === "AbortError" ? null : { for: mine.for, error: true };
+    return renderFolderNote();
   }
   // Read after the picker closes: it is the script on screen now that is saved (an open "/" command is not part of it).
-  if (!state.doc) return;
+  if (!state.doc) { folderSaved = null; return renderFolderNote(); }
   const doc = slash.open ? D.withoutCommand(state.doc, slash) : state.doc, name = state.name;
+  // A list that was still loading or blocked while the picker was open is not left out of the folder.
+  if (V.listState(broll.status) === "wait") { folderSaved = { for: name, error: true, wait: true }; return renderFolderNote(); }
   const linked = broll.status === "ok";
   try {
     const { files, receipt } = V.videoFolder({

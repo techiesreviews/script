@@ -6,6 +6,9 @@ import { exportBroll, cleanSketch, isImage, sketchLines, SKETCH_VIEWBOX } from "
 
 export const FOLDER_NAMES = ["script.md", "prompter.md", "recording-notes.md", "b-roll.md", "b-roll.json"];
 // Cue files are written by hand after the script is final; a folder that already has them keeps them.
+/** The B-roll list as a save sees it, from the editor's status: "none" (no list linked), "ok" (read), or "wait" (a linked
+ *  list that is loading, blocked or unreadable: saving then would leave out B-roll the folder should have). */
+export const listState = (status) => (status === "none" ? "none" : status === "ok" ? "ok" : "wait");
 export const FOLDER_KEEP = ["prompter.md", "recording-notes.md"];
 export const RECEIPT_NAME = "save-receipt.md";
 const PICTURES = "pictures";
@@ -37,7 +40,7 @@ function pictureBytes(data) {
 const SVG_STYLE = "path,rect,circle,ellipse,line,polyline,polygon{fill:none;stroke:#1a1a1a;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.l{stroke:#a8a8a8}.o{stroke:#ff6a3d;stroke-width:2.2}.mv{stroke:#ff6a3d;stroke-width:1.6;stroke-dasharray:4 4}text{fill:#1a1a1a;stroke:none;font:600 11px system-ui,sans-serif}";
 const standaloneSvg = (svg) => {
   const inner = svg.replace(/^<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SKETCH_VIEWBOX}">\n<style>${SVG_STYLE}</style>\n<rect width="260" height="140" fill="#fff"/>\n${sketchLines(inner)}\n</svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SKETCH_VIEWBOX}">\n<style>${SVG_STYLE}</style>\n<rect width="260" height="140" style="fill:#fff;stroke:none"/>\n${sketchLines(inner)}\n</svg>\n`;
 };
 
 /**
@@ -50,9 +53,9 @@ export function videoFolder({ doc, scriptText, shots = [], sketches = {}, title 
   const files = [{ name: "script.md", text: scriptText }, { name: "prompter.md", text: prompter }, { name: "recording-notes.md", text: prompter }];
   let pictures = 0;
   if (linked) {
-    const paths = {}, taken = new Set(), pictureFiles = [];
+    const paths = Object.create(null), taken = new Set(), pictureFiles = [];
     for (const s of shots) {
-      const v = cleanSketch(sketches[s.id] || "");
+      const v = Object.hasOwn(sketches, s.id) ? cleanSketch(sketches[s.id] || "") : "";
       if (!v) continue;
       const stem = fileStem(s.id, taken);
       if (isImage(v)) {
@@ -111,6 +114,7 @@ export async function writeFolder(dir, files, { keep = FOLDER_KEEP } = {}) {
 /** The short note under "Save to video folder": what the last save did, or "". */
 export function folderNote(r) {
   if (!r) return "";
-  if (r.error) return "Could not save";
+  if (r.error) return r.wait ? "B-roll list not ready" : "Could not save";
+  if (r.saving) return "Saving…";
   return `${r.zip ? "Downloaded" : "Saved"} ${r.date} · ${plural(r.words, "word")}${r.kept?.length ? " · cue files kept" : ""}`;
 }

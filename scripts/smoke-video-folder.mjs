@@ -100,7 +100,7 @@ async function run(width, height) {
   check(await page.eval(`document.documentElement.scrollWidth <= innerWidth`), `${tag} the menu fits the width`);
 
   await page.click(`[data-export="folder"]`);
-  await page.until(`!!document.querySelector("#folderNote").textContent`, "the item shows the result");
+  await page.until(`/^Saved /.test(document.querySelector("#folderNote").textContent)`, "the item shows the result");
   const files = await page.eval(LIST);
   const names = Object.keys(files).sort();
   for (const n of ["script.md", "prompter.md", "recording-notes.md", "b-roll.md", "b-roll.json", "save-receipt.md"]) check(n in files, `${tag} ${n} is written`);
@@ -149,7 +149,14 @@ async function runFallbacks() {
   await open();
   await page.eval(`window.showDirectoryPicker = async () => { throw new DOMException("", "NotAllowedError"); }; true`);
   await page.click(`[data-export="folder"]`);
-  await page.until(`document.querySelector("#folderNote").textContent === "Could not save"`, "a refused picker says so on the item");
+  check(await page.until(`document.querySelector("#folderNote").textContent === "Could not save"`, "a refused picker says so on the item"), `${tag} a refused picker says "Could not save" on the item`);
+  // A second click while the first save waits for its folder starts nothing.
+  await page.eval(`window.__picks = 0; window.showDirectoryPicker = async () => { window.__picks++; await new Promise((r) => setTimeout(r, 500)); const root = await navigator.storage.getDirectory(); return root.getDirectoryHandle("video", { create: true }); }; true`);
+  await page.eval(`document.querySelector("#exportMenu").hidePopover(); true`);
+  await open();
+  await page.eval(`document.querySelector('[data-export="folder"]').click(); document.querySelector('[data-export="folder"]').click(); true`);
+  await page.until(`/^Saved /.test(document.querySelector("#folderNote").textContent)`, "the overlapping clicks end in one save");
+  check(await page.eval(`window.__picks === 1`), `${tag} two quick clicks open the picker once`, await page.eval(`window.__picks`));
   await page.eval(`delete window.showDirectoryPicker; window.__downloads = []; const click = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { window.__downloads.push(this.download); }; true`);
   await page.eval(`document.querySelector("#exportMenu").hidePopover(); true`);
   await open();
@@ -163,6 +170,7 @@ async function runFallbacks() {
 await run(1280, 800);
 await runFallbacks();
 await run(390, 800);
+await run(320, 640);
 cdp.close();
 console.log(failures ? `${failures} FAILED` : "all ok");
 process.exit(failures ? 1 : 0);
