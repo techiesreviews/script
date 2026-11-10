@@ -8,7 +8,7 @@ Lex (2026-11-10, Orbit TOOLS-194, weekly flow step 7b): when a script is final, 
 - Files: `script.md` (the script exactly as the editor saves it), `prompter.md` and `recording-notes.md` (the prompter export, the same text in both, as the workflow wants them identical), `b-roll.md` (the Export all list, with each picture written as a link to its file), `b-roll.json` (id, kind, what, over, how, check, picture path for every shot, in script order), `pictures/<shot id>.png|jpg|webp|svg`, `save-receipt.md` (date, words, shots, pictures).
 - Picture file names come from the shot id: letters, digits, dot, dash and underscore only, starting with a letter (`shot-` is put in front otherwise), never twice. Line drawings are written as standalone SVG with the storyboard's colours.
 - Without a linked B-roll list there is no `b-roll.md`, `b-roll.json` or `pictures/`; the receipt says "no list linked".
-- A `prompter.md` or `recording-notes.md` already in the folder is kept as it is: the speaking cues written after the script is final must not be replaced by the plain prompter export (playbook: reopening keeps approved cues). Everything else is replaced.
+- A `prompter.md` or `recording-notes.md` already in the folder is kept as it is: the speaking cues written after the script is final must not be replaced by the plain prompter export (playbook: reopening keeps approved cues). Everything else is replaced. Nothing is ever deleted: a picture of a shot that was removed, or one whose format changed (`B1.png` and later `B1.svg`), stays in `pictures/` from an earlier save; `b-roll.json` and `b-roll.md` name the right files. A sketch that belongs to no shot is not saved.
 - The menu item shows the result in one line (`folderNote`); no toast, no explainer.
 
 ## Where
@@ -17,7 +17,7 @@ Lex (2026-11-10, Orbit TOOLS-194, weekly flow step 7b): when a script is final, 
 
 ## Browser check
 
-`scripts/smoke-video-folder.mjs` (1280 and 390 px, real clicks; the folder picker is replaced by one returning a folder in the browser's private file system): the item is second in the menu, the files and pictures are written with the right names, `b-roll.md` links the picture files, the receipt and the item's note, hand-written cue files kept on a second save, no toast. Evidence: `docs/agents/evidence/step-x-browser.txt`.
+`scripts/smoke-video-folder.mjs` (1280 and 390 px, real clicks; the folder picker is replaced by one returning a folder in the browser's private file system): the item is second in the menu, the files and pictures are written with the right names, `b-roll.md` links the picture files, the receipt and the item's note, hand-written cue files kept on a second save, no toast; a cancelled picker leaves the item alone, a refused one says "Could not save", and with no picker the item says "(.zip)" and a zip named `<name>-video-folder.zip` is downloaded. Evidence: `docs/agents/evidence/step-x-browser.txt`.
 
 ## Done
 

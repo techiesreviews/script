@@ -388,11 +388,14 @@
 ✔ video folder: the script is saved word for word, and the prompter files are the prompter export, twice the same
 ✔ video folder: B-roll data and pictures are included, and b-roll.md points to each picture file
 ✔ video folder: picture file names are plain, never twice, and the shot's id stays in the list
+✔ video folder: a sketch of no shot is not written into b-roll.md as an embedded picture, and gets no file
+✔ video folder: accents in a shot id are dropped, not turned into dashes
 ✔ video folder: without a B-roll list there is no B-roll file, and the receipt says so
 ✔ video folder: the receipt has the date and the word count, and is short
 ✔ video folder: the zip fallback carries the same names
 ✔ video folder: writeFolder writes every file under its name, pictures in their folder
 ✔ video folder: an existing cue file stays as it is; the script and B-roll files are replaced
+✔ video folder: a failed write rejects, so the app can say it could not save
 ✔ video folder: the note on the control says what happened, in a few words
 ✔ relay: a new token's note lasts until its birth + 8 h, with an alarm just after
 ✔ relay: the alarm refuses what waits, closes the tab and erases everything; an early alarm is set again
@@ -413,9 +416,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 415
+ℹ tests 418
 ℹ suites 0
-ℹ pass 415
+ℹ pass 418
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

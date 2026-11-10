@@ -1,4 +1,4 @@
-# Step X browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome 157.0.8103.50, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system)
+# Step X browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome 157.0.8103.50, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system; cancelled, refused and no-picker runs included)
 ok 1280 px: Save to video folder is second, after Export all
 ok 1280 px: no note before a save
 ok 1280 px: the menu fits the width
@@ -21,6 +21,9 @@ ok 1280 px: the picker asks for write access
 ok 1280 px: no toast
 ok 1280 px: hand-written cue files are kept
 ok 1280 px: the script is saved again, the same
+ok 1280 px: a cancelled picker leaves the item as it was
+ok 1280 px: the label says it is a zip here
+ok 1280 px: a zip named video-folder.zip is downloaded
 ok 390 px: Save to video folder is second, after Export all
 ok 390 px: no note before a save
 ok 390 px: the menu fits the width
