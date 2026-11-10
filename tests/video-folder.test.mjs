@@ -220,3 +220,43 @@ test("video folder: the note on the control says what happened, in a few words",
   assert.equal(folderNote({ saving: true }), "Saving…");
   assert.equal(folderNote(null), "");
 });
+
+test("video folder: a note about the B-roll list follows the list, and clears once it is ready", () => {
+  const waiting = { error: true, wait: "loading" };
+  assert.equal(folderNote(waiting, "loading"), "B-roll list still loading");
+  assert.equal(folderNote(waiting, "permission"), "Allow the B-roll list first", "the note says what the list needs now");
+  assert.equal(folderNote(waiting, "error"), "B-roll list can't be read");
+  assert.equal(folderNote(waiting, "ok"), "", "a list that is read now needs nothing");
+  assert.equal(folderNote(waiting, "none"), "", "an unlinked list needs nothing");
+  assert.equal(folderNote({ error: true }, "ok"), "Could not save", "other notes do not depend on the list");
+  assert.equal(folderNote({ date: "2026-11-10", words: 12, kept: [] }, "loading"), "Saved 2026-11-10 · 12 words");
+});
+
+test("video folder: with only one cue file in the folder, that one is kept and the other is written", async () => {
+  const r = videoFolder(build());
+  const { dir, files } = fakeFolder({ "prompter.md": "cues" });
+  const out = await writeFolder(dir, r.files);
+  assert.equal(files.get("prompter.md"), "cues");
+  assert.equal(files.get("recording-notes.md"), text(byName(r, "recording-notes.md")));
+  assert.equal(files.get("recording-notes.md"), exportPrompter(build().doc));
+  assert.deepEqual(out.kept, ["prompter.md"]);
+});
+
+test("video folder: nothing is deleted; a picture whose format changed stays, and the list names the new file", async () => {
+  const { shots } = parseBroll(LIST);
+  const id = shots[0].id;
+  const first = videoFolder(build({ sketches: { [id]: PNG } }));
+  const png = names(first).find((n) => n.startsWith("pictures/"));
+  const { dir, files } = fakeFolder();
+  await writeFolder(dir, first.files);
+  const second = videoFolder(build({ sketches: { [id]: DRAWING } }));
+  const svg = names(second).find((n) => n.startsWith("pictures/"));
+  assert.match(png, /\.png$/);
+  assert.match(svg, /\.svg$/);
+  await writeFolder(dir, second.files);
+  assert.ok(files.has(png), "the earlier picture is still in the folder");
+  assert.ok(files.has(svg), "the new picture is written");
+  const json = JSON.parse(files.get("b-roll.json"));
+  const entry = (Array.isArray(json) ? json : json.shots).find((s) => s.id === id);
+  assert.equal(entry.picture, svg);
+});

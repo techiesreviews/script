@@ -5,10 +5,10 @@ import { exportPrompter, stats } from "./doc.js";
 import { exportBroll, cleanSketch, isImage, sketchLines, SKETCH_VIEWBOX } from "./broll.js";
 
 export const FOLDER_NAMES = ["script.md", "prompter.md", "recording-notes.md", "b-roll.md", "b-roll.json"];
-// Cue files are written by hand after the script is final; a folder that already has them keeps them.
 /** The B-roll list as a save sees it, from the editor's status: "none" (no list linked), "ok" (read), or "wait" (a linked
  *  list that is loading, blocked or unreadable: saving then would leave out B-roll the folder should have). */
 export const listState = (status) => (status === "none" ? "none" : status === "ok" ? "ok" : "wait");
+// Cue files are written by hand after the script is final; a folder that already has them keeps them.
 export const FOLDER_KEEP = ["prompter.md", "recording-notes.md"];
 export const RECEIPT_NAME = "save-receipt.md";
 const PICTURES = "pictures";
@@ -114,9 +114,11 @@ export async function writeFolder(dir, files, { keep = FOLDER_KEEP } = {}) {
 // What a linked list that is not ready needs, by the editor's status for it.
 const WAIT_NOTE = { loading: "B-roll list still loading", permission: "Allow the B-roll list first", error: "B-roll list can't be read" };
 
-/** The short note under "Save to video folder": what the last save did, or "". */
-export function folderNote(r) {
+/** The short note under "Save to video folder": what the last save did, or "". A save the B-roll list stopped follows
+ *  the list's status now (`status`, when given): it says what the list needs, and nothing once the list is ready. */
+export function folderNote(r, status) {
   if (!r) return "";
+  if (r.error && r.wait && status !== undefined) return listState(status) === "wait" ? WAIT_NOTE[status] || WAIT_NOTE.error : "";
   if (r.error) return r.wait ? WAIT_NOTE[r.wait] || WAIT_NOTE.error : "Could not save";
   if (r.saving) return "Saving…";
   return `${r.zip ? "Downloaded" : "Saved"} ${r.date} · ${plural(r.words, "word")}${r.kept?.length ? " · cue files kept" : ""}`;
