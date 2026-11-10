@@ -1,0 +1,95 @@
+# TOOLS-201 browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system; prompter-link.txt checked at 1280 and 390 px, and after a hand-written cue file is kept; the zip's content is checked in tests/video-folder.test.mjs).
+ok 1280 px: Save to video folder is second, after Export all
+ok 1280 px: no note before a save
+ok 1280 px: the menu fits the width
+ok 1280 px: script.md is written
+ok 1280 px: prompter.md is written
+ok 1280 px: recording-notes.md is written
+ok 1280 px: b-roll.md is written
+ok 1280 px: b-roll.json is written
+ok 1280 px: save-receipt.md is written
+ok 1280 px: pictures are in pictures/
+ok 1280 px: the two cue files are the same
+ok 1280 px: the script is a Markdown script
+ok 1280 px: prompter-link.txt is written
+ok 1280 px: prompter-link.txt is one prompter link ending in &d=
+ok 1280 px: the link carries the saved prompter.md text
+ok 1280 px: the link's day is the day of this save (the demo has no file of its own)
+ok 1280 px: b-roll.json has the shots
+ok 1280 px: every picture b-roll.json names is a file
+ok 1280 px: b-roll.md links each picture file
+ok 1280 px: no embedded picture in b-roll.md
+ok 1280 px: the receipt has date and word count
+ok 1280 px: the item's note says what happened
+ok 1280 px: the picker asks for write access
+ok 1280 px: no toast
+ok 1280 px: hand-written cue files are kept
+ok 1280 px: the script is saved again, the same
+ok 1280 px: the link follows the kept cue file
+ok 1280 px: a cancelled picker leaves the item as it was
+ok 1280 px: a refused picker says "Could not save" on the item
+ok 1280 px: two quick clicks open the picker once
+ok 1280 px: a cancelled picker keeps the last note
+ok 1280 px: the label says it is a zip here
+ok 1280 px: a zip named video-folder.zip is downloaded
+ok 1280 px: the demo's B-roll list is held back while it loads
+ok 1280 px: a list still loading: the item says "B-roll list still loading"
+ok 1280 px: and the folder picker does not open
+ok 1280 px: once the list is read, the note is gone without another click
+ok 1280 px: then a save works
+ok 1280 px: the picker opened once, for that save
+ok 390 px: Save to video folder is second, after Export all
+ok 390 px: no note before a save
+ok 390 px: the menu fits the width
+ok 390 px: script.md is written
+ok 390 px: prompter.md is written
+ok 390 px: recording-notes.md is written
+ok 390 px: b-roll.md is written
+ok 390 px: b-roll.json is written
+ok 390 px: save-receipt.md is written
+ok 390 px: pictures are in pictures/
+ok 390 px: the two cue files are the same
+ok 390 px: the script is a Markdown script
+ok 390 px: prompter-link.txt is written
+ok 390 px: prompter-link.txt is one prompter link ending in &d=
+ok 390 px: the link carries the saved prompter.md text
+ok 390 px: the link's day is the day of this save (the demo has no file of its own)
+ok 390 px: b-roll.json has the shots
+ok 390 px: every picture b-roll.json names is a file
+ok 390 px: b-roll.md links each picture file
+ok 390 px: no embedded picture in b-roll.md
+ok 390 px: the receipt has date and word count
+ok 390 px: the item's note says what happened
+ok 390 px: the picker asks for write access
+ok 390 px: no toast
+ok 390 px: hand-written cue files are kept
+ok 390 px: the script is saved again, the same
+ok 390 px: the link follows the kept cue file
+ok 320 px: Save to video folder is second, after Export all
+ok 320 px: no note before a save
+ok 320 px: the menu fits the width
+ok 320 px: script.md is written
+ok 320 px: prompter.md is written
+ok 320 px: recording-notes.md is written
+ok 320 px: b-roll.md is written
+ok 320 px: b-roll.json is written
+ok 320 px: save-receipt.md is written
+ok 320 px: pictures are in pictures/
+ok 320 px: the two cue files are the same
+ok 320 px: the script is a Markdown script
+ok 320 px: prompter-link.txt is written
+ok 320 px: prompter-link.txt is one prompter link ending in &d=
+ok 320 px: the link carries the saved prompter.md text
+ok 320 px: the link's day is the day of this save (the demo has no file of its own)
+ok 320 px: b-roll.json has the shots
+ok 320 px: every picture b-roll.json names is a file
+ok 320 px: b-roll.md links each picture file
+ok 320 px: no embedded picture in b-roll.md
+ok 320 px: the receipt has date and word count
+ok 320 px: the item's note says what happened
+ok 320 px: the picker asks for write access
+ok 320 px: no toast
+ok 320 px: hand-written cue files are kept
+ok 320 px: the script is saved again, the same
+ok 320 px: the link follows the kept cue file
+all ok

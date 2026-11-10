@@ -342,6 +342,21 @@ test("prompter link: deflate-raw + base64url in #s=, default preset, round-trips
   assert.equal(await readPrompterLink(local), odd);
 });
 
+test("prompter link: the day the script was saved goes last as &d=YYYY-MM-DD, and only a real day", async () => {
+  const md = exportPrompter(parse(SCRIPT));
+  const link = await prompterLink(md, undefined, "2026-11-10");
+  assert.ok(link.startsWith(`${PROMPTER_SITE}/#s=`));
+  assert.ok(link.endsWith("&d=2026-11-10"), "the day is the last part");
+  assert.ok(!link.includes("&p="));
+  const q = new URLSearchParams(new URL(link).hash.slice(1));
+  assert.equal(q.get("d"), "2026-11-10");
+  assert.equal(await readPrompterLink(`${PROMPTER_SITE}/#s=${q.get("s")}`), md, "the script is the same with or without the day");
+  assert.equal(await prompterLink(md), await prompterLink(md, undefined, null), "no day, no &d=");
+  for (const bad of ["", "yesterday", "2026-02-30", "2026-13-01", "2026-1-5", "0099-01-01", "0000-01-01", 20261110, undefined])
+    assert.ok(!(await prompterLink(md, undefined, bad)).includes("&d="), `${bad} is not a day`);
+  assert.ok((await prompterLink(md, "http://localhost:8787/", "2026-01-31")).endsWith("&d=2026-01-31"));
+});
+
 test("prompter link: refuses a script longer than the prompter accepts", async () => {
   assert.equal(PROMPTER_MAX_CHARS, 100_000);
   assert.equal(await prompterLink("a".repeat(PROMPTER_MAX_CHARS + 1)), null);

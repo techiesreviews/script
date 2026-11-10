@@ -394,7 +394,7 @@ export function exportPrompter(doc) {
 
 /* ---------- Prompter link (prompter.techies.tools) ---------- */
 // Built like makeLink() in techies-prompter's src/core.mjs: deflate-raw, base64url, in the #s= fragment,
-// preset "default" (no &p=). The script travels only in the fragment, never to a server.
+// preset "default" (no &p=), and `&d=` for the day it was saved. The script travels only in the fragment, never to a server.
 export const PROMPTER_SITE = "https://prompter.techies.tools";
 export const PROMPTER_MAX_CHARS = 100_000;
 
@@ -404,12 +404,22 @@ function toBase64Url(bytes) {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** The prompter link for a prompter export, or null when it is longer than the prompter accepts. */
-export async function prompterLink(text, origin = PROMPTER_SITE) {
+/** A day as the prompter reads it from a link (`&d=`): YYYY-MM-DD and a real calendar day, else null. */
+export function savedDay(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d));
+  return y >= 100 && day.getUTCFullYear() === y && day.getUTCMonth() === m - 1 && day.getUTCDate() === d ? value : null;
+}
+
+/** The prompter link for a prompter export, or null when it is longer than the prompter accepts. `saved` (YYYY-MM-DD,
+ *  the day the script was saved) goes last as `&d=`, as the prompter's own links do; anything else is left out. */
+export async function prompterLink(text, origin = PROMPTER_SITE, saved = null) {
   text = String(text);
   if (text.length > PROMPTER_MAX_CHARS) return null;
   const stream = new Blob([new TextEncoder().encode(text)]).stream().pipeThrough(new CompressionStream("deflate-raw"));
-  return `${origin.replace(/\/+$/, "")}/#s=${toBase64Url(new Uint8Array(await new Response(stream).arrayBuffer()))}`;
+  const day = savedDay(saved);
+  return `${origin.replace(/\/+$/, "")}/#s=${toBase64Url(new Uint8Array(await new Response(stream).arrayBuffer()))}${day ? `&d=${day}` : ""}`;
 }
 
 /* ---------- Word count and spoken length ---------- */

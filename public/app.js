@@ -2758,10 +2758,13 @@ async function saveToFolder() {
       doc, scriptText: saveText(), linked, sketches: broll.sketches, title: D.titleOf(doc) || baseName(),
       shots: linked ? B.scriptOrder(doc, broll.shots) : [],
     });
-    if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files)) };
+    // The prompter link carries the day the script was saved (its file's own day, else the day of this save).
+    const saved = V.scriptDay({ file: !!state.handle, modified: state.fileModified, dirty: isDirty() });
+    if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files, { saved })) };
     else {
-      download(makeZip(files), `${baseName()}-video-folder.zip`, "application/zip");
-      folderSaved = { for: name, ...receipt, zip: true };
+      const withLink = await V.withPrompterLink(files, saved);
+      download(makeZip(withLink), `${baseName()}-video-folder.zip`, "application/zip");
+      folderSaved = { for: name, ...receipt, zip: true, ...(withLink.noLink && { noLink: true }) };
     }
   } catch { folderSaved = { for: name, error: true }; }
   renderFolderNote();
