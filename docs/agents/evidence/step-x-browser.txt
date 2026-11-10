@@ -1,0 +1,46 @@
+# Step X browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome 157.0.8103.50, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system)
+ok 1280 px: Save to video folder is second, after Export all
+ok 1280 px: no note before a save
+ok 1280 px: the menu fits the width
+ok 1280 px: script.md is written
+ok 1280 px: prompter.md is written
+ok 1280 px: recording-notes.md is written
+ok 1280 px: b-roll.md is written
+ok 1280 px: b-roll.json is written
+ok 1280 px: save-receipt.md is written
+ok 1280 px: pictures are in pictures/
+ok 1280 px: the two cue files are the same
+ok 1280 px: the script is a Markdown script
+ok 1280 px: b-roll.json has the shots
+ok 1280 px: every picture b-roll.json names is a file
+ok 1280 px: b-roll.md links each picture file
+ok 1280 px: no embedded picture in b-roll.md
+ok 1280 px: the receipt has date and word count
+ok 1280 px: the item's note says what happened
+ok 1280 px: the picker asks for write access
+ok 1280 px: no toast
+ok 1280 px: hand-written cue files are kept
+ok 1280 px: the script is saved again, the same
+ok 390 px: Save to video folder is second, after Export all
+ok 390 px: no note before a save
+ok 390 px: the menu fits the width
+ok 390 px: script.md is written
+ok 390 px: prompter.md is written
+ok 390 px: recording-notes.md is written
+ok 390 px: b-roll.md is written
+ok 390 px: b-roll.json is written
+ok 390 px: save-receipt.md is written
+ok 390 px: pictures are in pictures/
+ok 390 px: the two cue files are the same
+ok 390 px: the script is a Markdown script
+ok 390 px: b-roll.json has the shots
+ok 390 px: every picture b-roll.json names is a file
+ok 390 px: b-roll.md links each picture file
+ok 390 px: no embedded picture in b-roll.md
+ok 390 px: the receipt has date and word count
+ok 390 px: the item's note says what happened
+ok 390 px: the picker asks for write access
+ok 390 px: no toast
+ok 390 px: hand-written cue files are kept
+ok 390 px: the script is saved again, the same
+all ok

@@ -444,8 +444,10 @@ function sketchOrder(shots, sketches) {
  * # | Kind | What to show | Over (A-roll line) | How to make it | Check, then "## Sketches". parseBroll reads it back.
  * "Check" is written for people only: parseBroll never reads it, because check flags live with the script's draft.
  * Sketches of the shots come first, then any others the list holds; ids with spaces can't name a fence and are left out.
+ * `paths` ({ id: "pictures/B1.png" }, "Save to video folder"): a sketch with a path is written as a link to that file,
+ * not as the picture itself.
  */
-export function exportBroll(shots, sketches = {}, { title = "" } = {}) {
+export function exportBroll(shots, sketches = {}, { title = "", paths = {} } = {}) {
   const rows = shots.map((s) => `| ${[s.id, KIND_NAME[s.kind] || KIND_NAME.broll, s.what, s.over, s.how, s.check ? "Check" : ""].map(cell).join(" | ")} |`);
   const out = [`# ${cell(title) ? `${cell(title)} · ` : ""}B-roll list`, "",
     "| # | Kind | What to show | Over (A-roll line) | How to make it | Check |", "| --- | --- | --- | --- | --- | --- |", ...rows];
@@ -454,7 +456,8 @@ export function exportBroll(shots, sketches = {}, { title = "" } = {}) {
     out.push("", "## Sketches");
     for (const id of ids) {
       const v = cleanSketch(sketches[id]);
-      if (isImage(v)) out.push("", `![${id}](${v})`);
+      if (paths[id]) out.push("", `![${id}](${paths[id]})`);
+      else if (isImage(v)) out.push("", `![${id}](${v})`);
       else out.push("", `\`\`\`svg ${id}`, sketchLines(v), "```");
     }
   }
