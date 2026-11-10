@@ -137,9 +137,13 @@ export async function writeFolder(dir, files, { keep = FOLDER_KEEP, saved = null
     await put(at, parts.at(-1), f.text);
     written.push(f.name);
   }
-  const prompter = kept.includes("prompter.md")
-    ? await (await (await dir.getFileHandle("prompter.md")).getFile()).text()
-    : files.find((f) => f.name === "prompter.md")?.text;
+  // Every file is written by now: a kept prompter.md that can't be read back only costs the link.
+  let prompter = null;
+  try {
+    prompter = kept.includes("prompter.md")
+      ? await (await (await dir.getFileHandle("prompter.md")).getFile()).text()
+      : files.find((f) => f.name === "prompter.md")?.text;
+  } catch { prompter = null; }
   const link = prompter == null ? null : await prompterLinkFile(prompter, saved);
   if (!link) return { written, kept, noLink: true };
   await put(dir, link.name, link.text);
