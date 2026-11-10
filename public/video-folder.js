@@ -111,10 +111,13 @@ export async function writeFolder(dir, files, { keep = FOLDER_KEEP } = {}) {
   return { written, kept };
 }
 
+// What a linked list that is not ready needs, by the editor's status for it.
+const WAIT_NOTE = { loading: "B-roll list still loading", permission: "Allow the B-roll list first", error: "B-roll list can't be read" };
+
 /** The short note under "Save to video folder": what the last save did, or "". */
 export function folderNote(r) {
   if (!r) return "";
-  if (r.error) return r.wait ? "B-roll list not ready" : "Could not save";
+  if (r.error) return r.wait ? WAIT_NOTE[r.wait] || WAIT_NOTE.error : "Could not save";
   if (r.saving) return "Saving…";
   return `${r.zip ? "Downloaded" : "Saved"} ${r.date} · ${plural(r.words, "word")}${r.kept?.length ? " · cue files kept" : ""}`;
 }

@@ -24,6 +24,7 @@ ok 1280 px: the script is saved again, the same
 ok 1280 px: a cancelled picker leaves the item as it was
 ok 1280 px: a refused picker says "Could not save" on the item
 ok 1280 px: two quick clicks open the picker once
+ok 1280 px: a cancelled picker keeps the last note
 ok 1280 px: the label says it is a zip here
 ok 1280 px: a zip named video-folder.zip is downloaded
 ok 390 px: Save to video folder is second, after Export all

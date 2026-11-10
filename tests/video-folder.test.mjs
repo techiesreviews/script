@@ -214,7 +214,9 @@ test("video folder: the note on the control says what happened, in a few words",
   assert.equal(folderNote({ date: "2026-11-10", words: 1, kept: ["prompter.md", "recording-notes.md"] }), "Saved 2026-11-10 · 1 word · cue files kept");
   assert.equal(folderNote({ zip: true, date: "2026-11-10", words: 12, kept: [] }), "Downloaded 2026-11-10 · 12 words");
   assert.equal(folderNote({ error: true }), "Could not save");
-  assert.equal(folderNote({ error: true, wait: true }), "B-roll list not ready");
+  assert.equal(folderNote({ error: true, wait: "loading" }), "B-roll list still loading");
+  assert.equal(folderNote({ error: true, wait: "permission" }), "Allow the B-roll list first");
+  assert.equal(folderNote({ error: true, wait: "error" }), "B-roll list can't be read");
   assert.equal(folderNote({ saving: true }), "Saving…");
   assert.equal(folderNote(null), "");
 });
