@@ -157,6 +157,12 @@ async function runFallbacks() {
   await page.eval(`document.querySelector('[data-export="folder"]').click(); document.querySelector('[data-export="folder"]').click(); true`);
   await page.until(`/^Saved /.test(document.querySelector("#folderNote").textContent)`, "the overlapping clicks end in one save");
   check(await page.eval(`window.__picks === 1`), `${tag} two quick clicks open the picker once`, await page.eval(`window.__picks`));
+  // A cancelled picker keeps the note of the save before it.
+  await page.eval(`window.showDirectoryPicker = async () => { throw new DOMException("", "AbortError"); }; document.querySelector("#exportMenu").hidePopover(); true`);
+  await open();
+  await page.click(`[data-export="folder"]`);
+  await sleep(300);
+  check(await page.eval(`/^Saved /.test(document.querySelector("#folderNote").textContent)`), `${tag} a cancelled picker keeps the last note`, await page.eval(`document.querySelector("#folderNote").textContent`));
   await page.eval(`delete window.showDirectoryPicker; window.__downloads = []; const click = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { window.__downloads.push(this.download); }; true`);
   await page.eval(`document.querySelector("#exportMenu").hidePopover(); true`);
   await open();

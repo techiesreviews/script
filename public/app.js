@@ -2733,8 +2733,8 @@ function renderFolderNote() {
 async function saveToFolder() {
   if (folderSaved?.saving) return; // one save at a time: a second click would race the first one's writes
   const list = V.listState(broll.status);
-  if (list === "wait") { folderSaved = { for: state.name, error: true, wait: true }; return renderFolderNote(); }
-  const mine = (folderSaved = { for: state.name, saving: true });
+  if (list === "wait") { folderSaved = { for: state.name, error: true, wait: broll.status }; return renderFolderNote(); }
+  const prior = folderSaved, mine = (folderSaved = { for: state.name, saving: true });
   let dir = null;
   try {
     if ("showDirectoryPicker" in window) {
@@ -2742,16 +2742,17 @@ async function saveToFolder() {
       dir = await window.showDirectoryPicker({ id: "video-folder", mode: "readwrite" });
     }
   } catch (e) {
-    folderSaved = e?.name === "AbortError" ? null : { for: mine.for, error: true };
+    folderSaved = e?.name === "AbortError" ? prior : { for: mine.for, error: true }; // a cancel leaves the last note as it was
     return renderFolderNote();
   }
   // Read after the picker closes: it is the script on screen now that is saved (an open "/" command is not part of it).
-  if (!state.doc) { folderSaved = null; return renderFolderNote(); }
-  const doc = slash.open ? D.withoutCommand(state.doc, slash) : state.doc, name = state.name;
+  if (!state.doc) { folderSaved = prior; return renderFolderNote(); }
+  const name = state.name;
   // A list that was still loading or blocked while the picker was open is not left out of the folder.
-  if (V.listState(broll.status) === "wait") { folderSaved = { for: name, error: true, wait: true }; return renderFolderNote(); }
+  if (V.listState(broll.status) === "wait") { folderSaved = { for: name, error: true, wait: broll.status }; return renderFolderNote(); }
   const linked = broll.status === "ok";
   try {
+    const doc = slash.open ? D.withoutCommand(state.doc, slash) : state.doc;
     const { files, receipt } = V.videoFolder({
       doc, scriptText: saveText(), linked, sketches: broll.sketches, title: D.titleOf(doc) || baseName(),
       shots: linked ? B.scriptOrder(doc, broll.shots) : [],
