@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse, serialize, exportPrompter } from "../public/doc.js";
-import { parseBroll, matchShots, scriptOrder } from "../public/broll.js";
+import { parseBroll, matchShots, scriptOrder, exportBroll } from "../public/broll.js";
 import { makeZip } from "../public/zip.js";
-import { videoFolder, writeFolder, folderNote, FOLDER_NAMES } from "../public/video-folder.js";
+import { videoFolder, writeFolder, folderNote, listState, FOLDER_NAMES } from "../public/video-folder.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const SCRIPT = read("../public/samples/demo-good-script.md");
@@ -183,10 +183,38 @@ test("video folder: a failed write rejects, so the app can say it could not save
   await assert.rejects(writeFolder(dir, videoFolder(build()).files), /disk full/);
 });
 
+test("video folder: a linked B-roll list that is loading, blocked or unreadable does not count as no list", () => {
+  assert.equal(listState("none"), "none");
+  assert.equal(listState("ok"), "ok");
+  for (const status of ["loading", "permission", "error", undefined]) assert.equal(listState(status), "wait", String(status));
+});
+
+test("video folder: shot ids like constructor and toString work, with and without a paths option", () => {
+  const shots = ["constructor", "toString", "__proto__"].map((id) => ({ id, kind: "broll", what: id, over: "", how: "", blockIds: [] }));
+  const plain = exportBroll(shots, { constructor: DRAWING });
+  assert.ok(!plain.includes("function"), "no inherited path in an ordinary export");
+  assert.match(plain, /```svg constructor/);
+  const r = videoFolder(build({ shots, sketches: { constructor: PNG } }));
+  const json = JSON.parse(text(byName(r, "b-roll.json")));
+  assert.equal(json.shots[0].picture, "pictures/constructor.png");
+  assert.equal(json.shots[1].picture, null);
+  assert.equal(json.shots[2].picture, null);
+  assert.ok(!text(byName(r, "b-roll.md")).includes("function"));
+});
+
+test("video folder: a line drawing's file keeps a white background with no outline", () => {
+  const { shots } = parseBroll(LIST);
+  const r = videoFolder(build({ sketches: { [shots[0].id]: DRAWING } }));
+  const svg = text(r.files.find((f) => f.name.endsWith(".svg")));
+  assert.match(svg, /<rect width="260" height="140" style="fill:#fff;stroke:none"\/>/, "the inline style beats the drawing rules");
+});
+
 test("video folder: the note on the control says what happened, in a few words", () => {
   assert.equal(folderNote({ date: "2026-11-10", words: 1240, kept: [] }), "Saved 2026-11-10 · 1,240 words");
   assert.equal(folderNote({ date: "2026-11-10", words: 1, kept: ["prompter.md", "recording-notes.md"] }), "Saved 2026-11-10 · 1 word · cue files kept");
   assert.equal(folderNote({ zip: true, date: "2026-11-10", words: 12, kept: [] }), "Downloaded 2026-11-10 · 12 words");
   assert.equal(folderNote({ error: true }), "Could not save");
+  assert.equal(folderNote({ error: true, wait: true }), "B-roll list not ready");
+  assert.equal(folderNote({ saving: true }), "Saving…");
   assert.equal(folderNote(null), "");
 });

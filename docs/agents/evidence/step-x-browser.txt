@@ -1,4 +1,4 @@
-# Step X browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome 157.0.8103.50, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system; cancelled, refused and no-picker runs included)
+# Step X browser run: node scripts/smoke-video-folder.mjs on a static server for public/ and headless Chrome 157.0.8103.50, 2026-11-10 (the folder picker is replaced by one that returns a folder in the browser's private file system; cancelled, refused, double-click and no-picker runs included; 1280, 390 and 320 px)
 ok 1280 px: Save to video folder is second, after Export all
 ok 1280 px: no note before a save
 ok 1280 px: the menu fits the width
@@ -22,6 +22,8 @@ ok 1280 px: no toast
 ok 1280 px: hand-written cue files are kept
 ok 1280 px: the script is saved again, the same
 ok 1280 px: a cancelled picker leaves the item as it was
+ok 1280 px: a refused picker says "Could not save" on the item
+ok 1280 px: two quick clicks open the picker once
 ok 1280 px: the label says it is a zip here
 ok 1280 px: a zip named video-folder.zip is downloaded
 ok 390 px: Save to video folder is second, after Export all
@@ -46,4 +48,26 @@ ok 390 px: the picker asks for write access
 ok 390 px: no toast
 ok 390 px: hand-written cue files are kept
 ok 390 px: the script is saved again, the same
+ok 320 px: Save to video folder is second, after Export all
+ok 320 px: no note before a save
+ok 320 px: the menu fits the width
+ok 320 px: script.md is written
+ok 320 px: prompter.md is written
+ok 320 px: recording-notes.md is written
+ok 320 px: b-roll.md is written
+ok 320 px: b-roll.json is written
+ok 320 px: save-receipt.md is written
+ok 320 px: pictures are in pictures/
+ok 320 px: the two cue files are the same
+ok 320 px: the script is a Markdown script
+ok 320 px: b-roll.json has the shots
+ok 320 px: every picture b-roll.json names is a file
+ok 320 px: b-roll.md links each picture file
+ok 320 px: no embedded picture in b-roll.md
+ok 320 px: the receipt has date and word count
+ok 320 px: the item's note says what happened
+ok 320 px: the picker asks for write access
+ok 320 px: no toast
+ok 320 px: hand-written cue files are kept
+ok 320 px: the script is saved again, the same
 all ok
