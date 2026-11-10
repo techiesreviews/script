@@ -26,6 +26,12 @@ cdp.addEventListener("message", (e) => {
   waiting.delete(m.id);
   if (m.error) reject(new Error(JSON.stringify(m.error))); else resolve(m.result);
 });
+// Requests held back by Fetch.enable, oldest first.
+const paused = [];
+cdp.addEventListener("message", (e) => {
+  const m = JSON.parse(e.data);
+  if (m.method === "Fetch.requestPaused") paused.push(m.params);
+});
 const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
   const id = ++nextId;
   const timer = setTimeout(() => { waiting.delete(id); reject(new Error(`Chrome didn't answer ${method}`)); }, 20000);
@@ -173,8 +179,38 @@ async function runFallbacks() {
   await page.close();
 }
 
+// A linked B-roll list that is still loading: the save writes nothing and the item says so; once the list is read the
+// note goes away and a save works. The demo's list is held back with Fetch until the check lets it through.
+async function runListNotReady() {
+  const tag = "1280 px:";
+  const page = await openPage(1280, 800);
+  await page.send("Fetch.enable", { patterns: [{ urlPattern: "*demo-good-script-broll.md*", requestStage: "Request" }] });
+  await page.send("Page.navigate", { url: `${BASE}/` });
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen");
+  paused.length = 0;
+  await page.click("#emptySample");
+  for (let i = 0; i < 150 && !paused.length; i++) await sleep(60);
+  check(paused.length === 1, `${tag} the demo's B-roll list is held back while it loads`, paused.length);
+  if (!paused.length) return page.close();
+  await page.eval(`window.__picks = 0; window.showDirectoryPicker = async () => { window.__picks++; const root = await navigator.storage.getDirectory(); return root.getDirectoryHandle("video", { create: true }); }; true`);
+  const open = async () => { await page.click("#exportBtn"); await page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu opens"); };
+  await open();
+  await page.click(`[data-export="folder"]`);
+  check(await page.until(`document.querySelector("#folderNote").textContent === "B-roll list still loading" && !document.querySelector("#folderNote").hidden`, "the item says the list is loading"), `${tag} a list still loading: the item says "B-roll list still loading"`);
+  check(await page.eval(`window.__picks === 0`), `${tag} and the folder picker does not open`);
+  await page.send("Fetch.continueRequest", { requestId: paused[0].requestId });
+  await page.until(`document.querySelectorAll(".shot-frame").length >= 8`, "the demo's shots");
+  check(await page.until(`document.querySelector("#folderNote").hidden && document.querySelector("#folderNote").textContent === ""`, "the note goes away"), `${tag} once the list is read, the note is gone without another click`);
+  await open();
+  await page.click(`[data-export="folder"]`);
+  check(await page.until(`/^Saved /.test(document.querySelector("#folderNote").textContent)`, "a save works now"), `${tag} then a save works`);
+  check(await page.eval(`window.__picks === 1`), `${tag} the picker opened once, for that save`);
+  await page.close();
+}
+
 await run(1280, 800);
 await runFallbacks();
+await runListNotReady();
 await run(390, 800);
 await run(320, 640);
 cdp.close();

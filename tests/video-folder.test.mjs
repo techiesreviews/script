@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { parse, serialize, exportPrompter } from "../public/doc.js";
 import { parseBroll, matchShots, scriptOrder, exportBroll } from "../public/broll.js";
 import { makeZip } from "../public/zip.js";
-import { videoFolder, writeFolder, folderNote, listState, FOLDER_NAMES } from "../public/video-folder.js";
+import { videoFolder, writeFolder, folderNote, settleFolder, listState, FOLDER_NAMES } from "../public/video-folder.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const SCRIPT = read("../public/samples/demo-good-script.md");
@@ -230,6 +230,19 @@ test("video folder: a note about the B-roll list follows the list, and clears on
   assert.equal(folderNote(waiting, "none"), "", "an unlinked list needs nothing");
   assert.equal(folderNote({ error: true }, "ok"), "Could not save", "other notes do not depend on the list");
   assert.equal(folderNote({ date: "2026-11-10", words: 12, kept: [] }, "loading"), "Saved 2026-11-10 · 12 words");
+});
+
+test("video folder: a save the list stopped is over once the list is ready, so a later reload brings no note back", () => {
+  const waiting = { for: "a.md", error: true, wait: "loading" };
+  assert.equal(settleFolder(waiting, "permission"), waiting, "still waiting: kept");
+  assert.equal(settleFolder(waiting, "ok"), null, "the list is read: dropped");
+  assert.equal(settleFolder(waiting, "none"), null, "the list is unlinked: dropped");
+  const saved = { for: "a.md", date: "2026-11-10", words: 12, kept: [] };
+  assert.equal(settleFolder(saved, "loading"), saved, "a real save's note stays while the list reloads");
+  assert.equal(settleFolder({ error: true }, "ok").error, true, "Could not save stays");
+  assert.equal(settleFolder(null, "ok"), null);
+  // The list ready, then loading again: the dropped save shows nothing.
+  assert.equal(folderNote(settleFolder(settleFolder(waiting, "ok"), "loading"), "loading"), "");
 });
 
 test("video folder: with only one cue file in the folder, that one is kept and the other is written", async () => {

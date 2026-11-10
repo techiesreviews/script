@@ -401,6 +401,7 @@
 ✔ video folder: a line drawing's file keeps a white background with no outline
 ✔ video folder: the note on the control says what happened, in a few words
 ✔ video folder: a note about the B-roll list follows the list, and clears once it is ready
+✔ video folder: a save the list stopped is over once the list is ready, so a later reload brings no note back
 ✔ video folder: with only one cue file in the folder, that one is kept and the other is written
 ✔ video folder: nothing is deleted; a picture whose format changed stays, and the list names the new file
 ✔ relay: a new token's note lasts until its birth + 8 h, with an alarm just after
@@ -422,9 +423,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 424
+ℹ tests 425
 ℹ suites 0
-ℹ pass 424
+ℹ pass 425
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

@@ -2725,6 +2725,7 @@ function exportAll() {
 // same names where the browser can't write to a folder). What happened shows on the menu item itself.
 let folderSaved = null;
 function renderFolderNote() {
+  folderSaved = V.settleFolder(folderSaved, broll.status); // once the list is ready, a save it stopped is over
   const note = V.folderNote(folderSaved?.for === state.name ? folderSaved : null, broll.status);
   $("#folderNote").textContent = note;
   $("#folderNote").hidden = !note;

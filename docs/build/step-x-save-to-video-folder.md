@@ -18,7 +18,7 @@ Lex (2026-11-10, Orbit TOOLS-194, weekly flow step 7b): when a script is final, 
 
 ## Browser check
 
-`scripts/smoke-video-folder.mjs` (1280, 390 and 320 px, real clicks; the folder picker is replaced by one returning a folder in the browser's private file system): the item is second in the menu, the files and pictures are written with the right names, `b-roll.md` links the picture files, the receipt and the item's note, hand-written cue files kept on a second save, no toast; a cancelled picker leaves the item and the last note alone, a refused one says "Could not save", and with no picker the item says "(.zip)" and a zip named `<name>-video-folder.zip` is downloaded; two quick clicks open the picker once. Evidence: `docs/agents/evidence/step-x-browser.txt`.
+`scripts/smoke-video-folder.mjs` (1280, 390 and 320 px, real clicks; the folder picker is replaced by one returning a folder in the browser's private file system): the item is second in the menu, the files and pictures are written with the right names, `b-roll.md` links the picture files, the receipt and the item's note, hand-written cue files kept on a second save, no toast; a cancelled picker leaves the item and the last note alone, a refused one says "Could not save", and with no picker the item says "(.zip)" and a zip named `<name>-video-folder.zip` is downloaded; two quick clicks open the picker once; with the demo's B-roll list held back while it loads, the item says "B-roll list still loading" and no picker opens, and once the list is read the note is gone without another click and a save works. Evidence: `docs/agents/evidence/step-x-browser.txt`.
 
 ## Done
 
