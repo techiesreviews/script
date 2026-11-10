@@ -2725,7 +2725,7 @@ function exportAll() {
 // same names where the browser can't write to a folder). What happened shows on the menu item itself.
 let folderSaved = null;
 function renderFolderNote() {
-  const note = V.folderNote(folderSaved?.for === state.name ? folderSaved : null);
+  const note = V.folderNote(folderSaved?.for === state.name ? folderSaved : null, broll.status);
   $("#folderNote").textContent = note;
   $("#folderNote").hidden = !note;
   $("#folderLabel").textContent = "showDirectoryPicker" in window ? "Save to video folder" : "Save to video folder (.zip)";
@@ -3247,6 +3247,7 @@ function renderBroll() {
   const ok = broll.status === "ok";
   for (const b of $$('#exportMenu [data-export="broll"], #exportMenu [data-export="storyboard"]')) b.disabled = !ok;
   for (const n of $$('#exportMenu [data-note="broll"]')) n.hidden = ok;
+  renderFolderNote(); // a note about the list follows it: it clears once the list is ready
 }
 
 /* One sketch frame, as in the script and the storyboard. Pending agent sketches carry Keep / Undo. */
