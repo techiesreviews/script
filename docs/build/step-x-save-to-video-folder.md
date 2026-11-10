@@ -20,6 +20,15 @@ Lex (2026-11-10, Orbit TOOLS-194, weekly flow step 7b): when a script is final, 
 
 `scripts/smoke-video-folder.mjs` (1280, 390 and 320 px, real clicks; the folder picker is replaced by one returning a folder in the browser's private file system): the item is second in the menu, the files and pictures are written with the right names, `b-roll.md` links the picture files, the receipt and the item's note, hand-written cue files kept on a second save, no toast; a cancelled picker leaves the item and the last note alone, a refused one says "Could not save", and with no picker the item says "(.zip)" and a zip named `<name>-video-folder.zip` is downloaded; two quick clicks open the picker once; with the demo's B-roll list held back while it loads, the item says "B-roll list still loading" and no picker opens, and once the list is read the note is gone without another click and a save works. Evidence: `docs/agents/evidence/step-x-browser.txt`.
 
+## Prompter link (TOOLS-201)
+
+Lex (2026-11-10): the saved folder also holds `prompter-link.txt`, one line, so the link to the prompter never goes stale after edits.
+
+- The link is the prompter's own format (`https://prompter.techies.tools/#s=…`, deflate-raw + base64url, default preset) with the day last, `&d=YYYY-MM-DD` (prompter PR #32; the start screen shows it). It carries the `prompter.md` that is in the folder after the save: the plain export, or the kept cue file when the folder already had one.
+- The day is the script file's own day (its last-saved time) when the file holds what is on screen; when there are changes the file does not have yet, or the script has no file of its own (the demo, a script not saved yet), it is the day of this save, as the folder's copy is written now. A file with no time gives the day of this save too. It is never a day nobody read, and no `&d=` is made from anything but a real day (`savedDay`).
+- A zip (no folder picker) holds `prompter-link.txt` too. A `prompter.md` longer than the prompter accepts (`PROMPTER_MAX_CHARS`) gets no link file: the item's note ends with "no prompter link". An older `prompter-link.txt` in the folder is replaced (the link must not go stale); nothing is deleted.
+- Where: `prompterLink` (third argument) and `savedDay` in `public/doc.js`; `prompterLinkFile`, `withPrompterLink`, `scriptDay`, `fileDay`, `writeFolder`'s `saved` in `public/video-folder.js`; `saveToFolder` in `public/app.js`. Tests: `tests/doc.test.mjs` (the `&d=` part), `tests/video-folder.test.mjs` (the file, its day, a kept cue file, the zip, too long, the note); each failed before the change. Browser: `scripts/smoke-video-folder.mjs`, evidence `docs/agents/evidence/tools-201-browser.txt`.
+
 ## Done
 
 Feature list: updated (`docs/features.md`).

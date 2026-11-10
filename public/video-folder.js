@@ -1,7 +1,7 @@
 // "Save to video folder" (Lex, 2026-11-10, Orbit TOOLS-194): the script, the cue files, the B-roll data and its pictures
 // under the names a video folder uses (chat `youtube/workflow/project-files.md`), plus a short receipt. Pure but for
 // writeFolder, which takes a directory handle. Imported by the app and the tests; nothing here changes script text.
-import { exportPrompter, stats } from "./doc.js";
+import { exportPrompter, stats, prompterLink } from "./doc.js";
 import { exportBroll, cleanSketch, isImage, sketchLines, SKETCH_VIEWBOX } from "./broll.js";
 
 export const FOLDER_NAMES = ["script.md", "prompter.md", "recording-notes.md", "b-roll.md", "b-roll.json"];
@@ -11,6 +11,8 @@ export const listState = (status) => (status === "none" ? "none" : status === "o
 // Cue files are written by hand after the script is final; a folder that already has them keeps them.
 export const FOLDER_KEEP = ["prompter.md", "recording-notes.md"];
 export const RECEIPT_NAME = "save-receipt.md";
+// The prompter link (TOOLS-201): one line, the link to the saved prompter.md text with the day the script was saved.
+export const LINK_NAME = "prompter-link.txt";
 const PICTURES = "pictures";
 
 const EXT = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
@@ -86,6 +88,31 @@ export function videoFolder({ doc, scriptText, shots = [], sketches = {}, title 
   return { files, receipt };
 }
 
+/** A file's last-saved time as a day on this device (YYYY-MM-DD); null when the browser gives none. */
+export const fileDay = (ms) => (Number.isFinite(ms) && ms > 0 ? day(new Date(ms)) : null);
+
+/** The day the script was saved, for the prompter link: its own file's day when the file holds what is on screen;
+ *  otherwise the day of this save, as the folder's copy is written now. Never a day nobody read. */
+export function scriptDay({ file, modified, dirty, now = new Date() }) {
+  return (file && !dirty && fileDay(modified)) || day(now);
+}
+
+/** The prompter-link.txt file for a prompter text, or null when the text is longer than the prompter accepts. */
+export async function prompterLinkFile(text, saved = null) {
+  const link = await prompterLink(text, undefined, saved);
+  return link && { name: LINK_NAME, text: `${link}\n` };
+}
+
+/** The files with prompter-link.txt added (made from their prompter.md); as they were, and `noLink`, when it is too long. */
+export async function withPrompterLink(files, saved = null) {
+  const prompter = files.find((f) => f.name === "prompter.md");
+  const link = prompter && await prompterLinkFile(prompter.text, saved);
+  if (link) return [...files, link];
+  const out = [...files];
+  out.noLink = true;
+  return out;
+}
+
 const missing = (e) => e?.name === "NotFoundError";
 async function exists(dir, name) {
   try { await dir.getFileHandle(name); return true; } catch (e) { if (missing(e)) return false; throw e; }
@@ -96,9 +123,11 @@ async function put(dir, name, data) {
   await w.close();
 }
 
-/** writeFolder(dir, files, { keep }) → { written, kept }: every file into the chosen folder under its name (a name with
- *  a slash goes in its sub-folder). A name in `keep` that is already there is left as it is. */
-export async function writeFolder(dir, files, { keep = FOLDER_KEEP } = {}) {
+/** writeFolder(dir, files, { keep, saved }) → { written, kept, noLink? }: every file into the chosen folder under its name
+ *  (a name with a slash goes in its sub-folder). A name in `keep` that is already there is left as it is. Then
+ *  prompter-link.txt, made from the prompter.md that is in the folder now (kept or written) with the day `saved`;
+ *  `noLink` when that text is too long for the prompter. */
+export async function writeFolder(dir, files, { keep = FOLDER_KEEP, saved = null } = {}) {
   const written = [], kept = [];
   for (const f of files) {
     if (keep.includes(f.name) && await exists(dir, f.name)) { kept.push(f.name); continue; }
@@ -108,6 +137,13 @@ export async function writeFolder(dir, files, { keep = FOLDER_KEEP } = {}) {
     await put(at, parts.at(-1), f.text);
     written.push(f.name);
   }
+  const prompter = kept.includes("prompter.md")
+    ? await (await (await dir.getFileHandle("prompter.md")).getFile()).text()
+    : files.find((f) => f.name === "prompter.md")?.text;
+  const link = prompter == null ? null : await prompterLinkFile(prompter, saved);
+  if (!link) return { written, kept, noLink: true };
+  await put(dir, link.name, link.text);
+  written.push(link.name);
   return { written, kept };
 }
 
@@ -128,5 +164,5 @@ export function folderNote(r, status) {
   }
   if (r.error) return "Could not save";
   if (r.saving) return "Saving…";
-  return `${r.zip ? "Downloaded" : "Saved"} ${r.date} · ${plural(r.words, "word")}${r.kept?.length ? " · cue files kept" : ""}`;
+  return `${r.zip ? "Downloaded" : "Saved"} ${r.date} · ${plural(r.words, "word")}${r.kept?.length ? " · cue files kept" : ""}${r.noLink ? " · no prompter link" : ""}`;
 }
