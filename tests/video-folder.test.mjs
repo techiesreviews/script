@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import { parse, serialize, exportPrompter } from "../public/doc.js";
 import { parseBroll, matchShots, scriptOrder, exportBroll } from "../public/broll.js";
 import { makeZip } from "../public/zip.js";
-import { videoFolder, writeFolder, folderNote, settleFolder, listState, FOLDER_NAMES } from "../public/video-folder.js";
+import { videoFolder, writeFolder, folderNote, settleFolder, listState, FOLDER_NAMES, prompterLinkFile, withPrompterLink, fileDay, scriptDay, LINK_NAME } from "../public/video-folder.js";
+import { PROMPTER_MAX_CHARS } from "../public/doc.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const SCRIPT = read("../public/samples/demo-good-script.md");
@@ -145,7 +146,10 @@ function fakeFolder(start = {}) {
     async getFileHandle(name, { create = false } = {}) {
       const path = prefix + name;
       if (!files.has(path) && !create) throw Object.assign(new Error("not found"), { name: "NotFoundError" });
-      return { async createWritable() { let data; return { async write(d) { data = d; }, async close() { files.set(path, data); } }; } };
+      return {
+        async getFile() { const d = files.get(path); return { async text() { return typeof d === "string" ? d : new TextDecoder().decode(d); } }; },
+        async createWritable() { let data; return { async write(d) { data = d; }, async close() { files.set(path, data); } }; },
+      };
     },
     async getDirectoryHandle(name, { create = false } = {}) {
       if (!create && ![...files.keys()].some((p) => p.startsWith(`${prefix}${name}/`))) throw Object.assign(new Error("not found"), { name: "NotFoundError" });
@@ -159,9 +163,9 @@ test("video folder: writeFolder writes every file under its name, pictures in th
   const r = videoFolder(build({ sketches: { [parseBroll(LIST).shots[0].id]: PNG } }));
   const { dir, files } = fakeFolder();
   const out = await writeFolder(dir, r.files);
-  assert.deepEqual([...files.keys()].sort(), names(r).sort());
+  assert.deepEqual([...files.keys()].sort(), [...names(r), "prompter-link.txt"].sort());
   assert.deepEqual(out.kept, []);
-  assert.equal(out.written.length, r.files.length);
+  assert.equal(out.written.length, r.files.length + 1, "the files and the prompter link");
   assert.equal(files.get("script.md"), text(byName(r, "script.md")));
   assert.ok(files.get(names(r).find((n) => n.startsWith("pictures/"))) instanceof Uint8Array);
 });
@@ -272,4 +276,111 @@ test("video folder: nothing is deleted; a picture whose format changed stays, an
   const json = JSON.parse(files.get("b-roll.json"));
   const entry = (Array.isArray(json) ? json : json.shots).find((s) => s.id === id);
   assert.equal(entry.picture, svg);
+});
+
+/* ---------- prompter-link.txt (TOOLS-201) ---------- */
+// The script a prompter link carries, read back the way the prompter reads it.
+async function linkScript(link) {
+  const q = new URLSearchParams(new URL(link.trim()).hash.slice(1));
+  const data = q.get("s");
+  const b64 = data.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((data.length + 3) % 4);
+  const stream = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return { text: new TextDecoder().decode(await new Response(stream).arrayBuffer()), day: q.get("d") };
+}
+
+test("prompter-link.txt: one line, the prompter link to the prompter.md text with the script's day", async () => {
+  assert.equal(LINK_NAME, "prompter-link.txt");
+  const input = build();
+  const f = await prompterLinkFile(exportPrompter(input.doc), "2026-11-05");
+  assert.equal(f.name, "prompter-link.txt");
+  assert.match(f.text, /^https:\/\/prompter\.techies\.tools\/#s=[A-Za-z0-9_-]+&d=2026-11-05\n$/);
+  assert.deepEqual(await linkScript(f.text), { text: exportPrompter(input.doc), day: "2026-11-05" });
+});
+
+test("prompter-link.txt: without a known day the link has no &d=; a script too long for the prompter has no file", async () => {
+  const f = await prompterLinkFile("# Short\n\n### **1 · A · 0:10**\n\nHello there.\n", null);
+  assert.ok(!f.text.includes("&d="));
+  assert.equal(await prompterLinkFile("a".repeat(PROMPTER_MAX_CHARS + 1), "2026-11-05"), null);
+});
+
+test("prompter-link.txt: writeFolder writes it next to the files, from the prompter.md it wrote", async () => {
+  const input = build();
+  const r = videoFolder(input);
+  const { dir, files } = fakeFolder();
+  const out = await writeFolder(dir, r.files, { saved: "2026-11-05" });
+  assert.ok(files.has("prompter-link.txt"), "the link file is in the folder");
+  assert.ok(out.written.includes("prompter-link.txt"));
+  assert.equal(out.noLink, undefined);
+  assert.deepEqual(await linkScript(files.get("prompter-link.txt")), { text: files.get("prompter.md"), day: "2026-11-05" });
+});
+
+test("prompter-link.txt: a kept prompter.md is what the link carries, not the plain export", async () => {
+  const r = videoFolder(build());
+  const { dir, files } = fakeFolder({ "prompter.md": "# Lex's short cues\n\n### **1 · A · 0:10**\n\nShort cue.\n" });
+  const out = await writeFolder(dir, r.files, { saved: "2026-11-05" });
+  assert.deepEqual(out.kept, ["prompter.md"]);
+  const got = await linkScript(files.get("prompter-link.txt"));
+  assert.equal(got.text, "# Lex's short cues\n\n### **1 · A · 0:10**\n\nShort cue.\n");
+  assert.equal(got.day, "2026-11-05");
+});
+
+test("prompter-link.txt: an old link file is replaced, and a script too long for the prompter says so and writes none", async () => {
+  const r = videoFolder(build());
+  const { dir, files } = fakeFolder({ "prompter-link.txt": "https://prompter.techies.tools/#s=old\n" });
+  await writeFolder(dir, r.files, { saved: "2026-11-05" });
+  assert.notEqual(files.get("prompter-link.txt"), "https://prompter.techies.tools/#s=old\n");
+  const long = fakeFolder({ "prompter.md": "a".repeat(PROMPTER_MAX_CHARS + 1) });
+  const out = await writeFolder(long.dir, r.files, { saved: "2026-11-05" });
+  assert.equal(out.noLink, true);
+  assert.ok(!long.files.has("prompter-link.txt"));
+});
+
+test("prompter-link.txt: the zip carries it too, under the same name, with the same link", async () => {
+  const r = videoFolder(build());
+  const files = await withPrompterLink(r.files, "2026-11-05");
+  assert.ok(files.some((f) => f.name === "prompter-link.txt"));
+  assert.equal(files.length, r.files.length + 1);
+  assert.deepEqual(r.files.map((f) => f.name), files.slice(0, r.files.length).map((f) => f.name), "nothing else changed");
+  assert.deepEqual(await linkScript(text(files.find((f) => f.name === "prompter-link.txt"))), { text: text(byName(r, "prompter.md")), day: "2026-11-05" });
+  const z = makeZip(files);
+  assert.ok(new TextDecoder().decode(z).includes("prompter-link.txt"));
+  // Too long: the zip is as it was.
+  const big = await withPrompterLink([{ name: "prompter.md", text: "a".repeat(PROMPTER_MAX_CHARS + 1) }], "2026-11-05");
+  assert.equal(big.noLink, true);
+  assert.deepEqual(big.map((f) => f.name), ["prompter.md"]);
+});
+
+test("prompter-link.txt: the day is the script file's own day; never guessed when the file has none", () => {
+  const modified = new Date(2026, 10, 5, 23, 59).getTime();
+  assert.equal(fileDay(modified), "2026-11-05");
+  assert.equal(fileDay(0), null);
+  assert.equal(fileDay(NaN), null);
+  const now = new Date(2026, 10, 10, 9, 30);
+  assert.equal(scriptDay({ modified, dirty: false, now }), "2026-11-05", "a script with a file date and no changes: its file's day, with a handle or from the file input");
+  assert.equal(scriptDay({ modified, dirty: true, now }), "2026-11-10", "changes not in the file yet: the folder gets them today");
+  assert.equal(scriptDay({ modified: 0, dirty: false, now }), "2026-11-10", "no file date (the demo, a new script): the day of this save");
+});
+
+test("prompter-link.txt: a kept prompter.md that can't be read costs only the link; a link too long leaves the older one", async () => {
+  const r = videoFolder(build());
+  const broken = fakeFolder({ "prompter.md": "cues" });
+  const real = broken.dir.getFileHandle;
+  broken.dir.getFileHandle = async (name, o) => {
+    const h = await real(name, o);
+    return name === "prompter.md" && !o?.create && broken.reads++ > 0 ? { ...h, getFile: async () => { throw new Error("gone"); } } : h;
+  };
+  broken.reads = 0;
+  const out = await writeFolder(broken.dir, r.files, { saved: "2026-11-05" });
+  assert.equal(out.noLink, true);
+  assert.equal(broken.files.get("script.md"), text(byName(r, "script.md")), "the other files were saved");
+  assert.ok(!broken.files.has("prompter-link.txt"));
+  const long = fakeFolder({ "prompter.md": "a".repeat(PROMPTER_MAX_CHARS + 1), "prompter-link.txt": "older link\n" });
+  assert.equal((await writeFolder(long.dir, r.files, { saved: "2026-11-05" })).noLink, true);
+  assert.equal(long.files.get("prompter-link.txt"), "older link\n", "the older link stays; nothing is deleted");
+});
+
+test("prompter-link.txt: the note on the control says when the link could not be made", () => {
+  assert.equal(folderNote({ date: "2026-11-10", words: 3, kept: [], noLink: true }), "Saved 2026-11-10 · 3 words · no prompter link");
+  assert.equal(folderNote({ zip: true, date: "2026-11-10", words: 3, kept: ["prompter.md"], noLink: true }), "Downloaded 2026-11-10 · 3 words · cue files kept · no prompter link");
+  assert.equal(folderNote({ date: "2026-11-10", words: 3, kept: [] }), "Saved 2026-11-10 · 3 words");
 });

@@ -192,6 +192,7 @@
 ✔ prompter export reads back in the prompter: 7 sections, titles, times, no line lost
 ✔ prompter leaves out the time when the heading has none
 ✔ prompter link: deflate-raw + base64url in #s=, default preset, round-trips the export
+✔ prompter link: the day the script was saved goes last as &d=YYYY-MM-DD, and only a real day
 ✔ prompter link: refuses a script longer than the prompter accepts
 ✔ word count and spoken length at 160 words a minute
 ✔ snapToWords: half words snap to whole words, outer spaces drop
@@ -404,6 +405,15 @@
 ✔ video folder: a save the list stopped is over once the list is ready, so a later reload brings no note back
 ✔ video folder: with only one cue file in the folder, that one is kept and the other is written
 ✔ video folder: nothing is deleted; a picture whose format changed stays, and the list names the new file
+✔ prompter-link.txt: one line, the prompter link to the prompter.md text with the script's day
+✔ prompter-link.txt: without a known day the link has no &d=; a script too long for the prompter has no file
+✔ prompter-link.txt: writeFolder writes it next to the files, from the prompter.md it wrote
+✔ prompter-link.txt: a kept prompter.md is what the link carries, not the plain export
+✔ prompter-link.txt: an old link file is replaced, and a script too long for the prompter says so and writes none
+✔ prompter-link.txt: the zip carries it too, under the same name, with the same link
+✔ prompter-link.txt: the day is the script file's own day; never guessed when the file has none
+✔ prompter-link.txt: a kept prompter.md that can't be read costs only the link; a link too long leaves the older one
+✔ prompter-link.txt: the note on the control says when the link could not be made
 ✔ relay: a new token's note lasts until its birth + 8 h, with an alarm just after
 ✔ relay: the alarm refuses what waits, closes the tab and erases everything; an early alarm is set again
 ✔ relay: a tab with a token already past its time is refused and nothing is written
@@ -423,9 +433,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 425
+ℹ tests 435
 ℹ suites 0
-ℹ pass 425
+ℹ pass 435
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

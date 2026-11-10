@@ -2657,6 +2657,7 @@ async function saveAs() {
       }
     } else {
       download(text, state.name, "text/markdown");
+      state.fileModified = Date.now(); // the downloaded copy is from now; the old file's day no longer fits it
     }
     state.savedText = text;
     state.savedAt = Date.now();
@@ -2748,7 +2749,7 @@ async function saveToFolder() {
   }
   // Read after the picker closes: it is the script on screen now that is saved (an open "/" command is not part of it).
   if (!state.doc) { folderSaved = prior; return renderFolderNote(); }
-  const name = state.name;
+  const name = state.name, zipName = `${baseName()}-video-folder.zip`; // both read before any waiting: the script on screen may change meanwhile
   // A list that was still loading or blocked while the picker was open is not left out of the folder.
   if (V.listState(broll.status) === "wait") { folderSaved = { for: name, error: true, wait: broll.status }; return renderFolderNote(); }
   const linked = broll.status === "ok";
@@ -2758,10 +2759,13 @@ async function saveToFolder() {
       doc, scriptText: saveText(), linked, sketches: broll.sketches, title: D.titleOf(doc) || baseName(),
       shots: linked ? B.scriptOrder(doc, broll.shots) : [],
     });
-    if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files)) };
+    // The prompter link carries the day the script was saved (its file's own day, else the day of this save).
+    const saved = V.scriptDay({ modified: state.fileModified, dirty: isDirty() });
+    if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files, { saved })) };
     else {
-      download(makeZip(files), `${baseName()}-video-folder.zip`, "application/zip");
-      folderSaved = { for: name, ...receipt, zip: true };
+      const withLink = await V.withPrompterLink(files, saved);
+      download(makeZip(withLink), zipName, "application/zip");
+      folderSaved = { for: name, ...receipt, zip: true, ...(withLink.noLink && { noLink: true }) };
     }
   } catch { folderSaved = { for: name, error: true }; }
   renderFolderNote();

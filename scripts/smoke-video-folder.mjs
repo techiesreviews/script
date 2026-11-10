@@ -9,6 +9,15 @@ const BASE = (process.argv[2] || "http://127.0.0.1:8787").replace(/\/$/, "");
 const PORT = process.argv[3] || "9222";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
+// The script a prompter link carries and its day, read back the way the prompter reads them.
+async function readLink(link) {
+  const q = new URLSearchParams(new URL(String(link).trim()).hash.slice(1));
+  const data = q.get("s") || "";
+  const b64 = data.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((data.length + 3) % 4);
+  const stream = new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return { text: new TextDecoder().decode(await new Response(stream).arrayBuffer()), day: q.get("d") };
+}
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const check = (ok, label, extra = "") => {
   console.log(`${ok ? "ok" : "FAIL"} ${label}${extra !== "" && !ok ? ` (${extra})` : ""}`);
   if (!ok) failures++;
@@ -113,6 +122,11 @@ async function run(width, height) {
   check(names.some((n) => /^pictures\/.+\.(png|jpg|webp|svg)$/.test(n)), `${tag} pictures are in pictures/`, names.join(", "));
   check(files["prompter.md"] === files["recording-notes.md"], `${tag} the two cue files are the same`);
   check(!!files["script.md"] && files["script.md"].startsWith("# "), `${tag} the script is a Markdown script`);
+  check("prompter-link.txt" in files, `${tag} prompter-link.txt is written`);
+  const made = await readLink(files["prompter-link.txt"] || "#");
+  check(/^https:\/\/prompter\.techies\.tools\/#s=[A-Za-z0-9_-]+&d=\d{4}-\d{2}-\d{2}\n$/.test(files["prompter-link.txt"] || ""), `${tag} prompter-link.txt is one prompter link ending in &d=`, (files["prompter-link.txt"] || "").slice(-30));
+  check(made.text === files["prompter.md"], `${tag} the link carries the saved prompter.md text`);
+  check(made.day === localToday(), `${tag} the link's day is the day of this save (the demo has no file of its own)`, made.day);
   const json = JSON.parse(files["b-roll.json"] || "{}");
   check(json.shots?.length >= 8, `${tag} b-roll.json has the shots`, json.shots?.length);
   const pics = (json.shots || []).map((s) => s.picture).filter(Boolean);
@@ -134,6 +148,7 @@ async function run(width, height) {
   const again = await page.eval(LIST);
   check(again["prompter.md"] === "hand cues" && again["recording-notes.md"] === "hand cues", `${tag} hand-written cue files are kept`);
   check(again["script.md"] === files["script.md"], `${tag} the script is saved again, the same`);
+  check((await readLink(again["prompter-link.txt"] || "#")).text === "hand cues", `${tag} the link follows the kept cue file`);
 
   await page.close();
 }
