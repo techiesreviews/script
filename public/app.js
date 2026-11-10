@@ -2759,11 +2759,12 @@ async function saveToFolder() {
       shots: linked ? B.scriptOrder(doc, broll.shots) : [],
     });
     // The prompter link carries the day the script was saved (its file's own day, else the day of this save).
-    const saved = V.scriptDay({ file: !!state.handle, modified: state.fileModified, dirty: isDirty() });
+    const saved = V.scriptDay({ modified: state.fileModified, dirty: isDirty() });
     if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files, { saved })) };
     else {
+      const zipName = `${baseName()}-video-folder.zip`; // read before the link is made: the script on screen may change meanwhile
       const withLink = await V.withPrompterLink(files, saved);
-      download(makeZip(withLink), `${baseName()}-video-folder.zip`, "application/zip");
+      download(makeZip(withLink), zipName, "application/zip");
       folderSaved = { for: name, ...receipt, zip: true, ...(withLink.noLink && { noLink: true }) };
     }
   } catch { folderSaved = { for: name, error: true }; }
