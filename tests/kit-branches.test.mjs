@@ -21,6 +21,15 @@ test("kit.json lands on dev, releases to main, and the docs agree", () => {
   }
 });
 
+// The GitHub workflow runs the same unit tests as the kit, on every pull request and on pushes to dev, with no secrets or deploy.
+test("the GitHub checks workflow runs the kit's test command on pull requests and on dev", () => {
+  const workflow = read(".github/workflows/checks.yml");
+  assert.ok(workflow.split("\n").some(line => line.trim() === `- run: ${JSON.parse(read("scripts/agents/kit.json")).checks.test}`));
+  assert.match(workflow, /^on:\n {2}push:\n {4}branches: \[dev\]\n {2}pull_request:\n/m);
+  assert.match(workflow, /^permissions:\n {2}contents: read$/m);
+  assert.doesNotMatch(workflow, /secrets\.|wrangler|deploy:/);
+});
+
 // The deploy script itself, run with a stub kit and a stub npx: a failed check stops before wrangler.
 const deployScript = fileURLToPath(new URL("../scripts/agents/project.d/deploy", import.meta.url));
 const runDeploy = (t, checkStatus, { ignoredFile, args = [] } = {}) => {

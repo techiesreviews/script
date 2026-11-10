@@ -8,6 +8,7 @@ import * as K from "./cues.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
 import { makeZip } from "./zip.js";
+import * as V from "./video-folder.js";
 import { startPress, HOLD_MS } from "./press.js";
 import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
 
@@ -791,6 +792,7 @@ function renderDerived() {
   const tooLong = pro.length > D.PROMPTER_MAX_CHARS;
   $("#prompterAction").disabled = tooLong;
   $("#prompterNote").hidden = !tooLong;
+  renderFolderNote();
   if (!tooLong) prompterUrl(pro);
   rematchBroll(false);
   refreshSuggestions();
@@ -2691,6 +2693,7 @@ function exportFile(kind) {
   else if (kind === "prompter-open") openPrompter();
   else if (kind === "markdown") saveAs();
   else if (kind === "all") exportAll();
+  else if (kind === "folder") saveToFolder();
   else if ((kind === "broll" || kind === "storyboard") && broll.status === "ok") {
     const f = brollExports()[kind === "broll" ? 0 : 1];
     download(f.text, f.name, kind === "broll" ? "text/markdown" : "text/html");
@@ -2716,6 +2719,52 @@ function exportAll() {
   ];
   if (broll.status === "ok") files.push(...brollExports());
   download(makeZip(files), `${base}.zip`, "application/zip");
+}
+
+// "Save to video folder" (Lex, 2026-11-10, TOOLS-194): the video-folder names in a folder the person picks (a zip with the
+// same names where the browser can't write to a folder). What happened shows on the menu item itself.
+let folderSaved = null;
+function renderFolderNote() {
+  folderSaved = V.settleFolder(folderSaved, broll.status); // once the list is ready, a save it stopped is over
+  const note = V.folderNote(folderSaved?.for === state.name ? folderSaved : null, broll.status);
+  $("#folderNote").textContent = note;
+  $("#folderNote").hidden = !note;
+  $("#folderLabel").textContent = "showDirectoryPicker" in window ? "Save to video folder" : "Save to video folder (.zip)";
+}
+async function saveToFolder() {
+  if (folderSaved?.saving) return; // one save at a time: a second click would race the first one's writes
+  const list = V.listState(broll.status);
+  if (list === "wait") { folderSaved = { for: state.name, error: true, wait: broll.status }; return renderFolderNote(); }
+  const prior = folderSaved, mine = (folderSaved = { for: state.name, saving: true });
+  let dir = null;
+  try {
+    if ("showDirectoryPicker" in window) {
+      renderFolderNote();
+      dir = await window.showDirectoryPicker({ id: "video-folder", mode: "readwrite" });
+    }
+  } catch (e) {
+    folderSaved = e?.name === "AbortError" ? prior : { for: mine.for, error: true }; // a cancel leaves the last note as it was
+    return renderFolderNote();
+  }
+  // Read after the picker closes: it is the script on screen now that is saved (an open "/" command is not part of it).
+  if (!state.doc) { folderSaved = prior; return renderFolderNote(); }
+  const name = state.name;
+  // A list that was still loading or blocked while the picker was open is not left out of the folder.
+  if (V.listState(broll.status) === "wait") { folderSaved = { for: name, error: true, wait: broll.status }; return renderFolderNote(); }
+  const linked = broll.status === "ok";
+  try {
+    const doc = slash.open ? D.withoutCommand(state.doc, slash) : state.doc;
+    const { files, receipt } = V.videoFolder({
+      doc, scriptText: saveText(), linked, sketches: broll.sketches, title: D.titleOf(doc) || baseName(),
+      shots: linked ? B.scriptOrder(doc, broll.shots) : [],
+    });
+    if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files)) };
+    else {
+      download(makeZip(files), `${baseName()}-video-folder.zip`, "application/zip");
+      folderSaved = { for: name, ...receipt, zip: true };
+    }
+  } catch { folderSaved = { for: name, error: true }; }
+  renderFolderNote();
 }
 
 async function openSample() {
@@ -3199,6 +3248,7 @@ function renderBroll() {
   const ok = broll.status === "ok";
   for (const b of $$('#exportMenu [data-export="broll"], #exportMenu [data-export="storyboard"]')) b.disabled = !ok;
   for (const n of $$('#exportMenu [data-note="broll"]')) n.hidden = ok;
+  renderFolderNote(); // a note about the list follows it: it clears once the list is ready
 }
 
 /* One sketch frame, as in the script and the storyboard. Pending agent sketches carry Keep / Undo. */

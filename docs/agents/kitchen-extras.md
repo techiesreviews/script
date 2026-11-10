@@ -10,9 +10,10 @@ file wins. The project's own rules are in `AGENTS.md`; the build steps are in `d
 - **Landing:** a change lands on `dev` through `scripts/agents/kit pr` (its own branch, a PR into
   `dev`, the review attached, merged when it passes), never a raw `git push`. `main` only takes
   `dev`, through `scripts/agents/kit pr --release --base main` (the kit refuses `--release` without
-  `--base main`). The repo has no GitHub CI workflow, so `kit pr` runs `checks.test` here and lands
-  after the review. `branches.ci` (`dev`) is only the branch `kit wait ci` watches when no PR is
-  named; with no workflow there is nothing to wait for.
+  `--base main`). GitHub runs `.github/workflows/checks.yml` (the same unit tests, Node 24, no
+  secrets, no deploy) on every pull request and on every push to `dev`; `kit pr` also runs
+  `checks.test` here and lands after the review and the green GitHub check. `branches.ci` (`dev`) is
+  the branch `kit wait ci` watches when no PR is named.
 - **Checks:** `checks.test` is `node --test tests/*.test.mjs`; run it through `kit specs` before
   every hand-over and before `kit review`. `checks.doctor` adds the Claude CLI and a `node --check`
   of every JavaScript file to `kit doctor`.

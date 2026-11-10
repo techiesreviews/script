@@ -1,0 +1,36 @@
+# Step X: Save to video folder
+
+Lex (2026-11-10, Orbit TOOLS-194, weekly flow step 7b): when a script is final, one action puts the script, the cue files, the B-roll data and its pictures in the video's folder under the names the video folders use (`youtube/workflow/project-files.md`), with a short receipt. Nothing may change or reformat script text; build only this.
+
+## What it does
+
+- Export menu, second item: **Save to video folder**. The browser's folder picker (`showDirectoryPicker`) opens; the files are written there. Where the browser has no folder picker the same files come as one zip, `<name>-video-folder.zip`.
+- Files: `script.md` (the script exactly as the editor saves it), `prompter.md` and `recording-notes.md` (the prompter export, the same text in both, as the workflow wants them identical), `b-roll.md` (the Export all list, with each picture written as a link to its file), `b-roll.json` (id, kind, what, over, how, check, picture path for every shot, in script order), `pictures/<shot id>.png|jpg|webp|svg`, `save-receipt.md` (date, words, shots, pictures).
+- Picture file names come from the shot id: letters, digits, dot, dash and underscore only, starting with a letter (`shot-` is put in front otherwise), never twice. Line drawings are written as standalone SVG with the storyboard's colours.
+- A linked B-roll list that is loading, blocked or unreadable (`listState` is "wait") saves nothing: the item says what it needs (`WAIT_NOTE`: "B-roll list still loading", "Allow the B-roll list first" or "B-roll list can't be read"). The note follows the list from then on: it changes with what the list needs and clears once the list is ready (`folderNote` reads the list's status, and `renderBroll` redraws it). One save runs at a time (a second click is ignored until the first ends).
+- Without a linked B-roll list there is no `b-roll.md`, `b-roll.json` or `pictures/`; the receipt says "no list linked".
+- A `prompter.md` or `recording-notes.md` already in the folder is kept as it is: the speaking cues written after the script is final must not be replaced by the plain prompter export (playbook: reopening keeps approved cues). Everything else is replaced. Nothing is ever deleted: a picture of a shot that was removed, or one whose format changed (`B1.png` and later `B1.svg`), stays in `pictures/` from an earlier save; `b-roll.json` and `b-roll.md` name the right files. A sketch that belongs to no shot is not saved.
+- The menu item shows the result in one line (`folderNote`); no toast, no explainer.
+
+## Where
+
+`public/video-folder.js` (pure: `videoFolder`, `writeFolder`, `folderNote`), `saveToFolder` in `public/app.js`, one item in `public/index.html`; `exportBroll` takes `paths` so a sketch can be a file link. Tests: `tests/video-folder.test.mjs` (names, B-roll data and pictures included, receipt, the zip names, writing into a folder, cue files kept, one cue file kept, nothing deleted when a picture's format changes, the note and how it follows the list). Each new test failed before the change (the module did not exist).
+
+## Browser check
+
+`scripts/smoke-video-folder.mjs` (1280, 390 and 320 px, real clicks; the folder picker is replaced by one returning a folder in the browser's private file system): the item is second in the menu, the files and pictures are written with the right names, `b-roll.md` links the picture files, the receipt and the item's note, hand-written cue files kept on a second save, no toast; a cancelled picker leaves the item and the last note alone, a refused one says "Could not save", and with no picker the item says "(.zip)" and a zip named `<name>-video-folder.zip` is downloaded; two quick clicks open the picker once; with the demo's B-roll list held back while it loads, the item says "B-roll list still loading" and no picker opens, and once the list is read the note is gone without another click and a save works. Evidence: `docs/agents/evidence/step-x-browser.txt`.
+
+## Done
+
+Feature list: updated (`docs/features.md`).
+
+### Follow-ups
+
+- Validation gaps (gap): R1-3 still open: The new unit test shows `settleFolder` keeps a "Saved …" result while the list is "loading". No browser step checks that the app shows the "Saved …" note while the list is read again. The app side is the `for === state.name` check together with the reread in `loadBroll`/`readBrollNow`, which sets "l…
+- Validation gaps (gap): Carried over from R1-3: add a browser step at the end of `runListNotReady` in scripts/smoke-video-folder.mjs, right after "then a save works". Steps: Run `paused.length = 0`. Open the demo again with `#emptySample` (this goes through the open path that calls `loadBroll()`, public/app.js:2369). The script name stays the same, and the Fetch pattern holds back the demo list again. Wait for `paused.length === 1`. Check that `#folderNote` still matches `/^Saved /` and is not hidden while the list is loading. Run `Fetch.continueRequest`, wait for `.shot-frame`, and check the "Saved …" note one more time. Add the new ok lines to docs/agents/evidence/step-x-browser.txt. If reopening the demo shows a confirm step or resets the note in some other way, use another path that reads the list again for the same script. The B-roll "allow" action at public/app.js:3546 is one option.
+- Validation gaps (gap, second look): `scripts/smoke-video-folder.mjs:206`: the browser check ends after a successful save. Add a step that reloads the same script’s B-roll list with its request paused. Check that “Saved …” stays visible during loading and after the request finishes. Record both checks in the browser evidence.
+- Standards (P3): ad4e218:docs/build/step-x-save-to-video-folder.md:29 — P3 style: the new "Follow-ups" section has three entries about the same missing browser check: a "Saved …" note should stay while the same script's list is read again. The first entry is cut off in the middle of a sentence ("which sets "l…"). The first two call it "R1-3", but in this review loop R1-3 is the "nothing is deleted" test, so a reader could think that one is still open. Fix: merge them into one complete entry, and drop the round id or name the round it came from.
+- Validation gaps (gap): tests/video-folder.test.mjs:267: the test checks that `b-roll.json` names the new `.svg`, but the spec says "`b-roll.json` and `b-roll.md` name the right files". Add a check that `files.get("b-roll.md")` links the `.svg` path and does not link the old `.png` path, for example `assert.ok(md.includes(svg) && !md.includes(png))`.
+- Validation gaps (gap, second look): `scripts/smoke-video-folder.mjs:206`: after saving, reload the same script’s B-roll list with its request paused. Check that “Saved …” stays visible during loading and after loading finishes. Record both checks in the browser evidence.
+- Validation gaps (gap, second look): `tests/video-folder.test.mjs:267`: the picture-format test checks the new SVG path only in JSON. Also check that the saved `b-roll.md` links the new `.svg` and no longer links the old `.png`.
+
