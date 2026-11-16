@@ -13,7 +13,7 @@ export { parseLink };
 // The room itself (together/room.js) loads on first use: the host's first Share to edit, or a guest's edit link. It
 // must speak this interface version; a tab from before a release that gets a newer room counts it as not loaded.
 export const ROOM_SEAM = 1;
-const ROOM_GONE = "Couldn't share. Reload the page.";
+const ROOM_GONE = "Couldn't share. Click to try again.";
 const TYPES = ["title", "heading", "note", "raw", "para"];
 const ATTRS = ["type", "sep", "prefix"];
 
@@ -392,7 +392,7 @@ export function createTogether(app, { loadRoom = importRoom } = {}) {
       if (starting?.role === "host") return makeLink(location.origin, starting);
       const name = app.me.name && app.me.name !== "You" ? app.me.name : "Host";
       shared = { asks: "", broll: "" };
-      const keys = startRoom({ role: "host", ...newRoom(), name }, () => share.fail(ROOM_GONE));
+      const keys = startRoom({ role: "host", ...newRoom(), name }, shareFailed);
       render();
       return makeLink(location.origin, keys);
     },
@@ -405,6 +405,13 @@ export function createTogether(app, { loadRoom = importRoom } = {}) {
       box.select();
     },
   });
+
+  // Sharing could not start: a box to copy the link by hand (opened while the part loaded) closes, as its link leads nowhere.
+  function shareFailed() {
+    const box = $("#shareLink");
+    if (box.value) { $("#shareMenu").hidePopover(); box.value = ""; }
+    share.fail(ROOM_GONE);
+  }
 
   // The room's part is fetched as the pointer or the focus reaches Share to edit, so the click seldom waits for it: the
   // room then starts about as soon after the copied link as it did when it loaded with the page.

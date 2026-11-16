@@ -523,3 +523,160 @@ FAIL timed out: the retried share
 FAIL 1280 px: a click on the failed share button loads the room again and shares
 FAIL 1280 px: the retry asked for together/room.js again (/folder-note.js, /together/link.js, /together/room.js, /export-pack.js)
 FAIL 1280 px: the button loses its failed look once sharing works ({"failed":false,"icon":"<path d=\"M16 5l3 3-3 3\"></path><path d=\"M19 8h-6a6 6 0 0 0-6 6v4\"></path>","iconShown":true,"color":"oklch(0.22 0 none)","warn":"oklch(0.52 0.17 37)"})
+
+## Release #68 second-look fixes, 2026-11-16 (wrangler dev port 8842, headless Chrome with a hovering mouse)
+
+### scripts/smoke-rare-parts.mjs on origin/dev 46f0cad (port 8841): 111 ok, 16 fail
+FAIL timed out: the box closing
+FAIL 1280 px: the part then fails: the box closes, its link is cleared and the button says so
+FAIL timed out: the share failure
+FAIL 1280 px: a room that can't load: the share button says so and offers a retry
+FAIL 1280 px: the failed share button's name (what a screen reader says) is the failure (Couldn't share. Reload the page.)
+FAIL 1280 px: hovering the failed share button keeps its warning background (oklch(0.704 0.1915 37.1 / 0.08) → oklch(0.22 0 none / 0.07))
+FAIL 1280 px: light: the note under Export all reads on the orange (rest 2.39:1, hover 2:1, pressed 2:1) ({"rest":2.39,"hover":2,"pressed":2})
+FAIL 1280 px: dark: the note under Export all reads on the orange (rest 1.23:1, hover 1.13:1, pressed 1.13:1) ({"rest":1.23,"hover":1.13,"pressed":1.13})
+FAIL timed out: the box closing
+FAIL 390 px: the part then fails: the box closes, its link is cleared and the button says so
+FAIL timed out: the share failure
+FAIL 390 px: a room that can't load: the share button says so and offers a retry
+FAIL 390 px: the failed share button's name (what a screen reader says) is the failure (Couldn't share. Reload the page.)
+FAIL 390 px: hovering the failed share button keeps its warning background (oklch(0.704 0.1915 37.1 / 0.08) → oklch(0.22 0 none / 0.07))
+FAIL 390 px: light: the note under Export all reads on the orange (rest 2.39:1, hover 2:1, pressed 2:1) ({"rest":2.39,"hover":2,"pressed":2})
+FAIL 390 px: dark: the note under Export all reads on the orange (rest 1.23:1, hover 1.13:1, pressed 1.13:1) ({"rest":1.23,"hover":1.13,"pressed":1.13})
+FAIL 16
+
+### scripts/smoke-rare-parts.mjs on this branch: 124 ok, 0 fail
+ok 1280 px: a new script with typing fetches no share room, zip maker or folder writer
+ok 1280 px: the small startup files (edit links, folder note) load with the page
+ok 1280 px: start and typing: no CSP violation or error
+ok 1280 px: opening the Export menu loads export-pack.js, video-folder.js and zip.js
+ok 1280 px: the Export menu fetches no share room
+ok 1280 px: Export all downloads one file
+ok 1280 px: it is the script's zip
+ok 1280 px: no note on Export all or Save to video folder
+ok 1280 px: Export menu and Export all: no CSP violation or error
+ok 1280 px: the pointer over Share to edit fetches together/room.js before any click
+ok 1280 px: Share to edit copies an edit link
+ok 1280 px: Share to edit loads together/room.js
+ok 1280 px: the room started is the one in the copied link
+ok 1280 px: the button says Link copied, with Stop sharing beside it
+ok 1280 px: a guest's edit link loads together/room.js while the Join form shows
+ok 1280 px: the guest fetches no export pack
+ok 1280 px: the guest joins and gets the host's script
+ok 1280 px: the host sees the guest
+ok 1280 px: guest: join: no CSP violation or error
+ok 1280 px: Share to edit: no CSP violation or error
+ok 1280 px: Stop sharing ends the room
+ok 1280 px: after a reload each part answers 304
+ok 1280 px: after a reload: no CSP violation or error
+ok 1280 px: with the room's part held, the link is still copied in the click
+ok 1280 px: sharing shows as on while the part is held, with no room yet
+ok 1280 px: while the room's part is held, Ctrl+Z undoes the person's typing
+ok 1280 px: sharing stopped before the part came: no room starts
+ok 1280 px: after that, the Undo steps from before the share are still there
+ok 1280 px: room held, sharing stopped: no CSP violation or error
+ok 1280 px: copying blocked while the room's part is held: the box to copy the link by hand shows
+ok 1280 px: the part then fails: the box closes, its link is cleared and the button says so
+ok 1280 px: copy blocked, part failed: no CSP violation or error
+ok 1280 px: the export pack's download is held
+ok 1280 px: Export all waits for the pack
+ok 1280 px: once the pack is here, one zip downloads
+ok 1280 px: it holds the script on screen at the click, not the one opened since
+ok 1280 px: Export all while the pack loads: no CSP violation or error
+ok 1280 px: a pack that fails after the folder is picked: Save to video folder says to reload
+ok 1280 px: nothing is written to the picked folder
+ok 1280 px: pack that fails after the picker: no CSP violation or error
+ok 1280 px: a folder saved while the pack loads holds the script as it was at the click, in every file
+ok 1280 px: folder saved while the pack loads: no CSP violation or error
+ok 1280 px: a room that can't load: the share button says so and offers a retry
+ok 1280 px: sharing is off again
+ok 1280 px: the failed share button is marked data-failed
+ok 1280 px: the failed share button shows a warning icon in place of the share icon
+ok 1280 px: the failed share button takes the warning colour
+ok 1280 px: the failed share button's name (what a screen reader says) is the failure
+ok 1280 px: hovering the failed share button keeps its warning background
+ok 1280 px: an export pack that can't load: Export all and Save to video folder say to reload
+ok 1280 px: light: the note under Export all reads on the orange (rest 6.53:1, hover 5.46:1, pressed 5.46:1)
+ok 1280 px: dark: the note under Export all reads on the orange (rest 6.53:1, hover 7.09:1, pressed 7.09:1)
+ok 1280 px: Export all then downloads nothing
+ok 1280 px: a click on the failed share button loads the room again and shares
+ok 1280 px: the retry asked for together/room.js again
+ok 1280 px: the button loses its failed look once sharing works
+ok 1280 px: after Link copied the button says Copy edit link
+ok 1280 px: sharing then has the plain look with the link icon, not the warning look
+ok 1280 px: the retried share: the room started is the one in the copied link
+ok 1280 px: parts that can't load: no CSP violation or error
+ok 1280 px: a guest whose room can't load is told to reload
+ok 1280 px: guest: room that can't load: no CSP violation or error
+ok 390 px: a new script with typing fetches no share room, zip maker or folder writer
+ok 390 px: the small startup files (edit links, folder note) load with the page
+ok 390 px: start and typing: no CSP violation or error
+ok 390 px: opening the Export menu loads export-pack.js, video-folder.js and zip.js
+ok 390 px: the Export menu fetches no share room
+ok 390 px: Export all downloads one file
+ok 390 px: it is the script's zip
+ok 390 px: no note on Export all or Save to video folder
+ok 390 px: Export menu and Export all: no CSP violation or error
+ok 390 px: Share to edit copies an edit link
+ok 390 px: Share to edit loads together/room.js
+ok 390 px: the room started is the one in the copied link
+ok 390 px: the button says Link copied, with Stop sharing beside it
+ok 390 px: a guest's edit link loads together/room.js while the Join form shows
+ok 390 px: the guest fetches no export pack
+ok 390 px: the guest joins and gets the host's script
+ok 390 px: the host sees the guest
+ok 390 px: guest: join: no CSP violation or error
+ok 390 px: Share to edit: no CSP violation or error
+ok 390 px: Stop sharing ends the room
+ok 390 px: after a reload each part answers 304
+ok 390 px: after a reload: no CSP violation or error
+ok 390 px: with the room's part held, the link is still copied in the click
+ok 390 px: sharing shows as on while the part is held, with no room yet
+ok 390 px: while the room's part is held, Ctrl+Z undoes the person's typing
+ok 390 px: sharing stopped before the part came: no room starts
+ok 390 px: after that, the Undo steps from before the share are still there
+ok 390 px: room held, sharing stopped: no CSP violation or error
+ok 390 px: copying blocked while the room's part is held: the box to copy the link by hand shows
+ok 390 px: the part then fails: the box closes, its link is cleared and the button says so
+ok 390 px: copy blocked, part failed: no CSP violation or error
+ok 390 px: the export pack's download is held
+ok 390 px: Export all waits for the pack
+ok 390 px: once the pack is here, one zip downloads
+ok 390 px: it holds the script on screen at the click, not the one opened since
+ok 390 px: Export all while the pack loads: no CSP violation or error
+ok 390 px: a pack that fails after the folder is picked: Save to video folder says to reload
+ok 390 px: nothing is written to the picked folder
+ok 390 px: pack that fails after the picker: no CSP violation or error
+ok 390 px: a folder saved while the pack loads holds the script as it was at the click, in every file
+ok 390 px: folder saved while the pack loads: no CSP violation or error
+ok 390 px: a room that can't load: the share button says so and offers a retry
+ok 390 px: sharing is off again
+ok 390 px: the failed share button is marked data-failed
+ok 390 px: the failed share button shows a warning icon in place of the share icon
+ok 390 px: the failed share button takes the warning colour
+ok 390 px: the failed share button's name (what a screen reader says) is the failure
+ok 390 px: hovering the failed share button keeps its warning background
+ok 390 px: an export pack that can't load: Export all and Save to video folder say to reload
+ok 390 px: light: the note under Export all reads on the orange (rest 6.53:1, hover 5.46:1, pressed 5.46:1)
+ok 390 px: dark: the note under Export all reads on the orange (rest 6.53:1, hover 7.09:1, pressed 7.09:1)
+ok 390 px: Export all then downloads nothing
+ok 390 px: a click on the failed share button loads the room again and shares
+ok 390 px: the retry asked for together/room.js again
+ok 390 px: the button loses its failed look once sharing works
+ok 390 px: after Link copied the button says Copy edit link
+ok 390 px: sharing then has the plain look with the link icon, not the warning look
+ok 390 px: the retried share: the room started is the one in the copied link
+ok 390 px: parts that can't load: no CSP violation or error
+ok 390 px: a guest whose room can't load is told to reload
+ok 390 px: guest: room that can't load: no CSP violation or error
+ok all
+
+### scripts/smoke-csp.mjs on this branch: 51 ok
+ok 390 px: a new script is saved with what was typed
+ok 390 px: new script and save: no CSP violation or error
+ok all
+
+### scripts/smoke-room.mjs on this branch: 27 ok
+ok stop sharing ends the room for guests
+ok an ended room refuses new joins
+RESULT: ok smoke-room
