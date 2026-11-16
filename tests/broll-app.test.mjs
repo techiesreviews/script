@@ -82,9 +82,9 @@ function stage({ guest = false } = {}) {
   const note = (name) => (...args) => { calls.push(name); return args[0]; };
   const host = {
     state, ui: { view: "script", scriptY: 0 }, scriptEl: stubEl(), $, $$: () => [], h: stubEl, icon: () => "", esc: (s) => String(s),
-    store: { get: () => null, set() {}, del() {} }, me: { id: "me", name: "You" }, reduced: { matches: false },
+    me: { id: "me", name: "You" }, reduced: { matches: false },
     FILE_TYPES: [], SAMPLE: { name: "demo-good-script.md" }, SAMPLE_BROLL: { url: "samples/demo-good-script-broll.md", name: "demo-good-script-broll.md" },
-    together: () => null, isOpen: (a) => D.OPEN_STATUSES.includes(a.status), isBrollAnswer: (a) => a.status === "answered" && a.answer?.kind === "broll",
+    isOpen: (a) => D.OPEN_STATUSES.includes(a.status), isBrollAnswer: (a) => a.status === "answered" && a.answer?.kind === "broll",
     byId: (id) => D.blockById(state.doc, id), wrapOf: () => null, baseName: () => "demo-good-script",
     emit: note("emit"), changed: note("changed"), closeAsk: note("closeAsk"), validBy: (by) => by, offerAsks: note("offerAsks"),
     renderBlock: note("renderBlock"), getCaret: () => null, renderTocDots: note("renderTocDots"), renderAgent: note("renderAgent"),
@@ -98,6 +98,16 @@ function stage({ guest = false } = {}) {
   };
   return { host, state, calls };
 }
+// The names createBroll takes from its host, and the keys of the host app.js builds (brollHost).
+const names = (list) => list.replace(/\/\/[^\n]*/g, "").split(",").map((x) => x.trim().split(":")[0].trim()).filter(Boolean).sort();
+const hostNames = () => names(/createBroll\(host\) \{[\s\S]*?const \{([\s\S]*?)\} = host;/.exec(read("broll-app.js"))[1]);
+const appHostKeys = () => names(/const brollHost = \(\) => \(\{([\s\S]*?)\}\);/.exec(read("app.js"))[1].replace(/\([^()]*\)\s*=>\s*\{[^}]*\}/g, ""));
+
+test("createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too", () => {
+  assert.deepEqual(appHostKeys(), hostNames());
+  assert.deepEqual(Object.keys(stage().host).sort(), hostNames());
+});
+
 const API = ["adoptRoom", "agentTool", "answerBroll", "canAdd", "cardOpen", "cleanSketches", "close", "closeCard", "dropGone",
   "endDrag", "escape", "exports", "flags", "folder", "link", "load", "openCard", "pictureBytes", "pictureHead", "positionCard",
   "refreshSuggestions", "rematch", "render", "renderMarks", "renderView", "requestPlan", "requestSketches", "roomShare",

@@ -3,10 +3,14 @@
 // clicks over CDP at 1280 and 390 px: a new script without B-roll fetches none of it; opening the Storyboard, an agent's
 // B-roll call or the demo with its linked list loads it, and every B-roll flow then works as before (frames, the shot
 // card, add a shot from the selection bar, the storyboard). After a reload the module comes back as "not changed" (304).
-// The page must see no CSP violation and no error.
+// B-roll from the "/" menu and B-roll asks in a reopened script's draft load it too. A module that can't load (the
+// request refused) leaves a note on the Storyboard, an error for the agent, and the next script without B-roll saves
+// to a video folder as before. The page must see no CSP violation and no error.
 // Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; it applies _headers) and a headless
 // Chrome, then: node scripts/smoke-broll-lazy.mjs <base URL> <Chrome debugging port>
 // Its traffic goes to the base URL and the debugging port only.
+import { setMaxListeners } from "node:events";
+
 const BASE = (process.argv[2] || "http://127.0.0.1:8787").replace(/\/$/, "");
 const PORT = process.argv[3] || "9222";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -20,6 +24,7 @@ const BROLL_FILES = /\/broll(?:-app)?\.js(?:\?|$)/;
 
 const version = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
 const cdp = new WebSocket(version.webSocketDebuggerUrl);
+setMaxListeners(64, cdp); // one listener per page this check opens
 await new Promise((resolve, reject) => { cdp.addEventListener("open", resolve); cdp.addEventListener("error", reject); });
 let nextId = 0;
 const waiting = new Map();
@@ -37,7 +42,7 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
   cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
 });
 
-async function openPage(width, height) {
+async function openPage(width, height, { failBroll = false } = {}) {
   const { browserContextId } = await send("Target.createBrowserContext");
   const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -67,12 +72,15 @@ async function openPage(width, height) {
     },
     // Every B-roll file the page asked for, with the answer's status.
     broll: [],
+    asked: [],
     close: () => send("Target.disposeBrowserContext", { browserContextId }),
   };
   await page.send("Page.enable");
   await page.send("Runtime.enable");
   await page.send("Log.enable");
   await page.send("Network.enable");
+  // The B-roll module's request refused, as a network blip or a server that can't send it would.
+  if (failBroll) await page.send("Fetch.enable", { patterns: [{ urlPattern: "*broll-app.js*" }] });
   await page.send("Page.addScriptToEvaluateOnNewDocument", { source: COLLECT });
   page.log = [];
   cdp.addEventListener("message", (e) => {
@@ -82,12 +90,17 @@ async function openPage(width, height) {
     if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") page.log.push(m.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
     if (m.method === "Runtime.exceptionThrown") page.log.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
     if (m.method === "Network.responseReceived" && BROLL_FILES.test(m.params.response.url)) page.broll.push({ url: new URL(m.params.response.url).pathname, status: m.params.response.status });
+    if (m.method === "Network.requestWillBeSent" && BROLL_FILES.test(m.params.request.url)) page.asked.push(new URL(m.params.request.url).pathname);
+    if (m.method === "Page.javascriptDialogOpening") page.send("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+    if (m.method === "Fetch.requestPaused") page.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "Failed" }).catch(() => {});
   });
   await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 500 });
   return page;
 }
 async function clean(page, tag, what) {
   const seen = [...(await page.eval(`window.__csp.splice(0)`).catch(() => [])), ...page.log.splice(0)];
+  // The module's request refused on purpose (failBroll) is the check's doing, not the page's.
+  if (page.failBroll) seen.splice(0, seen.length, ...seen.filter((t) => !/broll-app\.js|ERR_FAILED/.test(t)));
   check(seen.length === 0, `${tag} ${what}: no CSP violation or error`, [...new Set(seen)].join(" | ").slice(0, 400));
 }
 const loaded = (page) => new Set(page.broll.map((r) => r.url));
@@ -121,7 +134,7 @@ async function selectDeadline(page) {
 async function run(width, height) {
   const tag = `${width} px:`;
 
-  // A new script without B-roll: none of the B-roll part is fetched, also with the selection bar open.
+  // A new script without B-roll: none of the B-roll part is fetched while it opens and the person types.
   const fresh = await openPage(width, height);
   await startScreen(fresh);
   await fresh.click("#emptyNew");
@@ -199,8 +212,87 @@ async function run(width, height) {
   await page.close();
 }
 
+// Opens a new script in the browser and types a title and one spoken line.
+async function newScript(page, title) {
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "the new script");
+  await page.send("Input.insertText", { text: title });
+  await page.key("Enter", "Enter", 13, "\r");
+  await page.send("Input.insertText", { text: "Hello there my friend." });
+  await sleep(300);
+}
+
+async function runEdges(width, height) {
+  const tag = `${width} px:`;
+
+  // "/" on a spoken line of a script without a list: B-roll in the menu loads the module and opens the Add card.
+  const slashPage = await openPage(width, height);
+  await startScreen(slashPage);
+  await newScript(slashPage, "Slash check");
+  await slashPage.send("Input.insertText", { text: " /b" });
+  check(await slashPage.until(`!document.querySelector("#slashMenu").hidden && !!document.querySelector('#slashMenu [data-part="broll"]')`, "B-roll in the / menu"), `${tag} the / menu offers B-roll on a spoken line`);
+  check(slashPage.asked.length === 0, `${tag} before it is picked, no B-roll code is fetched`, slashPage.asked.join(", "));
+  await slashPage.click('#slashMenu [data-part="broll"]');
+  check(await slashPage.until(`!document.querySelector("#shotCard").hidden && document.activeElement.id === "scWhat"`, "the Add B-roll card"), `${tag} picking B-roll loads the module and opens the Add card`);
+  check(slashPage.asked.includes("/broll-app.js"), `${tag} the / menu's B-roll loaded broll-app.js`);
+  await clean(slashPage, tag, "B-roll from the / menu");
+  await slashPage.close();
+
+  // A reopened script whose draft holds B-roll suggestions loads the module and shows them beside the line.
+  const draftPage = await openPage(width, height);
+  await startScreen(draftPage);
+  await newScript(draftPage, "Draft check");
+  const askId = await draftPage.eval(`window.__scriptEditor.planAsk()`);
+  const answered = await draftPage.eval(`window.__scriptEditor.answerBroll(${JSON.stringify(askId)}, { changes: [{ op: "add", kind: "broll", what: "Draft shot", how: "Stock clip", quote: "Hello there my friend." }] })`);
+  check(answered === true && await draftPage.until(`!!document.querySelector(".shot-frame[data-suggested]")`, "the suggestion"), `${tag} a B-roll suggestion shows beside the line`, String(answered));
+  // Saved (no "leave the page?" question), and the draft with the asks written (400 ms after a change).
+  await draftPage.until(`document.querySelector("#saveState").dataset.state === ""`, "saved");
+  await sleep(1500);
+  draftPage.asked.length = 0;
+  await draftPage.send("Page.reload");
+  await sleep(300);
+  await draftPage.until(`document.readyState === "complete" && !document.querySelector("#emptyReopen").hidden`, "Reopen on the start screen");
+  check(draftPage.asked.length === 0, `${tag} the start screen fetches no B-roll code`, draftPage.asked.join(", "));
+  await draftPage.click("#emptyReopen");
+  check(await draftPage.until(`!!document.querySelector(".shot-frame[data-suggested]")`, "the suggestion again"), `${tag} reopened, its draft's suggestion shows again`);
+  check(draftPage.asked.includes("/broll-app.js"), `${tag} the draft's B-roll asks loaded broll-app.js`);
+  await clean(draftPage, tag, "draft with B-roll asks");
+  await draftPage.close();
+
+  // The module can't load: the Storyboard says so, the agent is told, and a script without B-roll still saves.
+  const { token } = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
+  const failPage = await openPage(width, height, { failBroll: true });
+  failPage.failBroll = true;
+  await startScreen(failPage, token);
+  await newScript(failPage, "Fail check");
+  await failPage.click('#viewSwitch [data-view="board"]');
+  check(await failPage.until(`/Couldn't load the storyboard/.test(document.querySelector("#board").textContent)`, "the note on the storyboard"), `${tag} a module that can't load: the Storyboard says to reload`);
+  let linked = false;
+  for (let i = 0; i < 40 && !linked; i++) { linked = !(await mcp(token, "get_script", {})).error; if (!linked) await sleep(150); }
+  const gone = await mcp(token, "sketch_shot", { shotId: "B1", svg: '<svg><rect class="s" x="1" y="1" width="9" height="9"/></svg>' });
+  check(linked && gone.error && /could not load its B-roll part/.test(gone.text), `${tag} the agent's B-roll call is told to ask for a reload`, gone.text.slice(0, 200));
+  await failPage.click('#viewSwitch [data-view="script"]');
+  await failPage.until(`document.querySelector("#board").hidden`, "back to the script");
+  await failPage.click("#docSwitch");
+  await failPage.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await failPage.click("#menuNew");
+  await failPage.until(`/^Untitled/.test(document.querySelector("#fileName").textContent) || /untitled/i.test(document.querySelector("#fileName").textContent)`, "another new script");
+  await failPage.until(`!document.querySelector("#scriptMenu").matches(":popover-open") && !document.querySelector("#exportBtn").hidden && document.querySelector("#saveState").dataset.state === ""`, "the new script settled");
+  await sleep(500);
+  await failPage.eval(`window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("video", { create: true }); true`);
+  await failPage.click("#exportBtn");
+  await failPage.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu");
+  await failPage.click('[data-export="folder"]');
+  const receipt = `(async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("video"); return await (await (await d.getFileHandle("save-receipt.md")).getFile()).text(); } catch { return ""; } })()`;
+  check(await failPage.until(`${receipt}.then((t) => t.includes("B-roll: no list linked"))`, "the folder's receipt"), `${tag} after that, a script without B-roll saves to a video folder (no list linked)`, `${await failPage.eval(receipt)} | note: ${await failPage.eval(`document.querySelector("#folderNote").textContent + " / menu open: " + document.querySelector("#exportMenu").matches(":popover-open") + " / file: " + document.querySelector("#fileName").textContent`)}`);
+  await clean(failPage, tag, "module that can't load");
+  await failPage.close();
+}
+
 await run(1280, 800);
 await run(390, 844);
+await runEdges(1280, 800);
+await runEdges(390, 844);
 cdp.close();
 console.log(failures ? `FAIL ${failures}` : "ok all");
 process.exit(failures ? 1 : 0);
