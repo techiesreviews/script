@@ -71,7 +71,9 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
       found.add(handle.name);
       if (names().includes(handle.name)) continue; // read live: another listing may have freed the name for a new script
       let at = 0;
-      try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
+      try { at = (await handle.getFile()).lastModified; } catch (e) {
+        if (e?.name === "NotFoundError") continue; // deleted meanwhile (a copy another cleanup took away)
+      } // otherwise listed without a time
       out.push({ handle, name: handle.name, at, browser: true });
     }
     await listed(left, found);

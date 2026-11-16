@@ -69,3 +69,5 @@ ok copy stays: the new script stays in the browser
 ok copy stays: the file on the computer holds the moved script
 ok copy deleted later: no page error or CSP violation
 scripts/smoke-relay.mjs: RESULT: ok smoke (body cap 2,566,336 bytes)
+
+## After the second release review fix (a copy deleted mid-listing is skipped): smoke-saving 81 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, smoke-csp 51 ok, 0 FAIL
