@@ -227,6 +227,13 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .pdot--voice { background: transparent; border: 1.5px dashed var(--accent); }
 .pdot--ask { background: var(--accent); }
 .pdot--person { background: var(--c); }
+.pdot--person[data-c="agent"] { --c: var(--agent); }
+.pdot--person[data-c="1"] { --c: var(--rc-1); }
+.pdot--person[data-c="2"] { --c: var(--rc-2); }
+.pdot--person[data-c="3"] { --c: var(--rc-3); }
+.pdot--person[data-c="4"] { --c: var(--rc-4); }
+.pdot--person[data-c="5"] { --c: var(--rc-5); }
+.pdot--person[data-c="6"] { --c: var(--rc-6); }
 @media (hover: hover) and (pointer: fine) { .toc a:hover { background: var(--hover); color: var(--text); } }
 /* The left column: the section list. It stays in view and scrolls on its own. */
 @container app (width >= 52rem) {

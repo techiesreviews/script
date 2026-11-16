@@ -7,7 +7,7 @@ import * as C from "./changes.js";
 import { agentBrand } from "./agent-brand.js";
 import { RoomClient, newRoom, parseLink } from "./together/room.js";
 import { applyOp, movePoint } from "./together/ops.js";
-import { createCarets, colourVar } from "./together/carets.js";
+import { createCarets, colourVar, colourKey } from "./together/carets.js";
 import { createShareButton } from "./together/share-button.js";
 
 export { parseLink };
@@ -458,7 +458,7 @@ export function createTogether(app) {
     /** Coloured dots for the people (and the agent) whose caret is in these blocks (the section list). */
     dots(ids) {
       const list = room ? caretList() : [];
-      return list.filter((c) => ids.has(c.blockId)).map((c) => `<span class="pdot pdot--person" style="--c: ${colourVar(c)}" title="${String(c.name).replace(/[&<>"']/g, "")}"></span>`).join("");
+      return list.filter((c) => ids.has(c.blockId)).map((c) => `<span class="pdot pdot--person" data-c="${colourKey(c)}" title="${String(c.name).replace(/[&<>"']/g, "")}"></span>`).join("");
     },
     /** Show the share button only to the host's side, with a script open. */
     renderShare(open, guest) { $("#share").hidden = !open || guest; },

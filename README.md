@@ -42,7 +42,7 @@ npx wrangler@4 dev               # editor, /mcp and the relay at http://localhos
 node --test tests/*.test.mjs     # runs the tests
 ```
 
-With the local server running, `node scripts/smoke-relay.mjs` checks the relay and MCP end to end, and `node scripts/smoke-room.mjs` checks Share to edit with one host and two guests. To connect an agent to your local copy, use the prompt from **Wait for MCP**: it already points at `http://localhost:8787/mcp`.
+With the local server running, `node scripts/smoke-relay.mjs` checks the relay and MCP end to end, and `node scripts/smoke-room.mjs` checks Share to edit with one host and two guests. With a headless Chrome on a debugging port, `node scripts/smoke-csp.mjs <base URL> <port>` runs the main flows and fails on any Content-Security-Policy violation. To connect an agent to your local copy, use the prompt from **Wait for MCP**: it already points at `http://localhost:8787/mcp`.
 
 ## Deploy your own copy
 
