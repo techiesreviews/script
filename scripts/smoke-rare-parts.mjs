@@ -7,11 +7,15 @@
 // sharing stopped then starts no room and keeps the Undo steps from before. A part that
 // can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
 // a guest's Join; the failed share button is marked data-failed with a warning icon in the warning colour, its
-// accessible name says why, and a click on it once the network is back loads the room and shares. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
+// accessible name says why ("Couldn't share. Click to try again."), hovering it keeps its warning background, and a
+// click on it once the network is back loads the room and shares; with copying blocked while the room's part is held,
+// the box to copy the link by hand shows, and closes with its link cleared when the part then fails; the note under
+// Export all reads at 4.5:1 on its orange in light and dark, at rest, hovered and pressed. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
 // that fails after the video folder is picked writes nothing and says so; a folder saved while the pack loads holds the
 // script as it was at the click. No CSP violation and no page error.
 // Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; it applies _headers and runs the
-// rooms) and a headless Chrome, then: node scripts/smoke-rare-parts.mjs <base URL> <Chrome debugging port>
+// rooms) and a headless Chrome (with `--blink-settings=primaryHoverType=2,primaryPointerType=4,availableHoverTypes=2,
+// availablePointerTypes=4` it has a mouse that hovers, as a desktop does; without them the hover checks are left out), then: node scripts/smoke-rare-parts.mjs <base URL> <Chrome debugging port>
 import { setMaxListeners } from "node:events";
 
 const BASE = (process.argv[2] || "http://127.0.0.1:8787").replace(/\/$/, "");
@@ -157,6 +161,17 @@ async function openExport(page) {
   return page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu");
 }
 
+// WCAG contrast of an element's text on another's background, from their computed colours (a canvas turns any CSS
+// colour, oklch and color-mix included, into sRGB).
+const CONTRAST = (text, bg) => `(() => {
+  const c = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  const rgb = (col) => { c.clearRect(0, 0, 1, 1); c.fillStyle = "#000"; c.fillStyle = col; c.fillRect(0, 0, 1, 1); return [...c.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+  const lum = (v) => { const [r, g, b] = v.map((x) => { x /= 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const a = lum(rgb(getComputedStyle(document.querySelector(${JSON.stringify(text)})).color)), b = lum(rgb(getComputedStyle(document.querySelector(${JSON.stringify(bg)})).backgroundColor));
+  return Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100;
+})()`;
+const centre = (page, selector) => page.eval(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+
 async function run(width, height) {
   const tag = `${width} px:`;
 
@@ -261,6 +276,22 @@ async function run(width, height) {
   await clean(held, tag, "room held, sharing stopped");
   await held.close();
 
+  // Copying blocked while the room's part is on its way: the box to copy the link by hand shows; when the part then
+  // fails, the box closes and its link is cleared, as it leads to no room.
+  const blocked = await openPage(width, height, { hold: ["*together/room.js*"] });
+  blocked.failing = true;
+  await startScreen(blocked);
+  await newScript(blocked, "Blocked copy");
+  await blocked.eval(STANDINS);
+  await blocked.eval(`Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new DOMException("blocked", "NotAllowedError"); } } }); true`);
+  await blocked.click("#shareBtn");
+  check(await blocked.until(`document.querySelector("#shareMenu").matches(":popover-open") && document.querySelector("#shareLink").value.includes("#room=")`, "the copy-by-hand box"), `${tag} copying blocked while the room's part is held: the box to copy the link by hand shows`);
+  for (let i = 0; i < 50 && !blocked.held.length; i++) await sleep(100);
+  await blocked.refuse();
+  check(await blocked.until(`!document.querySelector("#shareMenu").matches(":popover-open") && document.querySelector("#shareLink").value === "" && document.querySelector("#shareLabel").textContent === "Couldn't share. Click to try again."`, "the box closing"), `${tag} the part then fails: the box closes, its link is cleared and the button says so`);
+  await clean(blocked, tag, "copy blocked, part failed");
+  await blocked.close();
+
   // Export all clicked while the pack is on its way, then another script opened: the zip is the script of the click.
   const waitPack = await openPage(width, height, { hold: ["*export-pack.js*"] });
   await startScreen(waitPack);
@@ -339,16 +370,42 @@ async function run(width, height) {
   await failing.eval(STANDINS);
   const idle = await failing.eval(LOOK);
   await failing.click("#shareBtn");
-  check(await failing.until(`document.querySelector("#shareLabel").textContent === "Couldn't share. Reload the page." && document.querySelector("#shareBtn").title === "Couldn't share. Reload the page."`, "the share failure"), `${tag} a room that can't load: the share button says to reload`);
+  check(await failing.until(`document.querySelector("#shareLabel").textContent === "Couldn't share. Click to try again." && document.querySelector("#shareBtn").title === "Couldn't share. Click to try again."`, "the share failure"), `${tag} a room that can't load: the share button says so and offers a retry`);
   check(await failing.eval(`document.querySelector("#stopShare").hidden && window.__scriptEditor.room() === null`), `${tag} sharing is off again`);
   // The failure shows on the button itself, at every width: its own look and icon, and its name says what happened.
   const broken = await failing.eval(LOOK);
   check(broken.failed && !idle.failed, `${tag} the failed share button is marked data-failed`, JSON.stringify(broken));
   check(broken.icon !== idle.icon && broken.iconShown, `${tag} the failed share button shows a warning icon in place of the share icon`, JSON.stringify(broken));
   check(broken.color !== idle.color && broken.color === broken.warn, `${tag} the failed share button takes the warning colour`, `${idle.color} → ${broken.color}, warning ${broken.warn}`);
-  check(await axName(failing, "#shareBtn") === "Couldn't share. Reload the page.", `${tag} the failed share button's name (what a screen reader says) is the failure`, await axName(failing, "#shareBtn"));
+  check(await axName(failing, "#shareBtn") === "Couldn't share. Click to try again.", `${tag} the failed share button's name (what a screen reader says) is the failure`, await axName(failing, "#shareBtn"));
+  // Hovering the failed button keeps its warning background (where the screen has a pointer that hovers).
+  if (await failing.eval(`matchMedia("(hover: hover) and (pointer: fine)").matches`)) {
+    const bg = () => failing.eval(`getComputedStyle(document.querySelector("#shareBtn")).backgroundColor`);
+    await failing.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: height - 1 });
+    const away = await bg();
+    await failing.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...(await centre(failing, "#shareBtn")) });
+    const over = await bg();
+    check(over === away && await failing.eval(`document.querySelector("#shareBtn").matches(":hover")`), `${tag} hovering the failed share button keeps its warning background`, `${away} → ${over}`);
+  }
   await openExport(failing);
   check(await failing.until(`document.querySelector("#zipNote").textContent === "Couldn't load. Reload the page." && !document.querySelector("#zipNote").hidden && document.querySelector("#folderNote").textContent === "Couldn't load. Reload the page."`, "the export notes"), `${tag} an export pack that can't load: Export all and Save to video folder say to reload`);
+  // The note under Export all reads on its orange in both themes, at rest, hovered and pressed (4.5:1 for small text).
+  const zipAll = await centre(failing, '[data-export="all"]');
+  const hovers = await failing.eval(`matchMedia("(hover: hover) and (pointer: fine)").matches`);
+  for (const mode of ["light", "dark"]) {
+    await failing.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: mode }] });
+    await failing.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: height - 1 });
+    const seen = { rest: await failing.eval(CONTRAST("#zipNote", '[data-export="all"]')) };
+    await failing.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...zipAll });
+    if (hovers) seen.hover = await failing.eval(CONTRAST("#zipNote", '[data-export="all"]'));
+    await failing.send("Input.dispatchMouseEvent", { type: "mousePressed", ...zipAll, button: "left", clickCount: 1 });
+    seen.pressed = await failing.eval(CONTRAST("#zipNote", '[data-export="all"]'));
+    await failing.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: height - 1, buttons: 1 });
+    await failing.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 1, y: height - 1, button: "left", clickCount: 1 });
+    check(Object.values(seen).every((r) => r >= 4.5), `${tag} ${mode}: the note under Export all reads on the orange (${Object.entries(seen).map(([k, v]) => `${k} ${v}:1`).join(", ")})`, JSON.stringify(seen));
+    if (!(await failing.eval(`document.querySelector("#exportMenu").matches(":popover-open")`))) await openExport(failing);
+  }
+  await failing.send("Emulation.setEmulatedMedia", { features: [] });
   await failing.click('[data-export="all"]');
   await sleep(400);
   check(await failing.eval(`window.__downloads.length === 0`), `${tag} Export all then downloads nothing`);

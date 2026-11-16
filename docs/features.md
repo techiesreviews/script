@@ -41,4 +41,4 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 ## Working together
 
 - Share to edit, other people's carets and Undo on name tags (step D, `docs/together.md`); guests' asks, the agent's caret, B-roll and `/` parts for guests (step D2); a guest's selection stays when the host's ask arrives on the same line (step W).
-- When sharing can't start (its part didn't load), the Share to edit button itself shows it: a warning icon in the warning colour, and its name and tooltip say "Couldn't share. Reload the page."; a click on it tries again (step AB, TOOLS-311, 2026-11-16).
+- When sharing can't start (its part didn't load), the Share to edit button itself shows it: a warning icon in the warning colour, and its name and tooltip say "Couldn't share. Click to try again."; a click on it tries again; hovering it keeps the warning look. A box to copy the link by hand (shown when copying is blocked) closes, with its link cleared, if the part then fails (step AB, TOOLS-311, 2026-11-16).

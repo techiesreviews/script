@@ -203,8 +203,8 @@ test("share room: a part that can't load ends sharing and the button says so; a 
   assert.equal(t.sharing, false);
   assert.equal(held.made.length, 0);
   assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "no room started: the app's Undo stays");
-  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
-  assert.equal(p.$("#shareBtn").title, "Couldn't share. Reload the page.");
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Click to try again.");
+  assert.equal(p.$("#shareBtn").title, "Couldn't share. Click to try again.");
   await p.$("#shareBtn").fire("click");
   assert.equal(held.asked, 2, "a click on the failed button asks for the part again");
   assert.deepEqual(held.retries, [0, 1], "the retry asks under a new address");
@@ -254,7 +254,7 @@ test("share room: a room part that speaks another seam version counts as not loa
   assert.equal(held.made.length, 0);
   assert.equal(t.sharing, false);
   assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "no room started: the app's Undo stays");
-  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Click to try again.");
 
   const g = heldRoom();
   const q = page({});
@@ -276,10 +276,10 @@ test("share button: a copy that lands after sharing failed says nothing was copi
     copy: () => new Promise((res) => { land = res; }), timers: { setTimeout: () => 0, clearTimeout() {} },
   });
   const clicked = button.fire("click");
-  share.fail("Couldn't share. Reload the page.");
+  share.fail("Couldn't share. Click to try again.");
   land();
   await clicked;
-  assert.equal(label.textContent, "Couldn't share. Reload the page.");
+  assert.equal(label.textContent, "Couldn't share. Click to try again.");
   assert.ok(!button.attrs.has("data-done"), "no Link copied");
   assert.equal(fallbacks, 0);
   assert.equal(stop.hidden, true);
@@ -294,10 +294,10 @@ test("share button: a failed share shows a warning icon and data-failed on the b
     share: () => "https://script.test/#room=x&k=y", end() {}, copy: async () => {}, timers: { setTimeout: () => 0, clearTimeout() {} },
   });
   assert.ok(!button.attrs.has("data-failed"));
-  share.fail("Couldn't share. Reload the page.");
+  share.fail("Couldn't share. Click to try again.");
   assert.ok(button.attrs.has("data-failed"), "the button is marked failed");
   assert.equal(iconSlot.innerHTML, "w", "the warning icon replaces the share icon");
-  assert.equal(button.title, "Couldn't share. Reload the page.");
+  assert.equal(button.title, "Couldn't share. Click to try again.");
   await button.fire("click");
   assert.ok(!button.attrs.has("data-failed"), "sharing again clears the failed look");
   assert.equal(iconSlot.innerHTML, "c");
@@ -317,7 +317,7 @@ test("share button: a clipboard write from a share that failed, landing after a 
       copy: () => new Promise((res, rej) => writes.push({ res, rej })), timers: { setTimeout: () => 0, clearTimeout() {} },
     });
     const first = button.fire("click");
-    share.fail("Couldn't share. Reload the page.");
+    share.fail("Couldn't share. Click to try again.");
     const retry = button.fire("click");
     if (late === "reject") { writes[1].res(); await retry; writes[0].rej(new Error("denied")); await first; }
     else { writes[0].res(); await first; }
@@ -354,7 +354,7 @@ test("share button: a copy from a share that was stopped, landing after a new sh
   }
 });
 
-test("share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says to reload", async () => {
+test("share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says so on the button", async () => {
   const { createTogether } = await import("../public/together-adapter.js");
   const held = heldRoom();
   const p = page({});
@@ -368,8 +368,8 @@ test("share room: a share stopped before its part failed: the next Share to edit
   assert.equal(held.asked, 2, "the next share asks for the part again");
   held.fail();
   await tick();
-  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
-  assert.equal(p.$("#shareBtn").title, "Couldn't share. Reload the page.");
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Click to try again.");
+  assert.equal(p.$("#shareBtn").title, "Couldn't share. Click to try again.");
   assert.equal(t.sharing, false);
   assert.equal(held.made.length, 0);
 });
@@ -403,4 +403,74 @@ test("share room: the pointer or the focus reaching Share to edit fetches the ro
     await p.$("#shareBtn").fire("click");
     assert.equal(held.asked, 1, `${type}: the click uses the same load`);
   }
+});
+
+test("share room: the copy-by-hand box opened while the part loads closes, with its link cleared, when the part then fails", async () => {
+  const { createTogether } = await import("../public/together-adapter.js");
+  const held = heldRoom();
+  const p = page({});
+  Object.defineProperty(globalThis, "navigator", { value: { clipboard: { writeText: async () => { throw new Error("blocked"); } } }, configurable: true });
+  const menu = p.$("#shareMenu"), box = p.$("#shareLink");
+  menu.open = false;
+  menu.showPopover = () => { menu.open = true; };
+  menu.hidePopover = () => { menu.open = false; };
+  const t = createTogether(p.app, { loadRoom: held.load });
+  await p.$("#shareBtn").fire("click");
+  assert.equal(menu.open, true, "copying is blocked: the box to copy by hand shows");
+  assert.match(box.value, /^https:\/\/script\.test\/#room=/);
+  held.fail();
+  await tick();
+  assert.equal(t.sharing, false);
+  assert.equal(menu.open, false, "the box closes: its link leads to no room");
+  assert.equal(box.value, "", "the dead link is cleared");
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Click to try again.");
+});
+
+/* ---------- Looks: the colours the CSS gives (WCAG contrast from the oklch tokens) ---------- */
+const CSS = read("app.css");
+// A token's value for a theme: light-dark(a, b) picks a or b.
+const token = (name, mode) => {
+  const v = new RegExp(`--${name}:\\s*([^;]+);`).exec(CSS)?.[1].trim();
+  const ld = /^light-dark\((oklch\([^)]*\)),\s*(oklch\([^)]*\))\)$/.exec(v);
+  return ld ? ld[mode === "light" ? 1 : 2] : v;
+};
+const oklch = (s) => { const [l, c, h] = /oklch\(([\d.]+)%\s+([\d.]+)\s+([\d.]+|none)\)/.exec(s).slice(1); return { l: +l / 100, c: +c, h: h === "none" ? null : +h }; };
+// color-mix(in oklch, a p, b): shorter hue; a missing hue takes the other one's.
+const mix = (a, p, b) => {
+  const ha = a.h ?? b.h, hb = b.h ?? a.h;
+  let d = (hb ?? 0) - (ha ?? 0);
+  if (d > 180) d -= 360; else if (d < -180) d += 360;
+  return { l: a.l * p + b.l * (1 - p), c: a.c * p + b.c * (1 - p), h: ha == null ? null : (((ha + d * (1 - p)) % 360) + 360) % 360 };
+};
+const luminance = ({ l, c, h }) => {
+  const r = ((h ?? 0) * Math.PI) / 180, A = c * Math.cos(r), B = c * Math.sin(r);
+  const L = (l + 0.3963377774 * A + 0.2158037573 * B) ** 3, M = (l - 0.1055613458 * A - 0.0638541728 * B) ** 3, S = (l - 0.0894841775 * A - 1.291485548 * B) ** 3;
+  const clamp = (x) => Math.min(1, Math.max(0, x));
+  const R = clamp(4.0767416621 * L - 3.3077115913 * M + 0.2309699292 * S), G = clamp(-1.2684380046 * L + 2.6097574011 * M - 0.3413193965 * S), Bl = clamp(-0.0041960863 * L - 0.7034186147 * M + 1.707614701 * S);
+  return 0.2126 * R + 0.7152 * G + 0.0722 * Bl;
+};
+const ratio = (x, y) => { const [a, b] = [luminance(x), luminance(y)].sort((p, q) => q - p); return (a + 0.05) / (b + 0.05); };
+
+test("export menu: a note inside Export all (the orange primary action) reads at 4.5:1 in light and dark, at rest, hovered and pressed", () => {
+  // The note's colour inside the primary action: a rule for it, else the notes' own muted colour.
+  const own = /(?:^|\})\s*[^{}]*\.menu-action--primary[^{}]*\.menu-action__note[^{}]*\{[^}]*?\bcolor:\s*([^;}]+)/m.exec(CSS)?.[1].trim();
+  for (const mode of ["light", "dark"]) {
+    const accent = oklch(token("accent", mode)), ink = oklch(token("ink", mode));
+    const text = !own ? oklch(token("muted", mode)) : own === "inherit" || own === "currentColor" ? oklch(token("on-accent", mode)) : oklch(token(/var\(--([\w-]+)\)/.exec(own)[1], mode));
+    for (const [state, bg] of [["at rest", accent], ["hovered", mix(accent, 0.9, ink)], ["pressed", mix(accent, 0.85, ink)]]) {
+      assert.ok(ratio(text, bg) >= 4.5, `${mode}, ${state}: the note on the orange is ${ratio(text, bg).toFixed(2)}:1`);
+    }
+  }
+});
+
+test("share button: hovering the failed button keeps its warning background; pressing it still shows the pressed one", () => {
+  const rules = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m, i) => ({ i, sel: m[1].trim(), body: m[2] }));
+  const hover = rules.find((r) => /\.share__btn\[data-failed\]:hover/.test(r.sel) && /background:\s*var\(--accent-faint\)/.test(r.body));
+  assert.ok(hover, "a hover rule for the failed share button keeps --accent-faint");
+  // The plain buttons' hover (.tb:not(.tb--ink, .tb--primary):enabled:hover, four classes) comes first, so the failed one wins.
+  const plain = rules.find((r) => r.sel.startsWith(".tb:not(.tb--ink, .tb--primary):enabled:hover"));
+  assert.ok(hover.i > plain.i, "the failed hover comes after the plain buttons' hover");
+  assert.ok((hover.sel.match(/[.[:]/g) || []).length >= 4, `the failed hover is as specific as the plain one: ${hover.sel}`);
+  const pressed = rules.find((r) => /\.share \.share__btn\[data-failed\]:active/.test(r.sel));
+  assert.ok(pressed.i > hover.i, "the pressed look comes after the hover one, so a press shows");
 });
