@@ -6,7 +6,7 @@ import {
   parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList, moveTo, wholeParas, moveOver, snapPara, edgeSpeed, EDGE, stackPushes,
-  quoteSelection, checkBrollAnswer, applyBrollChange, applyBrollChanges, changesToKeep, settleBroll, brollAskAllowed,
+  quoteSelection, checkBrollAnswer, applyBrollChange, changesToKeep, settleBroll, brollAskAllowed,
   applyBrollChangesReport, dropGone, askForAgent, cleanSketches, isImage, cleanSketch, sketchHtml, withoutPictures, withoutPictureLines, IMAGE_MAX, removeSketch, pictureRoom, noRoomMessage, sketchResult, SKETCH_LIST_CHANGED, sketchAnswer, freeAfter, SKETCH_ANSWER_MS, sketchHeld, sketchTwice, afterListMoved, sketchStatus, rereadAfterIn, pictureFit, PICTURE_SIZE, PICTURE_BUDGET, PICTURE_STEPS, pickPicture, bigPictures, PICTURE_SOURCE_MAX, worthLighter, pendingImages,
 } from "../public/broll.js";
 
@@ -745,7 +745,7 @@ test("Keep gives the same file as the C3 functions; Keep all is one write in ord
   assert.deepEqual(sug.answer.changes.map((c) => c.sketch ?? null), [svg, null, null]);
   assert.equal(cleanSketches(null), null);
   // Keep all: one write with every change in order; the adds get B9 and S3 at that moment.
-  const all = applyBrollChanges(DEMO, changesToKeep(answer, [0, 1, 2, 3]));
+  const all = applyBrollChangesReport(DEMO, changesToKeep(answer, [0, 1, 2, 3])).markdown;
   const step = [add, up, rm, screen].reduce((md, c) => applyBrollChange(md, c), DEMO);
   assert.equal(all, step);
   const back = parseBroll(all);
@@ -756,7 +756,7 @@ test("Keep gives the same file as the C3 functions; Keep all is one write in ord
   // Undo: the change is done without a write; a later Keep of it writes nothing either.
   up.state = "undone";
   assert.deepEqual(changesToKeep(answer, [1]), []);
-  assert.equal(applyBrollChanges(DEMO, changesToKeep(answer, [1])), DEMO);
+  assert.equal(applyBrollChangesReport(DEMO, changesToKeep(answer, [1])).markdown, DEMO);
   assert.equal(settleBroll(answer), null);
   for (const c of answer.changes) if (c.state === "open") c.state = "kept";
   assert.equal(settleBroll(answer), "kept");
@@ -777,7 +777,7 @@ test("changes for a shot that is gone: one change per shot, not kept when it can
   assert.deepEqual(r.applied, [false, true, true]);
   assert.equal(r.markdown, removeShot(addShot(without, { id: "B9", kind: "broll", what: "Key", over: add.over, how: "" }), "B1"));
   assert.equal(applyBrollChangesReport(without, [up]).markdown, without);
-  assert.equal(applyBrollChanges(without, [up]), without);
+  assert.equal(applyBrollChangesReport(without, [up]).markdown, without);
   // Gone shots: their open update or remove becomes undone, so the ask can settle; adds and kept ones stay.
   const answer = { kind: "broll", changes: [{ ...up }, { ...add }, { op: "remove", id: "B2", state: "kept" }, { op: "remove", id: "B3", state: "open" }] };
   assert.equal(dropGone(answer, parseBroll(without).shots, (i) => i === 3), 1);
