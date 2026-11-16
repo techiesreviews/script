@@ -1,6 +1,5 @@
-// Cues in the script (fleet issue #14, Lex 2026-11-04), shown as bold: "**words**" in a spoken line, the standard Markdown
-// bold (the fleet lead's decision after the release review; first built as "==words==", never released, so no script
-// holds that). Always on (Lex, 2026-11-06). The prompter shows "**" as literal asterisks today, so its export strips them.
+// Cues in the script, shown as bold: "**words**" in a spoken line, the standard Markdown bold. Always on (Lex,
+// 2026-11-06). The prompter shows "**" as literal asterisks, so its export strips them.
 // Rules like links (links.js): words on one line, no brackets or "*" inside, at least one letter or digit. A pair starts
 // and ends at word boundaries: no letter, digit or "*" outside it, no space inside its edges, so a**b, **kwargs, 2**3 and
 // a ** b are plain text.
@@ -28,8 +27,8 @@ export const boldStyle = (stored) => ({
   background: stored?.own !== false && HEX.test(stored?.background) ? stored.background : null,
 });
 // The ready-made colours by B (Lex 2026-11-07, Variant A); the default orange and "None" are the null of boldStyle. Saved as
-// `hex` (the night look); light mode shows each one's `light` partner, so bold words stay readable on white. `was`: the
-// values the first build of step U saved, before the release review made them readable; they count as the same swatch.
+// `hex` (the night look); light mode shows each one's `light` partner, so bold words stay readable on white. `was`: older
+// values a saved style may still hold; they count as the same swatch.
 export const BOLD_SWATCHES = {
   color: [
     { name: "Yellow", hex: "#fbd530", light: { name: "Yellow", hex: "#8a6500" } },
