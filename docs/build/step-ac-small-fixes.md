@@ -33,7 +33,7 @@ Lex (2026-11-16, Orbit TOOLS-315, pick 5 of the TOOLS-296 review): the review's 
 
 ## Browser check
 
-All suites on `wrangler dev` and headless Chrome 157: `smoke-csp` 51 ok, `smoke-saving` 79 ok, `smoke-broll-lazy` 91 ok, `smoke-rare-parts` 122 ok, `smoke-video-folder` 93 ok, `smoke-keep-all` 933 ok, `smoke-room` 27 ok, `smoke-relay` 42 ok, 0 FAIL. `smoke-broll-lazy` also on live with the older profile: 91 ok. Evidence: `docs/agents/evidence/tools-315-browser.txt`.
+All suites on `wrangler dev` and headless Chrome 157: `smoke-csp` 51 ok, `smoke-saving` 76 ok, `smoke-broll-lazy` 91 ok, `smoke-rare-parts` 122 ok, `smoke-video-folder` 93 ok, `smoke-keep-all` 933 ok, `smoke-room` 27 ok, `smoke-relay` 42 ok, 0 FAIL. `smoke-broll-lazy` also on live with the older profile: 91 ok. Evidence: `docs/agents/evidence/tools-315-browser.txt`.
 
 ## Done
 
