@@ -78,7 +78,7 @@ test("saving: the interface is small, and app.js reaches saving only through it"
   assert.equal(AUTOSAVE_MS, 1500);
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   assert.doesNotMatch(app, /save-queue\.js|Q\.(queueSave|settleQueue|splitQueue|changedOnDisk)/, "the save queue is the module's own");
-  assert.doesNotMatch(app, /createWritable|function (save|saveAs|saveInBrowser|writeLeft|diskConflict|keepDraft|finishSave)\(/, "no saving code is left in app.js");
+  assert.doesNotMatch(app, /\.createWritable\(|function (save|saveAs|saveInBrowser|writeLeft|diskConflict|keepDraft|finishSave)\(/, "no saving code is left in app.js");
   assert.doesNotMatch(app, /`draft:\$\{/, "drafts are kept by the module");
 });
 
@@ -158,6 +158,7 @@ test("saving: a script the person left that cannot be written keeps its text as 
   s.ed.text = "# A\n\nOne. Lost?\n";
   s.saving.save({ auto: true });
   s.script.handle.fail = true; // the next write of a.md fails
+  s.files.outside("b.md", "# B\n");
   s.open({ name: "b.md" }, "# B\n");
   s.time.t = 77_000;
   release();
@@ -243,7 +244,7 @@ test("saving: Save as moves a browser script to a file: renamed with its keys cl
   assert.deepEqual(s.events.filter((e) => ["picked", "renamed", "placed"].includes(e[0])), [
     ["picked", "move-me.md"], ["renamed", "move-me.md", "moved.md", { clear: true }], ["placed", "moved.md", { was: { name: "move-me.md" } }],
   ]);
-  assert.equal(s.store.get("draft:move-me.md"), null, "the old name's draft goes");
+  assert.equal(s.store.has("draft:move-me.md"), false, "the old name's draft goes");
   assert.deepEqual([s.script.name, s.script.inBrowser, s.script.savedText], ["moved.md", false, s.ed.text]);
   // A cancelled picker changes nothing.
   s.files.port.pickSave = async () => { throw Object.assign(new Error("x"), { name: "AbortError" }); };

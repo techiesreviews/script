@@ -1,6 +1,6 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
 import * as D from "./doc.js";
-import * as Q from "./save-queue.js";
+import { createSaving, writeHandle, permitted } from "./saving.js";
 import * as C from "./changes.js";
 import * as L from "./links.js";
 import * as K from "./cues.js";
@@ -790,7 +790,7 @@ function renderDerived() {
   brollApi?.refreshSuggestions();
 }
 
-let derivedTimer = 0, draftTimer = 0, saveTimer = 0;
+let derivedTimer = 0, draftTimer = 0;
 // While the agent's whole text is untouched: the line at the top with Undo puts `before` back.
 let replaced = null;
 // Counts the lines shown at the top (and on the start screen), so an old line's buttons never hide a newer line.
@@ -809,7 +809,7 @@ function changed() {
   brollApi?.touched();
   clearTimeout(draftTimer);
   draftTimer = setTimeout(persistDraft, 400);
-  scheduleSave();
+  saving.schedule();
 }
 
 /* ---------- Prompter (prompter.techies.tools) ---------- */
@@ -2284,16 +2284,7 @@ async function idbSet(k, v) {
     await new Promise((res) => { const t = db.transaction("handles", "readwrite"); t.objectStore("handles").put(v, k); t.oncomplete = res; t.onerror = res; });
   } catch { /* storage off: reopen is not offered */ }
 }
-async function permitted(handle, ask, mode = "readwrite") {
-  const o = { mode };
-  try {
-    if (!handle.queryPermission) return true;
-    if ((await handle.queryPermission(o)) === "granted") return true;
-    return ask ? (await handle.requestPermission(o)) === "granted" : false;
-  } catch { return false; }
-}
 
-const draftKey = (name = state.name) => `draft:${name}`;
 function persistDraft() {
   clearTimeout(draftTimer);
   if (!state.doc || state.pendingDraft || state.guest) return;
@@ -2304,13 +2295,13 @@ function persistDraft() {
   const open = C.withContext(state.asks.filter((a) => isOpen(a) || C.isMarked(a)), state.doc).map(D.withoutPictures);
   const dirty = isDirty();
   const flags = brollFlags();
-  if (!dirty && !open.length && !flags) { store.del(draftKey()); return; }
-  store.set(draftKey(), { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
+  if (!dirty && !open.length && !flags) { saving.drafts.del(state.name); return; }
+  saving.drafts.set(state.name, { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
 }
 
 function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false }) {
   // Leaving a script: write what is still waiting to its own file, and keep a draft as a safety net.
-  if (state.doc) { persistDraft(); flushSave(); }
+  if (state.doc) { persistDraft(); saving.flush(); }
   // A new script left as it came is not kept: empty ones would pile up in the browser.
   if (state.doc && state.inBrowser && state.blank && handle !== state.handle && D.serialize(state.doc) === state.blank && !state.asks.length) {
     deleteBrowserScript({ handle: state.handle, name: state.name });
@@ -2322,18 +2313,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   closeCard();
   closeBroll();
   state.doc = D.parse(text);
-  state.name = name;
-  state.handle = handle;
-  state.inBrowser = !!handle && browser;
-  state.blank = "";
-  state.savedText = fresh ? "" : text;
-  if (fresh) state.savedText = D.serialize(state.doc);
-  state.savedAt = fresh ? 0 : modified;
-  state.fileModified = modified;
-  state.saveError = "";
-  state.needsPermission = false;
-  state.conflict = false;
-  clearTimeout(saveTimer);
+  saving.open({ handle, name, browser, savedText: fresh ? D.serialize(state.doc) : text, modified, fresh });
   state.undo = [];
   state.redo = [];
   state.lastStep = null;
@@ -2344,7 +2324,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.pendingDraft = null;
   state.frontOpen = false;
   state.hint = null;
-  const draft = store.get(draftKey(name));
+  const draft = saving.drafts.get(name);
   setBrollFlags(draft?.broll);
   hideBanner();
   if (draft?.text != null && draft.text !== text && (draft.at || 0) > modified) {
@@ -2431,7 +2411,7 @@ function discardDraft() {
   if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || C.isMarked(a) || D.findQuote(state.doc, a.quote)));
   brollApi?.dropGone();
   brollIfAsks();
-  store.del(draftKey());
+  saving.drafts.del(state.name);
   renderAll(getCaret());
   changed();
   offerAsks();
@@ -2450,7 +2430,7 @@ async function openFile() {
 async function openHandle(handle) {
   try {
     // The switcher hands over a fresh handle object for a known file; reuse the one the save queue holds.
-    for (const known of [state.handle, saveQueue.waiting?.handle, ...(saveQueue.left || []).map((x) => x.handle)]) {
+    for (const known of [state.handle, ...saving.queued()]) {
       if (known && known !== handle && (await sameFile(known, handle))) { handle = known; break; }
     }
     const file = await handle.getFile();
@@ -2497,180 +2477,45 @@ $("#fileInput").addEventListener("change", async (e) => {
   catch { openProblem(file.name); }
 });
 
-async function writeHandle(handle, text) {
-  const w = await handle.createWritable();
-  await w.write(text);
-  await w.close();
-  try { return (await handle.getFile()).lastModified; } catch { return Date.now(); }
-}
-// Auto-save: about 1.5 s after the last change, to the opened file only. Ctrl/Cmd+S and page hide save at once.
-const AUTOSAVE_MS = 1500;
-function scheduleSave() {
-  clearTimeout(saveTimer);
-  if (slash.open) return; // a "/" command is being typed: auto-save waits until the menu closes
-  if (state.handle && !state.conflict && isDirty()) saveTimer = setTimeout(() => save({ auto: true }), AUTOSAVE_MS);
-}
-function flushSave() {
-  clearTimeout(saveTimer);
-  if (state.handle && !state.conflict && isDirty()) save({ auto: true });
-}
-async function allowSaving() {
-  if (!state.handle) return;
-  if (await permitted(state.handle, true)) { state.needsPermission = false; renderSaveState(); save(); }
-  else { state.needsPermission = false; state.saveError = "No permission to write this file."; renderSaveState(); }
-}
-// Saves asked for while another one runs wait here, one record per script (see save-queue.js).
-let saveQueue = Q.emptyQueue();
-const saveRequest = (force, auto) => ({
-  handle: state.handle, name: state.name, text: saveText(),
-  savedText: state.savedText, fileModified: state.fileModified, force, auto,
-});
-// A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
-function keepDraft(name, text) {
-  const draft = store.get(draftKey(name));
-  store.set(draftKey(name), { text, at: Date.now(), asks: draft?.asks ?? [], ...(draft?.broll ? { broll: draft.broll } : {}) });
-}
-// Write a left script's snapshot straight to its own file, with auto-save rules: no permission prompt, and the
-// changed-on-disk check. Current `state` is never touched.
-// The file's time when it changed on disk since our last write (and holds other text), else 0.
-async function diskConflict(handle, request) {
-  if (request.force || !request.fileModified) return 0;
-  const f = await handle.getFile();
-  if (f.lastModified <= request.fileModified) return 0;
-  return Q.changedOnDisk(request, { lastModified: f.lastModified, text: await f.text() }) ? f.lastModified : 0;
-}
-async function writeLeft(snap) {
-  try {
-    if (await permitted(snap.handle, false)) {
-      if (!(await diskConflict(snap.handle, snap))) {
-        return { handle: snap.handle, text: snap.text, modified: await writeHandle(snap.handle, snap.text) };
-      }
-    }
-  } catch { /* kept as a draft below */ }
-  keepDraft(snap.name, snap.text);
-  return null;
-}
-async function save({ force = false, auto = false } = {}) {
-  if (!state.doc || state.guest) return;
-  if (state.saving) {
-    // Auto-save without a file does nothing; a click without a file waits for its turn to pick one.
-    if (state.handle || !auto) saveQueue = Q.queueSave(saveQueue, saveRequest(force, auto));
-    return;
-  }
-  // Auto-save only writes to a file that is already open; it never asks where to save.
-  if (!state.handle && auto) return;
-  if (!state.handle) return browserSaving ? saveInBrowser() : saveAs();
-  clearTimeout(saveTimer);
-  const { handle, name, savedText, fileModified } = state;
-  const text = saveText();
-  let written = null;
-  state.saving = true;
-  state.autoSaving = auto;
-  state.saveError = "";
-  renderSaveState();
-  try {
-    // A click or key press may show the browser's permission prompt; auto-save may not, so it shows "Allow saving to …".
-    if (!(await permitted(handle, !auto))) {
-      if (auto) { if (handle === state.handle) state.needsPermission = true; }
-      else throw new Error("No permission to write this file.");
-    } else {
-      if (handle === state.handle) state.needsPermission = false;
-      const conflict = await diskConflict(handle, { force, fileModified, savedText });
-      if (conflict && handle === state.handle) {
-        state.conflict = true;
-        showBanner(`The file changed on disk at ${clock(conflict)}`, [["Save mine", () => { hideBanner(); state.conflict = false; save({ force: true }); }], ["Open that version", () => reloadFromDisk()]]);
-      } else if (!conflict) {
-        // Written to the file it was made for, even if another script was opened meanwhile.
-        written = { handle, text, modified: await writeHandle(handle, text) };
-        if (handle === state.handle) {
-          state.fileModified = written.modified;
-          state.conflict = false;
-          state.savedText = text;
-          state.savedAt = Date.now();
-          if ($("#banner").textContent.startsWith("The file changed")) hideBanner();
-          // A rename that fails leaves the old name; the text is saved either way.
-          try { await followTitle(handle); } catch { /* keeps its name */ }
-        }
-      }
-    }
-  } catch (e) {
-    // A script the person already left keeps its local draft; its problem must not show on the new one.
-    if (handle === state.handle) state.saveError = e?.message || "Could not save.";
-  }
-  if (!written && handle !== state.handle) keepDraft(name, text);
-  // Scripts the person left go straight to their own files; requests that arrive meanwhile keep waiting.
-  saveQueue = Q.settleQueue(saveQueue, written);
-  for (;;) {
-    const { left, current } = Q.splitQueue(saveQueue, state.handle);
-    if (!left.length) { saveQueue = Q.emptyQueue(); state.saving = false; finishSave(current); return; }
-    saveQueue = { waiting: current, left: [] };
-    for (const snap of left) saveQueue = Q.settleQueue(saveQueue, await writeLeft(snap));
-  }
-}
-function finishSave(current) {
-  state.autoSaving = false;
-  renderTop();
-  persistDraft();
-  // The open script's own waiting request runs with its own flags.
-  if (current) save({ force: current.force, auto: current.auto });
-  else if (!state.saveError && !state.needsPermission) scheduleSave();
-}
-// "Markdown file (.md)" and Ctrl/Cmd+S without an open file: pick where to save, then keep auto-saving there.
-async function saveAs() {
-  if (!state.doc || state.saving || state.guest) return;
-  const text = saveText();
-  const was = state.inBrowser ? state.handle : null;
-  // Where files can't be saved, a script in the browser stays there and a copy downloads.
-  if (was && !("showSaveFilePicker" in window)) return download(text, state.name, "text/markdown");
-  state.saveError = "";
-  try {
-    if ("showSaveFilePicker" in window) {
-      let handle;
-      try { handle = await window.showSaveFilePicker({ suggestedName: state.name, types: FILE_TYPES }); }
-      catch (e) { if (e?.name === "AbortError") return; throw e; }
-      state.saving = true;
-      renderSaveState();
-      state.fileModified = await writeHandle(handle, text);
-      if (handle.name !== state.name) {
-        store.del(draftKey());
-        // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees its
-        // name there, so its old keys are cleared; a file on disk or the demo keeps its own.
-        moveKeys(state.name, handle.name, { clear: !!was, link: brollLink() });
-        state.name = handle.name;
-      }
-      state.handle = handle;
-      state.inBrowser = false;
-      state.blank = "";
-      state.needsPermission = false;
-      state.conflict = false;
-      remember(handle);
-      // The script moved to its file: the copy in the browser goes.
+// Saving lives in saving.js (TOOLS-308): it gets the file system, local storage and the clock, and writes the save
+// fields of `state`; what the person sees follows through `on`.
+const saving = createSaving({
+  script: state,
+  editor: { ready: () => !!state.doc && !state.guest, doc: () => state.doc, text: () => saveText(), dirty: () => isDirty(), paused: () => slash.open },
+  files: {
+    write: (handle, text) => writeHandle(handle, text),
+    file: (handle) => handle.getFile(),
+    permitted: (handle, ask) => permitted(handle, ask),
+    get pickSave() { return "showSaveFilePicker" in window ? (name) => window.showSaveFilePicker({ suggestedName: name, types: FILE_TYPES }) : null; },
+    download: (text, name) => download(text, name, "text/markdown"),
+  },
+  // Scripts saved in the browser (step J), named after their title.
+  browser: browserSaving ? { name: async (from, doc) => D.scriptFileName("", doc, await nameTaken(from)), create: (name, text) => createBrowserScript(name, text) } : null,
+  drafts: store,
+  clock: { now: () => Date.now(), later: (fn, ms) => setTimeout(fn, ms), cancel: (id) => clearTimeout(id) },
+  on: {
+    status: () => renderSaveState(),
+    conflict: (at) => showBanner(`The file changed on disk at ${clock(at)}`, [["Save mine", () => { hideBanner(); saving.saveMine(); }], ["Open that version", () => reloadFromDisk()]]),
+    async written(handle) {
+      if ($("#banner").textContent.startsWith("The file changed")) hideBanner();
+      await followTitle(handle);
+    },
+    done(moved) { renderTop(); if (moved) renderDerived(); persistDraft(); },
+    renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
+    placed(handle, { was = null, browser = false }) {
+      remember(handle, browser);
       if (was) {
         const gone = was.name;
         forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {});
       }
-    } else {
-      download(text, state.name, "text/markdown");
-      state.fileModified = Date.now(); // the downloaded copy is from now; the old file's day no longer fits it
-    }
-    state.savedText = text;
-    state.savedAt = Date.now();
-  } catch (e) {
-    state.saveError = e?.message || "Could not save.";
-  }
-  state.saving = false;
-  // Requests made during a save-as belonged to the old place; the new file is now current.
-  saveQueue = Q.emptyQueue();
-  renderTop();
-  renderDerived();
-  persistDraft();
-  scheduleSave();
-}
+    },
+  },
+});
 async function reloadFromDisk() {
   hideBanner();
   if (!state.handle) return;
   // Keep what is on screen as a draft, so "Restore" brings it back.
-  if (isDirty()) store.set(draftKey(), { text: saveText(), at: Date.now(), asks: state.asks.filter(isOpen), ...(brollFlags() ? { broll: brollFlags() } : {}) });
+  if (isDirty()) saving.drafts.set(state.name, { text: saveText(), at: Date.now(), asks: state.asks.filter(isOpen), ...(brollFlags() ? { broll: brollFlags() } : {}) });
   await openHandle(state.handle);
 }
 function download(text, name, type) {
@@ -2686,7 +2531,7 @@ function exportFile(kind) {
   if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
   else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
   else if (kind === "prompter-open") openPrompter();
-  else if (kind === "markdown") saveAs();
+  else if (kind === "markdown") saving.saveAs();
   else if (kind === "all") exportAll();
   else if (kind === "folder") saveToFolder();
   else if ((kind === "broll" || kind === "storyboard") && brollStatus() === "ok") {
@@ -2802,7 +2647,7 @@ function selectTitle() {
 $("#emptyOpen").addEventListener("click", openFile);
 $("#emptyNew").addEventListener("click", newScript);
 $("#emptySample").addEventListener("click", openSample);
-$("#allowSave").addEventListener("click", allowSaving);
+$("#allowSave").addEventListener("click", () => saving.allow());
 $("#exportMenu").addEventListener("click", (e) => {
   const b = e.target.closest("[data-export]");
   if (!b) return;
@@ -2901,7 +2746,7 @@ async function nameTaken(own = "") {
     const l = n.toLowerCase();
     if (names.has(l)) return true;
     if (l === mine) return false;
-    return store.get(draftKey(n)) != null || (!!state.doc && l === state.name.toLowerCase());
+    return saving.drafts.get(n) != null || (!!state.doc && l === state.name.toLowerCase());
   };
 }
 let keepAsked = false;
@@ -2921,8 +2766,7 @@ async function createBrowserScript(name, text) {
 // as stored when the move runs in the queue, or `link` when none is stored (the demo links its list by itself).
 async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
-  const draft = store.get(draftKey(from));
-  if (draft != null) { store.set(draftKey(to), draft); store.del(draftKey(from)); }
+  saving.drafts.move(from, to);
   // The new name belongs to this script now: it takes this script's link, or none (never one left there before).
   await keyed(async () => {
     const stored = await idbGet(brollKey(from));
@@ -2950,36 +2794,12 @@ async function followTitle(handle) {
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
-// Ctrl/Cmd+S on a script without a file (the demo, or a file opened where files can't be saved): into the browser.
-async function saveInBrowser() {
-  if (!state.doc || state.saving || state.guest) return;
-  const doc = state.doc, text = saveText(), from = state.name;
-  state.saving = true;
-  state.saveError = "";
-  renderSaveState();
-  try {
-    const { handle, modified } = await createBrowserScript(D.scriptFileName("", doc, await nameTaken(from)), text);
-    if (state.doc === doc) {
-      moveKeys(from, handle.name, { link: brollLink() });
-      Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false });
-    }
-    remember(handle, true);
-  } catch (e) {
-    if (state.doc === doc) state.saveError = e?.message || "Could not save.";
-  }
-  state.saving = false;
-  saveQueue = Q.emptyQueue();
-  renderTop();
-  renderDerived();
-  persistDraft();
-  scheduleSave();
-}
 // Its draft and B-roll keys go too: they are by name, as for every script (a file opened later under the same name
 // starts without them).
 async function deleteBrowserScript(r) {
   await forget(r.handle);
   try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-  store.del(draftKey(r.name));
+  saving.drafts.del(r.name);
   delKept(r.name);
   setLinkKey(null, r.name);
 }
@@ -3079,7 +2899,7 @@ document.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (!mod || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (k === "s") { e.preventDefault(); save(); return; }
+  if (k === "s") { e.preventDefault(); saving.save(); return; }
   // Focus in the edit bar (the input, the B button): Ctrl/Cmd+B works there too, on the bar's saved selection.
   if (k === "b" && !e.shiftKey && state.doc && bar.contains(e.target)) { e.preventDefault(); toggleCueHere(); return; }
   if (!state.doc || e.target.closest?.("input, textarea")) return;
@@ -3095,11 +2915,11 @@ document.addEventListener("keydown", (e) => {
 });
 addEventListener("beforeunload", (e) => {
   persistDraft();
-  flushSave();
+  saving.flush();
   if (isDirty() && !state.guest) { e.preventDefault(); e.returnValue = ""; }
 });
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { persistDraft(); flushSave(); } });
-addEventListener("pagehide", () => { persistDraft(); flushSave(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { persistDraft(); saving.flush(); } });
+addEventListener("pagehide", () => { persistDraft(); saving.flush(); });
 
 /* ---------- Icons in the static markup ---------- */
 $$("[data-icon]").forEach((el) => {
@@ -3389,7 +3209,7 @@ function closeSlash() {
   slashMenu.hidden = true;
   const el = blockNode(slash.id);
   if (el) for (const k of ["role", "aria-controls", "aria-expanded", "aria-autocomplete", "aria-activedescendant"]) el.removeAttribute(k);
-  scheduleSave();
+  saving.schedule();
   // In a shared script the command text was held back; a picked part replaces it before this runs.
   queueMicrotask(() => together?.local());
 }
