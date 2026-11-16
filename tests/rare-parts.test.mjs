@@ -161,12 +161,14 @@ test("share room: Share to edit copies the link inside the click; the room start
   assert.equal(p.copied.length, 1, "the link is copied in the click, before the room's part arrives");
   assert.match(p.copied[0], /^https:\/\/script\.test\/#room=[\w-]{22}&k=[\w-]{43}$/);
   assert.equal(held.made.length, 0);
+  assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "the app's Undo stays until the room starts");
   assert.equal(t.sharing, true, "sharing counts as on while the part loads (another script may not open over it)");
   assert.equal(t.active, false, "no room runs yet: the person's own Undo still works");
   held.release();
   await tick();
   assert.equal(held.made.length, 1);
   assert.equal(held.made[0].role, "host");
+  assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [["sharing", true]], "the room started: the app clears its Undo now");
   assert.equal(held.made[0].link("https://script.test"), p.copied[0], "the room is the one in the copied link");
   assert.equal(held.asked, 1);
 });
@@ -179,7 +181,7 @@ test("share room: sharing stopped (or another script opened) before the part arr
   await p.$("#shareBtn").fire("click");
   t.stop();
   assert.equal(t.sharing, false);
-  assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [["sharing", true], ["sharing", false]]);
+  assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "the app's Undo is cleared only when a room starts, so it stays");
   held.release();
   await tick();
   assert.equal(held.made.length, 0, "no room starts for a share that was stopped");
@@ -195,7 +197,7 @@ test("share room: a part that can't load ends sharing and the button says so; a 
   await tick();
   assert.equal(t.sharing, false);
   assert.equal(held.made.length, 0);
-  assert.deepEqual(p.calls.at(-1), ["sharing", false]);
+  assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "no room started: the app's Undo stays");
   assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
   assert.equal(p.$("#shareBtn").title, "Couldn't share. Reload the page.");
   await p.$("#shareBtn").fire("click");
@@ -236,7 +238,7 @@ test("share room: a room part that speaks another seam version counts as not loa
   await tick();
   assert.equal(held.made.length, 0);
   assert.equal(t.sharing, false);
-  assert.deepEqual(p.calls.at(-1), ["sharing", false]);
+  assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "no room started: the app's Undo stays");
   assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
 
   const g = heldRoom();

@@ -289,6 +289,8 @@ export function createTogether(app, { loadRoom = () => import("./together/room.j
     part().then((m) => {
       if (starting !== mine) return;
       starting = null;
+      // The host's Undo steps from before sharing end when the room starts, not while it waits for its part.
+      if (opts.role === "host") app.sharing(true);
       room = new m.RoomClient({ ...opts, url: wsUrl(), adapter, on }).start();
       render();
     }, () => {
@@ -387,8 +389,7 @@ export function createTogether(app, { loadRoom = () => import("./together/room.j
       if (starting?.role === "host") return makeLink(location.origin, starting);
       const name = app.me.name && app.me.name !== "You" ? app.me.name : "Host";
       shared = { asks: "", broll: "" };
-      const keys = startRoom({ role: "host", ...newRoom(), name }, () => { share.fail(ROOM_GONE); app.sharing(false); });
-      app.sharing(true);
+      const keys = startRoom({ role: "host", ...newRoom(), name }, () => share.fail(ROOM_GONE));
       render();
       return makeLink(location.origin, keys);
     },
@@ -446,11 +447,10 @@ export function createTogether(app, { loadRoom = () => import("./together/room.j
   });
   $("#people").addEventListener("animationend", (e) => delete e.target.dataset.new);
 
-  // A host's share that stops before its room is here: nothing started, so the app hears it here.
+  // A host's share that stops before its room is here: nothing started, so the app's Undo stays as it is.
   function cancelHost() {
     starting = null;
     share.set(false);
-    app.sharing(false);
     render();
   }
 
