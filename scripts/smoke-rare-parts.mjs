@@ -5,7 +5,8 @@
 // after a reload each part answers 304. Sharing stopped while the room's part is held starts no room. A part that
 // can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
 // a guest's Join. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
-// that fails after the video folder is picked writes nothing and says so. No CSP violation and no page error.
+// that fails after the video folder is picked writes nothing and says so; a folder saved while the pack loads holds the
+// script as it was at the click. No CSP violation and no page error.
 // Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; it applies _headers and runs the
 // rooms) and a headless Chrome, then: node scripts/smoke-rare-parts.mjs <base URL> <Chrome debugging port>
 import { setMaxListeners } from "node:events";
@@ -231,9 +232,14 @@ async function run(width, height) {
   for (let i = 0; i < 50 && !waitPack.held.length; i++) await sleep(100);
   check(waitPack.held.length > 0, `${tag} the export pack's download is held`);
   await waitPack.click('[data-export="all"]');
-  await waitPack.click("#docSwitch");
-  await waitPack.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await waitPack.click("#menuNew");
+  // The menu may still be placing itself when it opens: the click is tried again until the other script is open.
+  for (let i = 0; i < 5 && await waitPack.eval(`(window.__scriptEditor.markdown() || "").includes("Held export A")`); i++) {
+    if (!(await waitPack.eval(`document.querySelector("#scriptMenu").matches(":popover-open")`))) await waitPack.click("#docSwitch");
+    await waitPack.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+    await sleep(150);
+    await waitPack.click("#menuNew");
+    await sleep(400);
+  }
   await waitPack.until(`!(window.__scriptEditor.markdown() || "").includes("Held export A")`, "the other script");
   await waitPack.send("Input.insertText", { text: "Held export B" });
   await sleep(200);
@@ -265,6 +271,28 @@ async function run(width, height) {
   await lateFail.key("Escape", "Escape", 27);
   await clean(lateFail, tag, "pack that fails after the picker");
   await lateFail.close();
+
+  // Save to video folder clicked while the pack is on its way, then more typing: the folder holds the script as it was at
+  // the click, the same text in script.md and the cue files.
+  const snap = await openPage(width, height, { hold: ["*export-pack.js*"] });
+  await startScreen(snap);
+  await newScript(snap, "Snapshot check");
+  await snap.eval(`window.showDirectoryPicker = async () => { window.__picked = true; const root = await navigator.storage.getDirectory(); return root.getDirectoryHandle("video", { create: true }); }; true`);
+  await openExport(snap);
+  for (let i = 0; i < 50 && !snap.held.length; i++) await sleep(100);
+  await snap.click('[data-export="folder"]');
+  await snap.until(`window.__picked === true`, "the folder picker");
+  await sleep(200);
+  await snap.eval(`(() => { const l = [...document.querySelectorAll('#script .block')].at(-1); l.focus(); const r = document.createRange(); r.selectNodeContents(l); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`);
+  await snap.send("Input.insertText", { text: " Typed later." });
+  await snap.until(`(window.__scriptEditor.markdown() || "").includes("Typed later.")`, "the later typing");
+  await snap.release();
+  const readVideo = (name) => `(async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("video"); return await (await (await d.getFileHandle(${JSON.stringify(name)})).getFile()).text(); } catch { return ""; } })()`;
+  await snap.until(`${readVideo("save-receipt.md")}.then((t) => t.length > 0)`, "the saved folder");
+  const files = { script: await snap.eval(readVideo("script.md")), prompter: await snap.eval(readVideo("prompter.md")), notes: await snap.eval(readVideo("recording-notes.md")) };
+  check(Object.values(files).every((t) => t.includes("Hello there my friend.") && !t.includes("Typed later.")), `${tag} a folder saved while the pack loads holds the script as it was at the click, in every file`, JSON.stringify(files).slice(0, 300));
+  await clean(snap, tag, "folder saved while the pack loads");
+  await snap.close();
 
   // Parts that can't load: each control says so, and nothing else breaks.
   const failing = await openPage(width, height, { fail: ["*together/room.js*", "*export-pack.js*"] });

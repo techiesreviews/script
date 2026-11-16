@@ -2601,12 +2601,14 @@ async function saveToFolder() {
   // A list that was still loading or blocked while the picker was open is not left out of the folder.
   if (listState(brollStatus()) === "wait") { folderSaved = { for: name, error: true, wait: brollStatus() }; return renderFolderNote(); }
   try {
-    // Everything is read from the script before the pack is awaited: it is this script that is saved, whatever opens next.
-    const doc = slash.open ? D.withoutCommand(state.doc, slash) : state.doc;
+    // Everything is copied from the script before the pack is awaited: it is the script as it was at the click that is
+    // saved, whatever is typed or opened meanwhile.
+    const doc = D.cloneDoc(slash.open ? D.withoutCommand(state.doc, slash) : state.doc);
+    // A linked list brings its shots in script order, its sketches and the B-roll helpers (the module is loaded then).
+    const list = brollApi?.folder(doc) ?? { linked: false };
     const what = {
       dir, doc, scriptText: saveText(), title: D.titleOf(doc) || baseName(),
-      // A linked list brings its shots in script order, its sketches and the B-roll helpers (the module is loaded then).
-      broll: brollApi?.folder(doc) ?? { linked: false },
+      broll: list.linked ? { ...list, shots: structuredClone(list.shots), sketches: structuredClone(list.sketches) } : list,
       // The prompter link carries the day the script was saved (its file's own day, else the day of this save).
       modified: state.fileModified, dirty: isDirty(),
     };

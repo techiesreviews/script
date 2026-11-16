@@ -35,6 +35,8 @@ ok 1280 px: Export all while the pack loads: no CSP violation or error
 ok 1280 px: a pack that fails after the folder is picked: Save to video folder says to reload
 ok 1280 px: nothing is written to the picked folder
 ok 1280 px: pack that fails after the picker: no CSP violation or error
+ok 1280 px: a folder saved while the pack loads holds the script as it was at the click, in every file
+ok 1280 px: folder saved while the pack loads: no CSP violation or error
 ok 1280 px: a room that can't load: the share button says to reload
 ok 1280 px: sharing is off again
 ok 1280 px: an export pack that can't load: Export all and Save to video folder say to reload
@@ -76,6 +78,8 @@ ok 390 px: Export all while the pack loads: no CSP violation or error
 ok 390 px: a pack that fails after the folder is picked: Save to video folder says to reload
 ok 390 px: nothing is written to the picked folder
 ok 390 px: pack that fails after the picker: no CSP violation or error
+ok 390 px: a folder saved while the pack loads holds the script as it was at the click, in every file
+ok 390 px: folder saved while the pack loads: no CSP violation or error
 ok 390 px: a room that can't load: the share button says to reload
 ok 390 px: sharing is off again
 ok 390 px: an export pack that can't load: Export all and Save to video folder say to reload
@@ -480,3 +484,8 @@ ok a revoked token gets 401
 ok a revoked token stays refused for a new tab
 ok with no tab, tools say the editor is not open
 RESULT: ok smoke
+
+## Without the save copy (public/app.js cloneDoc taken out), smoke-rare-parts.mjs
+FAIL 1280 px: a folder saved while the pack loads holds the script as it was at the click, in every file ({"script":"# Snapshot check\n\nHello there my friend.\n","prompter":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n","notes":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n"})
+FAIL 390 px: a folder saved while the pack loads holds the script as it was at the click, in every file ({"script":"# Snapshot check\n\nHello there my friend.\n","prompter":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n","notes":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n"})
+FAIL 2

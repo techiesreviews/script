@@ -267,3 +267,21 @@ test("share button: a copy that lands after sharing failed says nothing was copi
   assert.equal(fallbacks, 0);
   assert.equal(stop.hidden, true);
 });
+
+test("share room: a share stopped before its part failed: the next Share to edit says to reload, copies nothing and starts no room", async () => {
+  const { createTogether } = await import("../public/together-adapter.js");
+  const held = heldRoom();
+  const p = page({});
+  const t = createTogether(p.app, { loadRoom: held.load });
+  await p.$("#shareBtn").fire("click");
+  t.stop();
+  held.fail();
+  await tick();
+  assert.equal(p.$("#shareLabel").textContent, "Share to edit", "the stopped share heard nothing");
+  await p.$("#shareBtn").fire("click");
+  assert.equal(p.copied.length, 1, "no new link is copied");
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
+  assert.equal(p.$("#shareBtn").title, "Couldn't share. Reload the page.");
+  assert.equal(t.sharing, false);
+  assert.equal(held.made.length, 0);
+});
