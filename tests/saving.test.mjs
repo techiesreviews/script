@@ -412,6 +412,28 @@ test("saving: a Ctrl+S on the demo that waits for its Save as never saves or ren
   assert.deepEqual(s.saving.queued(), []);
 });
 
+test("saving: a waiting Ctrl+S without a file never replaces a newer draft the app kept when the script was left", async () => {
+  const s = setup({ handle: null });
+  s.open(null, "# Demo\n");
+  s.ed.text = "# Demo\n\nMoving.\n";
+  const release = s.files.hold("moved.md");
+  s.files.port.pickSave = async () => ({ name: "moved.md" });
+  const run = s.saving.saveAs();
+  await settle();
+  s.ed.text = "# Demo\n\nMoving.\n\nPressed.\n";
+  s.time.t = 70_000;
+  s.saving.save(); // Ctrl+S while the file is written
+  s.ed.text += "\nTyped after.\n";
+  s.time.t = 71_000;
+  // Leaving the demo, the app keeps its draft first (persistDraft in loadText), then opens the other script.
+  s.store.set("draft:demo.md", { text: s.ed.text, at: s.time.t, asks: [{ id: "q" }] });
+  s.open(null, "# Other\n");
+  release();
+  await run;
+  await until(() => !s.script.saving);
+  assert.deepEqual(s.store.get("draft:demo.md"), { text: "# Demo\n\nMoving.\n\nPressed.\n\nTyped after.\n", at: 71_000, asks: [{ id: "q" }] }, "the words typed after the Ctrl+S stay in the draft");
+});
+
 test("saving: Ctrl+S where neither the browser nor a file picker can save downloads the script", async () => {
   const s = setup({ handle: null });
   s.open(null, "# Demo\n");
