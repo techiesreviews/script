@@ -408,4 +408,13 @@ test("mcp: a request body bigger than the largest allowed call is refused before
   const res = await handleMcp(req, fakeRelay());
   assert.equal(res.status, 413);
   assert.ok(sent <= BODY_MAX + 2 * chunk.length, `read ${sent} bytes`);
+  // A stated length over the cap is refused without reading the body at all.
+  let pulled = 0;
+  const unread = new ReadableStream({ pull(c) { pulled++; c.enqueue(chunk); } }, { highWaterMark: 0 });
+  const relay = fakeRelay();
+  const stated = await handleMcp({ method: "POST", url: BASE, headers: new Headers({ "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}`, "Content-Length": String(BODY_MAX + 1) }), body: unread }, relay);
+  assert.equal(stated.status, 413);
+  assert.equal((await stated.json()).error.code, -32600);
+  assert.equal(pulled, 0, "the body is not read");
+  assert.equal(relay.ops.length, 0);
 });
