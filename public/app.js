@@ -2734,7 +2734,7 @@ function scriptsDir() {
   return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
 }
 // A browser copy left behind by a move to a file (the browser refused to delete it then) is kept off the list by name
-// and deleted on a later listing; a new script that takes its name deletes it first.
+// and deleted on a later listing; until then no script may take its name (nameTaken).
 const COPIES = "movedCopies";
 const leftCopies = () => { const v = store.get(COPIES); return Array.isArray(v) ? v : []; };
 async function dropCopy(name) {
@@ -2745,27 +2745,29 @@ async function dropCopy(name) {
 async function browserScripts() {
   if (!browserSaving) return [];
   const out = [];
-  const left = new Set(leftCopies());
+  const left = new Set(leftCopies()), stale = [];
   try {
     for await (const handle of (await scriptsDir()).values()) {
       if (handle.kind !== "file") continue;
-      if (left.has(handle.name)) { dropCopy(handle.name); continue; }
+      if (left.has(handle.name)) { stale.push(handle.name); continue; }
       let at = 0;
       try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
       out.push({ handle, name: handle.name, at, browser: true });
     }
   } catch { /* storage off: none */ }
+  for (const name of stale) await dropCopy(name);
   return out;
 }
 async function isInBrowser(handle) {
   if (!browserSaving || !handle) return false;
   try { return !!(await (await scriptsDir()).resolve(handle)); } catch { return false; }
 }
-// Names a new or renamed script may not take: recent files, scripts in the browser, kept drafts, names with a B-roll
-// link or list kept (a file taken off the list keeps them) and the open script (all by name, in any capitals; drafts
-// and B-roll keys go by name). `own`: the script being named.
+// Names a new or renamed script may not take: recent files, scripts in the browser (also a copy left behind that is not
+// deleted yet), kept drafts, names with a B-roll link or list kept (a file taken off the list keeps them) and the open
+// script (all by name, in any capitals; drafts and B-roll keys go by name). `own`: the script being named.
 async function nameTaken(own = "") {
   const names = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
+  for (const n of leftCopies()) names.add(n.toLowerCase());
   for (const n of await keyed(idbLinkedNames)) names.add(n.toLowerCase());
   names.add(SAMPLE.name.toLowerCase()); // the demo's name brings the demo's own B-roll list
   try {
@@ -2783,7 +2785,6 @@ async function nameTaken(own = "") {
 let keepAsked = false;
 async function createBrowserScript(name, text) {
   const dir = await scriptsDir();
-  if (leftCopies().includes(name)) await dropCopy(name);
   // Never over another script: getFileHandle with create would open it.
   try { await dir.getFileHandle(name); throw new Error(`${name} is in the browser already.`); } catch (e) { if (e?.name !== "NotFoundError") throw e; }
   const handle = await dir.getFileHandle(name, { create: true });
