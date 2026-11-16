@@ -26,3 +26,16 @@ Lex (2026-11-16, Orbit TOOLS-305, pick 1 of the TOOLS-296 review): a faster, saf
 ## Done
 
 Feature list: no change (cache and security headers; nothing on screen changes).
+
+### Proof
+
+- Failing test first: met. `tests/headers.test.mjs` failed 4 of 4 on `origin/dev` (`Cache-Control` was `no-store`, no CSP, no security headers, a style attribute in `together-adapter.js`); with the change it passes 5 of 5, and `kit specs` passes 440 of 440.
+- No CSP violation on the main flows: met. `node scripts/smoke-csp.mjs` on `wrangler dev` with headless Chrome, 1280 and 390 px, real clicks: open the demo, the agent over the live relay, an agent's line drawing and picture, the storyboard, the selection bar, bold colours and typing, Open in prompter, three exports, Share to edit with a guest, a new script saved in the browser. 50 checks ok, no violation and no page error in any flow; a request to another site is refused by `connect-src` (the CSP is on) and is the only violation seen. `curl -sI` on the local server shows `Cache-Control: no-cache`, an ETag and the CSP; a request with that ETag answers 304.
+- All checks green: met. `kit specs` 440 of 440; the older browser suites on the same server with the CSP on: `smoke-keep-all` 933 ok, `smoke-video-folder` 93 ok, `smoke-room` 27 ok, `smoke-relay` 41 ok and 1 fail that is older than this change (it expects 10 agent tools; there are 13 since the cue tools).
+
+### Declined
+
+- R3 (spec wording, P3): the Worker's 401, 404 and 426 answers and `/mcp` set `noindex` but not `no-store`; the sentence above says the Worker's answers keep their own headers, which is what happens. Nothing behaves differently.
+- R3 (README and the test, P3): a person deploying their own copy who changes the `wss://` address also has to change `tests/headers.test.mjs`; a follow-up can loosen that check to any one `wss://` host.
+- R3 (gap): no test yet for a `<style>` element built by the page; the page builds none today (only the storyboard export and the SVG file writer, both outside the page).
+- R2 and R3 nits about `scripts/smoke-csp.mjs` (a swallowed error in `until`, a flow that goes on after a timeout, the colour probe for the agent's dot): a timeout is still counted as a failure; not worth another round.
