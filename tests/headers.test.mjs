@@ -59,7 +59,7 @@ test("headers: the usual security headers", async () => {
   assert.equal(h["referrer-policy"], "strict-origin-when-cross-origin");
   assert.equal(h["cross-origin-opener-policy"], "same-origin");
   assert.match(h["strict-transport-security"] || "", /^max-age=\d{8,}$/);
-  for (const feature of ["camera", "microphone", "geolocation"]) assert.match(h["permissions-policy"] || "", new RegExp(`\\b${feature}=\\(\\)`));
+  for (const feature of ["camera", "microphone", "geolocation", "payment", "usb"]) assert.match(h["permissions-policy"] || "", new RegExp(`\\b${feature}=\\(\\)`));
 });
 
 // What the CSP forbids must not be in the page: no inline script, style or handler in index.html, and no style
@@ -72,7 +72,7 @@ test("headers: the page needs nothing the CSP blocks", async () => {
   const files = [...(await readdir(pub)).filter((f) => f.endsWith(".js")), ...(await readdir(new URL("together/", pub))).filter((f) => f.endsWith(".js")).map((f) => `together/${f}`)];
   for (const file of files) {
     if (file === "video-folder.js") continue;
-    assert.doesNotMatch(await read(file), /\sstyle="/, file);
+    assert.doesNotMatch(await read(file), /\sstyle=["'$]|setAttribute\(\s*["']style/, file);
   }
 });
 
@@ -81,6 +81,7 @@ test("headers: the section list's people dots carry their colour as a key the CS
   for (const p of [{ kind: "agent" }, { colour: 0 }, { colour: 5 }, { colour: 7 }]) {
     assert.equal(colourVar(p), colourKey(p) === "agent" ? "var(--agent)" : `var(--rc-${colourKey(p)})`);
   }
+  assert.match(await read("together-adapter.js"), /class="pdot pdot--person" data-c="\$\{colourKey\(c\)\}"/);
   const css = await read("app.css");
   for (const key of ["agent", "1", "2", "3", "4", "5", "6"]) assert.match(css, new RegExp(`\\.pdot--person\\[data-c="${key}"\\]`));
 });

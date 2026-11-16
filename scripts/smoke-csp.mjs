@@ -140,12 +140,10 @@ async function run(width, height) {
   const info = JSON.parse(await agent("upload_image", {}));
   const { imageId } = await (await fetch(info.url, { method: "PUT", headers: { "Content-Type": "image/png" }, body: Buffer.from(png, "base64") })).json();
   await agent("sketch_shot", { shotId: "B2", imageId });
-  await page.until(`[...document.querySelectorAll('#script img')].some((i) => i.src.startsWith("data:image/") && i.complete && i.naturalWidth > 0)`, "the agent's picture shows");
-  check(true, `${tag} the agent's picture shows as a data: image`);
+  check(await page.until(`[...document.querySelectorAll('#script img')].some((i) => i.src.startsWith("data:image/") && i.complete && i.naturalWidth > 0)`, "the agent's picture shows"), `${tag} the agent's picture shows as a data: image`);
   await clean(page, tag, "B-roll: an agent's drawing and picture");
   await page.click(`[data-view="board"]`);
-  await page.until(`!document.querySelector("#board").hidden && document.querySelectorAll("#board img, #board svg").length > 0`, "the storyboard");
-  check(true, `${tag} the storyboard shows`);
+  check(await page.until(`!document.querySelector("#board").hidden && document.querySelectorAll("#board img, #board svg").length > 0`, "the storyboard"), `${tag} the storyboard shows`);
   await clean(page, tag, "storyboard");
   await page.click(`[data-view="script"]`);
   await page.until(`!document.querySelector("#script").closest(".sheet").hidden`, "back to the script");
@@ -163,8 +161,7 @@ async function run(width, height) {
     await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
     await sleep(150);
     await page.send("Input.insertText", { text: "promise" });
-    await page.until(`document.querySelector("#script").textContent.includes("promise")`, "the typed word");
-    check(true, `${tag} typing replaces the selected word`);
+    check(await page.until(`document.querySelector("#script").textContent.includes("promise")`, "the typed word"), `${tag} typing replaces the selected word`);
   } else check(false, `${tag} a word to select`);
   await clean(page, tag, "edit");
 
