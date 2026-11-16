@@ -20,6 +20,7 @@ function folder() {
         if (handle.fail) throw new Error("The disk is full.");
         log.push([handle.name, text]);
         await gates.get(handle.name);
+        if (handle.fail) throw new Error("The disk is full.");
         disk.set(handle.name, { text, lastModified: ++tick });
         return tick;
       },
@@ -324,6 +325,39 @@ test("saving: another script opened while Save as writes keeps its own file, nam
   await s.saving.save();
   assert.equal(s.files.disk.get("b.md").text, "# B\n\nBee.\n");
   assert.equal(s.files.disk.get("moved.md").text, "# A\n\nMoving.\n");
+});
+
+test("saving: after a Save as that landed with another script open, that script's waiting click runs; a failed write says nothing there", async () => {
+  const s = setup({ handle: null });
+  s.files.outside("a.md", "# A\n");
+  s.files.outside("b.md", "# B\n");
+  s.saving.open({ handle: { name: "a.md" }, name: "a.md", browser: true, savedText: "# A\n", modified: 1 });
+  const release = s.files.hold("moved.md");
+  s.files.port.pickSave = async () => ({ name: "moved.md" });
+  const run = s.saving.saveAs();
+  await settle();
+  const B = { name: "b.md" };
+  s.open(B, "# B\n");
+  s.ed.text = "# B\n\nClicked.\n";
+  s.saving.save(); // Ctrl+S on B while A's file is written
+  release();
+  await run;
+  await until(() => !s.script.saving && s.files.disk.get("b.md").text.includes("Clicked."));
+  assert.deepEqual(B.asked, [true], "B's click keeps its flags");
+  // The same with a write that fails after B opened: B shows no error and nothing moves.
+  const f = setup({ handle: null });
+  f.saving.open({ handle: { name: "a.md" }, name: "a.md", browser: true, savedText: "", modified: 1 });
+  const target = { name: "moved.md" }, go = f.files.hold("moved.md");
+  f.files.port.pickSave = async () => target;
+  const failing = f.saving.saveAs();
+  await settle();
+  f.files.outside("b.md", "# B\n");
+  f.open({ name: "b.md" }, "# B\n");
+  target.fail = true;
+  go();
+  await failing;
+  assert.deepEqual([f.script.saveError, f.script.name], ["", "b.md"]);
+  assert.ok(!f.events.some((e) => e[0] === "placed" || e[0] === "renamed"));
 });
 
 test("saving: Ctrl+S where neither the browser nor a file picker can save downloads the script", async () => {

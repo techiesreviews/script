@@ -326,3 +326,80 @@ ok share (guest): no page error or CSP violation
 ok all
 
 ## node scripts/smoke-csp.mjs (head): 51 ok, 0 FAIL, ok all
+
+# After review round 2, 2026-11-16T12:42:38Z: the open script's waiting click runs after a Save as that landed with it open
+
+## node scripts/smoke-saving.mjs (head)
+ok new script: saved in the browser at once
+ok new script: the file takes the title's name
+ok new script: the old name is gone from the browser
+ok new script: the file holds the typed title
+ok auto-save: nothing is written while typing goes on
+ok auto-save: the dot shows unsaved changes meanwhile
+ok auto-save: the text is written after the pause
+ok auto-save: it waits about 1.5 s
+ok Ctrl+S: written at once, before the auto-save pause
+ok a new script left untouched is not kept
+ok reload: the start screen offers to reopen the browser script
+ok reload: the reopened browser script has its saved text
+ok reload: no unsaved-changes line for a saved script
+ok new script: no page error or CSP violation
+ok draft: kept in local storage with its time
+ok draft: the demo is not saved to a file by auto-save
+ok draft: after a reload the demo offers Restore and Discard
+ok draft: the script shows the file until Restore
+ok draft: Restore brings the typed words back
+ok draft: Discard keeps the file's text
+ok draft: Discard removes the kept draft
+ok Ctrl+S on the demo saves it in the browser
+ok Ctrl+S on the demo: the file holds what was typed
+ok draft: no page error or CSP violation
+ok disk file: auto-save writes to the opened file
+ok disk file: no copy in the browser
+ok changed on disk: the line says when
+ok changed on disk: the other version is not written over
+ok changed on disk: auto-save waits for the person's choice
+ok changed on disk: Save mine writes this version
+ok Open that version: the screen's text waits as unsaved changes
+ok Open that version, then Restore: saved to the file again
+ok reload: the start screen offers to reopen the file
+ok reload: the reopened file shows its saved text
+ok disk file: no page error or CSP violation
+ok permission: auto-save asks with Allow saving to talk.md
+ok permission: nothing is written without access
+ok permission: Allow saving writes the file and goes away
+ok permission: a refused Ctrl+S shows Not saved with the reason
+ok Save as: the picker suggests the script's name
+ok Save as: the file on the computer holds the script
+ok Save as: the browser copy is gone
+ok Save as: later typing saves to the new file
+ok Save as: the switcher no longer tags it Browser
+ok prompter link: carries the script's latest text
+ok video folder: script.md is the saved script
+ok video folder: prompter-link.txt is written
+ok move to file: no page error or CSP violation
+ok switch: alpha.md gets all of Alpha's words
+ok switch: bravo.md gets only Bravo's words
+ok switch: no write ever went to the other script's file
+ok switch: Alpha reopens with no unsaved changes
+ok failed write: alpha.md could not be written
+ok failed write: Alpha's problem does not show on Bravo
+ok failed write: reopening Alpha offers its unsaved words
+ok failed write: Restore saves the words to alpha.md
+ok switch: no page error or CSP violation
+ok B-roll link: the script is saved in the browser under its title's name
+ok B-roll link: the saved script does not take the demo's list
+ok B-roll link: no demo shots beside the saved script
+ok page hide: the file is written at once
+ok page hide: no page error or CSP violation
+ok two tabs: the second tab sees the first tab's save
+ok two tabs: the first tab's words are not written over
+ok two tabs (one): no page error or CSP violation
+ok two tabs (two): no page error or CSP violation
+ok share: the guest's words are saved to the host's file
+ok share: the guest's browser keeps no copy
+ok share: the guest's Ctrl+S writes nothing
+ok share: the guest keeps no draft
+ok share (host): no page error or CSP violation
+ok share (guest): no page error or CSP violation
+ok all
