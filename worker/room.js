@@ -7,10 +7,9 @@
 // ended, the erase 7 days later.
 //
 // No Cloudflare imports, so the tests can run it with a fake ctx and fake sockets.
-import { ENDED_KEEP_MS } from "../public/together/room.js";
+import { ENDED_KEEP_MS, PROTOCOL } from "../public/together/room.js";
 
-export { ENDED_KEEP_MS };
-export const PROTOCOL = "script-editor-room";
+export { ENDED_KEEP_MS, PROTOCOL };
 export const HOST_GRACE_MS = 30_000;
 export const HOST_CHECK_MS = 24 * 60 * 60 * 1000;
 export const GUESTS_MAX = 20;
