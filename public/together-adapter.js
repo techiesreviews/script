@@ -4,12 +4,18 @@
 import * as D from "./doc.js";
 import * as C from "./changes.js";
 import { agentBrand } from "./agent-brand.js";
-import { RoomClient, newRoom, parseLink } from "./together/room.js";
+import { newRoom, makeLink, parseLink } from "./together/link.js";
 import { applyOp, movePoint } from "./together/ops.js";
 import { createCarets, colourVar, colourKey } from "./together/carets.js";
 import { createShareButton } from "./together/share-button.js";
 
 export { parseLink };
+// The room itself (together/room.js) loads on first use: the host's first Share to edit, or a guest's edit link. It
+// must speak this interface version; a tab from before a release that gets a newer room counts it as not loaded.
+export const ROOM_SEAM = 1;
+// A part that didn't arrive may come on a retry; one from a newer release (another seam version) comes the same every time.
+const ROOM_GONE = "Couldn't share. Click to try again.";
+const ROOM_STALE = "Couldn't share. Reload the page.";
 const TYPES = ["title", "heading", "note", "raw", "para"];
 const ATTRS = ["type", "sep", "prefix"];
 
@@ -271,8 +277,35 @@ export function scriptAdapter(app, { busy = () => false } = {}) {
     },
   };
 }
-export function createTogether(app) {
+// A retry asks under a new address: a browser keeps a module that failed to load as failed under its own address.
+const importRoom = (retry) => (retry ? import(`./together/room.js?retry=${retry}`) : import("./together/room.js"));
+export function createTogether(app, { loadRoom = importRoom } = {}) {
   let room = null, composing = false, last = "", shared = { asks: "", broll: "" };
+  // The room's part, fetched once (a failed load stays failed until the host clicks Share to edit again, which asks
+  // again); `starting` is a room waiting for it: the host's share or a guest's join, dropped when sharing stops or a
+  // newer join replaces it.
+  let roomPart = null, roomFailed = false, retries = 0, starting = null;
+  const part = () => (roomPart ??= loadRoom(retries).then((m) => {
+    if (m?.SEAM !== ROOM_SEAM || typeof m.RoomClient !== "function") throw Object.assign(new Error("The room part speaks another version."), { stale: true });
+    return m;
+  }).catch((e) => { roomFailed = true; throw e; }));
+  function startRoom(opts, failed) {
+    const mine = (starting = { ...opts });
+    part().then((m) => {
+      if (starting !== mine) return;
+      starting = null;
+      // The host's Undo steps from before sharing end when the room starts, not while it waits for its part.
+      if (opts.role === "host") app.sharing(true);
+      room = new m.RoomClient({ ...opts, url: wsUrl(), adapter, on }).start();
+      render();
+    }, (e) => {
+      if (starting !== mine) return;
+      starting = null;
+      failed(e);
+      render();
+    });
+    return mine;
+  }
   const $ = (s) => document.querySelector(s);
   const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/room`;
   const isGuest = () => room?.role === "guest";
@@ -352,19 +385,20 @@ export function createTogether(app) {
   /* Share to edit (host) */
   const share = createShareButton({
     button: $("#shareBtn"), stop: $("#stopShare"), iconSlot: $("#shareIcon"), label: $("#shareLabel"),
-    icons: { share: app.icon("share"), link: app.icon("link"), check: app.icon("check") },
+    icons: { share: app.icon("share"), link: app.icon("link"), check: app.icon("check"), warn: app.icon("warn") },
+    // The link is made (and copied) inside the click; the room with its keys starts once its part is here.
     share: () => {
       if (!app.doc()) return null;
-      if (!room) {
-        const name = app.me.name && app.me.name !== "You" ? app.me.name : "Host";
-        shared = { asks: "", broll: "" };
-        room = new RoomClient({ role: "host", ...newRoom(), url: wsUrl(), name, adapter, on }).start();
-        app.sharing(true);
-        render();
-      }
-      return room.link(location.origin);
+      if (roomFailed) { roomPart = null; roomFailed = false; retries++; } // the part failed (also for a stopped share): ask again
+      if (room) return room.link(location.origin);
+      if (starting?.role === "host") return makeLink(location.origin, starting);
+      const name = app.me.name && app.me.name !== "You" ? app.me.name : "Host";
+      shared = { asks: "", broll: "" };
+      const keys = startRoom({ role: "host", ...newRoom(), name }, shareFailed);
+      render();
+      return makeLink(location.origin, keys);
     },
-    end: () => { room?.stop(); },
+    end: () => { if (starting?.role === "host") cancelHost(); else room?.stop(); },
     fallback: (link) => {
       const box = $("#shareLink");
       box.value = link;
@@ -373,6 +407,18 @@ export function createTogether(app) {
       box.select();
     },
   });
+
+  // Sharing could not start: a box to copy the link by hand (opened while the part loaded) closes, as its link leads nowhere;
+  // the button says to try again, or to reload when the part is from a newer release.
+  function shareFailed(e) {
+    const box = $("#shareLink");
+    if (box.value) { $("#shareMenu").hidePopover(); box.value = ""; }
+    share.fail(e?.stale ? ROOM_STALE : ROOM_GONE);
+  }
+
+  // The room's part is fetched as the pointer or the focus reaches Share to edit, so the click seldom waits for it: the
+  // room then starts about as soon after the copied link as it did when it loaded with the page.
+  for (const type of ["pointerenter", "pointerdown", "focusin"]) $("#share").addEventListener(type, () => { if (app.doc()) part().catch(() => {}); });
 
   /* People in the top bar: you, then the others (and the agent while it has a caret). Clicking one scrolls to their caret. */
   function renderPeople() {
@@ -414,6 +460,13 @@ export function createTogether(app) {
   });
   $("#people").addEventListener("animationend", (e) => delete e.target.dataset.new);
 
+  // A host's share that stops before its room is here: nothing started, so the app's Undo stays as it is.
+  function cancelHost() {
+    starting = null;
+    share.set(false);
+    render();
+  }
+
   function render() {
     renderPeople();
     carets.set(caretList());
@@ -423,17 +476,24 @@ export function createTogether(app) {
 
   return {
     get active() { return !!room && !room.stopped; },
+    /** Sharing is on: a running room, or the host's share waiting for its part (the agent may not open another script over it; the person opening one stops it). */
+    get sharing() { return (!!room && !room.stopped) || starting?.role === "host"; },
     get guest() { return isGuest(); },
     get room() { return room; },
     get outbox() { return outbox.items; },
     /** Guest: join the room in the link with a name. */
     join(link, name) {
       room?.stop();
-      room = new RoomClient({ role: "guest", ...link, url: wsUrl(), name, adapter, on }).start();
-      return room;
+      room = null;
+      startRoom({ role: "guest", ...link, name }, () => app.joinFailed("unloaded"));
     },
+    /** Guest: fetch the room's part while the person types a name. */
+    preload() { part().catch(() => {}); },
     /** Host: stop sharing (opening another script, for example). */
-    stop() { if (room && room.role === "host") { room.stop(); share.set(false); } },
+    stop() {
+      if (starting?.role === "host") cancelHost();
+      else if (room && room.role === "host") { room.stop(); share.set(false); }
+    },
     /** After every change: the text goes to the room, and the host shares its asks and B-roll when they changed. */
     local() { room?.local(); sync(); },
     /** Host: the change just made is the agent's (an answer that went straight in, or its Undo): it goes to the room
