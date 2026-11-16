@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emptyQueue, queueSave, settleQueue, splitQueue, changedOnDisk } from "../public/save-queue.js";
+import { readFileSync } from "node:fs";
+import { emptyQueue, queueSave, settleQueue, splitQueue } from "../public/save-queue.js";
 
 const A = { name: "a.md" }, B = { name: "b.md" };
-const req = (handle, text, flags = {}) => ({ handle, name: handle?.name ?? "untitled.md", text, savedText: "saved", fileModified: 100, force: false, auto: true, ...flags });
+const req = (handle, text, flags = {}) => ({ handle, name: handle?.name ?? "untitled.md", text, savedText: "saved", force: false, auto: true, ...flags });
 
 test("save queue: within one file the newest text and the strongest flags win", () => {
   let q = queueSave(emptyQueue(), req(A, "a1", { force: true, auto: true }));
@@ -53,28 +54,21 @@ test("save queue: a waiting request for a script the person left becomes a snaps
   assert.deepEqual(splitQueue(emptyQueue(), A), { left: [], current: null });
 });
 
-test("save queue: the finished write's lastModified feeds the snapshot's changed-on-disk check", () => {
-  // A's running save wrote "a1" at time 200; its snapshot still knows the older file (time 100, "saved").
+test("save queue: the finished write's words feed the snapshot's changed-on-disk check", () => {
+  // A's running save wrote "a1"; its snapshot still knows the older file ("saved").
   let q = queueSave(emptyQueue(), req(A, "a2"));
   q = queueSave(q, req(B, "b1"));
-  const fileAfterOurWrite = { lastModified: 200, text: "a1" };
-  assert.equal(changedOnDisk(q.left[0], fileAfterOurWrite), true, "without the finished write it looks like someone else changed it");
+  assert.equal(q.left[0].savedText, "saved", "without the finished write the file looks changed by someone else");
   q = settleQueue(q, { handle: A, text: "a1", modified: 200 });
-  assert.equal(q.left[0].fileModified, 200);
   assert.equal(q.left[0].savedText, "a1");
-  assert.equal(changedOnDisk(q.left[0], fileAfterOurWrite), false);
-  assert.equal(changedOnDisk(q.left[0], { lastModified: 300, text: "someone else" }), true);
   // Other files and failed writes are left alone.
-  assert.equal(q.waiting.fileModified, 100);
+  assert.equal(q.waiting.savedText, "saved");
   assert.equal(settleQueue(q, null), q);
-  assert.equal(settleQueue(q, { handle: A, text: "x", modified: 0 }), q);
+  // A write whose file time could not be read still counts: the words are what the check goes by.
+  assert.equal(settleQueue(q, { handle: B, text: "b0", modified: 0 }).waiting.savedText, "b0");
 });
 
-test("changed on disk: same text or an older file is not a change, force skips the check", () => {
-  const r = req(A, "a", { savedText: "s", fileModified: 100 });
-  assert.equal(changedOnDisk(r, { lastModified: 150, text: "s" }), false);
-  assert.equal(changedOnDisk(r, { lastModified: 100, text: "other" }), false);
-  assert.equal(changedOnDisk(r, { lastModified: 150, text: "other" }), true);
-  assert.equal(changedOnDisk({ ...r, force: true }, { lastModified: 150, text: "other" }), false);
-  assert.equal(changedOnDisk({ ...r, fileModified: 0 }, { lastModified: 150, text: "other" }), false);
+test("save queue: a request carries no file time; whether a file changed is decided by its words (saving.js)", () => {
+  const src = readFileSync(new URL("../public/save-queue.js", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /fileModified|lastModified|changedOnDisk/);
 });
