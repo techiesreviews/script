@@ -841,6 +841,17 @@ test("saving: every save into a browser script holds its name from its start to 
   await s.saving.save();
   assert.equal(s.files.disk.get("disk.md").text, "# Disk\n\nMore.\n");
   assert.deepEqual(held, ["a2.md", "b.md", "b.md"]);
+  // The same for a file on the computer the person left while a save of it waited.
+  const releaseDisk = s.files.hold("disk.md");
+  s.ed.text = "# Disk\n\nFirst.\n";
+  s.saving.save();
+  s.ed.text = "# Disk\n\nSecond.\n";
+  s.saving.save();
+  openBrowser("c.md", "# C\n");
+  releaseDisk();
+  await until(() => !s.script.saving);
+  assert.equal(s.files.disk.get("disk.md").text, "# Disk\n\nSecond.\n");
+  assert.deepEqual(held, ["a2.md", "b.md", "b.md"], "the left file's save ran without a hold");
 });
 
 test("saving: a name kept without a fingerprint (kept before copies had one) is never deleted: its copy shows again; a name whose copy is gone is freed with its fingerprint", async () => {
