@@ -27,6 +27,14 @@ ok 1280 px: with the room's part held, the link is still copied in the click
 ok 1280 px: sharing shows as on while the part is held, with no room yet
 ok 1280 px: sharing stopped before the part came: no room starts
 ok 1280 px: room held, sharing stopped: no CSP violation or error
+ok 1280 px: the export pack's download is held
+ok 1280 px: Export all waits for the pack
+ok 1280 px: once the pack is here, one zip downloads
+ok 1280 px: it holds the script on screen at the click, not the one opened since
+ok 1280 px: Export all while the pack loads: no CSP violation or error
+ok 1280 px: a pack that fails after the folder is picked: Save to video folder says to reload
+ok 1280 px: nothing is written to the picked folder
+ok 1280 px: pack that fails after the picker: no CSP violation or error
 ok 1280 px: a room that can't load: the share button says to reload
 ok 1280 px: sharing is off again
 ok 1280 px: an export pack that can't load: Export all and Save to video folder say to reload
@@ -60,6 +68,14 @@ ok 390 px: with the room's part held, the link is still copied in the click
 ok 390 px: sharing shows as on while the part is held, with no room yet
 ok 390 px: sharing stopped before the part came: no room starts
 ok 390 px: room held, sharing stopped: no CSP violation or error
+ok 390 px: the export pack's download is held
+ok 390 px: Export all waits for the pack
+ok 390 px: once the pack is here, one zip downloads
+ok 390 px: it holds the script on screen at the click, not the one opened since
+ok 390 px: Export all while the pack loads: no CSP violation or error
+ok 390 px: a pack that fails after the folder is picked: Save to video folder says to reload
+ok 390 px: nothing is written to the picked folder
+ok 390 px: pack that fails after the picker: no CSP violation or error
 ok 390 px: a room that can't load: the share button says to reload
 ok 390 px: sharing is off again
 ok 390 px: an export pack that can't load: Export all and Save to video folder say to reload
@@ -387,7 +403,8 @@ ok 320 px: the link follows the kept cue file
 all ok
 
 ## scripts/smoke-keep-all.mjs
-ok lines: 933
+ok lines: 933, FAIL lines: 0
+RESULT: ok
 
 ## scripts/smoke-room.mjs
 ok /api/room without a WebSocket gets 426

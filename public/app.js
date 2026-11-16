@@ -2306,7 +2306,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
     deleteBrowserScript({ handle: state.handle, name: state.name });
   }
   // Sharing ends when another script opens; the same file read again from disk stays shared.
-  if (together?.active && !(handle && handle === state.handle)) together.stop();
+  if (together?.sharing && !(handle && handle === state.handle)) together.stop();
   $("#emptyNote").hidden = true;
   hideBar();
   closeCard();
@@ -3562,7 +3562,7 @@ async function scriptList() {
 }
 async function openScript(args, by) {
   if (askingToOpen) return { error: busyChoice() };
-  if (together?.active) return { error: "The person is sharing this script with others; opening another one would end that. Ask them to stop sharing first." };
+  if (together?.sharing) return { error: "The person is sharing this script with others; opening another one would end that. Ask them to stop sharing first." };
   const busy = state.doc ? busyChoice() : "";
   if (busy) return { error: busy };
   // A script without a file can't be saved on the way out: leaving it would leave it only as a hidden draft.
@@ -3614,7 +3614,7 @@ async function openScript(args, by) {
     choice = "open";
     // Things may have changed since the line showed up (sharing, a choice, unsaved text without a file), or the
     // browser's prompt may be refused: then nothing opens and the line goes, as with Not now.
-    const allowed = () => line === lineSeq && !together?.active && !(state.doc && (state.pendingDraft || state.conflict || (!state.handle && isDirty())));
+    const allowed = () => line === lineSeq && !together?.sharing && !(state.doc && (state.pendingDraft || state.conflict || (!state.handle && isDirty())));
     const ok = allowed() && (await permitted(r.handle, true));
     if (choice !== "open") return;
     if (!(ok && allowed())) return notNow();

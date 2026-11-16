@@ -457,8 +457,9 @@ export function createTogether(app, { loadRoom = () => import("./together/room.j
   }
 
   return {
-    // A host's share waiting for its room counts: another script may not open over it.
-    get active() { return (!!room && !room.stopped) || starting?.role === "host"; },
+    get active() { return !!room && !room.stopped; },
+    /** Sharing is on: a running room, or the host's share waiting for its part (another script may not open over it). */
+    get sharing() { return (!!room && !room.stopped) || starting?.role === "host"; },
     get guest() { return isGuest(); },
     get room() { return room; },
     get outbox() { return outbox.items; },
