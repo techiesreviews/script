@@ -208,3 +208,37 @@ ok 390 px: Share to edit: no CSP violation or error
 ok 390 px: a new script is saved with what was typed
 ok 390 px: new script and save: no CSP violation or error
 ok all
+
+# Planted-bug check, 2026-11-16T12:31:11Z: a left script's snapshot written to the open script's file, then put back
+
+```diff
+-          return { handle: snap.handle, text: snap.text, modified: await files.write(snap.handle, snap.text) };
++          return { handle: snap.handle, text: snap.text, modified: await files.write(script.handle, snap.text) };
+```
+
+## node --test tests/saving.test.mjs (with the planted bug)
+✖ failing tests:
+✖ saving: a save always goes to the script it was made for, also when another script opens while it runs (222.311642ms)
+✖ saving: a script the person left that cannot be written keeps its text as a draft stamped by the clock (3.80155ms)
+ℹ fail 2
+ℹ pass 10
+
+## ONLY=runSwitch node scripts/smoke-saving.mjs (with the planted bug)
+FAIL timed out: both files written
+FAIL switch: alpha.md gets all of Alpha's words (# Alpha
+
+Alpha start. Alpha one.
+)
+FAIL switch: bravo.md gets only Bravo's words (# Alpha
+
+Alpha start. Alpha one. Alpha two.
+)
+FAIL switch: no write ever went to the other script's file ([{"name":"bravo.md","text":"# Alpha\n\nAlpha start. Alpha one. Alpha two.\n"}])
+FAIL timed out: Bravo settled
+FAIL switch: Alpha reopens with no unsaved changes (Unsaved changes from 13:30RestoreDiscard)
+ok failed write: alpha.md could not be written
+FAIL failed write: Alpha's problem does not show on Bravo
+ok failed write: reopening Alpha offers its unsaved words
+FAIL failed write: Restore saves the words to alpha.md
+ok switch: no page error or CSP violation
+FAIL 8
