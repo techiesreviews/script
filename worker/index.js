@@ -4,10 +4,9 @@ import { Relay } from "./relay.js";
 import { Room, PROTOCOL as ROOM_PROTOCOL } from "./room.js";
 import { handleMcp, TOKEN_RE, checkToken, newToken } from "./mcp.js";
 import { IMAGE_UPLOAD_MAX, IMAGE_TYPES } from "../public/broll.js";
+import { ROOM_RE, KEY_RE } from "../public/together/link.js";
 
 export { Relay, Room };
-const ROOM_RE = /^[A-Za-z0-9_-]{22}$/;
-const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 // A picture from the agent (step K): /mcp/images/<the token's hash>/<a one-time code the tab gave out>.
 const IMAGE_PATH_RE = /^\/mcp\/images\/([0-9a-f]{64})\/([A-Za-z0-9_-]{22})$/;
 // The body, read with a running count: past `max` bytes it stops (null). No decoding: the bytes go on as they are.

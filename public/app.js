@@ -6,6 +6,7 @@ import * as L from "./links.js";
 import * as K from "./cues.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
+import { TOKEN_MAX_AGE_MS as AGENT_MAX_AGE, NO_ASKS } from "./agent-link.js";
 import { listState, settleFolder, folderNote } from "./folder-note.js";
 import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
 
@@ -3314,8 +3315,6 @@ slashMenu.addEventListener("pointerdown", (e) => e.preventDefault());
 slashMenu.addEventListener("click", (e) => { const it = e.target.closest("[data-part]"); if (it) pickSlash(it.dataset.part); });
 
 /* ---------- Your own agent over MCP (live relay) ---------- */
-const AGENT_MAX_AGE = 8 * 60 * 60 * 1000;
-const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
 const STAYS_IN_PARAGRAPH = "This text would turn the asked paragraph into another kind of line (a heading, a list, a note). Send text that stays in the paragraph, with no new paragraphs.";
 const RETAKE_AFTER_MS = 2 * 60 * 1000;
 const BROLL_GONE = "The editor could not load its B-roll part. Ask the person to reload the page.";
