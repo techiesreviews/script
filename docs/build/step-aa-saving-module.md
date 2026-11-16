@@ -13,7 +13,7 @@ Lex (2026-11-15): pick 3 of the script editor review (TOOLS-296, report `script-
 
 ## Browser check
 
-`scripts/smoke-saving.mjs` on `wrangler dev` (it applies `_headers`) and headless Chrome, 1280 px, real typing and clicks; files on the computer are a folder in the browser's private file system that the stubbed pickers hand out. It passed on `dev` before the move (70 checks, twice) and passes unchanged after it. The older suites (`smoke-csp`, `smoke-video-folder`, `smoke-broll-lazy`, `smoke-keep-all`, `smoke-room`, `smoke-relay`) pass on the same server. Evidence: `docs/agents/evidence/tools-308-browser.txt`.
+`scripts/smoke-saving.mjs` on `wrangler dev` (it applies `_headers`) and headless Chrome, 1280 px, real typing and clicks; files on the computer are a folder in the browser's private file system that the stubbed pickers hand out. It passed on `dev` before the move (70 checks, twice) and passes unchanged after it; the page-hide check added after GPT's second look passes on both. The older suites (`smoke-csp`, `smoke-video-folder`, `smoke-broll-lazy`, `smoke-keep-all`, `smoke-room`, `smoke-relay`) pass on the same server. Evidence: `docs/agents/evidence/tools-308-browser.txt`.
 
 ## Done
 
@@ -22,9 +22,11 @@ Feature list: no change (saving moved into one module; nothing on screen changes
 ### Proof
 
 - Characterization tests for every saving path, passing on `dev` first: met. `node scripts/smoke-saving.mjs` on `origin/dev` 4e2bb84 printed 70 `ok` and `ok all`, twice (evidence, step 1).
-- One saving module with the storage, clock and file system passed in; `app.js` only calls it: met. `tests/saving.test.mjs` failed first (`Cannot find module public/saving.js`), now 12 of 12 pass; its first test fails if `app.js` holds save code or the save queue again.
+- One saving module with the storage, clock and file system passed in; `app.js` only calls it: met. `tests/saving.test.mjs` failed first (`Cannot find module public/saving.js`), now 14 of 14 pass; its first test fails if `app.js` holds save code or the save queue again.
 - The step-1 tests keep passing unchanged: met. The same `smoke-saving.mjs` after the move: 70 `ok`, `ok all`.
 - A save always goes to the script it was made for: met. Browser: alpha.md's write held 900 ms, more typing, a switch to bravo.md and Ctrl+S there; alpha.md gets all of Alpha's words, bravo.md only Bravo's, and no write ever carried the other script's text. With a planted bug (a left script's snapshot written to the open script's file; diff and both runs in the evidence) both checks fail: the unit test, and in the browser `FAIL switch: no write ever went to the other script's file ([{"name":"bravo.md","text":"# Alpha …"}])`; with the code as it is both pass. Unit: the same with a held write in memory, and the open script's record follows only its own write. B-roll: with the demo's list loaded and the next script's link lookup held, a save under a new name gets no list (`B-roll link: the saved script does not take the demo's list`).
+- Save as follows the script it was made for (GPT's second look, a real race, fixed): met. If another script was opened while Export → "Markdown file (.md)" was still writing, that other script took over the new file's place and name (its later typing would have saved into the moved script's file, and the moved script's B-roll link and draft went to it). `tests/saving.test.mjs` "another script opened while Save as writes…" failed first (the open script's record pointed at `moved.md`), now passes: the picked file gets the text and is listed, the open script keeps its own file, name, draft and B-roll keys, and the browser copy stays.
+- Page hide saves at once (GPT's gap): met. `runPageHide` passed on the code from before the move and passes now (evidence).
 - Strict CSP green: met. `smoke-csp` 51 `ok`, `ok all`, no violation; `smoke-saving` checks for none on every page too.
 - All unit and browser checks green: met. `kit specs` 458 pass; the six older browser suites pass.
 

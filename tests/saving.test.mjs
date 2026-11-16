@@ -45,7 +45,7 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
   if (handle) files.outside(handle.name, text);
   const script = { handle: null, name: "", savedText: "", fileModified: 0, saving: false, autoSaving: false, saveError: "", needsPermission: false, conflict: false, inBrowser: false, blank: "" };
   const ed = { doc: { id: 1 }, text, ready: true, paused: false };
-  const saving = createSaving({
+  const ports = {
     script,
     editor: { ready: () => ed.ready, doc: () => ed.doc, text: () => ed.text, dirty: () => ed.text !== script.savedText, paused: () => ed.paused },
     files: files.port,
@@ -60,7 +60,8 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
       renamed: (from, to, o) => events.push(["renamed", from, to, o]),
       placed: (h, o) => events.push(["placed", h.name, o]),
     },
-  });
+  };
+  const saving = createSaving(ports);
   // Opening a script, as loadText does: the record starts from the file.
   const open = (h, t) => {
     ed.doc = { id: Math.random() };
@@ -68,7 +69,7 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
     saving.open({ handle: h, name: h?.name ?? "demo.md", savedText: t, modified: h ? files.disk.get(h.name).lastModified : 0 });
   };
   if (handle) open(handle, text);
-  return { files, time, store, events, script, ed, saving, open };
+  return { files, time, store, events, script, ed, saving, open, ports };
 }
 
 test("saving: the interface is small, and app.js reaches saving only through it", () => {
@@ -294,6 +295,46 @@ test("saving: Save as moves a browser script to a file: renamed with its keys cl
   d.saving.open({ handle: { name: "b.md" }, name: "b.md", browser: true, savedText: "", modified: 1 });
   await d.saving.saveAs();
   assert.deepEqual(d.files.log, [["download", "b.md", d.ed.text]]);
+});
+
+test("saving: another script opened while Save as writes keeps its own file, name, draft and B-roll keys", async () => {
+  const s = setup({ handle: null });
+  s.files.outside("a.md", "# A\n");
+  s.files.outside("b.md", "# B\n");
+  s.saving.open({ handle: { name: "a.md" }, name: "a.md", browser: true, savedText: "# A\n", modified: 1 });
+  s.ed.text = "# A\n\nMoving.\n";
+  s.store.set("draft:a.md", { text: null, at: 1, asks: [{ id: "a" }] });
+  s.store.set("draft:b.md", { text: null, at: 1, asks: [{ id: "b" }] });
+  const release = s.files.hold("moved.md");
+  s.files.port.pickSave = async () => ({ name: "moved.md" });
+  const run = s.saving.saveAs();
+  await settle();
+  const B = { name: "b.md" };
+  s.open(B, "# B\n");
+  release();
+  await run;
+  assert.equal(s.files.disk.get("moved.md").text, "# A\n\nMoving.\n", "the picked file is written");
+  assert.deepEqual([s.script.handle, s.script.name, s.script.inBrowser, s.script.savedText], [B, "b.md", false, "# B\n"]);
+  assert.equal(s.script.fileModified, s.files.disk.get("b.md").lastModified);
+  assert.ok(!s.events.some((e) => e[0] === "renamed"), "no draft or B-roll link moves with the other script open");
+  assert.ok(!s.events.some((e) => e[0] === "placed" && e[2].was), "the browser copy of A stays");
+  assert.deepEqual(s.store.get("draft:b.md"), { text: null, at: 1, asks: [{ id: "b" }] });
+  assert.deepEqual(s.store.get("draft:a.md"), { text: null, at: 1, asks: [{ id: "a" }] });
+  s.ed.text = "# B\n\nBee.\n";
+  await s.saving.save();
+  assert.equal(s.files.disk.get("b.md").text, "# B\n\nBee.\n");
+  assert.equal(s.files.disk.get("moved.md").text, "# A\n\nMoving.\n");
+});
+
+test("saving: Ctrl+S where neither the browser nor a file picker can save downloads the script", async () => {
+  const s = setup({ handle: null });
+  s.open(null, "# Demo\n");
+  s.ed.text = "# Demo\n\nTyped.\n";
+  const plain = createSaving({ ...s.ports, browser: null });
+  s.time.t = 90_000;
+  await plain.save();
+  assert.deepEqual(s.files.log, [["download", "demo.md", "# Demo\n\nTyped.\n"]]);
+  assert.deepEqual([s.script.savedText, s.script.fileModified, s.script.savedAt, s.script.handle], ["# Demo\n\nTyped.\n", 90_000, 90_000, null]);
 });
 
 test("saving: drafts are kept by script name, and move with a rename", () => {

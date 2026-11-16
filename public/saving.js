@@ -42,6 +42,7 @@ export async function permitted(handle, ask, mode = "readwrite") {
 export function createSaving({ script, editor, files, browser, drafts: store, clock, on }) {
   let queue = Q.emptyQueue();
   let timer = 0;
+  let opened = 0; // counts open(): a Save as that lands after another script opened must leave that script alone
 
   const key = (name) => `draft:${name}`;
   const drafts = {
@@ -173,7 +174,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // save, then keep auto-saving there.
   async function saveAs() {
     if (!editor.ready() || script.saving) return;
-    const text = editor.text();
+    const text = editor.text(), mine = opened;
     const was = script.inBrowser ? script.handle : null;
     // Where files can't be saved, a script in the browser stays there and a copy downloads.
     if (was && !files.pickSave) return files.download(text, script.name);
@@ -185,25 +186,32 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         catch (e) { if (e?.name === "AbortError") return; throw e; }
         script.saving = true;
         on.status();
-        script.fileModified = await files.write(handle, text);
-        if (handle.name !== script.name) {
-          drafts.del(script.name);
-          // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees its
-          // name there, so its old keys are cleared; a file on disk or the demo keeps its own.
-          on.renamed(script.name, handle.name, { clear: !!was });
-          script.name = handle.name;
+        const modified = await files.write(handle, text);
+        if (mine === opened) {
+          script.fileModified = modified;
+          if (handle.name !== script.name) {
+            drafts.del(script.name);
+            // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees
+            // its name there, so its old keys are cleared; a file on disk or the demo keeps its own.
+            on.renamed(script.name, handle.name, { clear: !!was });
+            script.name = handle.name;
+          }
+          Object.assign(script, { handle, inBrowser: false, blank: "", needsPermission: false, conflict: false, savedText: text, savedAt: clock.now() });
+          // The script moved to its file: the copy in the browser goes.
+          on.placed(handle, { was });
+        } else {
+          // Another script opened while it was written: the file holds this text and is listed; the script open now
+          // keeps its own file, name, draft and B-roll keys, and the browser copy stays.
+          on.placed(handle, {});
         }
-        Object.assign(script, { handle, inBrowser: false, blank: "", needsPermission: false, conflict: false });
-        // The script moved to its file: the copy in the browser goes.
-        on.placed(handle, { was });
       } else {
         files.download(text, script.name);
         script.fileModified = clock.now(); // the downloaded copy is from now; the old file's day no longer fits it
+        script.savedText = text;
+        script.savedAt = clock.now();
       }
-      script.savedText = text;
-      script.savedAt = clock.now();
     } catch (e) {
-      script.saveError = e?.message || "Could not save.";
+      if (mine === opened) script.saveError = e?.message || "Could not save.";
     }
     script.saving = false;
     // Requests made during a save-as belonged to the old place; the new file is now current.
@@ -236,6 +244,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
 
   // Another script opens: its record starts from its file (a pending auto-save of the last one was flushed before).
   function open({ handle = null, name, browser: inBrowser = false, savedText, modified = 0, fresh = false }) {
+    opened++;
     Object.assign(script, {
       name, handle, inBrowser: !!handle && inBrowser, blank: "", savedText, savedAt: fresh ? 0 : modified,
       fileModified: modified, saveError: "", needsPermission: false, conflict: false,
