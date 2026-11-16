@@ -2303,10 +2303,10 @@ function persistDraft() {
 function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false }) {
   // Leaving a script: write what is still waiting to its own file, and keep a draft as a safety net.
   if (state.doc) { persistDraft(); saving.flush(); }
-  // A new script left as it came is not kept: empty ones would pile up in the browser.
-  if (state.doc && state.inBrowser && state.blank && handle !== state.handle && Doc.serialize(state.doc) === state.blank && !state.asks.length) {
-    deleteBrowserScript({ handle: state.handle, name: state.name });
-  }
+  // A new script left as it came is not kept: empty ones would pile up in the browser. It goes once this tab has let
+  // go of its name (below), and only while no other tab has it open or has saved words into it.
+  const unused = state.doc && state.inBrowser && state.blank && handle !== state.handle && Doc.serialize(state.doc) === state.blank && !state.asks.length
+    ? { handle: state.handle, name: state.name, words: state.blank } : null;
   // Sharing ends when another script opens; the same file read again from disk stays shared.
   if (together?.sharing && !(handle && handle === state.handle)) together.stop();
   $("#emptyNote").hidden = true;
@@ -2315,7 +2315,8 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   closeBroll();
   state.doc = Doc.parse(text);
   saving.open({ handle, name, browser, savedText: fresh ? Doc.serialize(state.doc) : text, modified, fresh });
-  holdOpen();
+  const freed = holdOpen();
+  if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle); dropKeys(unused.name); } }).catch(() => {});
   state.undo = [];
   state.redo = [];
   state.lastStep = null;
@@ -2505,11 +2506,11 @@ const saving = createSaving({
     },
     done(moved) { renderTop(); if (moved) renderDerived(); persistDraft(); },
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
-    placed(handle, { was = null, at, browser = false }) {
+    placed(handle, { was = null, words, browser = false }) {
       remember(handle, browser);
       // A script that moved to a file lets go of its browser copy's name first, so the cleanup can take it.
       const freed = holdOpen();
-      if (was) Promise.all([freed, forget(was)]).then(() => copies.afterMove(was.name, at)); // none rejects: afterMove keeps a copy it can't delete for later
+      if (was) Promise.all([freed, forget(was)]).then(() => copies.afterMove(was.name, words)).catch(() => {}); // a copy that can't be looked at now stays a browser script
     },
   },
 });
@@ -2737,9 +2738,10 @@ function scriptsDir() {
   scriptsDirP ??= navigator.storage.getDirectory().then((root) => root.getDirectoryHandle("scripts", { create: true }));
   return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
 }
-// Browser copies left behind by a move to a file: kept off the list, deleted on a later listing, never while a tab
-// has the script open or saves into it (saving.js). Web Locks tell the tabs apart; a browser without them gets one
-// tab's stand-in.
+// The scripts in the browser, for all tabs (saving.js): saves into one script run one at a time, a new or renamed
+// script never lands on a name another tab is taking, and a browser copy left behind by a move to a file is kept off
+// the list and deleted on a later listing, never while a tab has it open or saves into it, and never with words the
+// tab that moved it did not know. Web Locks tell the tabs apart; a browser without them gets one tab's stand-in.
 const copies = createLeftCopies({ store, dir: () => scriptsDir(), locks: navigator.locks ?? tabLocks() });
 // The open script, while it is a script in the browser, is held for the other tabs' cleanups: called whenever the
 // open script, its place or its name changes.
@@ -2774,14 +2776,10 @@ async function nameTaken(own = "") {
 }
 let keepAsked = false;
 async function createBrowserScript(name, text) {
-  const dir = await scriptsDir();
-  // Never over another script: getFileHandle with create would open it.
-  try { await dir.getFileHandle(name); throw new Error(`${name} is in the browser already.`); } catch (e) { if (e?.name !== "NotFoundError") throw e; }
-  const handle = await dir.getFileHandle(name, { create: true });
-  const modified = await writeHandle(handle, text);
+  const made = await copies.create(name, text); // never over another script, also one another tab makes at this moment
   // Ask once that the browser keeps the site's storage rather than clearing it to make room.
   if (!keepAsked) { keepAsked = true; navigator.storage.persist?.().catch(() => {}); }
-  return { handle, modified };
+  return made;
 }
 // A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser (drafts and B-roll keys
 // go by name, as for files on disk). `clear`: the old name goes away (a rename, a move to a file), so its B-roll keys
@@ -2809,7 +2807,7 @@ async function followTitle(handle) {
   if (Doc.scriptFileName("", doc).toLowerCase() === from.toLowerCase()) return; // the title's own name: nothing to look up
   const name = Doc.titleFileName(from, doc, await nameTaken(from));
   if (!name || handle !== state.handle) return;
-  await handle.move(name);
+  if (!(await copies.rename(handle, name))) return; // the name was taken meanwhile: tried again at the next save
   // The move is queued before the name changes: a link or unlink made before it went to the old name and moves with
   // it; one made after goes to the new name, after it.
   const moved = moveKeys(from, name, { clear: true });
@@ -2822,9 +2820,12 @@ async function followTitle(handle) {
 async function deleteBrowserScript(r) {
   await forget(r.handle);
   try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-  saving.drafts.del(r.name);
-  delKept(r.name);
-  setLinkKey(null, r.name);
+  dropKeys(r.name);
+}
+function dropKeys(name) {
+  saving.drafts.del(name);
+  delKept(name);
+  setLinkKey(null, name);
 }
 
 let listToken = 0;

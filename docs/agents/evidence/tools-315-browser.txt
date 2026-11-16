@@ -106,3 +106,43 @@ ok open elsewhere (one): no page error or CSP violation
 ok open elsewhere (two): no page error or CSP violation
 
 Full suites with the fix: smoke-saving 92 ok, smoke-csp 51 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, 0 FAIL
+
+## PR #75's second look on 8158156 (P0, P2): fingerprint, one save at a time, every freed copy listed (wrangler dev port 38335, headless Chrome 157, 2026-11-16)
+
+Unit tests failing first, on the code before (tests/saving.test.mjs; the old module given `fingerprint` and the old time handed to the cleanup, so each test reaches its own point):
+✖ saving: the changed-on-disk check goes by the file's words, never by its time
+  AssertionError: the same file time hides no change (actual false, expected true)
+✖ saving, two tabs: saves into one browser script run one at a time: the second waits for the first's whole save, then finds the file changed
+  AssertionError: tab B's save waited for tab A's, and did not write over words it never saw (actual "# X\n\nTab B's words.\n", expected "# X\n\nTab A's words.\n")
+✖ saving, two tabs: a Save as never deletes the browser copy with words another tab saved into it, whatever file time the moving tab holds
+  AssertionError: tab B's words are still in the browser (actual undefined)
+✖ saving, two tabs: two listings at once of a left-behind copy with newer words both show it, once, and neither deletes it
+  AssertionError: the copy is a row of both listings (actual [["other.md","x.md"],["other.md"]])
+With the fix: node --test tests/*.test.mjs: 520 pass, 0 fail.
+
+smoke-saving ONLY=runSameMoment (two real tabs, real Web Locks), the app before (1d66900 on its own wrangler dev), 4 of 4 runs:
+FAIL same moment: tab one's save waits while tab two's save runs ([{"name":"untitled-script.md","text":"# Untitled script\n\n\n"},{"name":"untitled-script.md","text":"# Same moment\n\nFirst words.\n"},{"name":"same-momen
+FAIL timed out: tab one's changed-on-disk line
+FAIL same moment: tab one is told the file changed, once tab two's save is through
+FAIL same moment: tab one wrote nothing over them
+FAIL same moment: the move leaves the browser copy with tab two's words (untitled-script.md)
+FAIL timed out: both rows in tab one's switcher
+FAIL same moment: the copy shows in the switcher as a browser script, beside the file
+FAIL same moment: a later visit does not delete it
+FAIL 8
+
+The same run on the app with the fix, 5 of 5 runs ok:
+ok same moment: tab one's save waits while tab two's save runs
+ok same moment: tab one is told the file changed, once tab two's save is through
+ok same moment: the script holds tab two's words, not written over
+ok same moment: tab one wrote nothing over them
+ok same moment: the file on the computer holds tab one's words
+ok same moment: the move leaves the browser copy with tab two's words
+ok same moment: the copy shows in the switcher as a browser script, beside the file
+ok same moment: a later visit does not delete it
+ok same moment (one): no page error or CSP violation
+ok same moment (two): no page error or CSP violation
+
+Full suites with the fix: smoke-csp 51 ok, smoke-saving 102 ok (92 before runSameMoment), smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, smoke-video-folder 93 ok, smoke-keep-all 933 ok, smoke-room 27 ok, smoke-relay 42 ok, 0 FAIL
+
+Seen in this run and left as it is (older than this step): while another tab's write into a browser script is on its way, Chrome keeps its swap file in the same folder (`<name>.crswap`), and a listing made in that moment shows it as a row. A write takes a few milliseconds; the check slowed it to a second to see it.

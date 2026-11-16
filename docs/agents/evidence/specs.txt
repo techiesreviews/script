@@ -25,7 +25,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 16 files, 441992 bytes; on first use: broll-app.js + broll.js, 149034 bytes
+ℹ startup: 16 files, 446739 bytes; on first use: broll-app.js + broll.js, 149034 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -329,7 +329,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 16 files, 441992 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 16 files, 446739 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -397,8 +397,8 @@
 ✔ save queue: another file keeps the old request as a snapshot and starts a fresh record
 ✔ save queue: A -> B -> A does not carry B's force onto A
 ✔ save queue: a waiting request for a script the person left becomes a snapshot when the save ends
-✔ save queue: the finished write's lastModified feeds the snapshot's changed-on-disk check
-✔ changed on disk: same text or an older file is not a change, force skips the check
+✔ save queue: the finished write's words feed the snapshot's changed-on-disk check
+✔ save queue: a request carries no file time; whether a file changed is decided by its words (saving.js)
 ✔ saving: the interface is small, and app.js reaches saving only through it
 ✔ saving: auto-save waits 1.5 s on the clock it is given, then writes to the open file
 ✔ saving: nothing is scheduled while a "/" command is typed, for a clean script, or after a conflict
@@ -427,13 +427,22 @@
 ✔ saving: a folder walk that fails partway still shows the scripts found so far, and frees no kept name
 ✔ saving: a left-behind copy that was saved into after the move is kept and shows again on the listing that finds it
 ✔ saving, two tabs: a browser copy another tab has open is never deleted, not by the move and not by a cleanup; it shows again with that tab's words once the tab leaves it
-✔ saving, two tabs: a copy saved into before the move is not the script that moved: it stays, by the moving tab's own time for it
+✔ saving, two tabs: a copy saved into before the move is not the script that moved: it stays, by the moving tab's own words for it
 ✔ saving, two tabs: a save into a copy and a cleanup of it never cross: a running save keeps the copy, a save that comes during the delete waits and is refused
-✔ saving: a left-behind copy whose time can't be read once stays kept and is tried again, not shown as a second script
+✔ saving: a left-behind copy that can't be read once stays kept and is tried again, not shown as a second script
 ✔ saving: tabLocks stands in for navigator.locks in one tab: shared holders together, an exclusive one alone, in order, and ifAvailable never waits
 ✔ saving: a save still runs, once, where the lock can't be asked for; and leaving a script before its lock came frees it
 ✔ saving: every save into a browser script holds its name from its start to the end of its write, also the save of a script the person just left
-✔ saving: a name kept without a time (kept before copies had one) is never deleted: its copy shows again; a name whose copy is gone is freed with its time
+✔ saving: a name kept without a fingerprint (kept before copies had one) is never deleted: its copy shows again; a name whose copy is gone is freed with its fingerprint
+✔ saving: the changed-on-disk check goes by the file's words, never by its time
+✔ saving: a fingerprint is the SHA-256 of the words as a file holds them
+✔ saving: a left-behind copy is the script that moved only by its words: the same file time with other words stays, the same words under a newer time go
+✔ saving, two tabs: saves into one browser script run one at a time: the second waits for the first's whole save, then finds the file changed
+✔ saving, two tabs: a Save as never deletes the browser copy with words another tab saved into it, whatever file time the moving tab holds
+✔ saving, two tabs: two listings at once of a left-behind copy with newer words both show it, once, and neither deletes it
+✔ saving, two tabs: a new script and a renamed one never land on a name another tab is taking at the same moment
+✔ saving, two tabs: a new script left as it came is deleted only while it still holds those words and no other tab has it open or saves into it
+✔ saving: app.js makes, renames and discards browser scripts only through the locked steps
 ✔ site: pages may be indexed, with a description and the canonical address
 ✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
 ✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
@@ -511,9 +520,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 511
+ℹ tests 520
 ℹ suites 0
-ℹ pass 511
+ℹ pass 520
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
