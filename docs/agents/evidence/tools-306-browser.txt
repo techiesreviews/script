@@ -71,6 +71,7 @@ ok 1280 px: the module's download is held while the agent's suggestion waits
 ok 1280 px: the agent hears the person opened another script
 ok 1280 px: the other script gets no suggestion
 ok 1280 px: suggestion while the module loads: no CSP violation or error
+ok 1280 px: the demo's module download is held
 ok 1280 px: the demo is saved in the browser under its title's name while the module is held
 ok 1280 px: once the module is here, the saved demo shows its list
 ok 1280 px: reopened, the saved demo still has its list
@@ -93,6 +94,7 @@ ok 390 px: the module's download is held while the agent's suggestion waits
 ok 390 px: the agent hears the person opened another script
 ok 390 px: the other script gets no suggestion
 ok 390 px: suggestion while the module loads: no CSP violation or error
+ok 390 px: the demo's module download is held
 ok 390 px: the demo is saved in the browser under its title's name while the module is held
 ok 390 px: once the module is here, the saved demo shows its list
 ok 390 px: reopened, the saved demo still has its list

@@ -3236,10 +3236,11 @@ function renderBroll() {
 // Leaving a script: the old list goes with it.
 function closeBroll() {
   brollPre.token++;
+  brollPre.link = null; // also with the module here: a save before the next script's lookup must not take this link
   ui.scriptY = 0;
   ui.scriptTop = null;
   if (brollApi) return brollApi.close();
-  Object.assign(brollPre, { status: "none", link: null, flags: {}, room: null });
+  Object.assign(brollPre, { status: "none", flags: {}, room: null });
   renderBroll();
 }
 // Opening a script: the module reads its list; without the module, its link is looked up here first, and the module
