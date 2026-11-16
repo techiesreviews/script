@@ -432,3 +432,20 @@ test("mcp: a request body bigger than the largest allowed call is refused before
   assert.equal(pulled, 0, "the body is not read");
   assert.equal(relay.ops.length, 0);
 });
+
+test("mcp: unmark_cue takes every cueId list_cues gives, also overlapping ones from bold inside a link inside bold", async () => {
+  const Doc = await import("../public/doc.js");
+  const Changes = await import("../public/changes.js");
+  const { SCRIPT_LIMITS } = Doc;
+  const words = "word ".repeat(12_000).trim(); // the outer cue holds the link, the inner cue and both of these
+  const md = `# T\n\n**a [${words} **${words}** ${words}](https://example.com) b**\n`;
+  assert.ok(md.length <= SCRIPT_LIMITS.markdown, `script ${md.length}`);
+  const cues = Changes.listCues(Doc.parse(md)).map((c) => ({ cueId: c.cueId }));
+  assert.equal(cues.length, 2);
+  assert.ok(cues.reduce((n, c) => n + c.cueId.length, 0) > md.length, "the cueIds overlap");
+  const relay = fakeRelay();
+  const r = await call("unmark_cue", { cues }, { relay });
+  assert.notEqual(r.status, 413);
+  assert.ok(!r.body.result?.isError, r.body.result?.content?.[0]?.text);
+  assert.ok(relay.ops.some((o) => o.op === "call" && o.tool === "unmark_cue"), "it reaches the tab");
+});
