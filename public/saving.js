@@ -214,10 +214,13 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
       if (mine === opened) script.saveError = e?.message || "Could not save.";
     }
     script.saving = false;
-    // Requests made during a save-as belonged to the old place; the new file is now current.
+    // Requests made during a save-as belonged to the old place; the new file is now current. With another script open
+    // now, that script's own waiting request runs with its own flags (a click may still show the browser's prompt).
+    const current = mine === opened ? null : Q.splitQueue(queue, script.handle).current;
     queue = Q.emptyQueue();
     on.done(true);
-    schedule();
+    if (current) save({ force: current.force, auto: current.auto });
+    else schedule();
   }
   // Ctrl/Cmd+S on a script without a file (the demo, or a file opened where files can't be saved): into the browser.
   async function saveInBrowser() {
