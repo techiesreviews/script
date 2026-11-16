@@ -66,16 +66,20 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
   // The scripts in the browser's folder, without the copies left behind; then those copies are cleaned (listed).
   async function list() {
     const out = [], left = names(), found = new Set();
-    for await (const handle of (await dir()).values()) {
-      if (handle.kind !== "file") continue;
-      found.add(handle.name);
-      if (names().includes(handle.name)) continue; // read live: another listing may have freed the name for a new script
-      let at = 0;
-      try { at = (await handle.getFile()).lastModified; } catch (e) {
-        if (e?.name === "NotFoundError") continue; // deleted meanwhile (a copy another cleanup took away)
-        // otherwise listed without a time
+    try {
+      for await (const handle of (await dir()).values()) {
+        if (handle.kind !== "file") continue;
+        found.add(handle.name);
+        if (names().includes(handle.name)) continue; // read live: another listing may have freed the name for a new script
+        let at = 0;
+        try { at = (await handle.getFile()).lastModified; } catch (e) {
+          if (e?.name === "NotFoundError") continue; // deleted meanwhile (a copy another cleanup took away)
+          // otherwise listed without a time
+        }
+        out.push({ handle, name: handle.name, at, browser: true });
       }
-      out.push({ handle, name: handle.name, at, browser: true });
+    } catch {
+      return out; // the folder stopped listing: the scripts found so far show, and a partial walk frees no name
     }
     try { await listed(left, found); } catch { /* the cleanup waits for the next listing; the scripts found still show */ }
     return out;
