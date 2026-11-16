@@ -509,7 +509,7 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   let refuse = true, gate = null;
   const dir = {
     async removeEntry(name) { if (refuse) throw Object.assign(new Error("in use"), { name: "NoModificationAllowedError" }); if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" }); files.delete(name); },
-    async getFileHandle(name) { if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" }); return { name }; },
+    async getFileHandle(name) { if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" }); return { name, getFile: async () => ({ lastModified: 1 }) }; },
   };
   const ports = { store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => { if (gate) await gate; return dir; } };
   const copies = createLeftCopies(ports);
@@ -539,9 +539,9 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
 });
 
 test("saving: a second cleanup waits until the first has freed the name, and leaves a script that took it alone", async () => {
-  const store = new Map([["movedCopies", ["stuck.md"]]]), files = new Map([["stuck.md", "old copy"]]);
+  const store = new Map([["movedCopies", ["stuck.md"]], ["movedCopyTimes", { "stuck.md": 1 }]]), files = new Map([["stuck.md", "old copy"]]);
   let held = null;
-  const dir = { async removeEntry(name) {
+  const dir = { async getFileHandle(name) { if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" }); return { getFile: async () => ({ lastModified: 1 }) }; }, async removeEntry(name) {
     if (!held) { let open; held = { done: new Promise((r) => { open = r; }), open }; await held.done; } // the first delete waits
     if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" });
     files.delete(name);
