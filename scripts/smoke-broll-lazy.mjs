@@ -325,6 +325,7 @@ async function runEdges(width, height) {
   await startScreen(demoPage);
   await demoPage.click("#emptySample");
   for (let i = 0; i < 50 && !demoPage.held.length; i++) await sleep(100);
+  check(demoPage.held.length > 0, `${tag} the demo's module download is held`);
   await demoPage.until(`document.querySelector("#fileName").textContent === "demo-good-script.md"`, "the demo");
   await demoPage.eval(`document.querySelector('#script .block[data-type="para"]').focus()`);
   for (const type of ["keyDown", "keyUp"]) await demoPage.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", windowsVirtualKeyCode: 83, modifiers: 2 });
