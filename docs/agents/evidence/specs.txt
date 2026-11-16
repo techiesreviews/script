@@ -25,7 +25,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 15 files, 429003 bytes; on first use: broll-app.js + broll.js, 148925 bytes
+ℹ startup: 16 files, 432169 bytes; on first use: broll-app.js + broll.js, 149034 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -316,6 +316,7 @@
 ✔ mcp: the agent hears that replace and add go into the text at once and can be undone (step F)
 ✔ open_script and set_script: arguments
 ✔ open_script, set_script and list_scripts go to the tab with their arguments
+✔ mcp: a request body bigger than the largest allowed call is refused before it is read in full
 ✔ press: a mouse lifts after 5 px, moves follow, and a release after the lift is a drop; the listeners go
 ✔ press: a release before the lift is a tap, for a mouse and a finger
 ✔ press: a finger lifts after holding still for HOLD_MS, at where it is; a small wobble is fine
@@ -327,7 +328,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 15 files, 429003 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 16 files, 432169 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -336,14 +337,22 @@
 ✔ share room: sharing stopped (or another script opened) before the part arrives starts no room
 ✔ share room: a part that can't load ends sharing and the button says so; a guest's join says so too
 ✔ share room: a guest joins once the part is here; a join replaced before then starts only the newer one
-✔ share room: a room part that speaks another seam version counts as not loaded, for the host and a guest
+✔ share room: a room part that speaks another seam version counts as not loaded and says to reload, for the host and a guest
 ✔ share button: a copy that lands after sharing failed says nothing was copied and shows no fallback
 ✔ share button: a failed share shows a warning icon and data-failed on the button; a click that shares again clears them
 ✔ share button: a clipboard write from a share that failed, landing after a retry, neither shows its old link nor says Link copied
 ✔ share button: a copy from a share that was stopped, landing after a new share, says nothing and shows no link
-✔ share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says to reload
+✔ share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says so on the button
 ✔ share room: a part that failed during the hover: the click asks for it again and shares
 ✔ share room: the pointer or the focus reaching Share to edit fetches the room's part before the click
+✔ share room: the copy-by-hand box opened while the part loads closes, with its link cleared, when the part then fails
+✔ export menu: a note inside Export all (the orange primary action) reads at 4.5:1 in light and dark, at rest, hovered and pressed
+✔ share button: hovering the failed button keeps a warning background, a little stronger; pressing it still shows the pressed one
+✔ shared facts: the agent token's age and the no-asks answer come from public/agent-link.js
+✔ shared facts: the Worker takes the room id, key and protocol from the tab's room files
+✔ one HTML escape: doc.js's escHtml, used by app.js and broll.js (no copy of their own)
+✔ no dead code: broll.js has no export that only the tests use
+✔ module names: the app's modules import each other under their own names, not one letter
 ✔ room: the host creates the room; a wrong key or no room is refused
 ✔ room: guests say who they are first, can't pose as someone else, and reach only the host
 ✔ room: the host sends to one guest or to all; the end closes everyone and refuses new joins
@@ -402,6 +411,7 @@
 ✔ saving: another script opened while Save as writes keeps its own file, name, draft and B-roll keys
 ✔ saving: after a Save as that landed with another script open, that script's waiting click runs; a failed write says nothing there
 ✔ saving: scripts left one after another while Save as writes each get their own save, or a draft
+✔ saving: a Ctrl+S on the demo that waits for its Save as never saves or renames another script without a file
 ✔ saving: Ctrl+S where neither the browser nor a file picker can save downloads the script
 ✔ saving: drafts are kept by script name, and move with a rename
 ✔ site: pages may be indexed, with a description and the canonical address
@@ -481,9 +491,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 481
+ℹ tests 491
 ℹ suites 0
-ℹ pass 481
+ℹ pass 491
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
