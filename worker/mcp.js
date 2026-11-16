@@ -36,6 +36,28 @@ export function checkToken(token, now = Date.now()) {
   if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
   return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
 }
+// The largest call is a whole script in set_script, and JSON may spell each of its characters in six bytes (\uXXXX).
+// A body bigger than that is refused before it is read in full; the per-field limits are checked after.
+export const BODY_MAX = SCRIPT_LIMITS.markdown * 6 + 64 * 1024;
+// The body, read with a running count: past `max` bytes it stops (null). No decoding (the picture upload passes the
+// bytes on as they are).
+export async function readUpTo(body, max) {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) { reader.cancel().catch(() => {}); return null; }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { bytes.set(c, at); at += c.byteLength; }
+  return bytes;
+}
 export const NOT_OPEN = "The script editor is not open. Ask the person to open it and keep the tab open.";
 export { NO_ASKS };
 const CALL_TIMEOUT_MS = 10_000;
@@ -408,8 +430,14 @@ export async function handleMcp(request, { relayFor, now = Date.now }) {
   const unauthorized = () => rpcError(null, -32001, "Unauthorized: use the Authorization Bearer token from the script editor's Connect your agent menu.", 401, { "WWW-Authenticate": "Bearer" });
   if (!auth) return unauthorized();
 
+  const tooBig = () => rpcError(null, -32600, "The request is too large.", 413);
+  if (Number(request.headers.get("Content-Length") || 0) > BODY_MAX) return tooBig();
   let msg;
-  try { msg = await request.json(); } catch { return rpcError(null, -32700, "Parse error", 400); }
+  try {
+    const bytes = await readUpTo(request.body, BODY_MAX);
+    if (!bytes) return tooBig();
+    msg = JSON.parse(new TextDecoder().decode(bytes));
+  } catch { return rpcError(null, -32700, "Parse error", 400); }
   if (Array.isArray(msg)) return rpcError(null, -32600, "Batches are not supported.", 400);
   if (!isObj(msg) || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return rpcError(msg?.id, -32600, "Invalid request", 400);
 
