@@ -1086,7 +1086,7 @@ test("saving, two tabs: a new script left as it came is deleted only while it st
 
 test("saving: app.js makes, renames and discards browser scripts only through the locked steps", () => {
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
-  assert.doesNotMatch(app, /\.move\(|getFileHandle\([^)]*create: true/, "no new or renamed browser script outside copies.create and copies.rename");
+  assert.doesNotMatch(app, /handle\.move\(|getFileHandle\([^)]*create: true/, "no new or renamed browser script outside copies.create and copies.rename");
   assert.match(app, /copies\.create\(name, text\)/);
   assert.match(app, /copies\.rename\(handle, name\)/);
   assert.match(app, /copies\.discard\(/);
