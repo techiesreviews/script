@@ -1,6 +1,6 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
 import * as Doc from "./doc.js";
-import { createSaving, createLeftCopies, writeHandle, permitted } from "./saving.js";
+import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted } from "./saving.js";
 import * as Changes from "./changes.js";
 import * as Links from "./links.js";
 import * as Cues from "./cues.js";
@@ -2315,6 +2315,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   closeBroll();
   state.doc = Doc.parse(text);
   saving.open({ handle, name, browser, savedText: fresh ? Doc.serialize(state.doc) : text, modified, fresh });
+  holdOpen();
   state.undo = [];
   state.redo = [];
   state.lastStep = null;
@@ -2489,6 +2490,7 @@ const saving = createSaving({
     permitted: (handle, ask) => permitted(handle, ask),
     get pickSave() { return "showSaveFilePicker" in window ? (name) => window.showSaveFilePicker({ suggestedName: name, types: FILE_TYPES }) : null; },
     download: (text, name) => download(text, name, "text/markdown"),
+    held: (name, fn) => copies.saving(name, fn),
   },
   // Scripts saved in the browser (step J), named after their title.
   browser: browserSaving ? { name: async (from, doc) => Doc.scriptFileName("", doc, await nameTaken(from)), create: (name, text) => createBrowserScript(name, text) } : null,
@@ -2503,9 +2505,11 @@ const saving = createSaving({
     },
     done(moved) { renderTop(); if (moved) renderDerived(); persistDraft(); },
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
-    placed(handle, { was = null, browser = false }) {
+    placed(handle, { was = null, at, browser = false }) {
       remember(handle, browser);
-      if (was) forget(was).then(() => copies.afterMove(was.name)); // neither rejects: afterMove keeps a refused delete for later
+      // A script that moved to a file lets go of its browser copy's name first, so the cleanup can take it.
+      const freed = holdOpen();
+      if (was) Promise.all([freed, forget(was)]).then(() => copies.afterMove(was.name, at)); // none rejects: afterMove keeps a copy it can't delete for later
     },
   },
 });
@@ -2733,9 +2737,13 @@ function scriptsDir() {
   scriptsDirP ??= navigator.storage.getDirectory().then((root) => root.getDirectoryHandle("scripts", { create: true }));
   return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
 }
-// Browser copies left behind by a move to a file: kept off the list, deleted on a later listing (saving.js).
-let copiesChain = Promise.resolve(); // one at a time in this tab where the browser has no Web Locks
-const copies = createLeftCopies({ store, dir: () => scriptsDir(), lock: (fn) => (navigator.locks ? navigator.locks.request("script-editor:moved-copies", fn) : (copiesChain = copiesChain.then(fn, fn))) });
+// Browser copies left behind by a move to a file: kept off the list, deleted on a later listing, never while a tab
+// has the script open or saves into it (saving.js). Web Locks tell the tabs apart; a browser without them gets one
+// tab's stand-in.
+const copies = createLeftCopies({ store, dir: () => scriptsDir(), locks: navigator.locks ?? tabLocks() });
+// The open script, while it is a script in the browser, is held for the other tabs' cleanups: called whenever the
+// open script, its place or its name changes.
+const holdOpen = () => copies.open(state.inBrowser && state.handle ? state.name : null);
 async function browserScripts() {
   if (!browserSaving) return [];
   try { return await copies.list(); } catch { return []; } // storage off: none
@@ -2805,7 +2813,7 @@ async function followTitle(handle) {
   // The move is queued before the name changes: a link or unlink made before it went to the old name and moves with
   // it; one made after goes to the new name, after it.
   const moved = moveKeys(from, name, { clear: true });
-  if (handle === state.handle) { state.name = name; renderTop(); }
+  if (handle === state.handle) { state.name = name; holdOpen(); renderTop(); }
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }

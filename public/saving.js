@@ -28,48 +28,116 @@ export async function permitted(handle, ask, mode = "readwrite") {
   } catch { return false; }
 }
 
-// A browser copy left behind by a move to a file (the browser refused to delete it then) is kept off the list by name
-// (in local storage, `store`) and deleted on a later listing; until then no script may take its name (app.js nameTaken).
-// `dir()`: the browser's scripts folder. `lock(fn)`: runs fn alone among this site's tabs (navigator.locks; one at a
-// time in this tab where the browser has no Web Locks), so one cleanup checks, deletes and frees a name before another
-// may look at it.
-export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
-  const KEY = "movedCopies", TIMES = "movedCopyTimes"; // the names, and each copy's file time when it was left behind
+// One tab's stand-in for navigator.locks.request (shared and exclusive holders in the order asked, ifAvailable), for a
+// browser without Web Locks: it orders this tab's own work only. The tests share one between their tabs.
+export function tabLocks() {
+  const all = new Map(); // name -> { held: [mode], waiting: [{ mode, start }] }
+  const free = (s, mode) => !s.held.length || (mode === "shared" && !s.held.includes("exclusive"));
+  const next = (name) => {
+    const s = all.get(name);
+    while (s.waiting.length && free(s, s.waiting[0].mode)) { const w = s.waiting.shift(); s.held.push(w.mode); w.start(); }
+    if (!s.held.length) all.delete(name);
+  };
+  return {
+    request(name, options, fn) {
+      if (typeof options === "function") { fn = options; options = {}; }
+      const mode = options.mode ?? "exclusive";
+      if (!all.has(name)) all.set(name, { held: [], waiting: [] });
+      const s = all.get(name);
+      if (options.ifAvailable && (s.waiting.length || !free(s, mode))) return Promise.resolve().then(() => fn(null));
+      return new Promise((resolve, reject) => {
+        const release = () => { s.held.splice(s.held.indexOf(mode), 1); next(name); };
+        s.waiting.push({ mode, start: () => Promise.resolve().then(() => fn({ name, mode })).then((v) => { release(); resolve(v); }, (e) => { release(); reject(e); }) });
+        next(name);
+      });
+    },
+  };
+}
+
+// A browser copy left behind by a move to a file (another tab has it open, or the browser refused to delete it) is kept
+// off the list by name (in local storage, `store`) and deleted on a later listing; until then no script may take its
+// name (app.js nameTaken). `dir()`: the browser's scripts folder. `locks`: navigator.locks (tabLocks without it).
+// Two kinds of lock keep a cleanup from deleting words:
+// - one for all cleanups, so one cleanup checks, deletes and frees a name before another (or another tab) looks at it;
+// - one per script name, held shared by every tab that has that browser script open (`open`) and by every save into
+//   it (`saving`). A copy is deleted only under that lock held alone, taken only when it is free at once: a copy open
+//   in a tab, or being saved into, is skipped, and a save that comes during a delete waits for it.
+export function createLeftCopies({ store, dir, locks = tabLocks() }) {
+  const KEY = "movedCopies", TIMES = "movedCopyTimes"; // the names, and each copy's file time as the tab that moved it knew it
   const names = () => { const v = store.get(KEY); return Array.isArray(v) ? v : []; };
   const times = () => { const v = store.get(TIMES); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; };
   const free = (gone) => {
     store.set(KEY, names().filter((n) => !gone.includes(n)));
     store.set(TIMES, Object.fromEntries(Object.entries(times()).filter(([n]) => !gone.includes(n))));
   };
-  const fileTime = async (d, name) => (await (await d.getFileHandle(name)).getFile()).lastModified;
-  // Right after the move: the copy goes, or its name is kept for later with the copy's file time.
-  const afterMove = (name) => lock(async () => {
-    const d = await dir();
-    try { await d.removeEntry(name); } catch (e) {
-      if (e?.name === "NotFoundError") return;
-      let at = null;
-      try { at = await fileTime(d, name); } catch { /* unknown: the copy is kept, never deleted */ }
-      store.set(KEY, [...new Set([...names(), name])]);
-      store.set(TIMES, { ...times(), [name]: at });
+  const lock = (fn) => locks.request("script-editor:moved-copies", fn);
+  const key = (name) => `script-editor:script:${name}`;
+  // Runs fn while no tab has the script open or saves into it; where one does, nothing runs (null).
+  const unused = (name, fn) => locks.request(key(name), { ifAvailable: true }, (held) => (held ? fn() : null));
+  const look = async (d, name) => { const handle = await d.getFileHandle(name); return { handle, at: (await handle.getFile()).lastModified }; };
+
+  // The browser script this tab has open (null: none, or a file on the computer). Its name is held until another
+  // script opens, the script moves or is renamed, or the tab closes. The promise ends once the name held before is
+  // let go, so a cleanup that follows can take it.
+  let mine = null;
+  function open(name) {
+    if (mine?.name === name) return Promise.resolve();
+    const was = mine;
+    mine = null;
+    was?.leave();
+    if (name != null) {
+      let leave;
+      const until = new Promise((r) => { leave = r; });
+      mine = { name, leave, left: locks.request(key(name), { mode: "shared" }, () => until).catch(() => {}) };
     }
+    return was ? was.left : Promise.resolve();
+  }
+  // A save into the script `name` runs with the name held (asked for before any wait, so a script that is left right
+  // after still has it). Where the lock can't be asked for, the save runs all the same, once.
+  async function saving(name, fn) {
+    let ran = false;
+    const run = () => { ran = true; return fn(); };
+    try { return await locks.request(key(name), { mode: "shared" }, run); } catch (e) { if (ran) throw e; return run(); }
+  }
+
+  // Right after the move. `at`: the copy's file time as the moving tab last wrote or read it; only a copy that still
+  // has that time is the script that moved. It goes at once when no tab uses it. A copy saved into meanwhile (by
+  // another tab) is not deleted and not hidden: it stays a browser script with those words. A copy in use, one the
+  // browser won't delete or one that can't be read now is kept for later, with that time.
+  const afterMove = (name, at) => lock(async () => {
+    const d = await dir();
+    const settled = await unused(name, async () => {
+      let copy;
+      try { copy = await look(d, name); } catch (e) { return e?.name === "NotFoundError"; }
+      if (copy.at !== at) return true;
+      try { await d.removeEntry(name); } catch (e) { return e?.name === "NotFoundError"; }
+      return true;
+    });
+    if (settled) { if (names().includes(name)) free([name]); return; }
+    store.set(KEY, [...new Set([...names(), name])]);
+    store.set(TIMES, { ...times(), [name]: at });
   });
   // A later listing found the copy: it goes, and its name is free again. The name is read again inside the lock:
-  // another listing (or tab) may have deleted the copy meanwhile, and a new script may hold the name now. A copy saved
-  // into since it was left behind (another tab still had the script open) is not deleted: its name is freed, so it shows
-  // in the switcher again with those words.
+  // another listing (or tab) may have deleted the copy meanwhile, and a new script may hold the name now. A copy in
+  // use, or one that can't be read or deleted now, waits for the next listing. A copy saved into since the moving tab
+  // knew it (or kept without a time) is not deleted: its name is freed and it is handed back as a row, so it shows in
+  // the switcher again with those words.
   const retry = (name) => lock(async () => {
     const d = await dir();
-    if (!names().includes(name)) return;
-    const at = times()[name];
-    let now = null;
-    try { now = await fileTime(d, name); } catch (e) { if (e?.name === "NotFoundError") return free([name]); }
-    if (typeof at !== "number" || now !== at) return free([name]);
-    try { await d.removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return; }
-    free([name]);
+    if (!names().includes(name)) return null;
+    return unused(name, async () => {
+      const at = times()[name];
+      let copy;
+      try { copy = await look(d, name); } catch (e) { if (e?.name === "NotFoundError") free([name]); return null; }
+      if (typeof at !== "number" || copy.at !== at) { free([name]); return { handle: copy.handle, name, at: copy.at, browser: true }; }
+      try { await d.removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return null; }
+      free([name]);
+      return null;
+    });
   });
   // After a full listing of the folder (`found`: every file name in it): the copies named in `left` (the names as the
   // listing started) that are still there go; the names whose copy went some other way (an older tab, cleared storage)
-  // are freed.
+  // are freed. Gives the rows of the copies that show again.
   async function listed(left, found) {
     const gone = left.filter((n) => !found.has(n));
     // Looked up again inside the lock: the name may have been kept again for a newer copy since the folder was read.
@@ -80,9 +148,12 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
       }
       if (missing.length) free(missing);
     });
-    for (const n of left) if (found.has(n)) await retry(n);
+    const back = [];
+    for (const n of left) if (found.has(n)) { const row = await retry(n); if (row) back.push(row); }
+    return back;
   }
-  // The scripts in the browser's folder, without the copies left behind; then those copies are cleaned (listed).
+  // The scripts in the browser's folder, without the copies left behind; then those copies are cleaned (listed), and
+  // the ones that turn out to hold newer words join the list.
   async function list() {
     const out = [], left = names(), found = new Set();
     try {
@@ -100,10 +171,10 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
     } catch {
       return out; // the folder stopped listing: the scripts found so far show, and a partial walk frees no name
     }
-    try { await listed(left, found); } catch { /* the cleanup waits for the next listing; the scripts found still show */ }
+    try { out.push(...(await listed(left, found))); } catch { /* the cleanup waits for the next listing; the scripts found still show */ }
     return out;
   }
-  return { names, afterMove, listed, list };
+  return { names, open, saving, afterMove, listed, list };
 }
 
 /**
@@ -112,17 +183,22 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
  * - editor: { ready(), doc(), text(), dirty(), paused() } — a script is open and the person may save it; its document
  *   object; its text as it would be saved; changed since the last save; a "/" command is being typed.
  * - files: { write(handle, text) → modified, file(handle) → { lastModified, text() }, permitted(handle, ask),
- *   pickSave(suggestedName) → handle (null where files can't be picked), download(text, name) }
+ *   pickSave(suggestedName) → handle (null where files can't be picked), download(text, name),
+ *   held(name, fn) → fn's result: runs a save with the script's name held (createLeftCopies saving; optional) }
  * - browser: { name(from, doc) → a free name from the title, create(name, text) → { handle, modified } }
  * - drafts: local storage { get(key), set(key, value), del(key) }
  * - clock: { now(), later(fn, ms) → id, cancel(id) }
- * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }), placed(handle, how) }
+ * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }),
+ *   placed(handle, { was, at, browser }) — was: the browser copy the script moved out of, at: that copy's file time }
  */
 export function createSaving({ script, editor, files, browser, drafts: store, clock, on }) {
   let queue = SaveQueue.emptyQueue();
   let timer = 0;
   let opened = 0; // counts open(): a Save as that lands after another script opened must leave that script alone
 
+  // A save into a script's own file runs with its name held from its first step to the end of its write, so the
+  // cleanup of a left-behind browser copy never deletes one that words are on their way into.
+  const held = (name, fn) => (files.held ? files.held(name, fn) : fn());
   const key = (name) => `draft:${name}`;
   const drafts = {
     get: (name) => store.get(key(name)),
@@ -163,16 +239,18 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   }
   // Write a left script's snapshot straight to its own file, with auto-save rules: no permission prompt, and the
   // changed-on-disk check. `script` is never touched.
-  async function writeLeft(snap) {
-    try {
-      if (await files.permitted(snap.handle, false)) {
-        if (!(await diskConflict(snap.handle, snap))) {
-          return { handle: snap.handle, text: snap.text, modified: await files.write(snap.handle, snap.text) };
+  function writeLeft(snap) {
+    return held(snap.name, async () => {
+      try {
+        if (await files.permitted(snap.handle, false)) {
+          if (!(await diskConflict(snap.handle, snap))) {
+            return { handle: snap.handle, text: snap.text, modified: await files.write(snap.handle, snap.text) };
+          }
         }
-      }
-    } catch { /* kept as a draft below */ }
-    keepDraft(snap.name, snap.text);
-    return null;
+      } catch { /* kept as a draft below */ }
+      keepDraft(snap.name, snap.text);
+      return null;
+    });
   }
 
   async function save({ force = false, auto = false } = {}) {
@@ -193,34 +271,36 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     script.autoSaving = auto;
     script.saveError = "";
     on.status();
-    try {
-      // A click or key press may show the browser's permission prompt; auto-save may not, so it shows "Allow saving to …".
-      if (!(await files.permitted(handle, !auto))) {
-        if (auto) { if (handle === script.handle) script.needsPermission = true; }
-        else throw new Error("No permission to write this file.");
-      } else {
-        if (handle === script.handle) script.needsPermission = false;
-        const conflict = await diskConflict(handle, { force, fileModified, savedText });
-        if (conflict && handle === script.handle) {
-          script.conflict = true;
-          on.conflict(conflict);
-        } else if (!conflict) {
-          // Written to the file it was made for, even if another script was opened meanwhile.
-          written = { handle, text, modified: await files.write(handle, text) };
-          if (handle === script.handle) {
-            script.fileModified = written.modified;
-            script.conflict = false;
-            script.savedText = text;
-            script.savedAt = clock.now();
-            // A rename that fails leaves the old name; the text is saved either way.
-            try { await on.written(handle); } catch { /* keeps its name */ }
+    await held(name, async () => {
+      try {
+        // A click or key press may show the browser's permission prompt; auto-save may not, so it shows "Allow saving to …".
+        if (!(await files.permitted(handle, !auto))) {
+          if (auto) { if (handle === script.handle) script.needsPermission = true; }
+          else throw new Error("No permission to write this file.");
+        } else {
+          if (handle === script.handle) script.needsPermission = false;
+          const conflict = await diskConflict(handle, { force, fileModified, savedText });
+          if (conflict && handle === script.handle) {
+            script.conflict = true;
+            on.conflict(conflict);
+          } else if (!conflict) {
+            // Written to the file it was made for, even if another script was opened meanwhile.
+            written = { handle, text, modified: await files.write(handle, text) };
+            if (handle === script.handle) {
+              script.fileModified = written.modified;
+              script.conflict = false;
+              script.savedText = text;
+              script.savedAt = clock.now();
+              // A rename that fails leaves the old name; the text is saved either way.
+              try { await on.written(handle); } catch { /* keeps its name */ }
+            }
           }
         }
+      } catch (e) {
+        // A script the person already left keeps its local draft; its problem must not show on the new one.
+        if (handle === script.handle) script.saveError = e?.message || "Could not save.";
       }
-    } catch (e) {
-      // A script the person already left keeps its local draft; its problem must not show on the new one.
-      if (handle === script.handle) script.saveError = e?.message || "Could not save.";
-    }
+    });
     if (!written && handle !== script.handle) keepDraft(name, text);
     queue = SaveQueue.settleQueue(queue, written);
     return drain(false);
@@ -271,6 +351,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         on.status();
         const modified = await files.write(handle, text);
         if (mine === opened) {
+          const at = script.fileModified; // the browser copy's time as this tab last wrote or read it
           script.fileModified = modified;
           if (handle.name !== script.name) {
             drafts.del(script.name);
@@ -281,7 +362,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
           }
           Object.assign(script, { handle, inBrowser: false, blank: "", needsPermission: false, conflict: false, savedText: text, savedAt: clock.now() });
           // The script moved to its file: the copy in the browser goes.
-          on.placed(handle, { was });
+          on.placed(handle, was ? { was, at } : { was });
         } else {
           // Another script opened while it was written: the file holds this text and is listed; the script open now
           // keeps its own file, name, draft and B-roll keys, and the browser copy stays.

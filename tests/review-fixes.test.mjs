@@ -57,7 +57,7 @@ test("left-behind copies: app.js gives them the browser's Web Locks (a stand-in 
   assert.match(app, /const holdOpen = \(\) => copies\.open\(state\.inBrowser && state\.handle \? state\.name : null\);/);
   const body = (name) => app.slice(app.indexOf(name), app.indexOf("\n}\n", app.indexOf(name)));
   assert.match(body("function loadText("), /saving\.open\([^\n]*\n\s*holdOpen\(\);/, "a script that opens is held (or the last one let go) at once");
-  assert.match(body("async function followTitle("), /state\.name = name; holdOpen\(\);/, "a renamed script is held under its new name");
-  assert.match(app, /placed\(handle, \{ was = null, at, browser = false \}\) \{[^}]*const let = holdOpen\(\);[^}]*Promise\.all\(\[let, forget\(was\)\]\)\.then\(\(\) => copies\.afterMove\(was\.name, at\)\)/s, "a moved script is let go before its copy is cleaned, with the copy's time");
+  assert.match(body("async function followTitle("), /state\.name = name; holdOpen\(\); renderTop\(\);/, "a renamed script is held under its new name");
+  assert.match(app, /placed\(handle, \{ was = null, at, browser = false \}\) \{[^}]*const freed = holdOpen\(\);[^}]*Promise\.all\(\[freed, forget\(was\)\]\)\.then\(\(\) => copies\.afterMove\(was\.name, at\)\)/s, "a moved script is let go before its copy is cleaned, with the copy's time");
   assert.match(app, /held: \(name, fn\) => copies\.saving\(name, fn\),/, "every save holds its script's name");
 });

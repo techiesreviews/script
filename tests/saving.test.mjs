@@ -715,8 +715,8 @@ test("saving, two tabs: a copy saved into before the move is not the script that
 });
 
 test("saving, two tabs: a save into a copy and a cleanup of it never cross: a running save keeps the copy, a save that comes during the delete waits and is refused", async () => {
-  const files = new Map([["x.md", { text: "at the move", lastModified: 100 }], ["y.md", { text: "at the move", lastModified: 100 }]]);
-  const { tab, write, hooks } = tabs(files, { "x.md": 100, "y.md": 100 });
+  const files = new Map([["x.md", { text: "at the move", lastModified: 100 }]]);
+  const { tab, write, hooks, store } = tabs(files, { "x.md": 100 });
   const a = tab(), b = tab();
   // Tab B left x.md, and its last save is still running when tab A's listing comes by.
   let land;
@@ -729,6 +729,9 @@ test("saving, two tabs: a save into a copy and a cleanup of it never cross: a ru
   await running;
   // A save that starts while the cleanup is between "unchanged" and the delete waits for it, then finds no file:
   // the tab shows it could not save (or keeps a draft), and no words land in a file about to be deleted.
+  files.set("y.md", { text: "at the move", lastModified: 100 });
+  store.set("movedCopies", ["x.md", "y.md"]);
+  store.set("movedCopyTimes", { "x.md": 100, "y.md": 100 });
   const order = [];
   let late;
   hooks.remove = async (name) => {
