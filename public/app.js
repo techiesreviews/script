@@ -2734,7 +2734,8 @@ function scriptsDir() {
   return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
 }
 // Browser copies left behind by a move to a file: kept off the list, deleted on a later listing (saving.js).
-const copies = createLeftCopies({ store, dir: () => scriptsDir(), lock: (fn) => (navigator.locks ? navigator.locks.request("script-editor:moved-copies", fn) : fn()) });
+let copiesChain = Promise.resolve(); // one at a time in this tab where the browser has no Web Locks
+const copies = createLeftCopies({ store, dir: () => scriptsDir(), lock: (fn) => (navigator.locks ? navigator.locks.request("script-editor:moved-copies", fn) : (copiesChain = copiesChain.then(fn, fn))) });
 async function browserScripts() {
   if (!browserSaving) return [];
   const out = [];

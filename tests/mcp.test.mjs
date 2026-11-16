@@ -406,7 +406,7 @@ test("mcp: a request body bigger than the largest allowed call is refused before
   assert.ok(cueRelay.ops.some((o) => o.op === "call" && o.tool === "unmark_cue"), "it reaches the tab");
   // cueIds longer together than a script can be are refused with a reason, not passed on.
   const tooLong = fakeRelay();
-  const over = await call("unmark_cue", { cues: Array.from({ length: 7 }, () => ({ cueId: "x".repeat(190_000) })) }, { relay: tooLong });
+  const over = await call("unmark_cue", { cues: Array.from({ length: 2 }, () => ({ cueId: "x".repeat(101_000) })) }, { relay: tooLong });
   assert.equal(over.body.result.isError, true);
   assert.match(over.body.result.content[0].text, /cueIds together/);
   assert.ok(!tooLong.ops.some((o) => o.op === "call"));

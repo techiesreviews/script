@@ -36,10 +36,12 @@ export function checkToken(token, now = Date.now()) {
   if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
   return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
 }
-// The largest call is unmark_cue with its 30 cueIds, each as long as a script can be (a whole script in set_script is
-// smaller), and JSON may spell each character in six bytes (\uXXXX). A body bigger than that is refused before it is
-// read in full; the per-field limits are checked after.
-export const BODY_MAX = Math.max(SCRIPT_LIMITS.markdown, CUE_LIMITS.cues * CUE_ID_MAX) * 6 + 64 * 1024;
+// unmark_cue's cueIds together hold at most one script's words, plus each one's block id and count.
+const CUE_IDS_MAX = SCRIPT_LIMITS.markdown + CUE_LIMITS.cues * 60;
+// The largest calls hold one script's words (a whole script in set_script, or unmark_cue's cueIds), and JSON may spell
+// each character in six bytes (\uXXXX). A body bigger than that is refused before it is read in full; the per-field
+// limits are checked after.
+export const BODY_MAX = CUE_IDS_MAX * 6 + 64 * 1024;
 // The body, read with a running count: past `max` bytes it stops (null). No decoding (the picture upload passes the
 // bytes on as they are).
 export async function readUpTo(body, max) {
@@ -400,6 +402,9 @@ export function checkArgs(name, args) {
         if (hasQuote && c.cueId != null) return `${at}: give quote or cueId, not both.`;
         if (!hasQuote && c.cueId == null) return `${at} needs quote or cueId.`;
       }
+    }
+    if (name === "unmark_cue" && a.cues.reduce((n, c) => n + (typeof c.cueId === "string" ? c.cueId.length : 0), 0) > CUE_IDS_MAX) {
+      return "The cueIds together are longer than a script can be: use cueIds from list_cues.";
     }
   }
   return "";
