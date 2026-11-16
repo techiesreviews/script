@@ -326,7 +326,31 @@ test("share button: a clipboard write from a share that failed, landing after a 
     else {
       assert.ok(!button.attrs.has("data-done"), "the first share's copy does not say Link copied while the retry's is pending");
       assert.equal(label.textContent, "Copy edit link");
+      assert.ok(!button.attrs.has("data-failed"), "the retry dropped the failed look before its copy landed");
+      assert.equal(iconSlot.innerHTML, "l");
     }
+  }
+});
+
+test("share button: a copy from a share that was stopped, landing after a new share, says nothing and shows no link", async () => {
+  const { createShareButton } = await import("../public/together/share-button.js");
+  const el = () => ({ ...stubEl(), attrs: new Set(), toggleAttribute(n, on) { if (on) this.attrs.add(n); else this.attrs.delete(n); } });
+  for (const late of ["resolve", "reject"]) {
+    const button = el(), stop = el(), iconSlot = el(), label = el();
+    const writes = [], shown = [];
+    let n = 0;
+    createShareButton({
+      button, stop, iconSlot, label, icons: { share: "s", link: "l", check: "c", warn: "w" },
+      share: () => `https://script.test/#room=${++n}&k=y`, end() {}, fallback: (link) => shown.push(link),
+      copy: () => new Promise((res, rej) => writes.push({ res, rej })), timers: { setTimeout: () => 0, clearTimeout() {} },
+    });
+    const first = button.fire("click");
+    await stop.fire("click");
+    button.fire("click");
+    if (late === "resolve") writes[0].res(); else writes[0].rej(new Error("denied"));
+    await first;
+    assert.ok(!button.attrs.has("data-done"), `${late}: no Link copied for the stopped share's link`);
+    assert.deepEqual(shown, [], `${late}: the stopped share's link is not shown`);
   }
 });
 
