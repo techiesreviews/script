@@ -25,7 +25,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 16 files, 436301 bytes; on first use: broll-app.js + broll.js, 149034 bytes
+ℹ startup: 16 files, 441826 bytes; on first use: broll-app.js + broll.js, 149034 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -329,7 +329,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 16 files, 436301 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 16 files, 441826 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -354,7 +354,7 @@
 ✔ one HTML escape: doc.js's escHtml, used by app.js and broll.js (no copy of their own)
 ✔ no dead code: broll.js has no export that only the tests use
 ✔ module names: the app's modules import each other under their own names, not one letter
-✔ left-behind copies: app.js cleans them one at a time with one named Web Lock, and one at a time in the tab without it
+✔ left-behind copies: app.js gives them the browser's Web Locks (a stand-in in the tab without them), holds the open browser script, and saves with the name held
 ✔ room: the host creates the room; a wrong key or no room is refused
 ✔ room: guests say who they are first, can't pose as someone else, and reach only the host
 ✔ room: the host sends to one guest or to all; the end closes everyone and refuses new joins
@@ -425,7 +425,14 @@
 ✔ saving: a listing never shows a left-behind copy that another cleanup deleted while it walked the folder
 ✔ saving: a listing keeps a script it can't read the time of, and still shows the scripts when a cleanup fails
 ✔ saving: a folder walk that fails partway still shows the scripts found so far, and frees no kept name
-✔ saving: a left-behind copy that another tab saved into after the move is kept and shown again, never deleted
+✔ saving: a left-behind copy that was saved into after the move is kept and shows again on the listing that finds it
+✔ saving, two tabs: a browser copy another tab has open is never deleted, not by the move and not by a cleanup; it shows again with that tab's words once the tab leaves it
+✔ saving, two tabs: a copy saved into before the move is not the script that moved: it stays, by the moving tab's own time for it
+✔ saving, two tabs: a save into a copy and a cleanup of it never cross: a running save keeps the copy, a save that comes during the delete waits and is refused
+✔ saving: a left-behind copy whose time can't be read once stays kept and is tried again, not shown as a second script
+✔ saving: tabLocks stands in for navigator.locks in one tab: shared holders together, an exclusive one alone, in order, and ifAvailable never waits
+✔ saving: a save still runs, once, where the lock can't be asked for; and leaving a script before its lock came frees it
+✔ saving: every save holds its script's name from its start to the end of its write, also the save of a script the person just left
 ✔ site: pages may be indexed, with a description and the canonical address
 ✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
 ✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
@@ -503,9 +510,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 503
+ℹ tests 510
 ℹ suites 0
-ℹ pass 503
+ℹ pass 510
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

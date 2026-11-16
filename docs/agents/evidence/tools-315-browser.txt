@@ -75,3 +75,34 @@ scripts/smoke-relay.mjs: RESULT: ok smoke (body cap 2,566,336 bytes)
 ## After the listing fixes of PR #74: smoke-saving 81 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, 0 FAIL
 
 ## After keeping a copy saved into since the move (PR #72 third review): smoke-saving 81 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, smoke-csp 51 ok, 0 FAIL
+
+## A copy another tab has open (PR #75 second look, P0), wrangler dev (port 38325) and headless Chrome 157
+Failing first, smoke-saving ONLY=runMoveOpenElsewhere on the app before "fix: a browser copy is deleted only when no tab has it open or saves into it" (the run's first version; its second half then opened the second script with "Reopen", which offers another script, and was changed to the switcher):
+FAIL open elsewhere: the move leaves the copy the other tab has open
+FAIL timed out: tab two saved
+FAIL open elsewhere: the other tab keeps saving into its copy (Not saved)
+FAIL open elsewhere: a later visit does not delete the copy in use
+FAIL timed out: the copy back in the switcher
+FAIL open elsewhere: once the other tab leaves it, the copy shows again as a browser script (["file"])
+FAIL open elsewhere: with the other tab's words
+ok open elsewhere: the file on the computer holds what tab one moved
+FAIL timed out: just-open.md is open in the other tab
+FAIL open elsewhere: an unchanged copy stays too while the other tab has it open (untitled-script.md)
+ok open elsewhere: an unchanged copy goes once the other tab has left it
+FAIL open elsewhere: the copy with words stays
+FAIL 10
+
+With the fix, runMoveOpenElsewhere (3 runs, ok all each):
+ok open elsewhere: the move leaves the copy the other tab has open
+ok open elsewhere: the other tab keeps saving into its copy
+ok open elsewhere: a later visit does not delete the copy in use
+ok open elsewhere: once the other tab leaves it, the copy shows again as a browser script
+ok open elsewhere: with the other tab's words
+ok open elsewhere: the file on the computer holds what tab one moved
+ok open elsewhere: an unchanged copy stays too while the other tab has it open
+ok open elsewhere: an unchanged copy goes once the other tab has left it
+ok open elsewhere: the copy with words stays
+ok open elsewhere (one): no page error or CSP violation
+ok open elsewhere (two): no page error or CSP violation
+
+Full suites with the fix: smoke-saving 92 ok, smoke-csp 51 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, 0 FAIL
