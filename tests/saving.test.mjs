@@ -400,7 +400,9 @@ test("saving: a Ctrl+S on the demo that waits for its Save as never saves or ren
   s.ed.text = "# Demo\n\nMoving.\n\nPressed.\n";
   s.saving.save(); // Ctrl+S on the demo while its file is written: it waits, with no file of its own
   s.time.t = 77_000;
-  s.open(null, "# Other\n"); // another script without a file opens
+  // Leaving the demo, the app keeps its draft (persistDraft in loadText), then opens another script without a file.
+  s.store.set("draft:demo.md", { text: s.ed.text, at: s.time.t, asks: [] });
+  s.open(null, "# Other\n");
   release();
   await run;
   await until(() => !s.script.saving);
@@ -408,7 +410,7 @@ test("saving: a Ctrl+S on the demo that waits for its Save as never saves or ren
   assert.equal(s.files.disk.has("from-title.md"), false, "the other script is not saved into the browser");
   assert.ok(!s.events.some((e) => e[0] === "renamed"), "nothing is renamed");
   assert.deepEqual([s.script.name, s.script.handle, s.script.inBrowser], ["demo.md", null, false]);
-  assert.deepEqual(s.store.get("draft:demo.md"), { text: "# Demo\n\nMoving.\n\nPressed.\n", at: 77_000, asks: [] }, "the demo's newer words are kept as its draft");
+  assert.deepEqual(s.store.get("draft:demo.md"), { text: "# Demo\n\nMoving.\n\nPressed.\n", at: 77_000, asks: [] }, "the demo's newer words stay in its draft");
   assert.deepEqual(s.saving.queued(), []);
 });
 
@@ -432,6 +434,30 @@ test("saving: a waiting Ctrl+S without a file never replaces a newer draft the a
   await run;
   await until(() => !s.script.saving);
   assert.deepEqual(s.store.get("draft:demo.md"), { text: "# Demo\n\nMoving.\n\nPressed.\n\nTyped after.\n", at: 71_000, asks: [{ id: "q" }] }, "the words typed after the Ctrl+S stay in the draft");
+});
+
+test("saving: a waiting Ctrl+S without a file brings back no words the person took out before leaving", async () => {
+  for (const kept of [{ text: null, at: 71_000, asks: [{ id: "q" }] }, null]) {
+    const s = setup({ handle: null });
+    s.open(null, "# Demo\n");
+    s.ed.text = "# Demo\n\nMoving.\n";
+    const release = s.files.hold("moved.md");
+    s.files.port.pickSave = async () => ({ name: "moved.md" });
+    const run = s.saving.saveAs();
+    await settle();
+    s.ed.text = "# Demo\n\nMoving.\n\nPressed.\n";
+    s.time.t = 70_000;
+    s.saving.save();
+    s.ed.text = "# Demo\n"; // undone back to the saved text
+    s.time.t = 71_000;
+    // Nothing unsaved: the app keeps a draft without text (open asks), or none.
+    if (kept) s.store.set("draft:demo.md", kept); else s.store.delete("draft:demo.md");
+    s.open(null, "# Other\n");
+    release();
+    await run;
+    await until(() => !s.script.saving);
+    assert.deepEqual(s.store.get("draft:demo.md"), kept, "the Ctrl+S words do not come back as unsaved changes");
+  }
 });
 
 test("saving: Ctrl+S where neither the browser nor a file picker can save downloads the script", async () => {
@@ -477,4 +503,13 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   open();
   await a;
   assert.equal(files.get("stuck.md"), "a new script", "the slower listing leaves the new script alone");
+  // A full listing frees the names whose copy went some other way (an older tab, cleared storage), and deletes the rest.
+  refuse = true;
+  files.set("kept.md", "copy"); files.set("other.md", "a script");
+  await copies.afterMove("kept.md");
+  await copies.afterMove("gone.md");
+  store.set("movedCopies", [...copies.names(), "later.md"]);
+  refuse = false;
+  await copies.listed(["kept.md", "gone.md"], new Set(["kept.md", "other.md", "stuck.md"]));
+  assert.deepEqual([copies.names(), files.has("kept.md"), files.has("other.md")], [["later.md"], false, true], "a name added after the listing started stays");
 });
