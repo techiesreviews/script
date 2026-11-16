@@ -24,6 +24,14 @@
 ✔ anchors follow a link going in or out by its edits; others' carets show at a nested link's words
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
+✔ first load: no B-roll code is among the files the page needs to start
+ℹ startup: 15 files, 461178 bytes; on first use: broll-app.js + broll.js, 148968 bytes
+✔ first load: the app loads the B-roll module with import() and checks its seam version
+✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
+✔ createBroll: one small interface, and a fresh part holds no list
+✔ createBroll: a script's linked list is read on load, shared with guests, exported and saved to the folder
+✔ createBroll: a guest shows the host's list and cannot add shots
+✔ createBroll: sketches in asks are cleaned where they come in, also the ones already there when it loads
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
@@ -438,9 +446,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 440
+ℹ tests 447
 ℹ suites 0
-ℹ pass 440
+ℹ pass 447
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

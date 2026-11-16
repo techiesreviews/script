@@ -2,7 +2,6 @@
 // and wires Share to edit, joining with a name, the people in the top bar and other people's carets.
 // The room itself (public/together/) knows nothing about scripts; see docs/together.md.
 import * as D from "./doc.js";
-import * as B from "./broll.js";
 import * as C from "./changes.js";
 import { agentBrand } from "./agent-brand.js";
 import { RoomClient, newRoom, parseLink } from "./together/room.js";
@@ -92,7 +91,7 @@ export function guestAsk(doc, a) {
   if (!b || typeof a.quote !== "string" || !a.quote.trim() || a.quote.length > D.LIMITS.text || !Number.isInteger(a.start) || a.start < 0) return null;
   const typed = typeof a.instruction === "string" ? a.instruction.trim() : "";
   if (a.action === "ask" && (!typed || typed.length > D.LIMITS.instruction)) return null;
-  if (a.action === "broll" && !B.spokenBlocks(doc).some((x) => x.id === b.id)) return null;
+  if (a.action === "broll" && !D.spokenBlocks(doc).some((x) => x.id === b.id)) return null;
   const r = D.reanchor({ start: a.start, quote: a.quote }, D.contentOf(b));
   return r ? { blockId: b.id, start: r.start, end: r.end, action: a.action, ...(a.action === "ask" ? { instruction: typed } : {}) } : null;
 }
@@ -117,7 +116,7 @@ export const mayAct = (ask, { host = false, id = "" } = {}) => host || (!!id && 
 /** What the host shares: the open asks and the marked changes, copied; each marked change with its exact place in
  *  the host's `doc` (C.withContext), so a guest finds that place or shows no mark. */
 // Guests get waiting pictures (step K) without the image: room messages stay small.
-export const shareAsks = (asks, doc) => C.withContext(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)), doc).map(B.withoutPictures);
+export const shareAsks = (asks, doc) => C.withContext(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)), doc).map(D.withoutPictures);
 /** A guest places the host's asks in its own copy of the script: each quote is found again near its place; a
  *  marked change only at its exact place (C.place), or where this guest's own copy of it (`prev`, the asks shown
  *  now) has followed it since, while its text is there. An ask whose text is not here (yet) is left out; B-roll

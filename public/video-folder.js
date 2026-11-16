@@ -1,8 +1,9 @@
 // "Save to video folder" (Lex, 2026-11-10, Orbit TOOLS-194): the script, the cue files, the B-roll data and its pictures
 // under the names a video folder uses (chat `youtube/workflow/project-files.md`), plus a short receipt. Pure but for
 // writeFolder, which takes a directory handle. Imported by the app and the tests; nothing here changes script text.
+// The B-roll helpers come in with a linked list (`broll`, the broll.js module): broll.js loads only once a script uses
+// B-roll (TOOLS-306), and this file loads at startup.
 import { exportPrompter, stats, prompterLink } from "./doc.js";
-import { exportBroll, cleanSketch, isImage, sketchLines, SKETCH_VIEWBOX } from "./broll.js";
 
 export const FOLDER_NAMES = ["script.md", "prompter.md", "recording-notes.md", "b-roll.md", "b-roll.json"];
 /** The B-roll list as a save sees it, from the editor's status: "none" (no list linked), "ok" (read), or "wait" (a linked
@@ -40,21 +41,24 @@ function pictureBytes(data) {
 
 // A line drawing as a file of its own: the same lines and colours as the storyboard page.
 const SVG_STYLE = "path,rect,circle,ellipse,line,polyline,polygon{fill:none;stroke:#1a1a1a;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.l{stroke:#a8a8a8}.o{stroke:#ff6a3d;stroke-width:2.2}.mv{stroke:#ff6a3d;stroke-width:1.6;stroke-dasharray:4 4}text{fill:#1a1a1a;stroke:none;font:600 11px system-ui,sans-serif}";
-const standaloneSvg = (svg) => {
+const standaloneSvg = (svg, { sketchLines, SKETCH_VIEWBOX }) => {
   const inner = svg.replace(/^<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SKETCH_VIEWBOX}">\n<style>${SVG_STYLE}</style>\n<rect width="260" height="140" style="fill:#fff;stroke:none"/>\n${sketchLines(inner)}\n</svg>\n`;
 };
 
 /**
- * videoFolder({ doc, scriptText, shots, sketches, title, date, linked }) → { files, receipt }
+ * videoFolder({ doc, scriptText, shots, sketches, title, date, linked, broll }) → { files, receipt }
  * files: [{ name, text }] where text is a string, or bytes for a picture (the zip and writeFolder take both).
- * shots are in script order; with no B-roll list linked there are no B-roll files and no pictures.
+ * shots are in script order; with no B-roll list linked there are no B-roll files and no pictures. A linked list needs
+ * `broll`, the broll.js module the app loaded for it.
  */
-export function videoFolder({ doc, scriptText, shots = [], sketches = {}, title = "", date = new Date(), linked = true }) {
+export function videoFolder({ doc, scriptText, shots = [], sketches = {}, title = "", date = new Date(), linked = true, broll = null }) {
   const prompter = exportPrompter(doc);
   const files = [{ name: "script.md", text: scriptText }, { name: "prompter.md", text: prompter }, { name: "recording-notes.md", text: prompter }];
   let pictures = 0;
   if (linked) {
+    if (!broll) throw new Error("A linked B-roll list needs the B-roll helpers.");
+    const { exportBroll, cleanSketch, isImage } = broll;
     const paths = Object.create(null), taken = new Set(), pictureFiles = [];
     for (const s of shots) {
       const v = Object.hasOwn(sketches, s.id) ? cleanSketch(sketches[s.id] || "") : "";
@@ -66,7 +70,7 @@ export function videoFolder({ doc, scriptText, shots = [], sketches = {}, title 
         pictureFiles.push({ name: paths[s.id], text: bytes });
       } else {
         paths[s.id] = `${PICTURES}/${stem}.svg`;
-        pictureFiles.push({ name: paths[s.id], text: standaloneSvg(v) });
+        pictureFiles.push({ name: paths[s.id], text: standaloneSvg(v, broll) });
       }
     }
     pictures = pictureFiles.length;

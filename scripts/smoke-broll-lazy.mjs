@@ -1,0 +1,206 @@
+#!/usr/bin/env node
+// Browser check for TOOLS-306: the B-roll part (public/broll-app.js and broll.js) loads only on first use. With real
+// clicks over CDP at 1280 and 390 px: a new script without B-roll fetches none of it; opening the Storyboard, an agent's
+// B-roll call or the demo with its linked list loads it, and every B-roll flow then works as before (frames, the shot
+// card, add a shot from the selection bar, the storyboard). After a reload the module comes back as "not changed" (304).
+// The page must see no CSP violation and no error.
+// Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; it applies _headers) and a headless
+// Chrome, then: node scripts/smoke-broll-lazy.mjs <base URL> <Chrome debugging port>
+// Its traffic goes to the base URL and the debugging port only.
+const BASE = (process.argv[2] || "http://127.0.0.1:8787").replace(/\/$/, "");
+const PORT = process.argv[3] || "9222";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let failures = 0;
+const check = (ok, label, extra = "") => {
+  console.log(`${ok ? "ok" : "FAIL"} ${label}${extra !== "" && !ok ? ` (${extra})` : ""}`);
+  if (!ok) failures++;
+};
+const COLLECT = `window.__csp = []; document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + (e.blockedURI || "inline")));`;
+const BROLL_FILES = /\/broll(?:-app)?\.js(?:\?|$)/;
+
+const version = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
+const cdp = new WebSocket(version.webSocketDebuggerUrl);
+await new Promise((resolve, reject) => { cdp.addEventListener("open", resolve); cdp.addEventListener("error", reject); });
+let nextId = 0;
+const waiting = new Map();
+cdp.addEventListener("message", (e) => {
+  const m = JSON.parse(e.data);
+  if (!m.id || !waiting.has(m.id)) return;
+  const { resolve, reject } = waiting.get(m.id);
+  waiting.delete(m.id);
+  if (m.error) reject(new Error(JSON.stringify(m.error))); else resolve(m.result);
+});
+const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+  const id = ++nextId;
+  const timer = setTimeout(() => { waiting.delete(id); reject(new Error(`Chrome didn't answer ${method}`)); }, 20000);
+  waiting.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
+  cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+});
+
+async function openPage(width, height) {
+  const { browserContextId } = await send("Target.createBrowserContext");
+  const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
+  const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
+  const page = {
+    send: (method, params) => send(method, params, sessionId),
+    async eval(expression) {
+      const r = await page.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+      return r.result.value;
+    },
+    async until(expression, label, ms = 8000) {
+      const end = Date.now() + ms;
+      for (;;) {
+        // A page still navigating has no elements yet: keep waiting.
+        if (await page.eval(expression).catch(() => false)) return true;
+        if (Date.now() > end) { check(false, `timed out: ${label}`); return false; }
+        await sleep(60);
+      }
+    },
+    async click(selector) {
+      const box = await page.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "nearest" }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      if (!box) throw new Error(`nothing to press: ${selector}`);
+      for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
+    },
+    async key(key, code, keyCode, text) {
+      for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: keyCode, ...(type === "keyDown" && text ? { text } : {}) });
+    },
+    // Every B-roll file the page asked for, with the answer's status.
+    broll: [],
+    close: () => send("Target.disposeBrowserContext", { browserContextId }),
+  };
+  await page.send("Page.enable");
+  await page.send("Runtime.enable");
+  await page.send("Log.enable");
+  await page.send("Network.enable");
+  await page.send("Page.addScriptToEvaluateOnNewDocument", { source: COLLECT });
+  page.log = [];
+  cdp.addEventListener("message", (e) => {
+    const m = JSON.parse(e.data);
+    if (m.sessionId !== sessionId) return;
+    if (m.method === "Log.entryAdded" && /Content Security Policy|Refused to/i.test(m.params.entry.text)) page.log.push(m.params.entry.text);
+    if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") page.log.push(m.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
+    if (m.method === "Runtime.exceptionThrown") page.log.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
+    if (m.method === "Network.responseReceived" && BROLL_FILES.test(m.params.response.url)) page.broll.push({ url: new URL(m.params.response.url).pathname, status: m.params.response.status });
+  });
+  await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 500 });
+  return page;
+}
+async function clean(page, tag, what) {
+  const seen = [...(await page.eval(`window.__csp.splice(0)`).catch(() => [])), ...page.log.splice(0)];
+  check(seen.length === 0, `${tag} ${what}: no CSP violation or error`, [...new Set(seen)].join(" | ").slice(0, 400));
+}
+const loaded = (page) => new Set(page.broll.map((r) => r.url));
+async function startScreen(page, token = null) {
+  await page.send("Page.navigate", { url: `${BASE}/` });
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyNew")`, "the start screen");
+  if (token) {
+    await page.eval(`localStorage.setItem("script-editor:agent", JSON.stringify({ token: ${JSON.stringify(token)}, createdAt: Date.now() }))`);
+    await page.send("Page.reload");
+    await sleep(300);
+    await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyNew")`, "the start screen");
+  }
+}
+let rpcId = 0;
+async function mcp(token, name, args) {
+  const res = await fetch(`${BASE}/mcp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const body = await res.json();
+  return { error: !!(body?.result?.isError || body?.error), text: body?.result?.content?.[0]?.text ?? JSON.stringify(body.error) };
+}
+// Selects the word in the demo's line "A blank page." and waits for the selection bar.
+async function selectDeadline(page) {
+  await page.eval(`(() => { const l = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes("A blank page.")), w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) { const at = n.data.indexOf("deadline"); if (at < 0) continue; l.scrollIntoView({ block: "center" }); const r = document.createRange(); r.setStart(n, at); r.setEnd(n, at + 8); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return; } })()`);
+  return page.until(`!document.querySelector("#editBar").hidden`, "the selection bar");
+}
+
+async function run(width, height) {
+  const tag = `${width} px:`;
+
+  // A new script without B-roll: none of the B-roll part is fetched, also with the selection bar open.
+  const fresh = await openPage(width, height);
+  await startScreen(fresh);
+  await fresh.click("#emptyNew");
+  await fresh.until(`!document.querySelector("#layout").hidden`, "the new script");
+  await fresh.send("Input.insertText", { text: "A new line to check." });
+  await sleep(800);
+  check(loaded(fresh).size === 0, `${tag} a new script without B-roll fetches no B-roll code`, [...loaded(fresh)].join(", "));
+  await clean(fresh, tag, "new script");
+  // The Storyboard is B-roll: opening it loads the module, which draws the empty board.
+  await fresh.click('#viewSwitch [data-view="board"]');
+  check(await fresh.until(`!!document.querySelector("#board .board__link") && !!document.querySelector('#board [data-act="plan"]')`, "the empty storyboard"), `${tag} opening the Storyboard shows Link B-roll list and Plan B-roll`);
+  check(loaded(fresh).has("/broll-app.js") && loaded(fresh).has("/broll.js"), `${tag} opening the Storyboard loads broll-app.js and broll.js`, [...loaded(fresh)].join(", "));
+  await fresh.click('#viewSwitch [data-view="script"]');
+  await fresh.until(`document.querySelector("#board").hidden`, "back to the script");
+  await clean(fresh, tag, "storyboard on first use");
+  await fresh.close();
+
+  // The agent's B-roll call loads the module too: upload_image answers with an address in a script without a list.
+  const { token } = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
+  const agentPage = await openPage(width, height);
+  await startScreen(agentPage, token);
+  await agentPage.click("#emptyNew");
+  await agentPage.until(`!document.querySelector("#layout").hidden`, "the new script");
+  let linked = false;
+  for (let i = 0; i < 40 && !linked; i++) { linked = !(await mcp(token, "get_script", {})).error; if (!linked) await sleep(150); }
+  check(linked && loaded(agentPage).size === 0, `${tag} the agent is connected and no B-roll code is loaded yet`, [...loaded(agentPage)].join(", "));
+  const up = await mcp(token, "upload_image", {});
+  check(!up.error && up.text.includes("/mcp/images/"), `${tag} upload_image answers with an address once the module loads`, up.text.slice(0, 200));
+  check(loaded(agentPage).has("/broll-app.js"), `${tag} the agent's B-roll call loaded broll-app.js`);
+  const noList = await mcp(token, "sketch_shot", { shotId: "B1", svg: '<svg><rect class="s" x="1" y="1" width="9" height="9"/></svg>' });
+  check(noList.error && /no B-roll list yet/.test(noList.text), `${tag} sketch_shot without a list says there is none`, noList.text.slice(0, 200));
+  await clean(agentPage, tag, "agent's B-roll call");
+  await agentPage.close();
+
+  // The demo links its list: the module loads with it and every B-roll flow works.
+  const page = await openPage(width, height);
+  await startScreen(page);
+  await page.click("#emptySample");
+  check(await page.until(`document.querySelectorAll(".shot-frame").length >= 6`, "the demo's shots"), `${tag} the demo shows its shots beside the lines`);
+  check(loaded(page).has("/broll-app.js"), `${tag} a script with a linked list loads broll-app.js`);
+  const before = await page.eval(`window.__scriptEditor.broll().length`);
+  // A frame opens the shot card; Escape puts it away.
+  await page.click(".shot-frame__jump");
+  check(await page.until(`!document.querySelector("#shotCard").hidden && /·/.test(document.querySelector("#scTitle").textContent)`, "the shot card"), `${tag} a frame opens its shot card`);
+  await page.key("Escape", "Escape", 27);
+  check(await page.until(`document.querySelector("#shotCard").hidden`, "the card closing"), `${tag} Escape closes the shot card`);
+  // Add a shot from the selection bar: "add b-roll", What, Enter.
+  await selectDeadline(page);
+  await page.click("#askInput");
+  await page.send("Input.insertText", { text: "add b-roll" });
+  await sleep(100);
+  await page.key("Enter", "Enter", 13, "\r");
+  check(await page.until(`!document.querySelector("#shotCard").hidden && document.activeElement.id === "scWhat"`, "the Add B-roll card"), `${tag} add b-roll opens the card`);
+  await page.send("Input.insertText", { text: "Lazy module check" });
+  await page.key("Enter", "Enter", 13, "\r");
+  check(await page.until(`window.__scriptEditor.broll().length === ${before + 1}`, "the new shot", 8000), `${tag} the new shot is in the list`);
+  check(await page.until(`[...document.querySelectorAll(".shot-frame__jump")].some((b) => /Lazy module check/.test(b.getAttribute("aria-label") || ""))`, "its frame"), `${tag} its frame shows beside the line`);
+  // The storyboard lists every shot; a frame there goes back to the script with that shot lit.
+  await page.click('#viewSwitch [data-view="board"]');
+  check(await page.until(`document.querySelectorAll("#board .frame").length === ${before + 1}`, "the storyboard"), `${tag} the storyboard shows every shot`);
+  await page.click("#board .frame__jump");
+  check(await page.until(`document.querySelector("#board").hidden && !!document.querySelector(".shot-frame[data-lit]")`, "back to the lit shot"), `${tag} a storyboard frame goes back to its lit shot`);
+  await page.key("Escape", "Escape", 27);
+  await clean(page, tag, "demo B-roll flows");
+  // A reload asks the server again: the unchanged module comes back as "not changed".
+  page.broll.length = 0;
+  await page.send("Page.reload");
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen again");
+  await page.click("#emptySample");
+  await page.until(`document.querySelectorAll(".shot-frame").length >= 6`, "the demo's shots again");
+  const again = page.broll.find((r) => r.url === "/broll-app.js");
+  check(again?.status === 304, `${tag} after a reload broll-app.js is checked with the server and comes back "not changed" (304)`, JSON.stringify(page.broll));
+  await clean(page, tag, "reload");
+  await page.close();
+}
+
+await run(1280, 800);
+await run(390, 844);
+cdp.close();
+console.log(failures ? `FAIL ${failures}` : "ok all");
+process.exit(failures ? 1 : 0);

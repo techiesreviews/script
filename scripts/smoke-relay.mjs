@@ -155,7 +155,7 @@ try {
 
   const list = await mcp("tools/list");
   const names = list.body.result?.tools?.map((t) => t.name).sort().join(",");
-  check(names === "answer_ask,answer_broll,get_script,list_asks,list_scripts,open_script,set_script,sketch_shot,upload_image,wait_for_asks", "tools/list has the ten tools", names);
+  check(names === "answer_ask,answer_broll,get_script,list_asks,list_cues,list_scripts,mark_cue,open_script,set_script,sketch_shot,unmark_cue,upload_image,wait_for_asks", "tools/list has the thirteen tools (the cue tools since step P)", names);
 
   const script = await mcp("tools/call", { name: "get_script", arguments: {} });
   check(JSON.parse(toolText(script) || "{}").title === "Smoke", "get_script returns the tab's script", toolText(script));

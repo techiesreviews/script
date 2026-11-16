@@ -1,0 +1,63 @@
+# TOOLS-306 browser check, 2026-11-16, wrangler dev (applies _headers) on 127.0.0.1:8791, headless Chrome "Chrome/157.0.8103.78"
+
+## curl -sI /broll-app.js
+HTTP/1.1 200 OK
+Content-Type: text/javascript; charset=utf-8
+Cache-Control: no-cache
+ETag: "fd60ee93e941a6c603ec866884e22a24"
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' wss://script.techies.tools data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'self'
+If-None-Match with that ETag -> 304
+
+## node scripts/smoke-broll-lazy.mjs
+ok 1280 px: a new script without B-roll fetches no B-roll code
+ok 1280 px: new script: no CSP violation or error
+ok 1280 px: opening the Storyboard shows Link B-roll list and Plan B-roll
+ok 1280 px: opening the Storyboard loads broll-app.js and broll.js
+ok 1280 px: storyboard on first use: no CSP violation or error
+ok 1280 px: the agent is connected and no B-roll code is loaded yet
+ok 1280 px: upload_image answers with an address once the module loads
+ok 1280 px: the agent's B-roll call loaded broll-app.js
+ok 1280 px: sketch_shot without a list says there is none
+ok 1280 px: agent's B-roll call: no CSP violation or error
+ok 1280 px: the demo shows its shots beside the lines
+ok 1280 px: a script with a linked list loads broll-app.js
+ok 1280 px: a frame opens its shot card
+ok 1280 px: Escape closes the shot card
+ok 1280 px: add b-roll opens the card
+ok 1280 px: the new shot is in the list
+ok 1280 px: its frame shows beside the line
+ok 1280 px: the storyboard shows every shot
+ok 1280 px: a storyboard frame goes back to its lit shot
+ok 1280 px: demo B-roll flows: no CSP violation or error
+ok 1280 px: after a reload broll-app.js is checked with the server and comes back "not changed" (304)
+ok 1280 px: reload: no CSP violation or error
+ok 390 px: a new script without B-roll fetches no B-roll code
+ok 390 px: new script: no CSP violation or error
+ok 390 px: opening the Storyboard shows Link B-roll list and Plan B-roll
+ok 390 px: opening the Storyboard loads broll-app.js and broll.js
+ok 390 px: storyboard on first use: no CSP violation or error
+ok 390 px: the agent is connected and no B-roll code is loaded yet
+ok 390 px: upload_image answers with an address once the module loads
+ok 390 px: the agent's B-roll call loaded broll-app.js
+ok 390 px: sketch_shot without a list says there is none
+ok 390 px: agent's B-roll call: no CSP violation or error
+ok 390 px: the demo shows its shots beside the lines
+ok 390 px: a script with a linked list loads broll-app.js
+ok 390 px: a frame opens its shot card
+ok 390 px: Escape closes the shot card
+ok 390 px: add b-roll opens the card
+ok 390 px: the new shot is in the list
+ok 390 px: its frame shows beside the line
+ok 390 px: the storyboard shows every shot
+ok 390 px: a storyboard frame goes back to its lit shot
+ok 390 px: demo B-roll flows: no CSP violation or error
+ok 390 px: after a reload broll-app.js is checked with the server and comes back "not changed" (304)
+ok 390 px: reload: no CSP violation or error
+ok all
+
+## Older suites, same server
+smoke-csp: 51 ok, 0 fail; last line: ok all
+smoke-keep-all: 933 ok, 0 fail; last line: RESULT: ok
+smoke-video-folder: 93 ok, 0 fail; last line: all ok
+smoke-room: 27 ok, 0 fail; last line: RESULT: ok smoke-room
+smoke-relay: 42 ok, 0 fail; last line: RESULT: ok smoke
