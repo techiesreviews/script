@@ -59,8 +59,8 @@ export function tabLocks() {
 // name (app.js nameTaken). `dir()`: the browser's scripts folder. `locks`: navigator.locks (tabLocks without it).
 // Two kinds of lock keep a cleanup from deleting words:
 // - one for all cleanups, so one cleanup checks, deletes and frees a name before another (or another tab) looks at it;
-// - one per script name, held shared by every tab that has that browser script open (`open`) and by every save into
-//   it (`saving`). A copy is deleted only under that lock held alone, taken only when it is free at once: a copy open
+// - one per browser script's name, held shared by every tab that has that script open (`open`) and by every save
+//   into it (`saving`). A copy is deleted only under that lock held alone, taken only when it is free at once: a copy open
 //   in a tab, or being saved into, is skipped, and a save that comes during a delete waits for it.
 export function createLeftCopies({ store, dir, locks = tabLocks() }) {
   const KEY = "movedCopies", TIMES = "movedCopyTimes"; // the names, and each copy's file time as the tab that moved it knew it
@@ -184,7 +184,8 @@ export function createLeftCopies({ store, dir, locks = tabLocks() }) {
  *   object; its text as it would be saved; changed since the last save; a "/" command is being typed.
  * - files: { write(handle, text) → modified, file(handle) → { lastModified, text() }, permitted(handle, ask),
  *   pickSave(suggestedName) → handle (null where files can't be picked), download(text, name),
- *   held(name, fn) → fn's result: runs a save with the script's name held (createLeftCopies saving; optional) }
+ *   held(name, fn) → fn's result: runs a save into a script in the browser with its name held (createLeftCopies
+ *   saving; optional) }
  * - browser: { name(from, doc) → a free name from the title, create(name, text) → { handle, modified } }
  * - drafts: local storage { get(key), set(key, value), del(key) }
  * - clock: { now(), later(fn, ms) → id, cancel(id) }
@@ -196,9 +197,10 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   let timer = 0;
   let opened = 0; // counts open(): a Save as that lands after another script opened must leave that script alone
 
-  // A save into a script's own file runs with its name held from its first step to the end of its write, so the
-  // cleanup of a left-behind browser copy never deletes one that words are on their way into.
-  const held = (name, fn) => (files.held ? files.held(name, fn) : fn());
+  // A save into a script in the browser runs with its name held from its first step to the end of its write, so the
+  // cleanup of a left-behind browser copy never deletes one that words are on their way into. A file on the computer
+  // needs no hold.
+  const held = (browser, name, fn) => (browser && files.held ? files.held(name, fn) : fn());
   const key = (name) => `draft:${name}`;
   const drafts = {
     get: (name) => store.get(key(name)),
@@ -222,7 +224,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   }
 
   const request = (force, auto) => ({
-    handle: script.handle, name: script.name, text: editor.text(),
+    handle: script.handle, name: script.name, text: editor.text(), browser: script.inBrowser,
     savedText: script.savedText, fileModified: script.fileModified, force, auto,
   });
   // A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
@@ -240,7 +242,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // Write a left script's snapshot straight to its own file, with auto-save rules: no permission prompt, and the
   // changed-on-disk check. `script` is never touched.
   function writeLeft(snap) {
-    return held(snap.name, async () => {
+    return held(snap.browser, snap.name, async () => {
       try {
         if (await files.permitted(snap.handle, false)) {
           if (!(await diskConflict(snap.handle, snap))) {
@@ -264,14 +266,14 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     if (!script.handle && auto) return;
     if (!script.handle) return browser ? saveInBrowser() : saveAs();
     stop();
-    const { handle, name, savedText, fileModified } = script;
+    const { handle, name, savedText, fileModified, inBrowser } = script;
     const text = editor.text();
     let written = null;
     script.saving = true;
     script.autoSaving = auto;
     script.saveError = "";
     on.status();
-    await held(name, async () => {
+    await held(inBrowser, name, async () => {
       try {
         // A click or key press may show the browser's permission prompt; auto-save may not, so it shows "Allow saving to …".
         if (!(await files.permitted(handle, !auto))) {

@@ -531,8 +531,7 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   refuse = true;
   files.set("kept.md", "copy"); files.set("other.md", "a script");
   await copies.afterMove("kept.md", 1);
-  await copies.afterMove("gone.md", 1);
-  store.set("movedCopies", [...copies.names(), "later.md"]);
+  store.set("movedCopies", [...copies.names(), "gone.md", "later.md"]); // gone.md: kept, and its copy went some other way
   refuse = false;
   await copies.listed(["kept.md", "gone.md"], new Set(["kept.md", "other.md", "stuck.md"]));
   assert.deepEqual([copies.names(), files.has("kept.md"), files.has("other.md")], [["later.md"], false, true], "a name added after the listing started stays");
@@ -805,31 +804,50 @@ test("saving: a save still runs, once, where the lock can't be asked for; and le
   assert.equal(await locks.request("script-editor:script:b.md", { ifAvailable: true }, (l) => !!l), true);
 });
 
-test("saving: every save holds its script's name from its start to the end of its write, also the save of a script the person just left", async () => {
+test("saving: every save into a browser script holds its name from its start to the end of its write, also the save of a script the person just left", async () => {
   const s = setup();
   const held = [];
   let inside = 0;
   s.ports.files.held = async (name, fn) => { held.push(name); inside++; try { return await fn(); } finally { inside--; } };
   const write = s.files.port.write;
-  s.files.port.write = async (h, t) => { assert.equal(inside > 0, true, `${h.name} is written while its name is held`); return write(h, t); };
-  // Leaving a.md with words not saved yet, as loadText does: flush, then open the next script.
+  s.files.port.write = async (h, t) => { if (h.name !== "disk.md") assert.equal(inside > 0, true, `${h.name} is written while its name is held`); return write(h, t); };
+  const openBrowser = (name, text) => { s.files.outside(name, text); s.ed.doc = { id: name }; s.ed.text = text; s.saving.open({ handle: { name }, name, browser: true, savedText: text, modified: s.files.disk.get(name).lastModified }); };
+  // Leaving a browser script with words not saved yet, as loadText does: flush, then open the next script.
+  openBrowser("a2.md", "# A\n");
   s.ed.text = "# A\n\nOne. Two.\n";
   s.saving.flush();
-  assert.deepEqual(held, ["a.md"], "the name is held before the script is left, with no wait in between");
-  s.files.outside("b.md", "# B\n");
-  s.open({ name: "b.md" }, "# B\n");
+  assert.deepEqual(held, ["a2.md"], "the name is held before the script is left, with no wait in between");
+  openBrowser("b.md", "# B\n");
   await until(() => !s.script.saving);
-  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Two.\n");
+  assert.equal(s.files.disk.get("a2.md").text, "# A\n\nOne. Two.\n");
   // A save that waited while another ran, for a script left meanwhile, holds its name too.
   const release = s.files.hold("b.md");
   s.ed.text = "# B\n\nFirst.\n";
   s.saving.save();
   s.ed.text = "# B\n\nSecond.\n";
   s.saving.save();
-  s.files.outside("c.md", "# C\n");
-  s.open({ name: "c.md" }, "# C\n");
+  // A file on the computer is saved without a hold: no browser copy is deleted under its name's lock for it.
+  s.files.outside("disk.md", "# Disk\n");
+  s.open({ name: "disk.md" }, "# Disk\n");
   release();
   await until(() => !s.script.saving);
   assert.equal(s.files.disk.get("b.md").text, "# B\n\nSecond.\n");
-  assert.deepEqual(held, ["a.md", "b.md", "b.md"]);
+  s.ed.text = "# Disk\n\nMore.\n";
+  await s.saving.save();
+  assert.equal(s.files.disk.get("disk.md").text, "# Disk\n\nMore.\n");
+  assert.deepEqual(held, ["a2.md", "b.md", "b.md"]);
+});
+
+test("saving: a name kept without a time (kept before copies had one) is never deleted: its copy shows again; a name whose copy is gone is freed with its time", async () => {
+  const files = new Map([["old.md", { text: "before the upgrade", lastModified: 50 }]]);
+  const { tab, store } = tabs(files, { "old.md": 50 });
+  const copies = tab();
+  store.set("movedCopyTimes", {});
+  assert.deepEqual((await copies.list()).map((r) => [r.name, r.at, r.browser]), [["old.md", 50, true]]);
+  assert.deepEqual([files.get("old.md")?.text, copies.names()], ["before the upgrade", []]);
+  // A kept name whose copy went some other way (an older tab, cleared storage): the name and its time are freed.
+  store.set("movedCopies", ["gone.md"]);
+  store.set("movedCopyTimes", { "gone.md": 1 });
+  await copies.listed(["gone.md"], new Set());
+  assert.deepEqual([copies.names(), store.get("movedCopyTimes")], [[], {}]);
 });

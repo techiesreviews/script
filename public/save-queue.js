@@ -1,6 +1,6 @@
 // Saves that wait while another save runs, kept per script. Pure: no DOM, no files. Imported by the app and the tests.
 //
-// A request is { handle, name, text, savedText, fileModified, force, auto }: everything needed to write that
+// A request is { handle, name, text, browser, savedText, fileModified, force, auto }: everything needed to write that
 // script to its own file later, even after the person has opened another script.
 // The queue is { waiting, left }: `waiting` is the newest script's request; `left` holds snapshots of scripts
 // the person has left, at most one per file.
