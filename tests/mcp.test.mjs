@@ -390,18 +390,26 @@ test("open_script, set_script and list_scripts go to the tab with their argument
 test("mcp: a request body bigger than the largest allowed call is refused before it is read in full", async () => {
   const { BODY_MAX } = await import("../worker/mcp.js");
   const { SCRIPT_LIMITS } = await import("../public/doc.js");
-  // The largest call is a whole script in set_script; JSON can make each character six bytes (\uXXXX).
-  assert.ok(BODY_MAX >= SCRIPT_LIMITS.markdown * 6, `BODY_MAX ${BODY_MAX}`);
-  assert.ok(BODY_MAX <= 64 * 1024 * 1024, `BODY_MAX ${BODY_MAX}`);
+  // The largest calls hold one script's words: a whole script in set_script, or unmark_cue's cueIds (each
+  // "<blockId>:<n>:<words>"); JSON can make each character six bytes (\uXXXX).
+  assert.ok(BODY_MAX >= (SCRIPT_LIMITS.markdown + 30 * 60) * 6, `BODY_MAX ${BODY_MAX}`);
+  assert.ok(BODY_MAX <= 1.5 * 1024 * 1024, `BODY_MAX ${BODY_MAX}`);
   const markdown = "\u0001".repeat(SCRIPT_LIMITS.markdown);
   const big = await call("set_script", { markdown });
   assert.notEqual(big.status, 413, "the largest set_script still goes through");
-  // unmark_cue takes up to 30 cueIds, each as long as a script can be: the largest call of all.
-  const cues = Array.from({ length: 7 }, () => ({ cueId: "\u0001".repeat(190_000) }));
+  // unmark_cue's 30 cueIds together hold at most one script's words: the largest such call goes through.
+  const words = "\u0001".repeat(SCRIPT_LIMITS.markdown / 30);
+  const cues = Array.from({ length: 30 }, (_, i) => ({ cueId: `b${String(i).padStart(9, "0")}:1:${words}` }));
   const cueRelay = fakeRelay();
   const unmark = await call("unmark_cue", { cues }, { relay: cueRelay });
-  assert.notEqual(unmark.status, 413, "a valid unmark_cue with long cueIds goes through");
+  assert.notEqual(unmark.status, 413, "the largest real unmark_cue goes through");
   assert.ok(cueRelay.ops.some((o) => o.op === "call" && o.tool === "unmark_cue"), "it reaches the tab");
+  // cueIds longer together than a script can be are refused with a reason, not passed on.
+  const tooLong = fakeRelay();
+  const over = await call("unmark_cue", { cues: Array.from({ length: 7 }, () => ({ cueId: "x".repeat(190_000) })) }, { relay: tooLong });
+  assert.equal(over.body.result.isError, true);
+  assert.match(over.body.result.content[0].text, /cueIds together/);
+  assert.ok(!tooLong.ops.some((o) => o.op === "call"));
   const huge = await rpc(null, { raw: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "get_script", arguments: { pad: "x".repeat(BODY_MAX) } } }) });
   assert.equal(huge.status, 413);
   assert.equal(huge.body.error.code, -32600);
