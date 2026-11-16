@@ -29,3 +29,16 @@ test("shared facts: the Worker takes the room id, key and protocol from the tab'
   assert.match(src("worker/index.js"), /import \{[^}]*\bROOM_RE\b[^}]*\bKEY_RE\b[^}]*\} from "\.\.\/public\/together\/link\.js"/);
   assert.ok(link.ROOM_RE.test("a".repeat(22)) && link.KEY_RE.test("b".repeat(43)));
 });
+
+test("one HTML escape: doc.js's escHtml, used by app.js and broll.js (no copy of their own)", async () => {
+  const doc = await import("../public/doc.js");
+  assert.equal(doc.escHtml(`<a href="x">Tom & 'Jo'</a>`), "&lt;a href=&quot;x&quot;&gt;Tom &amp; &#39;Jo&#39;&lt;/a&gt;");
+  assert.equal(doc.escHtml(null), "");
+  assert.equal(doc.escHtml(7), "7");
+  for (const f of ["public/app.js", "public/broll.js"]) assert.ok(!/replace\(\/\[&<>"'\]\/g/.test(src(f)), `${f} has its own HTML escape`);
+});
+
+test("no dead code: broll.js has no export that only the tests use", async () => {
+  const broll = await import("../public/broll.js");
+  assert.equal("applyBrollChanges" in broll, false, "applyBrollChanges: the app uses applyBrollChangesReport");
+});
