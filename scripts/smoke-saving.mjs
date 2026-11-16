@@ -404,6 +404,7 @@ async function runMoveOpenElsewhere() {
   const profile = await openProfile();
   const one = await profile.tab();
   const newScript = async (page, title, line, name) => {
+    await page.steady("#emptyNew"); // "Reopen …" joins its row a moment after the start screen shows
     await page.click("#emptyNew");
     await page.until(`!document.querySelector("#layout").hidden`, "the new script");
     await page.send("Input.insertText", { text: title });
@@ -454,7 +455,8 @@ async function runMoveOpenElsewhere() {
   // A copy the other tab only had open, and never saved into, goes once that tab leaves it.
   await one.send("Page.bringToFront");
   await newScript(one, "Just open", "Nothing more.", "just-open.md");
-  await reopenIn(two, "just-open.md");
+  await two.send("Page.bringToFront");
+  await switchTo(two, "just-open.md");
   await one.send("Page.bringToFront");
   await exportItem(one, "markdown");
   await one.until(`document.querySelector("#saveAsAction").hidden`, "the second script is a file now");
