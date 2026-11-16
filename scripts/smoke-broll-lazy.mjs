@@ -62,9 +62,11 @@ async function openPage(width, height, { failBroll = false, holdBroll = false } 
         await sleep(60);
       }
     },
-    async click(selector) {
+    // `late`: ms between finding the spot and pressing it, as a slow machine or a busy page would take.
+    async click(selector, { late = 0 } = {}) {
       const box = await page.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "nearest" }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
       if (!box) throw new Error(`nothing to press: ${selector}`);
+      if (late) await sleep(late);
       for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
     },
     async key(key, code, keyCode, text) {
@@ -226,6 +228,13 @@ async function newScript(page, title) {
   await sleep(300);
 }
 
+// Opens the script menu. Its list is drawn just after the menu opens (a frame later, or longer on a slow disk), which
+// moves "Open a script…" and "New script" down a row (TOOLS-309).
+async function openScriptMenu(page) {
+  await page.click("#docSwitch");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+}
+
 async function runEdges(width, height) {
   const tag = `${width} px:`;
 
@@ -277,9 +286,8 @@ async function runEdges(width, height) {
   check(linked && gone.error && /could not load its B-roll part/.test(gone.text), `${tag} the agent's B-roll call is told to ask for a reload`, gone.text.slice(0, 200));
   await failPage.click('#viewSwitch [data-view="script"]');
   await failPage.until(`document.querySelector("#board").hidden`, "back to the script");
-  await failPage.click("#docSwitch");
-  await failPage.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await failPage.click("#menuNew");
+  await openScriptMenu(failPage);
+  await failPage.click("#menuNew", { late: 150 });
   await failPage.until(`!window.__scriptEditor.markdown()?.includes("Fail check")`, "another new script");
   await failPage.until(`!document.querySelector("#scriptMenu").matches(":popover-open") && !document.querySelector("#exportBtn").hidden && document.querySelector("#saveState").dataset.state === ""`, "the new script settled");
   await sleep(500);
@@ -304,9 +312,8 @@ async function runEdges(width, height) {
   await holdPage.until(`true`, "the page");
   for (let i = 0; i < 50 && !holdPage.held.length; i++) await sleep(100);
   check(holdPage.held.length > 0, `${tag} the module's download is held while the agent's suggestion waits`);
-  await holdPage.click("#docSwitch");
-  await holdPage.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await holdPage.click("#menuNew");
+  await openScriptMenu(holdPage);
+  await holdPage.click("#menuNew", { late: 150 });
   await holdPage.until(`!window.__scriptEditor.markdown()?.includes("Hold check A")`, "script B");
   await holdPage.send("Input.insertText", { text: "Hold check B" });
   await holdPage.key("Enter", "Enter", 13, "\r");
