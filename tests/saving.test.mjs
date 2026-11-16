@@ -556,7 +556,6 @@ test("saving: a second cleanup waits until the first has freed the name, and lea
   if (!copies.names().includes("stuck.md")) { files.set("stuck.md", "a new script"); taken = true; } // a new script may take the name once it is free
   held.open();
   await Promise.all([a, b]);
-  if (taken) assert.equal(files.get("stuck.md"), "a new script", "the delete still waiting leaves the new script alone");
   assert.equal(taken, false, "the name stays kept until the waiting delete is done");
   assert.deepEqual([files.has("stuck.md"), copies.names()], [false, []]);
 });
