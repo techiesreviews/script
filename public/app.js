@@ -63,7 +63,7 @@ const ICONS = {
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${Object.hasOwn(ICONS, n) ? ICONS[n] : ""}</svg>`;
 const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest", links: "link" };
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const esc = D.escHtml;
 const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
 
 const LS = "script-editor:";

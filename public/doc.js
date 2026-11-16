@@ -3,6 +3,9 @@
 import { textLinks, isLinkLine, safeUrl, LINK_LIMITS } from "./links.js";
 import { spokenWords, stripCues, textCues, quoteAcrossCues } from "./cues.js";
 
+/** Text made safe to put in HTML (the app and the B-roll part use this one). */
+export const escHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 /* ---------- Actions and their standard instructions ---------- */
 export const ACTIONS = {
   like: { name: "Sound like me", instruction: "Rewrite in the speaker's own voice: plain spoken words, short sentences, everyday metaphors. Keep the meaning and facts." },
