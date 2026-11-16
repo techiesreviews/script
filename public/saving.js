@@ -38,9 +38,12 @@ export function createLeftCopies({ store, dir }) {
   async function afterMove(name) {
     try { await (await dir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") store.set(KEY, [...new Set([...names(), name])]); }
   }
-  // A later listing found the copy: it goes, and its name is free again.
+  // A later listing found the copy: it goes, and its name is free again. The name is read again just before the delete:
+  // another listing (or tab) may have deleted the copy meanwhile, and a new script may hold the name now.
   async function retry(name) {
-    try { await (await dir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return; }
+    const d = await dir();
+    if (!names().includes(name)) return;
+    try { await d.removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return; }
     if (names().includes(name)) store.set(KEY, names().filter((n) => n !== name));
   }
   return { names, afterMove, retry };
@@ -86,7 +89,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
 
   const request = (force, auto) => ({
     handle: script.handle, name: script.name, text: editor.text(),
-    savedText: script.savedText, fileModified: script.fileModified, force, auto,
+    savedText: script.savedText, fileModified: script.fileModified, force, auto, at: clock.now(),
   });
   // A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
   function keepDraft(name, text) {
@@ -271,8 +274,14 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   function open({ handle = null, name, browser: inBrowser = false, savedText, modified = 0, fresh = false }) {
     opened++;
     // A waiting click without a file (the demo's Ctrl+S during its Save as) has nowhere to go once its script is left:
-    // its words become that script's draft, and it never runs on the script opened now.
-    if (queue.waiting && !queue.waiting.handle) { keepDraft(queue.waiting.name, queue.waiting.text); queue = { ...queue, waiting: null }; }
+    // its words become that script's draft, unless the draft the app kept on leaving is as new, and it never runs on the
+    // script opened now.
+    const w = queue.waiting;
+    if (w && !w.handle) {
+      const draft = drafts.get(w.name);
+      if (!(draft?.text != null && draft.at >= w.at)) keepDraft(w.name, w.text);
+      queue = { ...queue, waiting: null };
+    }
     Object.assign(script, {
       name, handle, inBrowser: !!handle && inBrowser, blank: "", savedText, savedAt: fresh ? 0 : modified,
       fileModified: modified, saveError: "", needsPermission: false, conflict: false,
