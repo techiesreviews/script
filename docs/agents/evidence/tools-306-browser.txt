@@ -67,6 +67,10 @@ ok 1280 px: a module that can't load: the Storyboard says to reload
 ok 1280 px: the agent's B-roll call is told to ask for a reload
 ok 1280 px: after that, a script without B-roll saves to a video folder (no list linked)
 ok 1280 px: module that can't load: no CSP violation or error
+ok 1280 px: the module's download is held while the agent's suggestion waits
+ok 1280 px: the agent hears the person opened another script
+ok 1280 px: the other script gets no suggestion
+ok 1280 px: suggestion while the module loads: no CSP violation or error
 ok 390 px: the / menu offers B-roll on a spoken line
 ok 390 px: before it is picked, no B-roll code is fetched
 ok 390 px: picking B-roll loads the module and opens the Add card
@@ -81,7 +85,16 @@ ok 390 px: a module that can't load: the Storyboard says to reload
 ok 390 px: the agent's B-roll call is told to ask for a reload
 ok 390 px: after that, a script without B-roll saves to a video folder (no list linked)
 ok 390 px: module that can't load: no CSP violation or error
+ok 390 px: the module's download is held while the agent's suggestion waits
+ok 390 px: the agent hears the person opened another script
+ok 390 px: the other script gets no suggestion
+ok 390 px: suggestion while the module loads: no CSP violation or error
 ok all
+
+## The same check with the script-switch guard taken out of handleCall (failing first)
+FAIL 1280 px: the agent hears the person opened another script (Change 1: the quote is not in the spoken text word for word: "Hello there my friend.".)
+FAIL 390 px: the agent hears the person opened another script (Change 1: the quote is not in the spoken text word for word: "Hello there my friend.".)
+FAIL 2
 
 ## Older suites, same server
 smoke-csp: 51 ok, 0 fail; last line: ok all

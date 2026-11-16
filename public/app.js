@@ -3321,8 +3321,8 @@ function addBrollHere() {
   if (!s?.range || !canAddBroll()) return;
   const sel = spokenSelection(s.range);
   if (!sel.length) return;
-  const range = s.range.cloneRange();
-  withBroll((b) => b.openCard({ mode: "add", sel, anchor: () => range }));
+  const range = s.range.cloneRange(), doc = state.doc;
+  withBroll((b) => { if (state.doc === doc) b.openCard({ mode: "add", sel, anchor: () => range }); });
 }
 
 /* ---------- Parts with "/" while typing (step C5) ---------- */
@@ -3408,7 +3408,8 @@ function pickSlash(partId) {
     changed();
     const text = D.contentOf(byId(id));
     const words = D.snapToWords(text, 0, text.length);
-    return void withBroll((b) => b.openCard({ mode: "add", sel: [{ id, start: words.start, end: words.end }], anchor: () => blockNode(id) }));
+    const doc = state.doc;
+    return void withBroll((b) => { if (state.doc === doc) b.openCard({ mode: "add", sel: [{ id, start: words.start, end: words.end }], anchor: () => blockNode(id) }); });
   }
   // A line that held only the command gives its place to the part.
   const replaceId = D.lineToReplace(state.doc, id, state.asks);
@@ -3463,6 +3464,7 @@ const NO_ASKS = "No asks yet. Call wait_for_asks again to keep listening.";
 const STAYS_IN_PARAGRAPH = "This text would turn the asked paragraph into another kind of line (a heading, a list, a note). Send text that stays in the paragraph, with no new paragraphs.";
 const RETAKE_AFTER_MS = 2 * 60 * 1000;
 const BROLL_GONE = "The editor could not load its B-roll part. Ask the person to reload the page.";
+const SCRIPT_MOVED = "The person opened another script meanwhile, so nothing changed. Call get_script and send it again if it still fits.";
 const NOT_HERE = "This tab is editing someone else's shared script. Your agent works only in your own scripts.";
 const agent = { token: null, createdAt: 0, ws: null, state: "off", info: null, retry: 0, timer: 0, waiters: [], copiedTimer: 0 };
 
@@ -3645,9 +3647,11 @@ function handleCall(call, ws = agent.ws) {
     }
     const failed = (e) => send({ error: `The editor could not do that: ${e?.message || e}` });
     if (tool === "list_scripts") return void scriptList().then((result) => send({ result }), failed);
-    // The B-roll tools go to the B-roll module, which loads first if it isn't here yet.
+    // The B-roll tools go to the B-roll module, which loads first if it isn't here yet. A sketch or suggestion is for
+    // the script open when it was sent: if the person opened another one meanwhile, it goes nowhere.
     if (tool === "upload_image" || tool === "sketch_shot" || tool === "answer_broll") {
-      if (!brollApi) return void needBroll().then(() => handleCall(call, ws), () => send({ error: BROLL_GONE }));
+      const doc = state.doc;
+      if (!brollApi) return void needBroll().then(() => (tool === "upload_image" || state.doc === doc ? handleCall(call, ws) : send({ error: SCRIPT_MOVED })), () => send({ error: BROLL_GONE }));
       return brollApi.agentTool(tool, args, send, NO_SCRIPT);
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
