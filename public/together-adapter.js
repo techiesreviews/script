@@ -381,7 +381,8 @@ export function createTogether(app, { loadRoom = () => import("./together/room.j
     icons: { share: app.icon("share"), link: app.icon("link"), check: app.icon("check") },
     // The link is made (and copied) inside the click; the room with its keys starts once its part is here.
     share: () => {
-      if (!app.doc() || roomFailed) return null;
+      if (!app.doc()) return null;
+      if (roomFailed) { share.fail(ROOM_GONE); return null; } // also after a share that stopped before its part failed
       if (room) return room.link(location.origin);
       if (starting?.role === "host") return makeLink(location.origin, starting);
       const name = app.me.name && app.me.name !== "You" ? app.me.name : "Host";
