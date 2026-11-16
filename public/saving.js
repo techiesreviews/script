@@ -52,7 +52,14 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
   // are freed.
   async function listed(left, found) {
     const gone = left.filter((n) => !found.has(n));
-    if (gone.length) await lock(async () => store.set(KEY, names().filter((n) => !gone.includes(n))));
+    // Looked up again inside the lock: the name may have been kept again for a newer copy since the folder was read.
+    if (gone.length) await lock(async () => {
+      const d = await dir(), free = [];
+      for (const n of gone) {
+        try { await d.getFileHandle(n); } catch (e) { if (e?.name === "NotFoundError") free.push(n); }
+      }
+      if (free.length) store.set(KEY, names().filter((n) => !free.includes(n)));
+    });
     for (const n of left) if (found.has(n)) await retry(n);
   }
   return { names, afterMove, listed };
