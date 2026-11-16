@@ -304,6 +304,32 @@ test("share button: a failed share shows a warning icon and data-failed on the b
   assert.equal(label.textContent, "Link copied");
 });
 
+test("share button: a clipboard write from a share that failed, landing after a retry, neither shows its old link nor says Link copied", async () => {
+  const { createShareButton } = await import("../public/together/share-button.js");
+  const el = () => ({ ...stubEl(), attrs: new Set(), toggleAttribute(n, on) { if (on) this.attrs.add(n); else this.attrs.delete(n); } });
+  for (const late of ["reject", "resolve"]) {
+    const button = el(), stop = el(), iconSlot = el(), label = el();
+    const writes = [], shown = [];
+    let n = 0;
+    const share = createShareButton({
+      button, stop, iconSlot, label, icons: { share: "s", link: "l", check: "c", warn: "w" },
+      share: () => `https://script.test/#room=${++n}&k=y`, end() {}, fallback: (link) => shown.push(link),
+      copy: () => new Promise((res, rej) => writes.push({ res, rej })), timers: { setTimeout: () => 0, clearTimeout() {} },
+    });
+    const first = button.fire("click");
+    share.fail("Couldn't share. Reload the page.");
+    const retry = button.fire("click");
+    if (late === "reject") { writes[1].res(); await retry; writes[0].rej(new Error("denied")); await first; }
+    else { writes[0].res(); await first; }
+    assert.deepEqual(shown, [], `${late}: the first share's link is not shown to copy by hand`);
+    if (late === "reject") assert.equal(label.textContent, "Link copied", "the retry's own copy says Link copied");
+    else {
+      assert.ok(!button.attrs.has("data-done"), "the first share's copy does not say Link copied while the retry's is pending");
+      assert.equal(label.textContent, "Copy edit link");
+    }
+  }
+});
+
 test("share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says to reload", async () => {
   const { createTogether } = await import("../public/together-adapter.js");
   const held = heldRoom();

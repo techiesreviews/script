@@ -5,7 +5,7 @@
 export const COPIED_MS = 2400;
 
 export function createShareButton({ button, stop, iconSlot, label, icons, share, end, fallback, copy = (t) => navigator.clipboard.writeText(t), timers = globalThis }) {
-  let sharing = false, copied = false, timer = 0, failed = "";
+  let sharing = false, copied = false, timer = 0, failed = "", clicks = 0;
   function render() {
     iconSlot.innerHTML = icons[copied ? "check" : sharing ? "link" : failed ? "warn" : "share"];
     label.textContent = copied ? "Link copied" : sharing ? "Copy edit link" : failed || "Share to edit";
@@ -17,16 +17,17 @@ export function createShareButton({ button, stop, iconSlot, label, icons, share,
   button.addEventListener("click", async () => {
     const link = share(); // starts sharing the first time; the copy stays inside the click
     if (!link) return;
+    const mine = ++clicks; // only the latest click's copy speaks (an older one may land after a failed share's retry)
     sharing = true;
-    failed = "";
+    if (failed) { failed = ""; render(); } // a retry drops the failed look at once
     try {
       await copy(link);
-      if (!sharing) return; // sharing ended while the link was copied (its room could not start)
+      if (!sharing || mine !== clicks) return; // sharing ended while the link was copied (its room could not start), or a newer click took over
       copied = true;
       timers.clearTimeout(timer);
       timer = timers.setTimeout(() => { copied = false; render(); }, COPIED_MS);
     } catch {
-      if (sharing) fallback?.(link);
+      if (sharing && mine === clicks) fallback?.(link);
     }
     render();
   });

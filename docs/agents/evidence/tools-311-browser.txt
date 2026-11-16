@@ -1,6 +1,6 @@
 # TOOLS-311 browser checks on wrangler dev (port 8811) and headless Chrome 157, 2026-11-16
 
-## scripts/smoke-rare-parts.mjs (run again after the release review's share-button fix, 2026-11-16)
+## scripts/smoke-rare-parts.mjs (run again after the release review's share-button fix and its GPT second look, 2026-11-16)
 ok 1280 px: a new script with typing fetches no share room, zip maker or folder writer
 ok 1280 px: the small startup files (edit links, folder note) load with the page
 ok 1280 px: start and typing: no CSP violation or error
@@ -114,7 +114,7 @@ ok 390 px: a guest whose room can't load is told to reload
 ok 390 px: guest: room that can't load: no CSP violation or error
 ok all
 
-## scripts/smoke-csp.mjs (run again after the release review's share-button fix, 2026-11-16)
+## scripts/smoke-csp.mjs (run again after the release review's share-button fix and its GPT second look, 2026-11-16)
 ok 1280 px: the page comes with the CSP
 ok 1280 px: the page is checked with the server each visit (no-cache, ETag)
 ok 1280 px: an unchanged file comes back as "not changed" (304)
@@ -435,7 +435,7 @@ all ok
 ok lines: 933, FAIL lines: 0
 RESULT: ok
 
-## scripts/smoke-room.mjs (run again after the release review's share-button fix, 2026-11-16)
+## scripts/smoke-room.mjs (run again after the release review's share-button fix and its GPT second look, 2026-11-16)
 ok /api/room without a WebSocket gets 426
 ok the host opens the room
 ok the host proves its keys with subprotocols
