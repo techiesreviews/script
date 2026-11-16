@@ -513,3 +513,25 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   await copies.listed(["kept.md", "gone.md"], new Set(["kept.md", "other.md", "stuck.md"]));
   assert.deepEqual([copies.names(), files.has("kept.md"), files.has("other.md")], [["later.md"], false, true], "a name added after the listing started stays");
 });
+
+test("saving: two cleanups that both pass the name check never delete a script that took the freed name", async () => {
+  const store = new Map([["movedCopies", ["stuck.md"]]]), files = new Map([["stuck.md", "old copy"]]);
+  let held = null;
+  const dir = { async removeEntry(name) {
+    if (!held) { let open; held = { done: new Promise((r) => { open = r; }), open }; await held.done; } // the first delete waits
+    if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" });
+    files.delete(name);
+  } };
+  let chain = Promise.resolve();
+  const lock = (fn) => { const run = chain.then(fn); chain = run.catch(() => {}); return run; }; // as navigator.locks does
+  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir, lock });
+  const a = copies.listed(["stuck.md"], new Set(["stuck.md"]));
+  const b = copies.listed(["stuck.md"], new Set(["stuck.md"]));
+  for (let i = 0; i < 20; i++) await settle();
+  let taken = false;
+  if (!copies.names().includes("stuck.md")) { files.set("stuck.md", "a new script"); taken = true; } // a new script may take the name once it is free
+  held.open();
+  await Promise.all([a, b]);
+  if (taken) assert.equal(files.get("stuck.md"), "a new script", "the delete still waiting leaves the new script alone");
+  else assert.deepEqual([files.has("stuck.md"), copies.names()], [false, []]);
+});

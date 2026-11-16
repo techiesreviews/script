@@ -392,10 +392,16 @@ test("mcp: a request body bigger than the largest allowed call is refused before
   const { SCRIPT_LIMITS } = await import("../public/doc.js");
   // The largest call is a whole script in set_script; JSON can make each character six bytes (\uXXXX).
   assert.ok(BODY_MAX >= SCRIPT_LIMITS.markdown * 6, `BODY_MAX ${BODY_MAX}`);
-  assert.ok(BODY_MAX <= 4 * 1024 * 1024, `BODY_MAX ${BODY_MAX}`);
+  assert.ok(BODY_MAX <= 64 * 1024 * 1024, `BODY_MAX ${BODY_MAX}`);
   const markdown = "\u0001".repeat(SCRIPT_LIMITS.markdown);
   const big = await call("set_script", { markdown });
   assert.notEqual(big.status, 413, "the largest set_script still goes through");
+  // unmark_cue takes up to 30 cueIds, each as long as a script can be: the largest call of all.
+  const cues = Array.from({ length: 7 }, () => ({ cueId: "\u0001".repeat(190_000) }));
+  const cueRelay = fakeRelay();
+  const unmark = await call("unmark_cue", { cues }, { relay: cueRelay });
+  assert.notEqual(unmark.status, 413, "a valid unmark_cue with long cueIds goes through");
+  assert.ok(cueRelay.ops.some((o) => o.op === "call" && o.tool === "unmark_cue"), "it reaches the tab");
   const huge = await rpc(null, { raw: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "get_script", arguments: { pad: "x".repeat(BODY_MAX) } } }) });
   assert.equal(huge.status, 413);
   assert.equal(huge.body.error.code, -32600);
