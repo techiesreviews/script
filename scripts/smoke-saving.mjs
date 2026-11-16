@@ -93,6 +93,9 @@ async function openTab(browserContextId, width, height) {
       if (!box) throw new Error(`nothing to press: ${selector}`);
       for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
     },
+    // Waits until the element stays put for a quarter of a second: the start screen adds "Reopen …" once it has looked up
+    // the recent scripts, a moment after it shows, which moves the other buttons of its row.
+    steady: (selector) => page.until(`new Promise((done) => { const at = () => JSON.stringify(document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect() ?? null), was = at(); setTimeout(() => done(was !== "null" && at() === was), 250); })`, `${selector} in place`),
     async press(key, code, vk, modifiers = 0) {
       for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers });
     },
@@ -135,7 +138,11 @@ async function openDisk(page, name) {
     await page.click("#docSwitch");
     await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
     await page.eval(`document.querySelector("#menuOpen").click(); true`); // the menu may still be settling under a pointer click
-  } else await page.click("#emptyOpen");
+  } else {
+    await page.until(`!!document.querySelector("#reopenLabel")`, "the start screen");
+    await page.steady("#emptyOpen");
+    await page.click("#emptyOpen");
+  }
   await page.until(`document.querySelector("#fileName")?.textContent === ${JSON.stringify(name)} && !document.querySelector("#layout").hidden`, `${name} is open`);
 }
 async function switchTo(page, name) {

@@ -35,7 +35,7 @@ FAIL copy stays: a new script with the same title takes another name (stuck-copy
 FAIL copy stays: the new script stays in the browser
 
 ## scripts/smoke-csp.mjs: 51 ok, 0 FAIL; last line: ok all
-## scripts/smoke-saving.mjs: 76 ok, 0 FAIL; last line: ok all (run again after review round 1)
+## scripts/smoke-saving.mjs: 81 ok, 0 FAIL; last line: ok all (run again after review round 1 and the start-screen wait)
 ## scripts/smoke-broll-lazy.mjs: 91 ok, 0 FAIL; last line: ok all
 ## scripts/smoke-rare-parts.mjs: 122 ok, 0 FAIL; last line: ok all
 ## scripts/smoke-video-folder.mjs: 93 ok, 0 FAIL; last line: all ok
@@ -52,3 +52,9 @@ ok copy stays: a later visit deletes the browser copy
 ok copy stays: the new script stays in the browser
 ok copy stays: the file on the computer holds the moved script
 ok copy deleted later: no page error or CSP violation
+
+## smoke-saving runTwoTabs: "shared.md is open" timed out now and then (the same kind as TOOLS-309)
+Before (the check as on dev), against a server running origin/dev, ONLY=runTwoTabs, 6 runs: FAIL 2, ok all, FAIL 2, FAIL 2, FAIL 2, ok all.
+Cause: the start screen shows "Reopen shared.md" once it has looked up the recent scripts, a moment after it appears; that
+button joins the centred row and moves "Open a script", so the press found before it landed beside it.
+After (openDisk waits until "Open a script" stays put for 250 ms): origin/dev 4 of 4 ok, this branch 9 of 9 ok, full suite 81 ok.
