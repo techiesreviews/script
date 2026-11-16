@@ -6,7 +6,8 @@
 // after a reload each part answers 304. While the room's part is held, Ctrl+Z still undoes the person's typing, and
 // sharing stopped then starts no room and keeps the Undo steps from before. A part that
 // can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
-// a guest's Join. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
+// a guest's Join; the failed share button is marked data-failed with a warning icon in the warning colour, its
+// accessible name says why, and a click on it once the network is back loads the room and shares. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
 // that fails after the video folder is picked writes nothing and says so; a folder saved while the pack loads holds the
 // script as it was at the click. No CSP violation and no page error.
 // Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; it applies _headers and runs the

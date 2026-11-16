@@ -27,7 +27,7 @@ Lex (2026-11-16, Orbit TOOLS-311, pick 4 of the TOOLS-296 review): the parts of 
 
 ## Done
 
-Feature list: no change (rare parts load on first use; nothing on screen changes)
+Feature list: rare parts load on first use with no change on screen; the release review added one line under Working together (the share button's failed state, and a click tries again)
 
 ### Proof
 
