@@ -4,7 +4,8 @@
 // edit copies the link in the click and loads the room, and a guest's edit link loads it while the Join form shows;
 // after a reload each part answers 304. Sharing stopped while the room's part is held starts no room. A part that
 // can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
-// a guest's Join. No CSP violation and no page error.
+// a guest's Join. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
+// that fails after the video folder is picked writes nothing and says so. No CSP violation and no page error.
 // Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; it applies _headers and runs the
 // rooms) and a headless Chrome, then: node scripts/smoke-rare-parts.mjs <base URL> <Chrome debugging port>
 import { setMaxListeners } from "node:events";
@@ -78,6 +79,7 @@ async function openPage(width, height, { fail = [], hold = [] } = {}) {
     held: [],
     failing: fail.length > 0,
     release: () => Promise.all(page.held.splice(0).map((requestId) => page.send("Fetch.continueRequest", { requestId }))),
+    refuse: () => Promise.all(page.held.splice(0).map((requestId) => page.send("Fetch.failRequest", { requestId, errorReason: "Failed" }))),
     close: () => send("Target.disposeBrowserContext", { browserContextId }),
   };
   await page.send("Page.enable");
@@ -126,11 +128,11 @@ async function newScript(page, title) {
   await sleep(300);
 }
 // The clipboard and downloads, stood in for: the copied link lands in window.__link, each download's name and first
-// bytes in window.__downloads.
+// bytes (and its text, as stored zips keep it) in window.__downloads.
 const STANDINS = `Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__link = t; } } });
   window.__downloads = []; const blobs = new Map(), make = URL.createObjectURL;
   URL.createObjectURL = (b) => { const u = make(b); blobs.set(u, b); return u; };
-  HTMLAnchorElement.prototype.click = function () { const name = this.download; blobs.get(this.href).arrayBuffer().then((b) => window.__downloads.push({ name, head: [...new Uint8Array(b).slice(0, 2)].map((c) => String.fromCharCode(c)).join("") })); }; true`;
+  HTMLAnchorElement.prototype.click = function () { const name = this.download; blobs.get(this.href).arrayBuffer().then((b) => { const text = [...new Uint8Array(b)].map((c) => String.fromCharCode(c)).join(""); window.__downloads.push({ name, head: text.slice(0, 2), text }); }); }; true`;
 async function openExport(page) {
   await page.click("#exportBtn");
   return page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu");
@@ -154,7 +156,7 @@ async function run(width, height) {
   check(!page.asked.includes("/together/room.js"), `${tag} the Export menu fetches no share room`);
   await page.click('[data-export="all"]');
   check(await page.until(`window.__downloads.length === 1`, "the zip"), `${tag} Export all downloads one file`);
-  const dl = await page.eval(`window.__downloads[0]`);
+  const dl = await page.eval(`(({ name, head }) => ({ name, head }))(window.__downloads[0])`);
   check(/^[\w-]+\.zip$/.test(dl?.name) && !/video-folder/.test(dl.name) && dl.head === "PK", `${tag} it is the script's zip`, JSON.stringify(dl));
   await openExport(page);
   check(await page.eval(`document.querySelector("#zipNote").hidden && document.querySelector("#folderNote").hidden`), `${tag} no note on Export all or Save to video folder`);
@@ -219,6 +221,50 @@ async function run(width, height) {
   check(await held.eval(`window.__scriptEditor.room() === null && document.querySelector("#shareLabel").textContent === "Share to edit"`), `${tag} sharing stopped before the part came: no room starts`);
   await clean(held, tag, "room held, sharing stopped");
   await held.close();
+
+  // Export all clicked while the pack is on its way, then another script opened: the zip is the script of the click.
+  const waitPack = await openPage(width, height, { hold: ["*export-pack.js*"] });
+  await startScreen(waitPack);
+  await newScript(waitPack, "Held export A");
+  await waitPack.eval(STANDINS);
+  await openExport(waitPack);
+  for (let i = 0; i < 50 && !waitPack.held.length; i++) await sleep(100);
+  check(waitPack.held.length > 0, `${tag} the export pack's download is held`);
+  await waitPack.click('[data-export="all"]');
+  await waitPack.click("#docSwitch");
+  await waitPack.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await waitPack.click("#menuNew");
+  await waitPack.until(`!(window.__scriptEditor.markdown() || "").includes("Held export A")`, "the other script");
+  await waitPack.send("Input.insertText", { text: "Held export B" });
+  await sleep(200);
+  check(await waitPack.eval(`window.__downloads.length === 0`), `${tag} Export all waits for the pack`);
+  await waitPack.release();
+  check(await waitPack.until(`window.__downloads.length === 1`, "the held zip"), `${tag} once the pack is here, one zip downloads`);
+  await sleep(400);
+  check(await waitPack.eval(`window.__downloads.length === 1 && window.__downloads[0].text.includes("Held export A") && !window.__downloads[0].text.includes("Held export B")`), `${tag} it holds the script on screen at the click, not the one opened since`);
+  await clean(waitPack, tag, "Export all while the pack loads");
+  await waitPack.close();
+
+  // Save to video folder: the folder is picked in the click, then the pack fails: the item says so, nothing is written.
+  const lateFail = await openPage(width, height, { hold: ["*export-pack.js*"] });
+  lateFail.failing = true;
+  await startScreen(lateFail);
+  await newScript(lateFail, "Late failure");
+  await lateFail.eval(`window.showDirectoryPicker = async () => { window.__picked = true; const root = await navigator.storage.getDirectory(); return root.getDirectoryHandle("video", { create: true }); }; true`);
+  await openExport(lateFail);
+  for (let i = 0; i < 50 && !lateFail.held.length; i++) await sleep(100);
+  await lateFail.click('[data-export="folder"]');
+  await lateFail.until(`window.__picked === true`, "the folder picker");
+  await sleep(200);
+  await lateFail.refuse();
+  await sleep(400);
+  await openExport(lateFail);
+  check(await lateFail.until(`document.querySelector("#folderNote").textContent === "Couldn't load. Reload the page." && !document.querySelector("#folderNote").hidden`, "the folder note"), `${tag} a pack that fails after the folder is picked: Save to video folder says to reload`);
+  const written = await lateFail.eval(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("video"); const names = []; for await (const k of d.keys()) names.push(k); return names; })()`);
+  check(written.length === 0, `${tag} nothing is written to the picked folder`, JSON.stringify(written));
+  await lateFail.key("Escape", "Escape", 27);
+  await clean(lateFail, tag, "pack that fails after the picker");
+  await lateFail.close();
 
   // Parts that can't load: each control says so, and nothing else breaks.
   const failing = await openPage(width, height, { fail: ["*together/room.js*", "*export-pack.js*"] });

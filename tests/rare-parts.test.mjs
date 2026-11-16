@@ -147,7 +147,7 @@ function heldRoom() {
     caretList() { return []; }
   }
   let asked = 0;
-  return { made, get asked() { return asked; }, load: () => { asked++; return arrived; }, release: () => release({ SEAM: 1, RoomClient }), fail: () => fail(new Error("offline")) };
+  return { made, get asked() { return asked; }, load: () => { asked++; return arrived; }, release: (seam = 1) => release({ SEAM: seam, RoomClient }), fail: () => fail(new Error("offline")) };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -161,7 +161,8 @@ test("share room: Share to edit copies the link inside the click; the room start
   assert.equal(p.copied.length, 1, "the link is copied in the click, before the room's part arrives");
   assert.match(p.copied[0], /^https:\/\/script\.test\/#room=[\w-]{22}&k=[\w-]{43}$/);
   assert.equal(held.made.length, 0);
-  assert.equal(t.active, true, "sharing counts as on while the part loads (another script may not open over it)");
+  assert.equal(t.sharing, true, "sharing counts as on while the part loads (another script may not open over it)");
+  assert.equal(t.active, false, "no room runs yet: the person's own Undo still works");
   held.release();
   await tick();
   assert.equal(held.made.length, 1);
@@ -177,7 +178,7 @@ test("share room: sharing stopped (or another script opened) before the part arr
   const t = createTogether(p.app, { loadRoom: held.load });
   await p.$("#shareBtn").fire("click");
   t.stop();
-  assert.equal(t.active, false);
+  assert.equal(t.sharing, false);
   assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [["sharing", true], ["sharing", false]]);
   held.release();
   await tick();
@@ -192,7 +193,7 @@ test("share room: a part that can't load ends sharing and the button says so; a 
   await p.$("#shareBtn").fire("click");
   held.fail();
   await tick();
-  assert.equal(t.active, false);
+  assert.equal(t.sharing, false);
   assert.equal(held.made.length, 0);
   assert.deepEqual(p.calls.at(-1), ["sharing", false]);
   assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
@@ -223,4 +224,46 @@ test("share room: a guest joins once the part is here; a join replaced before th
   assert.equal(g.made[0].role, "guest");
   assert.equal(g.made[0].room, "b".repeat(22));
   assert.equal(guest.room, g.made[0]);
+});
+
+test("share room: a room part that speaks another seam version counts as not loaded, for the host and a guest", async () => {
+  const { createTogether } = await import("../public/together-adapter.js");
+  const held = heldRoom();
+  const p = page({});
+  const t = createTogether(p.app, { loadRoom: held.load });
+  await p.$("#shareBtn").fire("click");
+  held.release(2);
+  await tick();
+  assert.equal(held.made.length, 0);
+  assert.equal(t.sharing, false);
+  assert.deepEqual(p.calls.at(-1), ["sharing", false]);
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
+
+  const g = heldRoom();
+  const q = page({});
+  createTogether(q.app, { loadRoom: g.load }).join({ room: "r".repeat(22), key: "k".repeat(43) }, "Ann");
+  g.release(2);
+  await tick();
+  assert.equal(g.made.length, 0);
+  assert.deepEqual(q.calls.at(-1), ["joinFailed", "unloaded"]);
+});
+
+test("share button: a copy that lands after sharing failed says nothing was copied and shows no fallback", async () => {
+  const { createShareButton } = await import("../public/together/share-button.js");
+  const el = () => ({ ...stubEl(), attrs: new Set(), toggleAttribute(n, on) { if (on) this.attrs.add(n); else this.attrs.delete(n); } });
+  const button = el(), stop = el(), iconSlot = el(), label = el();
+  let land, fallbacks = 0;
+  const share = createShareButton({
+    button, stop, iconSlot, label, icons: { share: "s", link: "l", check: "c" },
+    share: () => "https://script.test/#room=x&k=y", end() {}, fallback: () => { fallbacks++; },
+    copy: () => new Promise((res) => { land = res; }), timers: { setTimeout: () => 0, clearTimeout() {} },
+  });
+  const clicked = button.fire("click");
+  share.fail("Couldn't share. Reload the page.");
+  land();
+  await clicked;
+  assert.equal(label.textContent, "Couldn't share. Reload the page.");
+  assert.ok(!button.attrs.has("data-done"), "no Link copied");
+  assert.equal(fallbacks, 0);
+  assert.equal(stop.hidden, true);
 });
