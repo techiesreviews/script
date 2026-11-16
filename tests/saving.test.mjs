@@ -79,7 +79,7 @@ test("saving: the interface is small, and app.js reaches saving only through it"
   assert.deepEqual(Object.keys(saving.drafts).sort(), ["del", "get", "move", "set"]);
   assert.equal(AUTOSAVE_MS, 1500);
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
-  assert.doesNotMatch(app, /save-queue\.js|Q\.(queueSave|settleQueue|splitQueue|changedOnDisk)/, "the save queue is the module's own");
+  assert.doesNotMatch(app, /save-queue\.js|(Q|SaveQueue)\.(queueSave|settleQueue|splitQueue|changedOnDisk)/, "the save queue is the module's own");
   assert.doesNotMatch(app, /\.createWritable\(|function (save|saveAs|saveInBrowser|writeLeft|diskConflict|keepDraft|finishSave)\(/, "no saving code is left in app.js");
   assert.doesNotMatch(app, /`draft:\$\{/, "drafts are kept by the module");
 });

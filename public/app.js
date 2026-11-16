@@ -1,9 +1,9 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
-import * as D from "./doc.js";
+import * as Doc from "./doc.js";
 import { createSaving, writeHandle, permitted } from "./saving.js";
-import * as C from "./changes.js";
-import * as L from "./links.js";
-import * as K from "./cues.js";
+import * as Changes from "./changes.js";
+import * as Links from "./links.js";
+import * as Cues from "./cues.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
 import { TOKEN_MAX_AGE_MS as AGENT_MAX_AGE, NO_ASKS } from "./agent-link.js";
@@ -63,8 +63,8 @@ const ICONS = {
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${Object.hasOwn(ICONS, n) ? ICONS[n] : ""}</svg>`;
 const ACT_ICON = { like: "wave", simpler: "simpler", shorter: "shorter", explain: "explain", facts: "facts", voice: "wave", ask: "send", sketch: "sketch", broll: "suggest", plan: "suggest", links: "link" };
-const esc = D.escHtml;
-const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : D.ACTIONS[ask.action]?.name || ask.action);
+const esc = Doc.escHtml;
+const actName = (ask) => (ask.action === "ask" ? `“${ask.instruction.length > 26 ? ask.instruction.slice(0, 25) + "…" : ask.instruction}”` : Doc.ACTIONS[ask.action]?.name || ask.action);
 
 const LS = "script-editor:";
 const FILE_TYPES = [{ description: "Markdown script", accept: { "text/markdown": [".md", ".markdown"], "text/plain": [".txt"] } }];
@@ -80,7 +80,7 @@ const store = {
 };
 const me = (() => {
   let p = store.get("me");
-  if (!p?.id) { p = { id: D.newId(10), name: "You" }; store.set("me", p); }
+  if (!p?.id) { p = { id: Doc.newId(10), name: "You" }; store.set("me", p); }
   return { id: p.id, name: p.name };
 })();
 
@@ -117,18 +117,18 @@ const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 
 
 /* ---------- Small helpers ---------- */
 const scriptEl = $("#script");
-const isOpen = (a) => D.OPEN_STATUSES.includes(a.status);
+const isOpen = (a) => Doc.OPEN_STATUSES.includes(a.status);
 // A selection or plan ask answered with B-roll changes: its suggestions live beside the lines, not in the text,
 // so the text decorations, anchors and "newest ask wins" leave it alone.
 const isBrollAnswer = (a) => a.status === "answered" && a.answer?.kind === "broll";
-const byId = (id) => (state.doc ? D.blockById(state.doc, id) : null);
+const byId = (id) => (state.doc ? Doc.blockById(state.doc, id) : null);
 const blockNode = (id) => scriptEl.querySelector(`.block[data-id="${id}"]`);
 const blockOf = (node) => {
   const el = node?.nodeType === 3 ? node.parentElement : node;
   const b = el?.closest?.(".block");
   return b && scriptEl.contains(b) ? b : null;
 };
-const isDirty = () => !!state.doc && D.serialize(state.doc) !== state.savedText;
+const isDirty = () => !!state.doc && Doc.serialize(state.doc) !== state.savedText;
 const clock = (t) => {
   const d = new Date(t), now = new Date();
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -259,7 +259,7 @@ function decorationsFor(id) {
   const items = [];
   for (const a of state.asks) {
     if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) items.push({ kind: "ask", ask: a, start: a.start, end: a.end });
-    else if (shownMarked(a) && a.blockId === id) items.push({ kind: "landed", ask: a, ...C.markRange(a) });
+    else if (shownMarked(a) && a.blockId === id) items.push({ kind: "landed", ask: a, ...Changes.markRange(a) });
   }
   for (const a of state.asks) {
     if (a.scope !== "script" || a.status !== "answered") continue;
@@ -286,8 +286,8 @@ function decorationsFor(id) {
    other's words, and each opens and closes on its own. */
 const linksOf = (b) => {
   if (b.type !== "para") return [];
-  const content = D.contentOf(b), links = L.textLinks(content);
-  return [...links, ...K.textCues(content)].sort((x, y) => x.start - y.start || y.end - x.end);
+  const content = Doc.contentOf(b), links = Links.textLinks(content);
+  return [...links, ...Cues.textCues(content)].sort((x, y) => x.start - y.start || y.end - x.end);
 };
 function linkNodes(content, from, to, links, cuts = []) {
   const nodes = [];
@@ -351,7 +351,7 @@ function linkStart(el, a) {
   r.selectNodeContents(a);
   return offsetIn(el, r.startContainer, r.startOffset);
 }
-// A drawn link as L.textLinks gives it ({ start, end, words: { start, end } }), from its element and where it starts.
+// A drawn link as Links.textLinks gives it ({ start, end, words: { start, end } }), from its element and where it starts.
 function shownLink({ a, start }) {
   const words = readContent(a.querySelector(".md-link__words")).length, head = readContent(a.querySelector(".md-link__mark")).length;
   return { start, end: start + readContent(a).length, words: { start: start + head, end: start + head + words } };
@@ -407,7 +407,7 @@ function refreshLinks(snap = false) {
     // A link inside another's words (bold links): from the inner one out, each edge to just outside it.
     const chain = opened.map((o) => o.link || shownLink(o)).sort((x, y) => (x.end - x.start) - (y.end - y.start));
     if (!chain.every((l, i) => i === 0 || (l.start <= chain[i - 1].start && l.end >= chain[i - 1].end))) continue;
-    const to = chain.reduce((at, l) => L.edgeSnap(l, at), s.start);
+    const to = chain.reduce((at, l) => Links.edgeSnap(l, at), s.start);
     if (to !== s.start) setCaretAt(el, to);
   }
 }
@@ -416,7 +416,7 @@ scriptEl.addEventListener("compositionend", () => { composingLinks = false; });
 // Ctrl/Cmd+click opens a link in a new tab; a plain click only places the caret.
 scriptEl.addEventListener("click", (e) => {
   const a = e.target.closest?.(".md-link[data-href]");
-  if (!a || !(e.ctrlKey || e.metaKey) || !L.safeUrl(a.dataset.href)) return;
+  if (!a || !(e.ctrlKey || e.metaKey) || !Links.safeUrl(a.dataset.href)) return;
   e.preventDefault();
   window.open(a.dataset.href, "_blank", "noopener,noreferrer");
 });
@@ -428,17 +428,17 @@ addEventListener("blur", () => scriptEl.removeAttribute("data-mod"));
 // Others' carets are drawn where the text shows: an offset inside a closed link's hidden Markdown sits at its words.
 function visibleRange(el, start, end = start) {
   const closed = closedLinks(el);
-  return rangeAt(el, L.shownOffset(closed, start), L.shownOffset(closed, end));
+  return rangeAt(el, Links.shownOffset(closed, start), Links.shownOffset(closed, end));
 }
 
 // When this tab got each of the agent's changes (its own clock): it shows a little stronger as it arrives.
 const arrived = new Map();
 /* The mark goes away by itself (step M): once the person has scrolled past it, or 60 minutes after it went in. Alone,
-   and the host's 60 minutes, end it for good (C.endExpired); in a shared script scrolling past ends it on this screen
+   and the host's 60 minutes, end it for good (Changes.endExpired); in a shared script scrolling past ends it on this screen
    only (`passedHere`, by ask id), so everyone else keeps theirs until they scroll past it too. */
 const passedHere = new Set();
 const seenMarks = new Set(); // the asks whose mark has been on screen here
-const shownMarked = (a) => C.isMarked(a) && !passedHere.has(a.id);
+const shownMarked = (a) => Changes.isMarked(a) && !passedHere.has(a.id);
 // The visible part of the script: below the top bar.
 const scriptView = () => ({ top: $(".top").getBoundingClientRect().bottom, bottom: innerHeight });
 // Each drawn mark is watched for when it is on screen (not under the top bar); the observer follows the bar's height.
@@ -489,7 +489,7 @@ function checkPassed() {
   for (const m of $$(".agent-change[data-ask]:not([data-ending])", scriptEl)) {
     const ask = state.asks.find((a) => a.id === m.dataset.ask);
     const r = m.getBoundingClientRect();
-    if (ask && shownMarked(ask) && (r.width || r.height) && C.readPast(r, view, seenMarks.has(ask.id))) ended.push(ask);
+    if (ask && shownMarked(ask) && (r.width || r.height) && Changes.readPast(r, view, seenMarks.has(ask.id))) ended.push(ask);
   }
   endMarks(ended, state.guest || !!together?.active);
 }
@@ -499,10 +499,10 @@ function checkPassed() {
 function expireMarks() {
   if (!state.doc || state.guest) return;
   if (passedHere.size && !together?.active) {
-    endMarks(state.asks.filter((a) => passedHere.has(a.id) && C.isMarked(a)));
+    endMarks(state.asks.filter((a) => passedHere.has(a.id) && Changes.isMarked(a)));
     passedHere.clear();
   }
-  endMarks(C.endExpired(state.asks, Date.now()));
+  endMarks(Changes.endExpired(state.asks, Date.now()));
 }
 setInterval(expireMarks, 60_000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") expireMarks(); });
@@ -535,7 +535,7 @@ function endMarks(asks, here = false) {
 // In a shared script only the person who asked, and the host, may Keep, Undo or cancel an ask.
 const may = (ask) => !state.guest || !!together?.may(ask);
 function fillBlock(el, b) {
-  const content = D.contentOf(b);
+  const content = Doc.contentOf(b);
   const decos = decorationsFor(b.id);
   const all = linksOf(b), links = shownLinks(content, all, decos), cuts = cutCues(all, links, decos);
   const nodes = [];
@@ -640,9 +640,9 @@ function domMatches(el, id) {
     if (!want) return false;
     const r = document.createRange();
     r.selectNodeContents(d);
-    if (offsetIn(el, r.startContainer, r.startOffset) !== want.start || readContent(d) !== D.contentOf(byId(id)).slice(want.start, want.end)) return false;
+    if (offsetIn(el, r.startContainer, r.startOffset) !== want.start || readContent(d) !== Doc.contentOf(byId(id)).slice(want.start, want.end)) return false;
   }
-  const content = D.contentOf(byId(id));
+  const content = Doc.contentOf(byId(id));
   if (content.endsWith("\n") !== !!el.querySelector("br[data-skip]")) return false;
   // Every link drawn as the model reads it now: its place, its Markdown, its words and its address.
   const links = shownLinks(content, linksOf(byId(id)), expected), shown = el.querySelectorAll(".md-link");
@@ -667,7 +667,7 @@ function renderBlock(id, caret = null) {
 let sectionObserver = null;
 function renderAll(caret = null) {
   for (const old of scriptEl.querySelectorAll(".agent-change")) seenObserver?.unobserve(old);
-  const { front, sections } = D.outline(state.doc);
+  const { front, sections } = Doc.outline(state.doc);
   const frag = document.createDocumentFragment();
   const head = h("header", "front");
   const title = front.find((b) => b.type === "title");
@@ -704,12 +704,12 @@ function renderAll(caret = null) {
 }
 
 function renderToc() {
-  const { sections } = D.outline(state.doc);
+  const { sections } = Doc.outline(state.doc);
   const toc = $("#toc");
   const current = toc.querySelector('[aria-current="true"]')?.dataset.sec;
   toc.innerHTML = sections.filter((s) => s.heading).map((s) => {
     const { num, name, start } = s.info;
-    return `<li><a href="#s-${s.heading.id}" data-sec="${s.heading.id}" data-spoken="${s.spoken}"${s.heading.id === current ? ' aria-current="true"' : ""}><span class="toc__num">${esc(num)}</span><span class="toc__title">${esc(name || D.contentOf(s.heading).trim() || "Untitled")}</span><span class="toc__side"><span class="toc__dots"></span><span class="toc__time">${esc(start)}</span></span></a></li>`;
+    return `<li><a href="#s-${s.heading.id}" data-sec="${s.heading.id}" data-spoken="${s.spoken}"${s.heading.id === current ? ' aria-current="true"' : ""}><span class="toc__num">${esc(num)}</span><span class="toc__title">${esc(name || Doc.contentOf(s.heading).trim() || "Untitled")}</span><span class="toc__side"><span class="toc__dots"></span><span class="toc__time">${esc(start)}</span></span></a></li>`;
   }).join("");
   sectionObserver?.disconnect();
   sectionObserver = new IntersectionObserver((entries) => {
@@ -723,7 +723,7 @@ function renderToc() {
   renderTocDots();
 }
 function renderTocDots() {
-  const { sections } = D.outline(state.doc);
+  const { sections } = Doc.outline(state.doc);
   for (const s of sections) {
     if (!s.heading) continue;
     const dots = $(`#toc a[data-sec="${s.heading.id}"] .toc__dots`);
@@ -759,7 +759,7 @@ function renderTop() {
   renderAgent();
   if (!open) return;
   $("#fileName").textContent = state.name;
-  document.title = `${D.titleOf(state.doc) || state.name} · script.techies.tools`;
+  document.title = `${Doc.titleOf(state.doc) || state.name} · script.techies.tools`;
   renderSaveState();
 }
 function renderSaveState() {
@@ -778,11 +778,11 @@ function renderSaveState() {
 }
 function renderDerived() {
   if (!state.doc) return;
-  const st = D.stats(state.doc);
+  const st = Doc.stats(state.doc);
   $("#docMeta").textContent = `${st.words.toLocaleString("en")} words · ${st.spoken} spoken`;
   // The prompter link is made ahead of the click; a script that is too long gets a quiet note instead.
-  const pro = D.exportPrompter(state.doc);
-  const tooLong = pro.length > D.PROMPTER_MAX_CHARS;
+  const pro = Doc.exportPrompter(state.doc);
+  const tooLong = pro.length > Doc.PROMPTER_MAX_CHARS;
   $("#prompterAction").disabled = tooLong;
   $("#prompterNote").hidden = !tooLong;
   renderFolderNote();
@@ -799,7 +799,7 @@ let lineSeq = 0;
 // The file a "wants to open" line asks about, until the person answers or another line takes its place.
 let askingToOpen = null;
 function changed() {
-  if (replaced && D.serialize(state.doc) !== replaced.text) hideBanner();
+  if (replaced && Doc.serialize(state.doc) !== replaced.text) hideBanner();
   followMarks();
   together?.local();
   together?.redraw();
@@ -819,13 +819,13 @@ const prompterCache = { text: null, url: null, seq: 0 };
 async function prompterUrl(text) {
   if (prompterCache.text === text) return prompterCache.url;
   const seq = ++prompterCache.seq;
-  const url = await D.prompterLink(text);
+  const url = await Doc.prompterLink(text);
   if (seq === prompterCache.seq) Object.assign(prompterCache, { text, url });
   return url;
 }
 async function openPrompter() {
   if (!state.doc) return;
-  const text = D.exportPrompter(state.doc);
+  const text = Doc.exportPrompter(state.doc);
   const url = prompterCache.text === text ? prompterCache.url : await prompterUrl(text);
   if (url) window.open(url, "_blank", "noopener");
 }
@@ -837,20 +837,20 @@ function checkpoint(kind, id, before = null) {
   if (together?.active) return;
   const now = Date.now(), last = state.lastStep;
   if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
-  state.undo.push({ doc: before || D.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
+  state.undo.push({ doc: before || Doc.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
   if (state.undo.length > UNDO_LIMIT) state.undo.shift();
   state.redo = [];
   state.lastStep = { kind, id, at: now };
 }
 function restore(snap, from, to) {
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
-  const { back, closed } = C.landStep(state.asks, snap.land);
-  to.push({ doc: D.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
+  const { back, closed } = Changes.landStep(state.asks, snap.land);
+  to.push({ doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
   const was = state.doc;
-  state.doc = D.cloneDoc(snap.doc);
+  state.doc = Doc.cloneDoc(snap.doc);
   // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
   for (const b of state.doc.blocks) {
-    const old = D.blockById(was, b.id), a = old && D.contentOf(old), z = D.contentOf(b);
+    const old = Doc.blockById(was, b.id), a = old && Doc.contentOf(old), z = Doc.contentOf(b);
     if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, marksMoved(a, z));
   }
   state.lastStep = null;
@@ -882,14 +882,14 @@ function reanchorBlock(id) {
   let moved = false;
   for (const a of state.asks) {
     if (a.scope === "selection" && a.blockId === id && isOpen(a) && !isBrollAnswer(a)) {
-      const r = b && D.reanchor(a, D.contentOf(b));
+      const r = b && Doc.reanchor(a, Doc.contentOf(b));
       if (!r) { closeAsk(a, "cancelled"); moved = true; }
       else if (r.start !== a.start) { a.start = r.start; a.end = r.end; moved = true; }
     }
     if (a.scope === "script" && a.status === "answered") {
       for (const m of a.answer.marks) {
         if (m.state !== "open" || m.blockId !== id) continue;
-        const r = b && D.reanchor(m, D.contentOf(b));
+        const r = b && Doc.reanchor(m, Doc.contentOf(b));
         if (!r) { m.state = "gone"; moved = true; }
         else if (r.start !== m.start) { m.start = r.start; m.end = r.end; moved = true; }
       }
@@ -902,7 +902,7 @@ function reanchorAll() {
   const ids = new Set(state.asks.flatMap((a) => (a.scope === "selection" ? [a.blockId] : (a.answer?.marks || []).map((m) => m.blockId))));
   for (const id of ids) reanchorBlock(id);
 }
-const moveAsks = (fromId, toId, fromStart, shift) => D.moveAsks(state.asks, fromId, toId, fromStart, shift);
+const moveAsks = (fromId, toId, fromStart, shift) => Doc.moveAsks(state.asks, fromId, toId, fromStart, shift);
 // Bold marks moved in a block: open asks and "Sounds like me" marks there follow by their offsets (`at(start, end)` gives
 // the new range of one, or null when an edit fell inside it), with their quote as it reads now (`content`; null when it
 // stays), so they can't jump into another word by a search. `insideGoes`: one the edit fell inside is cancelled, for the
@@ -918,22 +918,22 @@ function followAnchors(id, content, at, { insideGoes = false } = {}) {
     if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m, () => { m.state = "gone"; });
   }
 }
-const marksMoved = (from, to) => K.marksRange(from, to);
+const marksMoved = (from, to) => Cues.marksRange(from, to);
 // The agent's marked changes (step F) follow every edit from the script as it was when they last followed
 // (changeBase); an edit inside one ends its mark. `ops`: the room's operations, when they are known.
 let changeBase = null;
 function followMarks(ops = null) {
-  if (!state.doc || !state.asks.some(C.isMarked)) { changeBase = null; return; }
-  const now = C.blocksOf(state.doc);
+  if (!state.doc || !state.asks.some(Changes.isMarked)) { changeBase = null; return; }
+  const now = Changes.blocksOf(state.doc);
   const c = ops ? null : getCaret();
-  const touched = C.follow(state.asks, changeBase, now, { ops, caret: c && { blockId: c.id, offset: c.offset } });
+  const touched = Changes.follow(state.asks, changeBase, now, { ops, caret: c && { blockId: c.id, offset: c.offset } });
   changeBase = now;
   if (!touched.size) return;
   const caret = getCaret();
   for (const id of touched) if (byId(id)) renderBlock(id, caret);
 }
 // The script as it is now is where the marks are (after they were made, placed or adopted).
-function markBase() { changeBase = state.doc && state.asks.some(C.isMarked) ? C.blocksOf(state.doc) : null; }
+function markBase() { changeBase = state.doc && state.asks.some(Changes.isMarked) ? Changes.blocksOf(state.doc) : null; }
 // After setContent split or retyped a block: anchors move into the blocks their text went to.
 function followPieces(id, r) {
   for (let i = r.pieces.length - 1; i >= 0; i--) {
@@ -947,9 +947,9 @@ function followPieces(id, r) {
 }
 // Set a block's content, follow splits and type changes, re-render and put the caret back.
 function applyContent(id, content, caretOffset) {
-  const r = D.setContent(state.doc, id, content);
+  const r = Doc.setContent(state.doc, id, content);
   followPieces(id, r);
-  const caret = caretOffset == null ? null : D.locate(r, caretOffset);
+  const caret = caretOffset == null ? null : Doc.locate(r, caretOffset);
   if (r.changed || r.created.length) renderAll(caret);
   else renderBlock(id, caret);
   return r;
@@ -958,25 +958,25 @@ function applyContent(id, content, caretOffset) {
 /* ---------- Editing ---------- */
 // The links that were closed when a deletion began (beforeinput), so that their hidden Markdown survives it.
 let linksBefore = null;
-let boldTyping = null; // A word being typed in front of a bold word: { id, content, end } (K.settleMarks).
+let boldTyping = null; // A word being typed in front of a bold word: { id, content, end } (Cues.settleMarks).
 function syncFromDom(el) {
   const id = el.dataset.id, b = byId(id);
   if (!b) return;
   clearAskNote(id);
   const typed = readContent(el);
-  const before = linksBefore?.id === id && linksBefore.content === D.contentOf(b) ? linksBefore.closed : null;
+  const before = linksBefore?.id === id && linksBefore.content === Doc.contentOf(b) ? linksBefore.closed : null;
   linksBefore = null;
-  let fix = before && L.keepHidden(D.contentOf(b), typed, before, getCaret()?.offset), settledNow = null;
-  // A bold stretch this edit broke is settled, so its marks never stay behind as literal text (K.settleMarks). A word
+  let fix = before && Links.keepHidden(Doc.contentOf(b), typed, before, getCaret()?.offset), settledNow = null;
+  // A bold stretch this edit broke is settled, so its marks never stay behind as literal text (Cues.settleMarks). A word
   // being typed in front of one is followed from edit to edit, until its space is typed.
   if (b.type === "para") {
-    const old = D.contentOf(b), going = boldTyping?.id === id && boldTyping.content === old ? boldTyping.end : null;
+    const old = Doc.contentOf(b), going = boldTyping?.id === id && boldTyping.content === old ? boldTyping.end : null;
     const now = fix ? fix.content : typed, caret = fix ? fix.caret : getCaret()?.offset;
-    const settled = K.settleMarks(old, now, caret, { typedBefore: going, deleted: fix?.gone });
+    const settled = Cues.settleMarks(old, now, caret, { typedBefore: going, deleted: fix?.gone });
     // The space that ends a word typed in front of a bold word: the person is writing, say a numbered list, and asked for it.
     const endsTyped = going != null && now.length === old.length + 1 && /\s/.test(now[caret - 1] ?? "");
     // A deletion is judged against the text before it, as it can take the marks itself; text put in, against what was put in.
-    if (settled && !endsTyped && C.settlingChangesKind(now.length < old.length ? old : now, settled.content)) {
+    if (settled && !endsTyped && Changes.settlingChangesKind(now.length < old.length ? old : now, settled.content)) {
       // Without its marks this line would read as another kind of block ("- item", "# Plan"), and its words would leave
       // the spoken text: the edit is refused, quietly, and it keeps them, with the caret where it was.
       const was = state.preCaret?.id === id ? state.preCaret.offset : (caret ?? 0) + old.length - now.length;
@@ -989,17 +989,17 @@ function syncFromDom(el) {
     }
   }
   const content = fix ? fix.content : typed;
-  if (content === D.contentOf(b)) {
+  if (content === Doc.contentOf(b)) {
     if (fix || !domMatches(el, id)) renderBlock(id, fix ? { id, offset: fix.caret } : getCaret());
     return;
   }
   checkpoint("type", id);
   const caret = fix ? { id, offset: fix.caret } : getCaret();
   if (settledNow) followAnchors(id, content, settledNow.follow, { insideGoes: true });
-  const r = D.setContent(state.doc, id, content);
+  const r = Doc.setContent(state.doc, id, content);
   const moved = followPieces(id, r);
   if (r.changed || r.created.length) {
-    renderAll(D.locate(r, caret?.offset ?? 0));
+    renderAll(Doc.locate(r, caret?.offset ?? 0));
   } else {
     if (moved || fix || !domMatches(el, id)) renderBlock(id, caret);
     if (b.type === "heading" || b.type === "title") { renderToc(); renderTop(); }
@@ -1009,23 +1009,23 @@ function syncFromDom(el) {
 
 function splitAt(el, start, end, lineBreak) {
   const id = el.dataset.id, b = byId(id);
-  let content = D.contentOf(b);
+  let content = Doc.contentOf(b);
   const after = state.doc.blocks[state.doc.blocks.indexOf(b) + 1];
-  if (!lineBreak && start === end && start === content.length && after?.type === "para" && D.contentOf(after) === "") {
+  if (!lineBreak && start === end && start === content.length && after?.type === "para" && Doc.contentOf(after) === "") {
     placeCaret(after.id, 0);
     return;
   }
   // Enter inside a bold stretch: it is settled as if the line broke there, so no lone marks are left in either part. If a
   // part would then read as another kind of block, its words would leave the spoken text: nothing changes.
-  const settled = b.type === "para" ? K.settleMarks(content, `${content.slice(0, start)}\n${content.slice(end)}`, start + 1) : null;
+  const settled = b.type === "para" ? Cues.settleMarks(content, `${content.slice(0, start)}\n${content.slice(end)}`, start + 1) : null;
   const broke = settled?.content[settled.caret - 1] === "\n";
   if (broke) {
     const at = settled.caret - 1, left = settled.content.slice(0, at), right = settled.content.slice(at + 1);
     // The left part is tried with a letter after it: "1. " alone reads as text, but as a list once anything follows. The
     // two parts joined without their marks must keep the type too: "**1. x y**" would join as the list "1. x y", "**## Plan**"
     // as a heading (Enter and Shift+Enter alike).
-    const parts = lineBreak ? C.keepsType(settled.content, b.type) : C.keepsType(`${left}x`, b.type) && C.keepsType(right, b.type);
-    if (!(parts && C.keepsType(left + right, b.type))) return;
+    const parts = lineBreak ? Changes.keepsType(settled.content, b.type) : Changes.keepsType(`${left}x`, b.type) && Changes.keepsType(right, b.type);
+    if (!(parts && Changes.keepsType(left + right, b.type))) return;
   }
   checkpoint("enter", id);
   if (broke) {
@@ -1035,18 +1035,18 @@ function splitAt(el, start, end, lineBreak) {
       const r = settled.follow(from, to);
       return r && { start: r.start > start ? r.start - 1 : r.start, end: r.end > start ? r.end - 1 : r.end };
     }, { insideGoes: true });
-    D.setContent(state.doc, id, content);
+    Doc.setContent(state.doc, id, content);
     reanchorBlock(id);
   }
   if (end > start) {
     content = content.slice(0, start) + content.slice(end);
-    D.setContent(state.doc, id, content);
+    Doc.setContent(state.doc, id, content);
     reanchorBlock(id);
   }
   // A second line break in a row starts a new block, so a para never holds a blank line.
   if (lineBreak && b.type !== "raw" && content[start - 1] === "\n") {
     content = content.slice(0, start - 1) + content.slice(start);
-    D.setContent(state.doc, id, content);
+    Doc.setContent(state.doc, id, content);
     moveAsks(id, id, start, -1);
     start -= 1;
     lineBreak = false;
@@ -1056,10 +1056,10 @@ function splitAt(el, start, end, lineBreak) {
     applyContent(id, content.slice(0, start) + "\n" + content.slice(start), start + 1);
   } else if ((b.type === "heading" || b.type === "title") && start === 0 && content.length) {
     const i = state.doc.blocks.indexOf(b);
-    D.insertBlock(state.doc, i > 0 ? state.doc.blocks[i - 1].id : null, "para", "");
+    Doc.insertBlock(state.doc, i > 0 ? state.doc.blocks[i - 1].id : null, "para", "");
     renderAll({ id, offset: 0 });
   } else {
-    const next = D.splitBlock(state.doc, id, start);
+    const next = Doc.splitBlock(state.doc, id, start);
     moveAsks(id, next.id, start, -start);
     reanchorBlock(id);
     reanchorBlock(next.id);
@@ -1073,28 +1073,28 @@ function removeEmpty(el, dir) {
   const i = state.doc.blocks.findIndex((b) => b.id === id);
   if (state.doc.blocks.length <= 1) return;
   checkpoint("remove", id);
-  D.removeBlock(state.doc, id);
+  Doc.removeBlock(state.doc, id);
   reanchorBlock(id);
   const prev = state.doc.blocks[i - 1], next = state.doc.blocks[i];
   const target = dir < 0 ? prev || next : next || prev;
-  renderAll(target ? { id: target.id, offset: target === prev && dir < 0 ? D.contentOf(prev).length : 0 } : null);
+  renderAll(target ? { id: target.id, offset: target === prev && dir < 0 ? Doc.contentOf(prev).length : 0 } : null);
   changed();
 }
 
 function mergeInto(prevId, id) {
   const prev = byId(prevId);
-  const offset = D.contentOf(prev).length;
+  const offset = Doc.contentOf(prev).length;
   // The next paragraph's bold word right after a word: it is settled as if the line break between them was deleted. If
   // that would turn the line into another kind of block, the join is refused, quietly, and both lines stay as they are.
-  const joined = D.contentOf(prev) + D.contentOf(byId(id));
-  const settled = prev.type === "para" ? K.settleMarks(`${D.contentOf(prev)}\n${D.contentOf(byId(id))}`, joined, offset) : null;
-  if (settled && C.settlingChangesKind(joined, settled.content)) return;
+  const joined = Doc.contentOf(prev) + Doc.contentOf(byId(id));
+  const settled = prev.type === "para" ? Cues.settleMarks(`${Doc.contentOf(prev)}\n${Doc.contentOf(byId(id))}`, joined, offset) : null;
+  if (settled && Changes.settlingChangesKind(joined, settled.content)) return;
   checkpoint("merge", id);
   moveAsks(id, prevId, 0, offset);
-  const m = D.mergeWithPrevious(state.doc, id);
+  const m = Doc.mergeWithPrevious(state.doc, id);
   if (settled) {
     followAnchors(prevId, settled.content, marksMoved(joined, settled.content));
-    D.setContent(state.doc, prevId, settled.content);
+    Doc.setContent(state.doc, prevId, settled.content);
   }
   reanchorBlock(prevId);
   renderAll({ id: m.into, offset: settled ? settled.caret : m.offset });
@@ -1105,14 +1105,14 @@ function onBackspace(el) {
   const sel = selectionIn(el);
   if (!sel || sel.start !== sel.end || sel.start !== 0) return false;
   const id = el.dataset.id, b = byId(id);
-  if (D.contentOf(b) === "") { removeEmpty(el, -1); return true; }
+  if (Doc.contentOf(b) === "") { removeEmpty(el, -1); return true; }
   const i = state.doc.blocks.indexOf(b), prev = state.doc.blocks[i - 1];
   if (b.type === "para" && prev && (prev.type === "para" || prev.type === "note")) { mergeInto(prev.id, id); return true; }
   return true;
 }
 function onDelete(el) {
   const sel = selectionIn(el);
-  const id = el.dataset.id, b = byId(id), len = D.contentOf(b).length;
+  const id = el.dataset.id, b = byId(id), len = Doc.contentOf(b).length;
   if (!sel || sel.start !== sel.end || sel.end !== len) return false;
   if (len === 0) { removeEmpty(el, 1); return true; }
   const i = state.doc.blocks.indexOf(b), next = state.doc.blocks[i + 1];
@@ -1127,11 +1127,11 @@ function pasteText(el, raw) {
   if (b.type === "title" || b.type === "heading") text = text.replace(/\s*\n\s*/g, " ");
   if (!text) return;
   const sel = selectionIn(el) || { start: 0, end: 0 };
-  const content = D.contentOf(b);
-  const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? K.settleMarks(content, pasted, sel.start + text.length) : null;
+  const content = Doc.contentOf(b);
+  const pasted = content.slice(0, sel.start) + text + content.slice(sel.end), settled = b.type === "para" ? Cues.settleMarks(content, pasted, sel.start + text.length) : null;
   // Without its marks this line would read as another kind of block: the paste is refused, quietly. A paste that makes
   // paragraphs or a list itself reads the same with or without them, and goes in.
-  if (settled && C.settlingChangesKind(pasted, settled.content)) return;
+  if (settled && Changes.settlingChangesKind(pasted, settled.content)) return;
   checkpoint("paste", id);
   // Bold settled: asks follow by their offsets from the text before the paste; one it fell inside isn't moved at all.
   if (settled) followAnchors(id, settled.content, settled.follow, { insideGoes: true });
@@ -1257,13 +1257,13 @@ scriptEl.addEventListener("paste", (e) => {
 /* ---------- Cues (fleet issue #14; always on, Lex 2026-11-06) ---------- */
 // The on/off and export settings saved before 2026-11-06 mean nothing now: they go from this browser.
 try { for (const k of Object.keys(localStorage)) if (k === `${LS}cues` || k.startsWith(`${LS}cues:`)) localStorage.removeItem(k); } catch { /* storage off */ }
-// Bold style: orange and bold (app.css), or the person's own colours (K.boldStyle lets only "#rrggbb" through to the CSS).
+// Bold style: orange and bold (app.css), or the person's own colours (Cues.boldStyle lets only "#rrggbb" through to the CSS).
 // Picked in the small popover by B on the selection bar (Lex 2026-11-07, Variant A); the popover's sample word follows too.
 const boldPop = $("#boldPop"), boldBtn = $("#boldBtn");
 const darkMode = matchMedia("(prefers-color-scheme: dark)");
 const boldMode = () => (darkMode.matches ? "dark" : "light");
 function applyBoldStyle() {
-  const b = K.boldStyle(store.get("boldStyle")), shown = K.boldShown(b, boldMode());
+  const b = Cues.boldStyle(store.get("boldStyle")), shown = Cues.boldShown(b, boldMode());
   for (const el of [scriptEl, boldPop]) for (const [prop, value] of [["--bold-fg", shown.color], ["--bold-bg", shown.background]]) {
     if (value) el.style.setProperty(prop, value);
     else el.style.removeProperty(prop);
@@ -1271,26 +1271,26 @@ function applyBoldStyle() {
   return b;
 }
 applyBoldStyle();
-const setBoldStyle = (patch) => { store.set("boldStyle", { ...K.boldStyle(store.get("boldStyle")), ...patch }); renderBoldPop(); };
+const setBoldStyle = (patch) => { store.set("boldStyle", { ...Cues.boldStyle(store.get("boldStyle")), ...patch }); renderBoldPop(); };
 $("#boldBg").addEventListener("input", (e) => setBoldStyle({ background: e.target.value }));
 $("#boldFg").addEventListener("input", (e) => setBoldStyle({ color: e.target.value }));
 // What the colour fields show while nothing is chosen: the default orange (as sRGB) and the page's own colour (--bg).
 const BOLD_SHOWN = { light: { color: "#b53707", background: "#fafafa" }, dark: { color: "#fb401e", background: "#080721" } };
 for (const row of $$(".bold-pop__row", boldPop)) {
   const custom = $(".bold-pop__custom", row);
-  for (const { hex } of K.BOLD_SWATCHES[row.dataset.kind]) custom.insertAdjacentHTML("beforebegin", `<button class="bold-pop__swatch" type="button" data-hex="${hex}" aria-pressed="false"></button>`);
+  for (const { hex } of Cues.BOLD_SWATCHES[row.dataset.kind]) custom.insertAdjacentHTML("beforebegin", `<button class="bold-pop__swatch" type="button" data-hex="${hex}" aria-pressed="false"></button>`);
 }
 // Each row is one Tab stop (the picked one, or the last one reached with the arrows), and the arrow keys move along it: B to the input is a few presses, not fifteen.
 const popRowItems = (row) => [...$$(".bold-pop__swatch", row), $(".bold-pop__custom input", row)];
 function renderBoldPop() {
-  const bold = applyBoldStyle(), mode = boldMode(), seen = K.boldShown(bold, mode), fallback = BOLD_SHOWN[mode];
+  const bold = applyBoldStyle(), mode = boldMode(), seen = Cues.boldShown(bold, mode), fallback = BOLD_SHOWN[mode];
   $("#boldFg").value = seen.color || fallback.color;
   $("#boldBg").value = seen.background || fallback.background;
   for (const row of $$(".bold-pop__row", boldPop)) {
-    const kind = row.dataset.kind, now = K.boldSwatch(kind, bold[kind])?.hex || (bold[kind] || "").toLowerCase();
+    const kind = row.dataset.kind, now = Cues.boldSwatch(kind, bold[kind])?.hex || (bold[kind] || "").toLowerCase();
     let picked = null;
     for (const sw of $$(".bold-pop__swatch", row)) {
-      const s = K.BOLD_SWATCHES[kind].find((x) => x.hex === sw.dataset.hex);
+      const s = Cues.BOLD_SWATCHES[kind].find((x) => x.hex === sw.dataset.hex);
       if (s) {
         const look = mode === "light" ? s.light : s;
         sw.style.setProperty("--swatch-colour", look.hex);
@@ -1333,7 +1333,7 @@ renderBoldPop();
 // Anything else (across paragraphs, a heading, a reminder, a link line) changes nothing, quietly.
 function toggleCueHere() {
   const s = markupSel();
-  if (s) changeMarkup(s, "cue", (content) => K.toggleCue(content, s.start, s.end));
+  if (s) changeMarkup(s, "cue", (content) => Cues.toggleCue(content, s.start, s.end));
 }
 // The selection B or the link icon acts on: the bar's saved one while the focus is in the bar (input, B or the link icon by
 // keyboard: the browser takes the page's selection away then), as makeAsk does; else the page's. Only spoken paragraphs.
@@ -1342,19 +1342,19 @@ function markupSel() {
   const inBar = bar.contains(document.activeElement);
   const s = (inBar && barSel) || currentSelection();
   const b = s && byId(s.id);
-  if (!b || b.type !== "para" || D.contentOf(b).slice(s.start, s.end) !== s.quote) return null;
-  return D.spokenBlocks(state.doc).some((x) => x.id === b.id) ? s : null;
+  if (!b || b.type !== "para" || Doc.contentOf(b).slice(s.start, s.end) !== s.quote) return null;
+  return Doc.spokenBlocks(state.doc).some((x) => x.id === b.id) ? s : null;
 }
-// Put a change of marks in (K.toggleCue, K.addLink, K.removeLink): one Ctrl/Cmd+Z step; the words stay selected and the
+// Put a change of marks in (Cues.toggleCue, Cues.addLink, Cues.removeLink): one Ctrl/Cmd+Z step; the words stay selected and the
 // bar shows their new state. Anything that can't work there (a link line, open work in the way) changes nothing, quietly.
 function changeMarkup(s, kind, make) {
-  const b = byId(s.id), old = D.contentOf(b), inBar = bar.contains(document.activeElement);
+  const b = byId(s.id), old = Doc.contentOf(b), inBar = bar.contains(document.activeElement);
   if (!s.el.contains(s.range.startContainer) || !s.el.contains(s.range.endContainer)) return;
   const res = make(old);
-  if (!C.canToggleCue(state.asks, b.id, b.type, res)) return;
+  if (!Changes.canToggleCue(state.asks, b.id, b.type, res)) return;
   checkpoint(kind, b.id);
-  followAnchors(b.id, res.content, res.ops ? K.opsRange(old, res.ops) : marksMoved(old, res.content));
-  const r = D.setContent(state.doc, b.id, res.content);
+  followAnchors(b.id, res.content, res.ops ? Cues.opsRange(old, res.ops) : marksMoved(old, res.content));
+  const r = Doc.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
   if (barSel?.id === b.id) Object.assign(barSel, { start: res.start, end: res.end, quote: res.content.slice(res.start, res.end), plainAt: plainOffset(res.content, res.start) });
@@ -1383,13 +1383,13 @@ function changeMarkup(s, kind, make) {
 // What the toggle would do on this selection: null where it can't work (across paragraphs, a link or "*" in the way).
 function cueTry(s) {
   const b = byId(s.id);
-  return b && s.el.contains(s.range.startContainer) && s.el.contains(s.range.endContainer) ? K.toggleCue(D.contentOf(b), s.start, s.end) : null;
+  return b && s.el.contains(s.range.startContainer) && s.el.contains(s.range.endContainer) ? Cues.toggleCue(Doc.contentOf(b), s.start, s.end) : null;
 }
 // The B button: pressed when the selection is bold; disabled where the toggle can't work or is stopped.
 function cueBtnState(s) {
   const b = byId(s.id), btn = $("#boldBtn"), res = !btn.hidden && cueTry(s);
-  btn.setAttribute("aria-pressed", String(!!b && K.cueSelected(D.contentOf(b), s.start, s.end)));
-  btn.disabled = !res || !C.canToggleCue(state.asks, b.id, b.type, res);
+  btn.setAttribute("aria-pressed", String(!!b && Cues.cueSelected(Doc.contentOf(b), s.start, s.end)));
+  btn.disabled = !res || !Changes.canToggleCue(state.asks, b.id, b.type, res);
 }
 // No title tooltip: hovering B opens the colours, and a tooltip would sit on them. The keys stay in aria-keyshortcuts.
 $("#boldBtn").addEventListener("click", toggleCueHere);
@@ -1402,16 +1402,16 @@ const linkBtn = $("#linkBtn");
 const ASK_PLACEHOLDER = askInputDefaults();
 let linkMode = false;
 function askInputDefaults() { const i = $("#askInput"); return { placeholder: i.placeholder, label: i.getAttribute("aria-label"), hint: i.getAttribute("enterkeyhint"), max: i.maxLength, describedBy: i.getAttribute("aria-describedby") }; }
-const typedLink = () => (linkMode ? L.typedAddress($("#askInput").value) : null);
+const typedLink = () => (linkMode ? Links.typedAddress($("#askInput").value) : null);
 function linkTry(s) {
   const b = s && byId(s.id);
-  return b && s.el.contains(s.range.startContainer) && s.el.contains(s.range.endContainer) ? K.linkState(D.contentOf(b), s.start, s.end) : null;
+  return b && s.el.contains(s.range.startContainer) && s.el.contains(s.range.endContainer) ? Cues.linkState(Doc.contentOf(b), s.start, s.end) : null;
 }
 function linkBtnState(s) {
   const b = s && byId(s.id), st = s && !linkBtn.hidden ? linkTry(s) : null, on = st?.state === "on";
   // Off: the stretch a link would change (its address doesn't matter for that) must be free of open work.
-  const res = !b || !st ? null : on ? K.removeLink(D.contentOf(b), s.start, s.end) : st.state === "off" ? K.addLink(D.contentOf(b), s.start, s.end, "https://example.com") : null;
-  linkBtn.disabled = barSending > 0 || !C.canToggleCue(state.asks, b?.id, b?.type, res);
+  const res = !b || !st ? null : on ? Cues.removeLink(Doc.contentOf(b), s.start, s.end) : st.state === "off" ? Cues.addLink(Doc.contentOf(b), s.start, s.end, "https://example.com") : null;
+  linkBtn.disabled = barSending > 0 || !Changes.canToggleCue(state.asks, b?.id, b?.type, res);
   linkBtn.setAttribute("aria-pressed", String(on || !!typedLink()));
   const name = on ? "unlink" : "link";
   if (linkBtn.dataset.icon !== name) { linkBtn.dataset.icon = name; linkBtn.innerHTML = icon(name); }
@@ -1436,7 +1436,7 @@ function enterLinkMode() {
   askInput.setAttribute("enterkeyhint", "done");
   askInput.setAttribute("aria-label", "Link address");
   askInput.removeAttribute("aria-describedby");
-  askInput.maxLength = L.LINK_LIMITS.url;
+  askInput.maxLength = Links.LINK_LIMITS.url;
   askField.dataset.mode = "link";
   askInput.focus({ preventScroll: true });
   renderAsk();
@@ -1458,20 +1458,20 @@ function leaveLinkMode() {
 }
 linkBtn.addEventListener("click", () => {
   const s = markupSel(), st = s && linkTry(s);
-  if (st?.state === "on") changeMarkup(s, "link", (content) => K.removeLink(content, s.start, s.end));
+  if (st?.state === "on") changeMarkup(s, "link", (content) => Cues.removeLink(content, s.start, s.end));
   else if (st?.state === "off") { if (linkMode) { leaveLinkMode(); askInput.focus({ preventScroll: true }); } else enterLinkMode(); }
 });
 function applyLink() {
   const url = typedLink(), s = url && markupSel();
-  if (s) changeMarkup(s, "link", (content) => K.addLink(content, s.start, s.end, url));
+  if (s) changeMarkup(s, "link", (content) => Cues.addLink(content, s.start, s.end, url));
 }
 // The agent's mark_cue and unmark_cue: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script),
-// a marked change with Undo on the agent's name tag per paragraph (C.landCues). Returns how many cues changed.
+// a marked change with Undo on the agent's name tag per paragraph (Changes.landCues). Returns how many cues changed.
 function landAgentCues(plan, mode, by) {
   together?.local();
-  const before = D.cloneDoc(state.doc);
-  for (const seg of plan.segments) followAnchors(seg.id, seg.content, marksMoved(D.contentOf(byId(seg.id)), seg.content));
-  const parts = C.landCues(state.doc, plan, mode, by, Date.now());
+  const before = Doc.cloneDoc(state.doc);
+  for (const seg of plan.segments) followAnchors(seg.id, seg.content, marksMoved(Doc.contentOf(byId(seg.id)), seg.content));
+  const parts = Changes.landCues(state.doc, plan, mode, by, Date.now());
   if (!parts.length) return 0;
   checkpoint("agent", parts[0].blockId, before);
   if (!together?.active) state.undo.at(-1).land = { id: parts[0].ask.id, status: "undone", ...(parts.length > 1 ? { also: parts.slice(1).map((p) => p.ask.id) } : {}) };
@@ -1511,7 +1511,7 @@ function currentSelection() {
     const content = readContent(el);
     const start = el.contains(r.startContainer) ? offsetIn(el, r.startContainer, r.startOffset) : 0;
     const end = el.contains(r.endContainer) ? offsetIn(el, r.endContainer, r.endOffset) : content.length;
-    const snap = D.snapToWords(content, start, end);
+    const snap = Doc.snapToWords(content, start, end);
     if (snap.end > snap.start) return { id: el.dataset.id, el, start: snap.start, end: snap.end, quote: content.slice(snap.start, snap.end), range: r.cloneRange() };
   }
   return null;
@@ -1550,7 +1550,7 @@ function showBar() {
   if (!s) { hideBar(); return; }
   barSel = s;
   barSel.spoken = spokenSelection(s.range).length > 0;
-  barSel.plainAt = plainOffset(D.contentOf(byId(s.id)), s.start);
+  barSel.plainAt = plainOffset(Doc.contentOf(byId(s.id)), s.start);
   $("#boldBtn").hidden = linkBtn.hidden = byId(s.id)?.type !== "para" || !barSel.spoken;
   leaveLinkMode();
   cueBtnState(s);
@@ -1582,7 +1582,7 @@ function hideBar() {
 }
 // The bar's word count, for the words it holds (also after B widened them over a bold edge).
 function barLabel(quote) {
-  const n = D.countWords(K.spokenWords(quote));
+  const n = Doc.countWords(Cues.spokenWords(quote));
   $("#ebLabel").textContent = `${n.toLocaleString("en")} ${n === 1 ? "word" : "words"}`;
 }
 // A redraw of the selected line (an agent's answer, a guest's edit) while the focus is in the bar: its range went with the
@@ -1591,7 +1591,7 @@ function keepBarSel(id) {
   if (!barSel?.range || barSel.id !== id || !bar.contains(document.activeElement)) return;
   const b = byId(id), el = blockNode(id);
   if (!b || !el) return;
-  const content = D.contentOf(b);
+  const content = Doc.contentOf(b);
   // Always searched: the same text at the old offset can be another copy, moved there by a mark before it.
   const r = findWords(content, barSel.quote, barSel.plainAt ?? barSel.start);
   if (!r) return;
@@ -1874,7 +1874,7 @@ function makeAsk(action, typed = "") {
   if (!s || !state.doc) return;
   const b = byId(s.id);
   if (!b) return hideBar();
-  const content = D.contentOf(b);
+  const content = Doc.contentOf(b);
   // Always searched: the same text at the old offset can be another copy, moved there by a mark before it.
   const r = findWords(content, s.quote, s.plainAt ?? s.start);
   if (!r) return hideBar();
@@ -1891,13 +1891,13 @@ function makeAsk(action, typed = "") {
 }
 // A new ask on the agent's marked change: the text is being worked on again, so its mark (and Undo) goes.
 function unmarkOver(blockId, start, end) {
-  for (const a of state.asks) if (C.isMarked(a) && a.blockId === blockId && a.start < end && a.end > start) delete a.change;
+  for (const a of state.asks) if (Changes.isMarked(a) && a.blockId === blockId && a.start < end && a.end > start) delete a.change;
 }
 // onlyBy: a guest's ask closes only that guest's own overlapping asks; the host's closes any ("the newest ask wins").
 function addAsk({ blockId, start, end, action, typed = "", by, onlyBy = null }) {
   for (const a of overlappingAsks(state.asks, { blockId, start, end }, onlyBy)) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
   unmarkOver(blockId, start, end);
-  const ask = D.makeAsk(state.doc, { blockId, start, end, action, instruction: action === "ask" ? typed : undefined, by });
+  const ask = Doc.makeAsk(state.doc, { blockId, start, end, action, instruction: action === "ask" ? typed : undefined, by });
   state.asks.push(ask);
   emit("created", ask);
   renderBlock(blockId, getCaret());
@@ -1913,24 +1913,24 @@ function validBy(by) {
 export function receiveAnswer(askId, answer) {
   const ask = state.asks.find((a) => a.id === askId);
   if (!ask || !state.doc || ask.scope === "broll" || (ask.status !== "waiting" && ask.status !== "taken")) return false;
-  const clean = D.cleanAnswer(ask, answer);
+  const clean = Doc.cleanAnswer(ask, answer);
   if (!clean) return false;
   if (ask.scope === "selection") {
     const b = byId(ask.blockId);
-    const r = b && D.reanchor(ask, D.contentOf(b));
+    const r = b && Doc.reanchor(ask, Doc.contentOf(b));
     if (!r) { closeAsk(ask, "cancelled"); if (b) renderBlock(b.id); changed(); return false; }
     ask.start = r.start; ask.end = r.end;
     ask.answer = clean;
     ask.answeredBy = validBy(answer.by);
     ask.status = "answered";
     // A new text or an addition goes straight in (step F); a note shows beside its text.
-    if (C.goesStraightIn(ask, clean)) { emit("answered", ask); return landAnswer(ask); }
+    if (Changes.goesStraightIn(ask, clean)) { emit("answered", ask); return landAnswer(ask); }
     renderBlock(ask.blockId, getCaret());
   } else if (clean.kind === "links") {
     // The whole script's links (step G): nothing changes when none can go in, and the ask waits for another answer.
     return landScriptLinks(ask, clean, validBy(answer.by));
   } else {
-    clean.marks = clean.marks.map((m) => ({ ...m, ...(D.findQuote(state.doc, m.quote) || {}), state: "open" })).filter((m) => m.blockId);
+    clean.marks = clean.marks.map((m) => ({ ...m, ...(Doc.findQuote(state.doc, m.quote) || {}), state: "open" })).filter((m) => m.blockId);
     ask.answer = clean;
     ask.answeredBy = validBy(answer.by);
     ask.status = "answered";
@@ -1961,7 +1961,7 @@ export function takeAsk(askId, by) {
 export function requestVoiceCheck() {
   if (!state.doc || state.pendingDraft) return null;
   for (const a of state.asks) if (a.scope === "script" && a.action === "voice" && isOpen(a)) closeAsk(a, "cancelled");
-  const ask = D.makeAsk(state.doc, { scope: "script", action: "voice", by: me });
+  const ask = Doc.makeAsk(state.doc, { scope: "script", action: "voice", by: me });
   state.asks.push(ask);
   emit("created", ask);
   renderAll(getCaret());
@@ -1974,7 +1974,7 @@ export function requestVoiceCheck() {
 export function requestLinks() {
   if (!state.doc || state.pendingDraft || state.guest) return null;
   for (const a of state.asks) if (a.scope === "script" && a.action === "links" && isOpen(a)) closeAsk(a, "cancelled");
-  const ask = D.makeAsk(state.doc, { scope: "script", action: "links", by: me });
+  const ask = Doc.makeAsk(state.doc, { scope: "script", action: "links", by: me });
   state.asks.push(ask);
   emit("created", ask);
   renderAgent();
@@ -1987,15 +1987,15 @@ function keepAnswer(askId) {
   const ask = state.asks.find((a) => a.id === askId);
   if (!ask || ask.status !== "answered") return;
   const b = byId(ask.blockId);
-  const r = b && D.reanchor(ask, D.contentOf(b));
+  const r = b && Doc.reanchor(ask, Doc.contentOf(b));
   if (!r) { closeAsk(ask, "cancelled"); if (b) renderBlock(b.id); changed(); return; }
   ask.start = r.start; ask.end = r.end;
   checkpoint("keep", b.id);
-  const res = D.applyAnswer(D.contentOf(b), ask);
-  const delta = res.content.length - D.contentOf(b).length;
+  const res = Doc.applyAnswer(Doc.contentOf(b), ask);
+  const delta = res.content.length - Doc.contentOf(b).length;
   closeAsk(ask, "kept");
   moveAsks(b.id, b.id, ask.end, delta);
-  const r2 = D.setContent(state.doc, b.id, res.content);
+  const r2 = Doc.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r2);
   if (r2.changed || r2.created.length) renderAll();
   else { renderBlock(b.id); glow(b.id, res.start, res.end); }
@@ -2025,8 +2025,8 @@ function landAnswer(ask) {
   const b = byId(ask.blockId);
   if (!b) return false;
   together?.local(); // the host's own typing goes out first, under the host's name
-  const before = D.cloneDoc(state.doc);
-  const res = C.land(state.doc, ask, Date.now(), { asks: state.asks });
+  const before = Doc.cloneDoc(state.doc);
+  const res = Changes.land(state.doc, ask, Date.now(), { asks: state.asks });
   if (!res) { closeAsk(ask, "cancelled"); renderBlock(b.id, getCaret()); changed(); return false; }
   if (res.cuesDropped) cueDrops.set(ask.id, res.cuesDropped);
   // One Ctrl/Cmd+Z step, taken only now the change happened; undoing it makes the ask undone again (restore).
@@ -2037,7 +2037,7 @@ function landAnswer(ask) {
   moveAsks(b.id, b.id, res.at, res.delta);
   followPieces(b.id, res.result);
   followMarks(); // the agent's earlier changes follow this one
-  C.setMark(ask, res.mark);
+  Changes.setMark(ask, res.mark);
   markBase();
   together?.localAs("agent");
   if (res.result.changed || res.result.created.length) renderAll(getCaret());
@@ -2046,11 +2046,11 @@ function landAnswer(ask) {
   return true;
 }
 // The whole script's links: one change (one Ctrl/Cmd+Z step when alone, the agent's in a shared script), with a marked
-// change and Undo per paragraph (C.landScript).
+// change and Undo per paragraph (Changes.landScript).
 function landScriptLinks(ask, clean, by) {
   together?.local();
-  const before = D.cloneDoc(state.doc);
-  const res = C.landScript(state.doc, { ...ask, answer: clean }, Date.now(), { asks: state.asks });
+  const before = Doc.cloneDoc(state.doc);
+  const res = Changes.landScript(state.doc, { ...ask, answer: clean }, Date.now(), { asks: state.asks });
   if (!res) return false;
   ask.answer = { ...clean, links: res.parts.flatMap((p) => p.ask.answer.links) };
   ask.answeredBy = by;
@@ -2081,10 +2081,10 @@ function landScriptLinks(ask, clean, by) {
 // change still marked, or leaves.
 function undoChange(ask) {
   const b = byId(ask.blockId);
-  if (!b || !C.isMarked(ask)) return;
+  if (!b || !Changes.isMarked(ask)) return;
   together?.local();
-  const before = D.cloneDoc(state.doc);
-  const res = C.undo(state.doc, ask);
+  const before = Doc.cloneDoc(state.doc);
+  const res = Changes.undo(state.doc, ask);
   if (!res) { renderBlock(b.id, getCaret()); changed(); return; }
   checkpoint("agent-undo", b.id, before);
   if (!together?.active) state.undo.at(-1).land = { id: ask.id, status: "kept" };
@@ -2105,7 +2105,7 @@ function undoAgent(askId) {
 function undoAnswer(askId) {
   const ask = state.asks.find((a) => a.id === askId);
   if (!ask) return;
-  if (C.isMarked(ask)) return undoChange(ask);
+  if (Changes.isMarked(ask)) return undoChange(ask);
   if (!isOpen(ask)) return;
   closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled");
   renderBlock(ask.blockId, getCaret());
@@ -2163,10 +2163,10 @@ function positionCard(m) {
 // A rewrite that can't stay in its line's type (step F) is not offered: "Use this" would change nothing.
 function rewriteFits(mark) {
   const b = byId(mark.blockId);
-  const r = b && D.reanchor(mark, D.contentOf(b));
+  const r = b && Doc.reanchor(mark, Doc.contentOf(b));
   if (!r) return false;
-  const probe = D.makeAsk(state.doc, { blockId: b.id, start: r.start, end: r.end, action: "voice", by: me });
-  return C.fits(state.doc, probe, { kind: "replace", text: mark.rewrite });
+  const probe = Doc.makeAsk(state.doc, { blockId: b.id, start: r.start, end: r.end, action: "voice", by: me });
+  return Changes.fits(state.doc, probe, { kind: "replace", text: mark.rewrite });
 }
 function openCard(m) {
   const found = markOf(m);
@@ -2176,7 +2176,7 @@ function openCard(m) {
   cardFor = m;
   m.dataset.open = "";
   $("#vcWhy").innerHTML = icon("wave") + "<span></span>";
-  $("#vcWhy span").textContent = found.mark.why || D.ACTIONS.voice.name;
+  $("#vcWhy span").textContent = found.mark.why || Doc.ACTIONS.voice.name;
   $("#vcTry").textContent = found.mark.rewrite;
   $("#vcUse").hidden = !found.mark.rewrite || !rewriteFits(found.mark);
   $("#vcKeep").parentElement.hidden = state.guest; // the host's "Sounds like me" check: only the host acts on it
@@ -2208,13 +2208,13 @@ $("#vcUse").addEventListener("click", () => {
   if (!found) return;
   const { ask: voice, mark } = found;
   const b = byId(mark.blockId);
-  const r = b && D.reanchor(mark, D.contentOf(b));
+  const r = b && Doc.reanchor(mark, Doc.contentOf(b));
   if (r && !rewriteFits(mark)) return;
   mark.state = "used";
   settleVoice(voice);
   if (r) {
     for (const a of state.asks) if (a.scope === "selection" && a.blockId === b.id && isOpen(a) && !isBrollAnswer(a) && a.start < r.end && a.end > r.start) closeAsk(a, a.status === "answered" ? "undone" : "cancelled");
-    const ask = D.makeAsk(state.doc, { blockId: b.id, start: r.start, end: r.end, action: "voice", by: me });
+    const ask = Doc.makeAsk(state.doc, { blockId: b.id, start: r.start, end: r.end, action: "voice", by: me });
     ask.status = "answered";
     ask.answer = { kind: "replace", text: mark.rewrite };
     ask.answeredBy = voice.answeredBy ?? null;
@@ -2293,7 +2293,7 @@ function persistDraft() {
   // after a reload only there).
   // Waiting pictures (step K) stay out: local storage is small. After a reload a sketch ask's shot waits for its
   // sketch again; a suggested add shows without its picture.
-  const open = C.withContext(state.asks.filter((a) => isOpen(a) || C.isMarked(a)), state.doc).map(D.withoutPictures);
+  const open = Changes.withContext(state.asks.filter((a) => isOpen(a) || Changes.isMarked(a)), state.doc).map(Doc.withoutPictures);
   const dirty = isDirty();
   const flags = brollFlags();
   if (!dirty && !open.length && !flags) { saving.drafts.del(state.name); return; }
@@ -2304,7 +2304,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   // Leaving a script: write what is still waiting to its own file, and keep a draft as a safety net.
   if (state.doc) { persistDraft(); saving.flush(); }
   // A new script left as it came is not kept: empty ones would pile up in the browser.
-  if (state.doc && state.inBrowser && state.blank && handle !== state.handle && D.serialize(state.doc) === state.blank && !state.asks.length) {
+  if (state.doc && state.inBrowser && state.blank && handle !== state.handle && Doc.serialize(state.doc) === state.blank && !state.asks.length) {
     deleteBrowserScript({ handle: state.handle, name: state.name });
   }
   // Sharing ends when another script opens; the same file read again from disk stays shared.
@@ -2313,8 +2313,8 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   hideBar();
   closeCard();
   closeBroll();
-  state.doc = D.parse(text);
-  saving.open({ handle, name, browser, savedText: fresh ? D.serialize(state.doc) : text, modified, fresh });
+  state.doc = Doc.parse(text);
+  saving.open({ handle, name, browser, savedText: fresh ? Doc.serialize(state.doc) : text, modified, fresh });
   state.undo = [];
   state.redo = [];
   state.lastStep = null;
@@ -2346,19 +2346,19 @@ function adoptAsks(asks) {
   if (!Array.isArray(asks)) return;
   for (const a of asks) {
     // Its new text, only at its exact place in this script's block of the same place (ids are new); else no mark.
-    if (C.isMarked(a)) { if (C.place(a, state.doc, { byIndex: true })) state.asks.push(a); continue; }
+    if (Changes.isMarked(a)) { if (Changes.place(a, state.doc, { byIndex: true })) state.asks.push(a); continue; }
     if (!a?.id || !isOpen(a)) continue;
     brollApi?.cleanSketches(a); // a draft holds what storage gave it (the B-roll module cleans the rest when it loads)
     if (a.scope === "selection" && !byId(a.blockId)) {
       // Ids are new after a reload: find the quote again. B-roll suggestions stay even when it is gone.
-      const hit = D.findQuote(state.doc, a.quote, null);
+      const hit = Doc.findQuote(state.doc, a.quote, null);
       if (hit) Object.assign(a, hit);
       else if (!isBrollAnswer(a)) continue;
     }
     if (a.scope === "script" && a.answer?.marks) {
       for (const m of a.answer.marks) {
         if (m.state !== "open") continue;
-        const hit = D.findQuote(state.doc, m.quote, byId(m.blockId) ? m : null);
+        const hit = Doc.findQuote(state.doc, m.quote, byId(m.blockId) ? m : null);
         if (hit) Object.assign(m, hit); else m.state = "gone";
       }
     }
@@ -2366,7 +2366,7 @@ function adoptAsks(asks) {
   }
   reanchorAll();
   for (const a of state.asks) if (a.scope === "script") settleVoice(a);
-  C.endExpired(state.asks, Date.now()); // a mark whose 60 minutes are over comes back without its tint (step M)
+  Changes.endExpired(state.asks, Date.now()); // a mark whose 60 minutes are over comes back without its tint (step M)
   markBase();
 }
 function showBanner(text, actions) {
@@ -2392,7 +2392,7 @@ function restoreDraft() {
   if (!draft) return hideBanner();
   state.preCaret = null;
   checkpoint("restore", null);
-  state.doc = D.parse(draft.text);
+  state.doc = Doc.parse(draft.text);
   state.pendingDraft = null;
   state.asks = [];
   adoptAsks(draft.asks);
@@ -2409,7 +2409,7 @@ function discardDraft() {
   state.pendingDraft = null;
   hideBanner();
   // The agent's marked changes come back only where the file itself has them, at their exact place (adoptAsks).
-  if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || C.isMarked(a) || D.findQuote(state.doc, a.quote)));
+  if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || Changes.isMarked(a) || Doc.findQuote(state.doc, a.quote)));
   brollApi?.dropGone();
   brollIfAsks();
   saving.drafts.del(state.name);
@@ -2491,7 +2491,7 @@ const saving = createSaving({
     download: (text, name) => download(text, name, "text/markdown"),
   },
   // Scripts saved in the browser (step J), named after their title.
-  browser: browserSaving ? { name: async (from, doc) => D.scriptFileName("", doc, await nameTaken(from)), create: (name, text) => createBrowserScript(name, text) } : null,
+  browser: browserSaving ? { name: async (from, doc) => Doc.scriptFileName("", doc, await nameTaken(from)), create: (name, text) => createBrowserScript(name, text) } : null,
   drafts: store,
   clock: { now: () => Date.now(), later: (fn, ms) => setTimeout(fn, ms), cancel: (id) => clearTimeout(id) },
   on: {
@@ -2540,8 +2540,8 @@ function needPack() {
 $("#exportMenu").addEventListener("beforetoggle", (e) => { if (e.newState === "open") needPack().catch(() => {}); });
 function exportFile(kind) {
   if (!state.doc || state.guest) return;
-  if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
-  else if (kind === "prompter") download(D.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
+  if (kind === "camera") download(Doc.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
+  else if (kind === "prompter") download(Doc.exportPrompter(state.doc), `${baseName()}-prompter.md`, "text/markdown");
   else if (kind === "prompter-open") openPrompter();
   else if (kind === "markdown") saving.saveAs();
   else if (kind === "all") exportAll();
@@ -2558,8 +2558,8 @@ async function exportAll() {
   const base = baseName();
   const files = [
     { name: /\.(md|markdown|txt)$/i.test(state.name) ? state.name : `${base}.md`, text: saveText() },
-    { name: `${base}-camera.txt`, text: D.exportCamera(state.doc) },
-    { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc) },
+    { name: `${base}-camera.txt`, text: Doc.exportCamera(state.doc) },
+    { name: `${base}-prompter.md`, text: Doc.exportPrompter(state.doc) },
   ];
   if (brollStatus() === "ok") files.push(...brollApi.exports());
   let pack;
@@ -2602,11 +2602,11 @@ async function saveToFolder() {
   try {
     // Everything is copied from the script before the pack is awaited: it is the script as it was at the click that is
     // saved, whatever is typed or opened meanwhile.
-    const doc = D.cloneDoc(slash.open ? D.withoutCommand(state.doc, slash) : state.doc);
+    const doc = Doc.cloneDoc(slash.open ? Doc.withoutCommand(state.doc, slash) : state.doc);
     // A linked list brings its shots in script order, its sketches and the B-roll helpers (the module is loaded then).
     const list = brollApi?.folder(doc) ?? { linked: false };
     const what = {
-      dir, doc, scriptText: saveText(), title: D.titleOf(doc) || baseName(),
+      dir, doc, scriptText: saveText(), title: Doc.titleOf(doc) || baseName(),
       broll: list.linked ? { ...list, shots: structuredClone(list.shots), sketches: structuredClone(list.sketches) } : list,
       // The prompter link carries the day the script was saved (its file's own day, else the day of this save).
       modified: state.fileModified, dirty: isDirty(),
@@ -2629,16 +2629,16 @@ async function openSample() {
 }
 async function newScript() {
   // A new script still as it came is the new script: its title is selected again.
-  if (state.doc && state.inBrowser && state.blank && D.serialize(state.doc) === state.blank) return selectTitle();
+  if (state.doc && state.inBrowser && state.blank && Doc.serialize(state.doc) === state.blank) return selectTitle();
   const doc = { blocks: [], tail: "\n", eol: "\n" };
-  const t = D.insertBlock(doc, null, "title", "Untitled script");
+  const t = Doc.insertBlock(doc, null, "title", "Untitled script");
   t.sep = "";
-  const hint = D.insertBlock(doc, t.id, "para", "").id;
-  const text = D.serialize(doc);
+  const hint = Doc.insertBlock(doc, t.id, "para", "").id;
+  const text = Doc.serialize(doc);
   // Saved in the browser at once (step J); where it can't be, it waits for the first save as before.
   let made = null;
   if (browserSaving) {
-    try { made = await createBrowserScript(D.scriptFileName("", doc, await nameTaken()), text); } catch { made = null; }
+    try { made = await createBrowserScript(Doc.scriptFileName("", doc, await nameTaken()), text); } catch { made = null; }
   }
   if (made) {
     loadText(text, { name: made.handle.name, handle: made.handle, modified: made.modified, browser: true });
@@ -2815,8 +2815,8 @@ async function moveKeys(from, to, { clear = false, link = null } = {}) {
 async function followTitle(handle) {
   if (!state.inBrowser || handle !== state.handle || typeof handle.move !== "function") return;
   const from = state.name, doc = state.doc;
-  if (D.scriptFileName("", doc).toLowerCase() === from.toLowerCase()) return; // the title's own name: nothing to look up
-  const name = D.titleFileName(from, doc, await nameTaken(from));
+  if (Doc.scriptFileName("", doc).toLowerCase() === from.toLowerCase()) return; // the title's own name: nothing to look up
+  const name = Doc.titleFileName(from, doc, await nameTaken(from));
   if (!name || handle !== state.handle) return;
   await handle.move(name);
   // The move is queued before the name changes: a link or unlink made before it went to the old name and moves with
@@ -2958,7 +2958,7 @@ $$("[data-icon]").forEach((el) => {
   if (el.classList.contains("menu-action__copy") || el.tagName === "BUTTON") el.innerHTML = icon(el.dataset.icon);
   else el.outerHTML = icon(el.dataset.icon);
 });
-$$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.dataset.act])}<span class="edit-bar__text">${esc(D.ACTIONS[b.dataset.act].name)}</span>`));
+$$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.dataset.act])}<span class="edit-bar__text">${esc(Doc.ACTIONS[b.dataset.act].name)}</span>`));
 
 
 /* ---------- B-roll: one module, loaded the first time a script needs it (TOOLS-306) ---------- */
@@ -3157,14 +3157,14 @@ $("#viewSwitch").addEventListener("click", (e) => { const b = e.target.closest("
 // The spoken paras a selection touches, with the selected part of each (the matcher only reads spoken paras).
 function spokenSelection(range) {
   if (!state.doc || !range) return [];
-  const spoken = new Set(D.spokenBlocks(state.doc).map((b) => b.id));
+  const spoken = new Set(Doc.spokenBlocks(state.doc).map((b) => b.id));
   const out = [];
   for (const el of $$(".block", scriptEl)) {
     if (!range.intersectsNode(el) || !spoken.has(el.dataset.id) || el.closest("details:not([open])")) continue;
     const content = readContent(el);
     const start = el.contains(range.startContainer) ? offsetIn(el, range.startContainer, range.startOffset) : 0;
     const end = el.contains(range.endContainer) ? offsetIn(el, range.endContainer, range.endOffset) : content.length;
-    const snap = D.snapToWords(content, start, end);
+    const snap = Doc.snapToWords(content, start, end);
     if (snap.end > snap.start) out.push({ id: el.dataset.id, start: snap.start, end: snap.end });
   }
   return out;
@@ -3192,14 +3192,14 @@ function slashAtCaret() {
   if (!sel.rangeCount || !sel.isCollapsed) return null;
   const caret = getCaret();
   const b = caret && byId(caret.id);
-  if (!D.slashAllowed(b)) return null;
-  const content = D.contentOf(b);
-  const cmd = D.slashCommand(content, caret.offset);
+  if (!Doc.slashAllowed(b)) return null;
+  const content = Doc.contentOf(b);
+  const cmd = Doc.slashCommand(content, caret.offset);
   return cmd ? { id: b.id, content, ...cmd } : null;
 }
 // B-roll is offered on a spoken line that has words besides the command.
-const slashOnSpokenLine = (cmd) => canAddBroll() && D.spokenBlocks(state.doc).some((x) => x.id === cmd.id)
-  && /[\p{L}\p{N}]/u.test(D.cutCommand(cmd.content, cmd).content);
+const slashOnSpokenLine = (cmd) => canAddBroll() && Doc.spokenBlocks(state.doc).some((x) => x.id === cmd.id)
+  && /[\p{L}\p{N}]/u.test(Doc.cutCommand(cmd.content, cmd).content);
 function updateSlash(typed) {
   const cmd = slashAtCaret();
   if (!cmd) { slash.dismissed = null; return closeSlash(); }
@@ -3207,7 +3207,7 @@ function updateSlash(typed) {
   if (slash.dismissed?.id === cmd.id && slash.dismissed.start === cmd.start) return closeSlash();
   slash.dismissed = null;
   if (!slash.open && !typed) return;
-  const items = D.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) });
+  const items = Doc.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) });
   if (!items.length) return closeSlash();
   const same = slash.open && slash.id === cmd.id && slash.start === cmd.start && slash.items.map((p) => p.id).join() === items.map((p) => p.id).join();
   Object.assign(slash, { open: true, id: cmd.id, start: cmd.start, end: cmd.end, items, active: same ? slash.active : 0 });
@@ -3247,30 +3247,30 @@ function closeSlash() {
 }
 // Picking removes the command and inserts the part, all in one undo step.
 function pickSlash(partId) {
-  const part = D.PARTS.find((p) => p.id === partId);
+  const part = Doc.PARTS.find((p) => p.id === partId);
   if (!slash.open || !part) return;
   const { id, start, end } = slash;
   closeSlash();
   const b = byId(id);
-  if (!b || D.contentOf(b).slice(start, start + 1) !== "/") return;
+  if (!b || Doc.contentOf(b).slice(start, start + 1) !== "/") return;
   state.preCaret = { id, offset: end };
   checkpoint("part", id);
-  const cut = D.cutCommand(D.contentOf(b), { start, end });
-  D.setContent(state.doc, id, cut.content);
+  const cut = Doc.cutCommand(Doc.contentOf(b), { start, end });
+  Doc.setContent(state.doc, id, cut.content);
   moveAsks(id, id, end, cut.at - end);
   reanchorBlock(id);
   if (part.kind === "broll") {
     renderAll({ id, offset: cut.at });
     changed();
-    const text = D.contentOf(byId(id));
-    const words = D.snapToWords(text, 0, text.length);
+    const text = Doc.contentOf(byId(id));
+    const words = Doc.snapToWords(text, 0, text.length);
     const asked = brollPre.token;
     return void withBroll((b) => { if (brollPre.token === asked) b.openCard({ mode: "add", sel: [{ id, start: words.start, end: words.end }], anchor: () => blockNode(id) }); });
   }
   // A line that held only the command gives its place to the part.
-  const replaceId = D.lineToReplace(state.doc, id, state.asks);
+  const replaceId = Doc.lineToReplace(state.doc, id, state.asks);
   if (replaceId && replaceId === state.hint) state.hint = null;
-  const res = D.insertPart(state.doc, id, part.id, { replaceId });
+  const res = Doc.insertPart(state.doc, id, part.id, { replaceId });
   renderAll(res.caret);
   changed();
 }
@@ -3280,12 +3280,12 @@ function slashHeld() {
   if (slash.open) return true;
   const focused = scriptEl.contains(document.activeElement);
   const cmd = focused ? slashAtCaret() : null;
-  const matches = cmd ? D.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) }).length : 0;
-  return D.slashHold({ focused, cmd, dismissed: slash.dismissed, matches });
+  const matches = cmd ? Doc.matchParts(cmd.query, { spokenLine: slashOnSpokenLine(cmd) }).length : 0;
+  return Doc.slashHold({ focused, cmd, dismissed: slash.dismissed, matches });
 }
 // What a save writes: the script without an open "/" command.
 function saveText() {
-  return D.serialize(slash.open && state.doc ? D.withoutCommand(state.doc, slash) : state.doc);
+  return Doc.serialize(slash.open && state.doc ? Doc.withoutCommand(state.doc, slash) : state.doc);
 }
 scriptEl.addEventListener("input", (e) => { if (!e.isComposing) updateSlash(true); });
 scriptEl.addEventListener("compositionend", () => updateSlash(true));
@@ -3445,8 +3445,8 @@ function takeUnseen() {
   return list.map(askForAgent);
 }
 function voiceGuide() { return store.get("voiceGuide"); }
-const askForAgent = (a) => D.askForAgent(a, {
-  spokenText: a.scope === "selection" || a.action === "sketch" || !state.doc ? "" : D.exportCamera(state.doc),
+const askForAgent = (a) => Doc.askForAgent(a, {
+  spokenText: a.scope === "selection" || a.action === "sketch" || !state.doc ? "" : Doc.exportCamera(state.doc),
   shots: brollShots(),
   voiceGuide: voiceGuide()?.text || "",
 });
@@ -3471,17 +3471,17 @@ function offerAsks() {
   }
 }
 function scriptInfo() {
-  const { sections } = D.outline(state.doc);
-  const st = D.stats(state.doc);
+  const { sections } = Doc.outline(state.doc);
+  const st = Doc.stats(state.doc);
   return {
     fileName: state.name,
-    title: D.titleOf(state.doc),
-    markdown: D.serialize(state.doc),
-    sections: sections.map((sec) => ({ heading: sec.heading ? D.contentOf(sec.heading).trim() : "", spoken: sec.spoken })),
+    title: Doc.titleOf(state.doc),
+    markdown: Doc.serialize(state.doc),
+    sections: sections.map((sec) => ({ heading: sec.heading ? Doc.contentOf(sec.heading).trim() : "", spoken: sec.spoken })),
     words: st.words,
     spoken: st.spoken,
-    broll: brollShots().map(D.forAgent),
-    cues: C.listCues(state.doc),
+    broll: brollShots().map(Doc.forAgent),
+    cues: Changes.listCues(state.doc),
   };
 }
 // `ws`: the socket the call came on, which its answer goes back on (also after the B-roll module has loaded).
@@ -3518,32 +3518,32 @@ function handleCall(call, ws = agent.ws) {
       return send({ result: "Done: the whole text is in the editor now. The person can undo it." });
     }
     if (tool === "list_asks") return send({ result: { asks: state.asks.map(askForList) } });
-    if (tool === "list_cues") return send({ result: { cues: C.listCues(state.doc) } });
+    if (tool === "list_cues") return send({ result: { cues: Changes.listCues(state.doc) } });
     if (tool === "mark_cue" || tool === "unmark_cue") {
       const busy = busyChoice(); // not while the person chooses about unsaved changes or a changed file
       if (busy) return send({ error: busy });
       const mode = tool === "mark_cue" ? "mark" : "unmark";
-      const plan = C.planCues(state.doc, mode, args.cues, { asks: state.asks });
+      const plan = Changes.planCues(state.doc, mode, args.cues, { asks: state.asks });
       const n = plan.segments.length ? landAgentCues(plan, mode, agentBy()) : 0;
       if (!n) return send({ error: `No cue changed.${cueSkips(plan.skipped)}` });
       return send({ result: `Done: ${n} ${n === 1 ? "cue" : "cues"} ${mode === "mark" ? "marked" : "removed"} in the text now. The person can undo it.${cueSkips(plan.skipped)}` });
     }
     if (tool === "answer_ask") {
       const ask = state.asks.find((a) => a.id === args.askId);
-      const checked = D.checkAnswer(ask, args, state.doc);
+      const checked = Doc.checkAnswer(ask, args, state.doc);
       if (checked.error) return send({ error: checked.error });
       if (checked.answer.kind === "links") {
         // Links (step G): the quotes that can't be linked are skipped and listed back; with none left, nothing changes.
-        const plan = C.planFor(state.doc, ask, checked.answer, { asks: state.asks });
-        if (plan && !plan.segments.length) return send({ error: C.noLinksError(plan.skipped) });
-        if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: !plan || ask.status === "cancelled" ? "The text this ask was about has changed, so the ask was cancelled." : C.noLinksError(plan.skipped) });
-        return send({ result: C.answerResult("links", { linked: ask.answer.links.length, skipped: plan.skipped }) });
+        const plan = Changes.planFor(state.doc, ask, checked.answer, { asks: state.asks });
+        if (plan && !plan.segments.length) return send({ error: Changes.noLinksError(plan.skipped) });
+        if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: !plan || ask.status === "cancelled" ? "The text this ask was about has changed, so the ask was cancelled." : Changes.noLinksError(plan.skipped) });
+        return send({ result: Changes.answerResult("links", { linked: ask.answer.links.length, skipped: plan.skipped }) });
       }
-      if (!C.fits(state.doc, ask, checked.answer)) return send({ error: STAYS_IN_PARAGRAPH });
+      if (!Changes.fits(state.doc, ask, checked.answer)) return send({ error: STAYS_IN_PARAGRAPH });
       if (!receiveAnswer(ask.id, { ...checked.answer, by: agentBy() })) return send({ error: "The text this ask was about has changed, so the ask was cancelled." });
       const cuesDropped = cueDrops.get(ask.id) || 0;
       cueDrops.delete(ask.id);
-      return send({ result: C.answerResult(checked.answer.kind, { cuesDropped }) });
+      return send({ result: Changes.answerResult(checked.answer.kind, { cuesDropped }) });
     }
     send({ error: `Unknown tool: ${tool}` });
   } catch (e) {
@@ -3561,7 +3561,7 @@ function busyChoice() {
 }
 function scriptProblem(markdown) {
   if (typeof markdown !== "string" || !markdown.trim()) return "markdown is required: the script's whole text.";
-  if (markdown.length > D.SCRIPT_LIMITS.markdown) return `markdown is longer than ${D.SCRIPT_LIMITS.markdown} characters.`;
+  if (markdown.length > Doc.SCRIPT_LIMITS.markdown) return `markdown is longer than ${Doc.SCRIPT_LIMITS.markdown} characters.`;
   return "";
 }
 async function scriptList() {
@@ -3581,7 +3581,7 @@ async function openScript(args, by) {
   if (args.markdown != null) {
     const problem = scriptProblem(args.markdown);
     if (problem) return { error: problem };
-    const name = D.scriptFileName(args.fileName, D.parse(args.markdown), await nameTaken());
+    const name = Doc.scriptFileName(args.fileName, Doc.parse(args.markdown), await nameTaken());
     // Saved in the browser at once (step J), where the browser can.
     let made = null;
     if (browserSaving) { try { made = await createBrowserScript(name, args.markdown); } catch { made = null; } }
@@ -3618,7 +3618,7 @@ async function openScript(args, by) {
     if (line !== lineSeq) return; // a newer line took its place
     hideBanner();
     $("#emptyNote").hidden = true;
-    if (undoLine && state.doc && D.serialize(state.doc) === undoLine.text) showReplaced(undoLine);
+    if (undoLine && state.doc && Doc.serialize(state.doc) === undoLine.text) showReplaced(undoLine);
   };
   const open = async () => {
     if (choice) return;
@@ -3641,11 +3641,11 @@ async function openScript(args, by) {
 }
 // The agent's whole text goes in as one change: one Ctrl/Cmd+Z step when alone, the agent's in a shared script.
 // Paragraphs it left word for word keep their ids, so their asks and marks stay; asks on text that is gone end.
-function putScript(next, { by = null, before = D.cloneDoc(state.doc) } = {}) {
+function putScript(next, { by = null, before = Doc.cloneDoc(state.doc) } = {}) {
   together?.local(); // the host's own typing goes out first, under the host's name
   hideBar();
   closeCard();
-  state.doc = D.keepIds(state.doc, next);
+  state.doc = Doc.keepIds(state.doc, next);
   state.preCaret = null;
   checkpoint("agent", null, before);
   reanchorAll();
@@ -3654,11 +3654,11 @@ function putScript(next, { by = null, before = D.cloneDoc(state.doc) } = {}) {
 }
 function setScript(markdown, by) {
   // The file keeps its own line endings; compared with the text as saved (a "/" command being typed is left out).
-  const text = D.wholeText(state.doc, markdown, saveText());
+  const text = Doc.wholeText(state.doc, markdown, saveText());
   if (text == null) return false;
-  const before = D.cloneDoc(state.doc);
-  putScript(D.parse(text), { by, before });
-  showReplaced({ text: D.serialize(state.doc), before, step: together?.active ? null : state.undo.at(-1), by });
+  const before = Doc.cloneDoc(state.doc);
+  putScript(Doc.parse(text), { by, before });
+  showReplaced({ text: Doc.serialize(state.doc), before, step: together?.active ? null : state.undo.at(-1), by });
   changed();
   return true;
 }
@@ -3670,9 +3670,9 @@ function showReplaced(r) {
 function undoScript() {
   const r = replaced;
   hideBanner();
-  if (!r || D.serialize(state.doc) !== r.text) return;
+  if (!r || Doc.serialize(state.doc) !== r.text) return;
   if (r.step && state.undo.at(-1) === r.step) return undo();
-  putScript(D.cloneDoc(r.before));
+  putScript(Doc.cloneDoc(r.before));
   changed();
 }
 
@@ -3691,7 +3691,7 @@ function renderAgent() {
   const rows = $("#agentRows");
   if (agent.state === "on") {
     const busy = state.asks.find((a) => a.status === "taken");
-    const where = busy ? (busy.scope === "script" ? "whole script" : busy.scope === "broll" ? "storyboard" : `section ${D.parseHeading(busy.section || "").num || "·"}`) : "listening";
+    const where = busy ? (busy.scope === "script" ? "whole script" : busy.scope === "broll" ? "storyboard" : `section ${Doc.parseHeading(busy.section || "").num || "·"}`) : "listening";
     rows.innerHTML = `<li class="agent-row"><span class="status-dot"></span><span class="agent-row__name"></span><span class="agent-row__where"></span><button class="small-btn" type="button" id="agentStop">Stop</button></li>`;
     rows.querySelector(".agent-row__name").textContent = name;
     rows.querySelector(".agent-row__where").textContent = where;
@@ -3771,7 +3771,7 @@ $("#voiceGuideInput").addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   e.target.value = "";
   if (!file) return;
-  if (file.size > D.LIMITS.voiceGuide) return renderVoiceGuide("too large, 20 KB at most");
+  if (file.size > Doc.LIMITS.voiceGuide) return renderVoiceGuide("too large, 20 KB at most");
   try {
     const text = await file.text();
     if (!store.set("voiceGuide", { name: file.name, text })) return renderVoiceGuide("could not be kept");
@@ -3837,11 +3837,11 @@ function afterRoomOps(ops, sel, before = new Map()) {
     if (op.type === "text") {
       touched.add(op.blockId);
       const old = was.get(op.blockId);
-      followAnchors(op.blockId, null, (start, end) => (strict ? C.followRoomEdit({ start, end }, op, old) : C.followTextOp({ start, end }, op)), { insideGoes: strict });
+      followAnchors(op.blockId, null, (start, end) => (strict ? Changes.followRoomEdit({ start, end }, op, old) : Changes.followTextOp({ start, end }, op)), { insideGoes: strict });
       if (typeof old === "string") was.set(op.blockId, old.slice(0, op.at) + op.ins + old.slice(op.at + op.del));
     }
     else if (op.type === "split") {
-      if (strict) followAnchors(op.blockId, null, (start, end) => C.followRoomEdit({ start, end }, op), { insideGoes: true });
+      if (strict) followAnchors(op.blockId, null, (start, end) => Changes.followRoomEdit({ start, end }, op), { insideGoes: true });
       const old = was.get(op.blockId);
       if (typeof old === "string") { was.set(op.blockId, old.slice(0, op.at)); was.set(op.newId, old.slice(op.at)); } else was.delete(op.blockId);
       moveAsks(op.blockId, op.newId, op.at, -op.at);
@@ -3898,7 +3898,7 @@ function setRoomAsks(asks) {
   const before = perBlock(state.asks), after = perBlock(asks), brollBefore = brollSig(state.asks);
   // An ask this guest saw open whose change is now in the text arrived just now (this tab's clock).
   const was = new Map(state.asks.map((a) => [a.id, a]));
-  for (const a of asks) if (C.isMarked(a) && was.has(a.id) && was.get(a.id).status !== "kept") arrived.set(a.id, Date.now());
+  for (const a of asks) if (Changes.isMarked(a) && was.has(a.id) && was.get(a.id).status !== "kept") arrived.set(a.id, Date.now());
   state.asks = asks;
   brollIfAsks();
   markBase();
@@ -3922,7 +3922,7 @@ function loadGuest(doc, name, sharedBroll = null) {
   closeCard();
   if (first) closeBroll();
   Object.assign(state, {
-    guest: true, locked: false, doc, name, handle: null, savedText: D.serialize(doc), savedAt: 0, saveError: "",
+    guest: true, locked: false, doc, name, handle: null, savedText: Doc.serialize(doc), savedAt: 0, saveError: "",
     needsPermission: false, conflict: false, undo: [], redo: [], lastStep: null, pendingDraft: null, hint: null,
     // A fresh snapshot keeps the host's asks, placed again in the new copy; the first one starts with none.
     asks: first ? [] : fitAsks(state.asks, doc),
@@ -3984,7 +3984,7 @@ together = createTogether({
   renderTop: () => renderTop(),
   renderDots: () => { if (state.doc) renderTocDots(); },
   asks: () => state.asks,
-  seenAsks: () => C.seenAsks(state.asks, passedHere), // the agent's caret: without the marks scrolled past here
+  seenAsks: () => Changes.seenAsks(state.asks, passedHere), // the agent's caret: without the marks scrolled past here
   setRoomAsks,
   guestAsk,
   guestAct,
@@ -4016,8 +4016,8 @@ window.__scriptEditor = {
   take: takeAsk,
   voiceCheck: () => requestVoiceCheck()?.id ?? null,
   asks: () => structuredClone(state.asks),
-  markdown: () => (state.doc ? D.serialize(state.doc) : null),
-  broll: () => (brollStatus() === "ok" ? brollShots().map(D.forAgent) : null),
+  markdown: () => (state.doc ? Doc.serialize(state.doc) : null),
+  broll: () => (brollStatus() === "ok" ? brollShots().map(Doc.forAgent) : null),
   // The B-roll hooks answer at once while the B-roll module is here, else with a promise once it has loaded.
   sketchAsk: () => brollHook((b) => b.requestSketches()?.id ?? null),
   planAsk: () => brollHook((b) => b.requestPlan()?.id ?? null),
@@ -4028,7 +4028,7 @@ window.__scriptEditor = {
   ask: (blockIndex, start, end, action = "simpler", typed = "") => {
     const b = state.doc?.blocks[blockIndex];
     if (!b) return null;
-    const content = D.contentOf(b);
+    const content = Doc.contentOf(b);
     barSel = { id: b.id, start, end, quote: content.slice(start, end) };
     return makeAsk(action, typed)?.id ?? null;
   },

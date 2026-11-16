@@ -6,7 +6,7 @@
 // handle, name, inBrowser, blank, savedText, savedAt, fileModified, saving, autoSaving, saveError, needsPermission,
 // conflict. Every save carries its own handle, name and text, so a write lands in the file it was made for even after
 // the person opened another script; its result changes `script` only while that script is still the open one.
-import * as Q from "./save-queue.js";
+import * as SaveQueue from "./save-queue.js";
 
 // About 1.5 s after the last change, to the opened file only. Ctrl/Cmd+S and page hide save at once.
 export const AUTOSAVE_MS = 1500;
@@ -40,7 +40,7 @@ export async function permitted(handle, ask, mode = "readwrite") {
  * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }), placed(handle, how) }
  */
 export function createSaving({ script, editor, files, browser, drafts: store, clock, on }) {
-  let queue = Q.emptyQueue();
+  let queue = SaveQueue.emptyQueue();
   let timer = 0;
   let opened = 0; // counts open(): a Save as that lands after another script opened must leave that script alone
 
@@ -80,7 +80,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     if (req.force || !req.fileModified) return 0;
     const f = await files.file(handle);
     if (f.lastModified <= req.fileModified) return 0;
-    return Q.changedOnDisk(req, { lastModified: f.lastModified, text: await f.text() }) ? f.lastModified : 0;
+    return SaveQueue.changedOnDisk(req, { lastModified: f.lastModified, text: await f.text() }) ? f.lastModified : 0;
   }
   // Write a left script's snapshot straight to its own file, with auto-save rules: no permission prompt, and the
   // changed-on-disk check. `script` is never touched.
@@ -100,7 +100,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     if (!editor.ready()) return;
     if (script.saving) {
       // Auto-save without a file does nothing; a click without a file waits for its turn to pick one.
-      if (script.handle || !auto) queue = Q.queueSave(queue, request(force, auto));
+      if (script.handle || !auto) queue = SaveQueue.queueSave(queue, request(force, auto));
       return;
     }
     // Auto-save only writes to a file that is already open; it never asks where to save.
@@ -143,17 +143,17 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
       if (handle === script.handle) script.saveError = e?.message || "Could not save.";
     }
     if (!written && handle !== script.handle) keepDraft(name, text);
-    queue = Q.settleQueue(queue, written);
+    queue = SaveQueue.settleQueue(queue, written);
     return drain(false);
   }
   // Scripts the person left go straight to their own files; requests that arrive meanwhile keep waiting. Then the
   // open script's own waiting request runs.
   async function drain(moved) {
     for (;;) {
-      const { left, current } = Q.splitQueue(queue, script.handle);
-      if (!left.length) { queue = Q.emptyQueue(); script.saving = false; finish(current, moved); return; }
+      const { left, current } = SaveQueue.splitQueue(queue, script.handle);
+      if (!left.length) { queue = SaveQueue.emptyQueue(); script.saving = false; finish(current, moved); return; }
       queue = { waiting: current, left: [] };
-      for (const snap of left) queue = Q.settleQueue(queue, await writeLeft(snap));
+      for (const snap of left) queue = SaveQueue.settleQueue(queue, await writeLeft(snap));
     }
   }
   function finish(current, moved) {
@@ -222,7 +222,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     if (mine !== opened) return drain(true);
     script.saving = false;
     // Requests made during a save-as belonged to the old place; the new file is now current.
-    queue = Q.emptyQueue();
+    queue = SaveQueue.emptyQueue();
     on.done(true);
     schedule();
   }
@@ -244,7 +244,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
       if (editor.doc() === doc) script.saveError = e?.message || "Could not save.";
     }
     script.saving = false;
-    queue = Q.emptyQueue();
+    queue = SaveQueue.emptyQueue();
     on.done(true);
     schedule();
   }
