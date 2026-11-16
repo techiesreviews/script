@@ -42,7 +42,7 @@ const CUE_IDS_MAX = 2 * SCRIPT_LIMITS.markdown + CUE_LIMITS.cues * 60;
 // The largest call is unmark_cue's cueIds (a whole script in set_script is smaller), and JSON may spell each character
 // in six bytes (\uXXXX). A body bigger than that is refused before it is read in full; the per-field
 // limits are checked after.
-export const BODY_MAX = CUE_IDS_MAX * 6 + 64 * 1024;
+export const BODY_MAX = (CUE_IDS_MAX + CUE_LIMITS.cues * LIMITS.quote) * 6 + 64 * 1024; // with a quote on every cue
 // The body, read with a running count: past `max` bytes it stops (null). No decoding (the picture upload passes the
 // bytes on as they are).
 export async function readUpTo(body, max) {
