@@ -25,7 +25,7 @@ Lex (2026-11-16, Orbit TOOLS-305, pick 1 of the TOOLS-296 review): a faster, saf
 
 ## Done
 
-Feature list: no change (cache and security headers; nothing on screen changes).
+Feature list: no change (cache and security headers; nothing on screen changes)
 
 ### Proof
 
