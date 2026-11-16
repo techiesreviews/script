@@ -2,32 +2,13 @@
 // working together (/api/room) and MCP (/mcp).
 import { Relay } from "./relay.js";
 import { Room, PROTOCOL as ROOM_PROTOCOL } from "./room.js";
-import { handleMcp, TOKEN_RE, checkToken, newToken } from "./mcp.js";
+import { handleMcp, TOKEN_RE, checkToken, newToken, readUpTo } from "./mcp.js";
 import { IMAGE_UPLOAD_MAX, IMAGE_TYPES } from "../public/broll.js";
+import { ROOM_RE, KEY_RE } from "../public/together/link.js";
 
 export { Relay, Room };
-const ROOM_RE = /^[A-Za-z0-9_-]{22}$/;
-const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 // A picture from the agent (step K): /mcp/images/<the token's hash>/<a one-time code the tab gave out>.
 const IMAGE_PATH_RE = /^\/mcp\/images\/([0-9a-f]{64})\/([A-Za-z0-9_-]{22})$/;
-// The body, read with a running count: past `max` bytes it stops (null). No decoding: the bytes go on as they are.
-async function readUpTo(body, max) {
-  if (!body) return new Uint8Array(0);
-  const reader = body.getReader();
-  const chunks = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) { reader.cancel().catch(() => {}); return null; }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(size);
-  let at = 0;
-  for (const c of chunks) { bytes.set(c, at); at += c.byteLength; }
-  return bytes;
-}
 
 async function sha256hex(text) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));

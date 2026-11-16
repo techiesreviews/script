@@ -2,8 +2,8 @@
 // frames beside the lines, the storyboard, the shot card, dragging a shot to other lines, the agent's suggestions,
 // sketches and pictures. app.js loads it with import() the first time a script needs it, so opening a script without
 // B-roll downloads none of this (nor broll.js), and talks to it only through what createBroll returns.
-import * as D from "./doc.js";
-import * as B from "./broll.js";
+import * as Doc from "./doc.js";
+import * as Broll from "./broll.js";
 import { startPress, HOLD_MS } from "./press.js";
 
 // Bump with any change to the host createBroll takes or the interface it returns: app.js checks it, so a tab opened
@@ -31,7 +31,7 @@ export function createBroll(host) {
 
   /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
   const KIND_ICON = { broll: "film", motion: "motion", screen: "screen" };
-  const KIND_NAME = B.KIND_NAME;
+  const KIND_NAME = Broll.KIND_NAME;
   const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
   // A shot being dragged to other paragraphs (steps L, L2), and whether the next click ends a drag.
   const mv = { drag: null, dropped: false };
@@ -102,8 +102,8 @@ export function createBroll(host) {
     adoptBroll(text);
   }
   function adoptBroll(text) {
-    const { shots, sketches } = B.parseBroll(text);
-    if (state.doc) B.matchShots(state.doc, shots);
+    const { shots, sketches } = Broll.parseBroll(text);
+    if (state.doc) Broll.matchShots(state.doc, shots);
     for (const s of shots) s.check = !!broll.flags[s.id];
     Object.assign(broll, { text, shots, sketches, status: "ok", err: "" });
     if (broll.lit && !shotById(broll.lit)) broll.lit = null;
@@ -113,22 +113,22 @@ export function createBroll(host) {
   // After a reload or restore the block ids are new: match every shot again. Otherwise only the ones not found.
   function rematchBroll(all) {
     if (broll.status !== "ok" || !state.doc) return;
-    const list = B.spokenBlocks(state.doc);
+    const list = Broll.spokenBlocks(state.doc);
     let moved = false;
     for (const s of broll.shots) {
       if (!all && covered(s).length) continue;
-      const ids = B.matchOver(list, s.over);
+      const ids = Broll.matchOver(list, s.over);
       if (!ids.length && !all) continue;
       if (ids.join() !== (s.blockIds || []).join()) moved = true;
       s.blockIds = ids;
-      s.sig = B.coverText(state.doc, ids);
+      s.sig = Broll.coverText(state.doc, ids);
     }
     if (moved) renderBroll();
   }
   // A covered line changed (typing, Keep, undo): its shot gets "Check".
   function brollTouched() {
     if (broll.status !== "ok" || !state.doc) return;
-    if (!B.touchShots(state.doc, broll.shots).length) { placeFrames(); return; }
+    if (!Broll.touchShots(state.doc, broll.shots).length) { placeFrames(); return; }
     syncFlags();
     renderBroll();
   }
@@ -230,7 +230,7 @@ export function createBroll(host) {
       const boxes = $$(".broll-tags", scriptEl);
       for (const b of boxes) b.style.removeProperty("--push");
       const wide = boxes.filter((b) => getComputedStyle(b).position === "absolute");
-      const pushes = B.stackPushes(wide.map((b) => { const r = b.getBoundingClientRect(); return { top: r.top, height: r.height }; }));
+      const pushes = Broll.stackPushes(wide.map((b) => { const r = b.getBoundingClientRect(); return { top: r.top, height: r.height }; }));
       wide.forEach((b, i) => { if (pushes[i]) b.style.setProperty("--push", `${pushes[i]}px`); });
       if (mv.drag?.on) dragTo(mv.drag); // a dragged frame keeps to its landing place
     });
@@ -350,7 +350,7 @@ export function createBroll(host) {
   }
   function boardHead() {
     if (state.guest) return broll.status === "ok" ? `<div class="board__file">${icon("film")}<span class="board__name">${esc(broll.link?.name || "B-roll list")}</span></div>` : "";
-    const show = B.boardHeadState(broll.link, broll.status);
+    const show = Broll.boardHeadState(broll.link, broll.status);
     const more = planAction() + keepAllAction();
     if (show.link) return `<button class="board__link" type="button" data-act="link">${icon("film")}Link B-roll list…</button>${more}`;
     const name = esc(broll.link.name || "B-roll list");
@@ -389,7 +389,7 @@ export function createBroll(host) {
       const counts = filterCounts(real);
       const current = boardFilter(real);
       const chips = counts.map(([id, name, , n]) => `<button class="chip" type="button" data-act="filter" data-filter="${id}" aria-pressed="${id === current[0]}">${name} · ${n}</button>`).join("");
-      const order = B.scriptOrder(state.doc, [...real.filter(current[2]), ...(current[0] === "all" ? adds : [])]);
+      const order = Broll.scriptOrder(state.doc, [...real.filter(current[2]), ...(current[0] === "all" ? adds : [])]);
       const found = order.filter((s) => covered(s).length), lost = order.filter((s) => !covered(s).length);
       body = (chips ? `<div class="board__filters" role="group" aria-label="Show">${chips}</div>` : "")
         + (found.length ? `<ol class="board__grid">${found.map((s) => boardFrame(s, false)).join("")}</ol>` : "")
@@ -436,7 +436,7 @@ export function createBroll(host) {
     if (!missing.length) return null;
     const old = sketchAsk();
     if (old) closeAsk(old, old.status === "answered" ? "kept" : "cancelled");
-    const ask = D.makeAsk(state.doc, { scope: "broll", action: "sketch", by: me });
+    const ask = Doc.makeAsk(state.doc, { scope: "broll", action: "sketch", by: me });
     ask.shots = missing.map((s) => ({ id: s.id, what: s.what, over: s.over, kind: s.kind }));
     state.asks.push(ask);
     emit("created", ask);
@@ -473,14 +473,14 @@ export function createBroll(host) {
   }
   // A picture for a shot in the list (step K2) goes into the list at once, lightly marked, with Undo, like a replace
   // answer; a line drawing still waits for Keep. If the write fails it stays waiting, with Keep and "Not saved".
-  const putsInAtOnce = (shotId, sketch) => B.isImage(sketch) && broll.status === "ok" && !!shotById(shotId) && !state.guest;
+  const putsInAtOnce = (shotId, sketch) => Broll.isImage(sketch) && broll.status === "ok" && !!shotById(shotId) && !state.guest;
   // → "in"; "waits" (not written: Keep, Undo and "Not saved" show, or another write for the shot runs; or the same list
   // was read again and the write failed, so Keep works again); or "changed" (another list or script: nothing waits).
   async function pictureInAtOnce(ask, id, pic) {
     const prev = broll.sketches[id] || "", token = broll.token;
     const wrote = await keepSketch(id);
     if (token !== broll.token) {
-      const outcome = B.afterListMoved({ live: sketchAsk() === ask, pending: ask.answer?.sketches?.[id] === pic, written: wrote === "written" });
+      const outcome = Broll.afterListMoved({ live: sketchAsk() === ask, pending: ask.answer?.sketches?.[id] === pic, written: wrote === "written" });
       if (outcome !== "changed") {
         // The same list read again ("Allow"): the write went into its file, or Keep works again.
         delete broll.saving[id];
@@ -492,10 +492,10 @@ export function createBroll(host) {
           // The read may have taken the file before the write: read it again, so what shows and later writes have it.
           // It waits its turn in the write queue (no write queued before it is overtaken) and keeps the token (writes
           // under way go on). The token is taken before waiting, so any list change while it waits skips the read.
-          // No browser step covers a list change during this wait; B.rereadAfterIn is unit-tested.
+          // No browser step covers a list change during this wait; Broll.rereadAfterIn is unit-tested.
           const t = broll.token;
           await broll.reading?.catch(() => {});
-          const run = brollWrites.then(() => (B.rereadAfterIn({ token: t, now: broll.token, shown: broll.sketches[id], pic, link: broll.link }) ? readBroll(t, false) : null));
+          const run = brollWrites.then(() => (Broll.rereadAfterIn({ token: t, now: broll.token, shown: broll.sketches[id], pic, link: broll.link }) ? readBroll(t, false) : null));
           brollWrites = run.catch(() => {});
           await run.catch(() => {});
         }
@@ -507,7 +507,7 @@ export function createBroll(host) {
       if (!isOpen(ask) && ask.answer?.done && !ask.answer.done[id] && ask.answer.sketches?.[id] === pic) {
         delete ask.answer.sketches[id];
         ask.answer.done[id] = "undone";
-        ask.status = B.sketchStatus(ask.answer.done);
+        ask.status = Broll.sketchStatus(ask.answer.done);
         changed();
       }
       return "changed";
@@ -518,8 +518,8 @@ export function createBroll(host) {
     return "in";
   }
   // sketch_shot answers once the picture is written, but within the Worker's 10 s for a call: after 7 s it says the
-  // picture is still being written (B.sketchAnswer), and its place is freed only once it went in.
-  const sketchAnswer = (atOnce, left = []) => B.sketchAnswer(atOnce, left, B.SKETCH_ANSWER_MS);
+  // picture is still being written (Broll.sketchAnswer), and its place is freed only once it went in.
+  const sketchAnswer = (atOnce, left = []) => Broll.sketchAnswer(atOnce, left, Broll.SKETCH_ANSWER_MS);
   // Undo puts back what the shot had before (a sketch, or none), if the agent's picture is still there.
   async function undoMarked(id) {
     const m = broll.marked[id];
@@ -532,13 +532,13 @@ export function createBroll(host) {
     delete broll.problem[id];
     renderBroll();
     try {
-      await changeList((md) => (m.prev ? B.setSketch(md, id, m.prev) : B.removeSketch(md, id)));
+      await changeList((md) => (m.prev ? Broll.setSketch(md, id, m.prev) : Broll.removeSketch(md, id)));
       if (token !== broll.token) return;
       delete broll.marked[id];
       const ask = state.asks.find((a) => a.id === m.askId);
       if (ask?.answer?.done) {
         ask.answer.done[id] = "undone";
-        if (!isOpen(ask)) ask.status = B.sketchStatus(ask.answer.done);
+        if (!isOpen(ask)) ask.status = Broll.sketchStatus(ask.answer.done);
       }
       changed();
     } catch (e) {
@@ -551,7 +551,7 @@ export function createBroll(host) {
   function settleSketches(ask) {
     const done = ask.answer?.done || {};
     if (!ask.shots.every((s) => done[s.id])) return;
-    closeAsk(ask, B.sketchStatus(done));
+    closeAsk(ask, Broll.sketchStatus(done));
   }
   function undoSketch(id) {
     const ask = sketchAsk();
@@ -568,7 +568,7 @@ export function createBroll(host) {
   // → "kept"; "written" (written into the list file, but the list moved meanwhile); "failed"; or undefined (nothing to do).
   async function keepSketch(id) {
     const ask = sketchAsk();
-    const svg = B.cleanSketch(ask?.answer?.sketches?.[id] || "");
+    const svg = Broll.cleanSketch(ask?.answer?.sketches?.[id] || "");
     if (!svg || broll.saving[id]) return;
     const token = broll.token;
     broll.saving[id] = true;
@@ -609,20 +609,20 @@ export function createBroll(host) {
     if (link.handle) {
       if (!(await permitted(link.handle, true))) throw new Error(`No permission to write ${link.handle.name}.`);
       const now = await (await link.handle.getFile()).text();
-      const next = await lighterList(B.setSketch(now, id, svg));
+      const next = await lighterList(Broll.setSketch(now, id, svg));
       still();
       await writeHandle(link.handle, next);
       if (token !== broll.token) return;
       broll.text = next;
-      broll.sketches = B.parseBroll(next).sketches; // other pictures may have been made lighter
+      broll.sketches = Broll.parseBroll(next).sketches; // other pictures may have been made lighter
     } else {
       // The demo list and lists without a file handle are kept in this browser (see keepList).
-      const next = await lighterList(B.setSketch(broll.text, id, svg));
+      const next = await lighterList(Broll.setSketch(broll.text, id, svg));
       still();
       await keepList(next, state.name); // the token says it is still open, so its name now is its own
       if (token !== broll.token) return;
       broll.text = next;
-      broll.sketches = B.parseBroll(next).sketches;
+      broll.sketches = Broll.parseBroll(next).sketches;
     }
   }
   // Every save of a B-roll list shrinks its big pictures (step K4, Lex 2026-10-29): a list made elsewhere, or pictures
@@ -630,10 +630,10 @@ export function createBroll(host) {
   // about 60 KB). Small pictures and line drawings stay as they are; a picture that can't be read stays too.
   async function lighterList(markdown) {
     let md = markdown;
-    for (const { id, data } of B.bigPictures(md)) {
+    for (const { id, data } of Broll.bigPictures(md)) {
       try {
         const pic = await shrinkPicture(await (await fetch(data)).blob());
-        if (B.worthLighter(data, pic.data)) md = B.setSketch(md, id, pic.data); // else as the editor made it: left alone
+        if (Broll.worthLighter(data, pic.data)) md = Broll.setSketch(md, id, pic.data); // else as the editor made it: left alone
       } catch { /* a picture that can't be read stays as it is */ }
     }
     return md;
@@ -682,7 +682,7 @@ export function createBroll(host) {
   }
   // The first Add without a list makes one: a file next to the script where the browser can, else kept here.
   async function startList() {
-    const text = B.newList(D.titleOf(state.doc) || baseName());
+    const text = Broll.newList(Doc.titleOf(state.doc) || baseName());
     const name = `${baseName()}-broll.md`;
     const token = ++broll.token;
     let link = null;
@@ -819,16 +819,16 @@ export function createBroll(host) {
     renderShotCard();
     try {
       if (mode === "add") {
-        const over = B.overFor(state.doc, sc.sel || []);
+        const over = Broll.overFor(state.doc, sc.sel || []);
         if (broll.status === "none") await startList();
         if (broll.status !== "ok") throw new Error("The B-roll list can't be read.");
         // The id comes from the newest text, so a file changed elsewhere still gets a free one.
         await changeList((md) => {
-          const now = B.parseBroll(md);
-          return B.addShot(md, { id: B.nextShotId(now.shots, kind, now.sketches), kind, what, over, how });
+          const now = Broll.parseBroll(md);
+          return Broll.addShot(md, { id: Broll.nextShotId(now.shots, kind, now.sketches), kind, what, over, how });
         });
       } else {
-        await changeList((md) => B.updateShot(md, id, { kind, what, how }));
+        await changeList((md) => Broll.updateShot(md, id, { kind, what, how }));
       }
       sc.busy = false;
       closeShotCard(true);
@@ -840,7 +840,7 @@ export function createBroll(host) {
     sc.busy = true;
     renderShotCard();
     try {
-      await changeList((md) => B.removeShot(md, id));
+      await changeList((md) => Broll.removeShot(md, id));
       // A sketch the agent was asked for, or one waiting for Keep or Undo, goes with the shot.
       const ask = sketchAsk();
       if (ask?.shots?.some((s) => s.id === id) && !ask.answer?.done?.[id]) {
@@ -869,7 +869,7 @@ export function createBroll(host) {
   // a few pixels, a finger after a hold (a quick swipe still scrolls, a tap still opens the card). While dragging, its
   // frame jumps to where it will sit beside the spoken paragraph under the pointer (or the nearest one); the drop puts
   // it there. The title, the front matter, outside the script or Escape leave it where it was.
-  const spokenList = () => (state.doc ? B.spokenBlocks(state.doc) : []);
+  const spokenList = () => (state.doc ? Broll.spokenBlocks(state.doc) : []);
   // The spoken paragraph a point is in, or null (a heading, the title, a frame, anything outside the script).
   function paraAt(target) {
     const el = target?.closest?.(".block");
@@ -881,15 +881,15 @@ export function createBroll(host) {
     for (const l of $$(".line[data-target]", scriptEl)) delete l.dataset.target;
     ids.forEach((id, i) => { const w = wrapOf(id); if (w) w.dataset.target = i < ids.length - 1 ? "on" : "last"; });
   }
-  const targetFor = (id, para) => { const s = shotById(id); return s && para ? B.moveTo(spokenList(), covered(s), para) : []; };
+  const targetFor = (id, para) => { const s = shotById(id); return s && para ? Broll.moveTo(spokenList(), covered(s), para) : []; };
   // Only the shot's Over is written again; it shows in its new place once the list is written. Moving it is checking it.
   async function moveShot(id, sel) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
-    const over = B.moveOver(state.doc, covered(s), sel);
+    const over = Broll.moveOver(state.doc, covered(s), sel);
     if (!over) return; // onto the lines it covers already
     const token = broll.token;
-    try { await changeList((md) => B.updateShot(md, id, { over })); }
+    try { await changeList((md) => Broll.updateShot(md, id, { over })); }
     catch (err) {
       // "Not saved" in the card, where its other changes show it; the shot stays where it was.
       if (token !== broll.token || !shotById(id)) return;
@@ -915,7 +915,7 @@ export function createBroll(host) {
       const r = w && !w.closest("details:not([open])") ? w.getBoundingClientRect() : null;
       if (r?.height) paras.push({ id: b.id, top: r.top, bottom: r.bottom });
     }
-    return B.snapPara(paras, y);
+    return Broll.snapPara(paras, y);
   }
   // Where the dragged frame will sit beside a paragraph after the drop, as a shift from its own place. Nothing else in
   // the margin moves meanwhile. Wide screens: the margin column, stacked as placeFrames will stack it. Narrow ones: in
@@ -943,7 +943,7 @@ export function createBroll(host) {
       }
       if (!box) boxes.push({ b: null, top: line.getBoundingClientRect().top + edge, height: r.height });
       boxes.sort((p, q) => p.top - q.top);
-      const pushes = B.stackPushes(boxes);
+      const pushes = Broll.stackPushes(boxes);
       const i = boxes.findIndex((x) => x.b === (box || null));
       const offset = before.reduce((sum, k) => sum + k.getBoundingClientRect().height + gap, 0);
       return { x: 0, y: Math.round(boxes[i].top + pushes[i] + offset - at.top) };
@@ -973,7 +973,7 @@ export function createBroll(host) {
     if (mv.drag !== d || !d.on) return;
     const toc = $(".toc");
     const top = Math.max(scriptView().top, toc && getComputedStyle(toc).position === "sticky" ? toc.getBoundingClientRect().bottom : 0);
-    const v = B.edgeSpeed(d.py, top, scriptView().bottom), y = scrollY;
+    const v = Broll.edgeSpeed(d.py, top, scriptView().bottom), y = scrollY;
     if (v) { personInput(); scrollBy(0, v); }
     dragTo(d);
     // motion-exception: the edge scroll goes on frame by frame while a dragged shot is held near the edge
@@ -1039,7 +1039,7 @@ export function createBroll(host) {
     d.px = p.px;
     d.py = p.py;
     dragTo(d);
-    const sel = d.to.length && state.doc ? B.wholeParas(state.doc, d.to) : null;
+    const sel = d.to.length && state.doc ? Broll.wholeParas(state.doc, d.to) : null;
     putBack(d, !!sel);
     mv.dropped = true;
     if (sel) moveShot(d.id, sel).finally(() => { if (d.el.isConnected) d.el.style.translate = ""; });
@@ -1081,7 +1081,7 @@ export function createBroll(host) {
     let dropped = 0;
     for (const a of state.asks) {
       if (!isBrollAnswer(a)) continue;
-      const n = B.dropGone(a.answer, shots, (i) => !!broll.saving[`${a.id}:${i}`]);
+      const n = Broll.dropGone(a.answer, shots, (i) => !!broll.saving[`${a.id}:${i}`]);
       if (n) { dropped += n; settleSuggestions(a); }
     }
     if (dropped) changed();
@@ -1099,9 +1099,9 @@ export function createBroll(host) {
   // Suggested adds look like shots; their lines are found from the Over each time, so an edit can move one to
   // "Not found in the script", where it can still be kept or undone.
   function suggestedAdds() {
-    const list = state.doc ? B.spokenBlocks(state.doc) : [];
+    const list = state.doc ? Broll.spokenBlocks(state.doc) : [];
     return openSuggestions().filter((x) => x.c.op === "add")
-      .map((x) => ({ ...x, suggested: true, kind: x.c.kind, what: x.c.what, how: x.c.how, over: x.c.over, why: x.c.why, sketch: x.c.sketch || "", blockIds: B.matchOver(list, x.c.over) }));
+      .map((x) => ({ ...x, suggested: true, kind: x.c.kind, what: x.c.what, how: x.c.how, over: x.c.over, why: x.c.why, sketch: x.c.sketch || "", blockIds: Broll.matchOver(list, x.c.over) }));
   }
   let addsSig = "";
   function refreshSuggestions() {
@@ -1144,7 +1144,7 @@ export function createBroll(host) {
   /* "Plan B-roll": one ask for the whole script. */
   function requestPlan() {
     if (!state.doc || planAsk()) return null;
-    const ask = D.makeAsk(state.doc, { scope: "broll", action: "plan", by: me });
+    const ask = Doc.makeAsk(state.doc, { scope: "broll", action: "plan", by: me });
     state.asks.push(ask);
     emit("created", ask);
     renderBroll();
@@ -1177,13 +1177,13 @@ export function createBroll(host) {
   /* "Keep all" and "Undo all" for the agent's pictures (step Q): in a row at the top of the script and the storyboard,
      from two pictures on. Each picture goes the way its own Keep or Undo goes; a kept picture has no Undo afterwards, like a single Keep. */
   function imagesOpen() {
-    if (state.guest || !state.doc) return B.pendingImages(); // guests see the pictures; the host keeps or undoes them
+    if (state.guest || !state.doc) return Broll.pendingImages(); // guests see the pictures; the host keeps or undoes them
     // Only what is in sight: over the script the shots with a frame, over the storyboard the shots its filter shows.
     const board = ui.view === "board";
     const real = broll.status === "ok" ? broll.shots : [];
     const filter = boardFilter(real);
     const inScript = (s) => !!wrapOf(covered(s)[0]);
-    return B.pendingImages({
+    return Broll.pendingImages({
       shotIds: real.filter((s) => (board ? filter[2](s) : inScript(s))).map((s) => s.id),
       waiting: sketchAsk()?.answer?.sketches,
       marked: Object.keys(broll.marked).filter(markedSketch),
@@ -1258,7 +1258,7 @@ export function createBroll(host) {
     return c ? { ask, n, c, key } : null;
   }
   function settleSuggestions(ask) {
-    const status = B.settleBroll(ask.answer);
+    const status = Broll.settleBroll(ask.answer);
     if (!status) return;
     closeAsk(ask, status);
     if (ask.scope === "selection" && byId(ask.blockId)) renderBlock(ask.blockId, getCaret());
@@ -1286,9 +1286,9 @@ export function createBroll(host) {
       if (broll.status !== "ok") throw new Error("The B-roll list can't be read.");
       // One queued write: every change in order, each add with the next free id at that moment. Only a change that
       // really applied counts as kept; one whose shot is gone becomes undone.
-      const changes = items.flatMap((x) => B.changesToKeep(x.ask.answer, [x.n]));
+      const changes = items.flatMap((x) => Broll.changesToKeep(x.ask.answer, [x.n]));
       let report = null;
-      await changeList((md) => { report = B.applyBrollChangesReport(md, changes); return report.markdown; });
+      await changeList((md) => { report = Broll.applyBrollChangesReport(md, changes); return report.markdown; });
       items.forEach((x, i) => { x.c.state = report?.applied[i] ? "kept" : "undone"; });
       for (const ask of new Set(items.map((x) => x.ask))) settleSuggestions(ask);
       changed();
@@ -1306,7 +1306,7 @@ export function createBroll(host) {
   // a call that uses it frees its place at once (step K2); the picture then lives in the shot or the suggestion.
   // Only pictures not used yet hold a place: 24, a whole storyboard in one go (at most about 10 MB in memory).
   const UPLOAD_MS = 15 * 60_000, PICTURE_MS = 30 * 60_000, PICTURES_MAX = 24;
-  const pictureRoom = () => B.pictureRoom(pictures.values(), Date.now(), { max: PICTURES_MAX, uploadMs: UPLOAD_MS, pictureMs: PICTURE_MS });
+  const pictureRoom = () => Broll.pictureRoom(pictures.values(), Date.now(), { max: PICTURES_MAX, uploadMs: UPLOAD_MS, pictureMs: PICTURE_MS });
   const pictures = new Map(); // id → { at, data: "" (waiting for the file) | data address }
   function prunePictures() {
     const now = Date.now();
@@ -1317,8 +1317,8 @@ export function createBroll(host) {
   async function pictureAddress() {
     prunePictures();
     const room = pictureRoom();
-    if (!room.free) return { error: B.noRoomMessage(room, PICTURES_MAX, Date.now()) };
-    const id = D.newId(22);
+    if (!room.free) return { error: Broll.noRoomMessage(room, PICTURES_MAX, Date.now()) };
+    const id = Doc.newId(22);
     pictures.set(id, { at: Date.now(), data: "" });
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(agent.token));
     const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -1337,7 +1337,7 @@ export function createBroll(host) {
     prunePictures();
     const p = pictures.get(m.code);
     if (!p || p.data || p.busy || state.guest) return replyPicture(m.id, { error: "This address is not valid (any more). Call upload_image again." });
-    if (!B.IMAGE_TYPES.includes(m.mime)) return replyPicture(m.id, { error: "Send a PNG, JPEG or WebP picture." });
+    if (!Broll.IMAGE_TYPES.includes(m.mime)) return replyPicture(m.id, { error: "Send a PNG, JPEG or WebP picture." });
     incoming.set(m.id, { code: m.code, mime: m.mime, parts, size: Number(m.size), list: [], got: 0, at: Date.now() });
   }
   function receivePictureBytes(buf) {
@@ -1359,16 +1359,16 @@ export function createBroll(host) {
       replyPicture(id, { result: { imageId: x.code, width: pic.width, height: pic.height } });
     }, (e) => { pictures.delete(x.code); replyPicture(id, { error: e?.message || "The editor could not read the picture." }); });
   }
-  // Cut to the storyboard frame and made small in this browser (step K3, B.pictureFit): at most 640 × 345, WebP (JPEG
-  // where the browser can't make WebP), stepping down quality and size until it fits B.PICTURE_BUDGET.
+  // Cut to the storyboard frame and made small in this browser (step K3, Broll.pictureFit): at most 640 × 345, WebP (JPEG
+  // where the browser can't make WebP), stepping down quality and size until it fits Broll.PICTURE_BUDGET.
   async function shrinkPicture(blob) {
     let bitmap;
     try { bitmap = await createImageBitmap(blob); }
     catch { throw new Error("The editor could not read the picture. Send a PNG, JPEG or WebP file."); }
     try {
       const results = [];
-      for (const [scale, quality] of B.PICTURE_STEPS) {
-        const fit = B.pictureFit(bitmap.width, bitmap.height, scale);
+      for (const [scale, quality] of Broll.PICTURE_STEPS) {
+        const fit = Broll.pictureFit(bitmap.width, bitmap.height, scale);
         const canvas = document.createElement("canvas");
         Object.assign(canvas, { width: fit.width, height: fit.height });
         const g = canvas.getContext("2d");
@@ -1379,10 +1379,10 @@ export function createBroll(host) {
         let data = canvas.toDataURL("image/webp", quality);
         if (!data.startsWith("data:image/webp")) data = canvas.toDataURL("image/jpeg", quality);
         results.push({ data, width: fit.width, height: fit.height });
-        if (B.isImage(data) && data.length <= B.PICTURE_BUDGET) break;
+        if (Broll.isImage(data) && data.length <= Broll.PICTURE_BUDGET) break;
       }
       // The first step within the budget; a very busy picture keeps the smallest, still far under the list's limit.
-      const pic = B.pickPicture(results);
+      const pic = Broll.pickPicture(results);
       if (pic) return pic;
     } finally { bitmap.close?.(); }
     throw new Error("The picture could not be made small enough.");
@@ -1392,9 +1392,9 @@ export function createBroll(host) {
     prunePictures();
     const requested = args.imageId != null ? [args.imageId] : (Array.isArray(args.changes) ? args.changes : []).map((c) => c?.imageId).filter((x) => x != null);
     const twice = requested.find((id, i) => requested.indexOf(id) !== i);
-    if (twice != null) return { error: B.sketchTwice(twice) };
+    if (twice != null) return { error: Broll.sketchTwice(twice) };
     const busy = requested.find((id) => pictures.get(id)?.held);
-    if (busy) return { error: B.sketchHeld(busy) };
+    if (busy) return { error: Broll.sketchHeld(busy) };
     const lookup = (id) => pictures.get(id)?.data || "";
     const unknown = (id) => ({ error: `Unknown imageId ${JSON.stringify(String(id).slice(0, 40))}: send the picture with upload_image first (an id is good for 30 minutes).` });
     // `used`: the ids to free once the call has gone through (a refused call keeps them, so the agent can try again).
@@ -1421,18 +1421,18 @@ export function createBroll(host) {
   // They come in as an ask of the agent's own (own: true), already answered, so they show and are kept or undone
   // exactly like the answer to "Plan B-roll" or "Ask for sketches".
   function ownAsk(action, instruction) {
-    const ask = D.makeAsk(state.doc, { scope: "broll", action, instruction, by: me });
+    const ask = Doc.makeAsk(state.doc, { scope: "broll", action, instruction, by: me });
     Object.assign(ask, { own: true, status: "taken", takenAt: ask.createdAt, takenBy: agentBy() });
     return ask;
   }
   // At most this many of the agent's own changes wait at once: each may carry an 8 KB sketch, and open answers go
   // into the draft and to guests. Own sketches need no limit: one per shot in the list (a new one replaces the waiting
   // one in answer.sketches), in one sketch ask at a time.
-  const OWN_OPEN_MAX = 2 * B.BROLL_LIMITS.changes;
+  const OWN_OPEN_MAX = 2 * Broll.BROLL_LIMITS.changes;
   function ownBroll(args) {
     if (broll.status !== "ok" && broll.status !== "none") return { error: brollUnreadable() };
     const ask = ownAsk("plan", "Your own B-roll suggestions, asked for in your chat.");
-    const checked = B.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
+    const checked = Broll.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
     if (checked.error) return { error: checked.error };
     const waiting = openSuggestions().filter((x) => x.ask.own).length;
     if (waiting + checked.answer.changes.length > OWN_OPEN_MAX) {
@@ -1447,7 +1447,7 @@ export function createBroll(host) {
     if (broll.status !== "ok") return { error: broll.status === "none" ? "There is no B-roll list yet. Suggest shots with answer_broll (each add can bring its sketch)." : brollUnreadable() };
     const shot = shotById(args.shotId);
     if (!shot) return { error: `shotId must be one of the shots in the list: ${broll.shots.map((s) => s.id).join(", ") || "none yet"}.` };
-    const svg = B.checkSketch({ scope: "broll", action: "sketch", status: "taken", shots: [shot] }, args);
+    const svg = Broll.checkSketch({ scope: "broll", action: "sketch", status: "taken", shots: [shot] }, args);
     if (svg.error) return { error: svg.error };
     // One sketch ask at a time: an open one (also the person's) takes the shot in, else a new one of the agent's own.
     let ask = sketchAsk();
@@ -1460,7 +1460,7 @@ export function createBroll(host) {
     if (!ask.shots.some((s) => s.id === shot.id)) ask.shots.push({ id: shot.id, what: shot.what, over: shot.over, kind: shot.kind });
     const atOnce = receiveSketch(ask, shot.id, svg.svg, agentBy());
     const left = ask.own ? [] : ask.shots.filter((s) => !ask.answer.sketches[s.id] && !ask.answer.done[s.id]).map((s) => s.id);
-    if (!atOnce) return { result: B.sketchResult("shown", left) };
+    if (!atOnce) return { result: Broll.sketchResult("shown", left) };
     // The answer waits for the write (at most 7 s), so it says what really happened.
     return sketchAnswer(atOnce, left);
   }
@@ -1473,10 +1473,10 @@ export function createBroll(host) {
   /* ---------- What the app asks of the B-roll part ---------- */
   // The B-roll list and the storyboard, as the single exports and "Export all" give them.
   function brollExports() {
-    const shots = B.scriptOrder(state.doc, broll.shots), title = D.titleOf(state.doc) || baseName();
+    const shots = Broll.scriptOrder(state.doc, broll.shots), title = Doc.titleOf(state.doc) || baseName();
     return [
-      { name: `${baseName()}-broll.md`, text: B.exportBroll(shots, broll.sketches, { title }) },
-      { name: `${baseName()}-storyboard.html`, text: B.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }) },
+      { name: `${baseName()}-broll.md`, text: Broll.exportBroll(shots, broll.sketches, { title }) },
+      { name: `${baseName()}-storyboard.html`, text: Broll.exportStoryboard(shots, broll.sketches, { title, missing: (s) => !covered(s).length }) },
     ];
   }
   // The agent's B-roll tools: upload_image, sketch_shot and answer_broll (the app's handleCall passes them on).
@@ -1488,14 +1488,14 @@ export function createBroll(host) {
       const used = withPictures(args);
       if (used.error) return send({ error: used.error });
       args = used.args;
-      // Held from now on, so no other call can use them meanwhile (B.freeAfter settles them with the answer).
+      // Held from now on, so no other call can use them meanwhile (Broll.freeAfter settles them with the answer).
       for (const u of used.used) { const p = pictures.get(u); if (p) p.held = true; }
       // Gone through: the pictures now live in the shot or the suggestion, and their places are free (step K2).
       // An answer sent while the picture is still being written (`later`) holds its id (no second use) and frees it
-      // only once it went in; if the list changed or the write failed, the id works again (B.freeAfter).
+      // only once it went in; if the list changed or the write failed, the id works again (Broll.freeAfter).
       if (used.used.length) {
         const each = (fn) => () => { for (const u of used.used) fn(u); };
-        send = (payload) => reply(B.freeAfter(payload, {
+        send = (payload) => reply(Broll.freeAfter(payload, {
           free: each((u) => pictures.delete(u)),
           release: each((u) => { const p = pictures.get(u); if (p) delete p.held; }),
         }));
@@ -1509,10 +1509,10 @@ export function createBroll(host) {
       }
       if (args.askId == null) { const out = ownSketch(args); return out instanceof Promise ? void out.then(send, failed) : send(out); }
       const ask = state.asks.find((a) => a.id === args.askId);
-      const checked = B.checkSketch(ask, args);
+      const checked = Broll.checkSketch(ask, args);
       if (checked.error) return send({ error: checked.error });
       const atOnce = receiveSketch(ask, args.shotId, checked.svg, agentBy());
-      if (!atOnce) return send({ result: B.sketchResult("shown") });
+      if (!atOnce) return send({ result: Broll.sketchResult("shown") });
       return void sketchAnswer(atOnce).then(send, failed);
     } catch (e) {
       failed(e);
@@ -1520,13 +1520,13 @@ export function createBroll(host) {
   }
   // An agent's answer to a B-roll ask, checked against the list: "" once it shows, else why not.
   function answerBroll(ask, args, by) {
-    const checked = B.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
+    const checked = Broll.checkBrollAnswer(ask, args, { doc: state.doc, shots: broll.status === "ok" ? broll.shots : [] });
     if (checked.error) return checked.error;
     receiveBroll(ask, checked.answer, by);
     return "";
   }
   function sketch(ask, shotId, svg, by) {
-    const checked = B.checkSketch(ask, { shotId, svg });
+    const checked = Broll.checkSketch(ask, { shotId, svg });
     if (checked.error) return checked.error;
     receiveSketch(ask, shotId, checked.svg, by);
     return "";
@@ -1534,7 +1534,7 @@ export function createBroll(host) {
   // Host: the B-roll list as guests get it (in the snapshot and after each change).
   function roomShare() {
     // A large list goes to guests without its pictures (step K): room messages stay small.
-    const text = broll.text.length > 700_000 ? B.withoutPictureLines(broll.text) : broll.text;
+    const text = broll.text.length > 700_000 ? Broll.withoutPictureLines(broll.text) : broll.text;
     return broll.status === "ok" ? { status: "ok", name: broll.link?.name || "B-roll list", text, flags: brollFlags() || {} } : { status: "none" };
   }
   // Guest: the host's B-roll list, shown as the host shows it (no file, no changes from here).
@@ -1551,7 +1551,7 @@ export function createBroll(host) {
   }
 
   // Asks already here when it loads (a restored draft, a guest's copy) are cleaned like the ones that come later.
-  for (const a of state.asks) B.cleanSketches(a);
+  for (const a of state.asks) Broll.cleanSketches(a);
 
   return Object.freeze({
     status: () => broll.status,
@@ -1569,7 +1569,7 @@ export function createBroll(host) {
     touched: brollTouched,
     refreshSuggestions,
     dropGone: () => { if (broll.status === "ok" || broll.status === "none") dropGoneSuggestions(); },
-    cleanSketches: (ask) => B.cleanSketches(ask),
+    cleanSketches: (ask) => Broll.cleanSketches(ask),
     cardOpen: () => !shotCard.hidden,
     openCard: openShotCard,
     positionCard: positionShotCard,
@@ -1584,7 +1584,7 @@ export function createBroll(host) {
     pictureHead: receivePictureHead,
     pictureBytes: receivePictureBytes,
     exports: brollExports,
-    folder: (doc) => (broll.status === "ok" ? { linked: true, shots: B.scriptOrder(doc, broll.shots), sketches: broll.sketches, broll: B } : { linked: false, shots: [], sketches: {} }),
+    folder: (doc) => (broll.status === "ok" ? { linked: true, shots: Broll.scriptOrder(doc, broll.shots), sketches: broll.sketches, broll: Broll } : { linked: false, shots: [], sketches: {} }),
     roomShare,
     adoptRoom,
   });

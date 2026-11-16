@@ -1,7 +1,9 @@
 // Saves that wait while another save runs, kept per script. Pure: no DOM, no files. Imported by the app and the tests.
 //
-// A request is { handle, name, text, savedText, fileModified, force, auto }: everything needed to write that
-// script to its own file later, even after the person has opened another script.
+// A request is { handle, name, text, browser, savedText, force, auto }: everything needed to write that script to
+// its own file later, even after the person has opened another script. A file's name is its handle's (a script may
+// take another name while a request waits); `name` is for a request without a file. `savedText` is the file's words
+// as the tab last wrote or read them: the changed-on-disk check (saving.js) goes by them.
 // The queue is { waiting, left }: `waiting` is the newest script's request; `left` holds snapshots of scripts
 // the person has left, at most one per file.
 
@@ -28,8 +30,8 @@ export function queueSave(queue, request, same = Object.is) {
 
 /** A write finished: later requests for that file compare against what was just written, not the older state. */
 export function settleQueue(queue, written, same = Object.is) {
-  if (!written?.modified) return queue;
-  const fix = (r) => (r && same(r.handle, written.handle) ? { ...r, fileModified: written.modified, savedText: written.text } : r);
+  if (!written) return queue;
+  const fix = (r) => (r && same(r.handle, written.handle) ? { ...r, savedText: written.text } : r);
   return { waiting: fix(queue.waiting), left: queue.left.map(fix) };
 }
 
@@ -38,10 +40,4 @@ export function splitQueue(queue, currentHandle, same = Object.is) {
   const { waiting, left } = queue;
   if (waiting && !same(waiting.handle, currentHandle)) return { left: keepSnapshot(left, waiting, same), current: null };
   return { left, current: waiting };
-}
-
-/** The changed-on-disk check: the file is newer than the last write we know of, and holds other text. */
-export function changedOnDisk(request, file) {
-  if (request.force || !request.fileModified) return false;
-  return file.lastModified > request.fileModified && file.text !== request.savedText;
 }

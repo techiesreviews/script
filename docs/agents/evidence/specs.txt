@@ -25,7 +25,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 15 files, 429003 bytes; on first use: broll-app.js + broll.js, 148925 bytes
+ℹ startup: 16 files, 447326 bytes; on first use: broll-app.js + broll.js, 149034 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -316,6 +316,8 @@
 ✔ mcp: the agent hears that replace and add go into the text at once and can be undone (step F)
 ✔ open_script and set_script: arguments
 ✔ open_script, set_script and list_scripts go to the tab with their arguments
+✔ mcp: a request body bigger than the largest allowed call is refused before it is read in full
+✔ mcp: unmark_cue takes every cueId list_cues gives, also overlapping ones from bold inside a link inside bold
 ✔ press: a mouse lifts after 5 px, moves follow, and a release after the lift is a drop; the listeners go
 ✔ press: a release before the lift is a tap, for a mouse and a finger
 ✔ press: a finger lifts after holding still for HOLD_MS, at where it is; a small wobble is fine
@@ -327,7 +329,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 15 files, 429003 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 16 files, 447326 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -336,14 +338,23 @@
 ✔ share room: sharing stopped (or another script opened) before the part arrives starts no room
 ✔ share room: a part that can't load ends sharing and the button says so; a guest's join says so too
 ✔ share room: a guest joins once the part is here; a join replaced before then starts only the newer one
-✔ share room: a room part that speaks another seam version counts as not loaded, for the host and a guest
+✔ share room: a room part that speaks another seam version counts as not loaded and says to reload, for the host and a guest
 ✔ share button: a copy that lands after sharing failed says nothing was copied and shows no fallback
 ✔ share button: a failed share shows a warning icon and data-failed on the button; a click that shares again clears them
 ✔ share button: a clipboard write from a share that failed, landing after a retry, neither shows its old link nor says Link copied
 ✔ share button: a copy from a share that was stopped, landing after a new share, says nothing and shows no link
-✔ share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says to reload
+✔ share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says so on the button
 ✔ share room: a part that failed during the hover: the click asks for it again and shares
 ✔ share room: the pointer or the focus reaching Share to edit fetches the room's part before the click
+✔ share room: the copy-by-hand box opened while the part loads closes, with its link cleared, when the part then fails
+✔ export menu: a note inside Export all (the orange primary action) reads at 4.5:1 in light and dark, at rest, hovered and pressed
+✔ share button: hovering the failed button keeps a warning background, a little stronger; pressing it still shows the pressed one
+✔ shared facts: the agent token's age and the no-asks answer come from public/agent-link.js
+✔ shared facts: the Worker takes the room id, key and protocol from the tab's room files
+✔ one HTML escape: doc.js's escHtml, used by app.js and broll.js (no copy of their own)
+✔ no dead code: broll.js has no export that only the tests use
+✔ module names: the app's modules import each other under their own names, not one letter
+✔ left-behind copies: app.js gives them the browser's Web Locks (a stand-in in the tab without them), holds the open browser script, and saves with the name held
 ✔ room: the host creates the room; a wrong key or no room is refused
 ✔ room: guests say who they are first, can't pose as someone else, and reach only the host
 ✔ room: the host sends to one guest or to all; the end closes everyone and refuses new joins
@@ -386,8 +397,8 @@
 ✔ save queue: another file keeps the old request as a snapshot and starts a fresh record
 ✔ save queue: A -> B -> A does not carry B's force onto A
 ✔ save queue: a waiting request for a script the person left becomes a snapshot when the save ends
-✔ save queue: the finished write's lastModified feeds the snapshot's changed-on-disk check
-✔ changed on disk: same text or an older file is not a change, force skips the check
+✔ save queue: the finished write's words feed the snapshot's changed-on-disk check
+✔ save queue: a request carries no file time; whether a file changed is decided by its words (saving.js)
 ✔ saving: the interface is small, and app.js reaches saving only through it
 ✔ saving: auto-save waits 1.5 s on the clock it is given, then writes to the open file
 ✔ saving: nothing is scheduled while a "/" command is typed, for a clean script, or after a conflict
@@ -402,8 +413,37 @@
 ✔ saving: another script opened while Save as writes keeps its own file, name, draft and B-roll keys
 ✔ saving: after a Save as that landed with another script open, that script's waiting click runs; a failed write says nothing there
 ✔ saving: scripts left one after another while Save as writes each get their own save, or a draft
+✔ saving: a Ctrl+S on the demo that waits for its Save as never saves or renames another script without a file
+✔ saving: a waiting Ctrl+S without a file never replaces a newer draft the app kept when the script was left
+✔ saving: a waiting Ctrl+S without a file brings back no words the person took out before leaving
+✔ saving: a Ctrl+S on the demo that waits for another script's write never runs on the next script without a file
 ✔ saving: Ctrl+S where neither the browser nor a file picker can save downloads the script
 ✔ saving: drafts are kept by script name, and move with a rename
+✔ saving: a browser copy left behind is deleted by a later listing; two listings at once never delete a script that took the freed name
+✔ saving: a second cleanup waits until the first has freed the name, and leaves a script that took it alone
+✔ saving: a listing frees a name only when its copy is really gone, also if the name was kept again meanwhile
+✔ saving: a listing never shows a left-behind copy that another cleanup deleted while it walked the folder
+✔ saving: a listing keeps a script it can't read the time of, and still shows the scripts when a cleanup fails
+✔ saving: a folder walk that fails partway still shows the scripts found so far, and frees no kept name
+✔ saving: a left-behind copy that was saved into after the move is kept and shows again on the listing that finds it
+✔ saving, two tabs: a browser copy another tab has open is never deleted, not by the move and not by a cleanup; it shows again with that tab's words once the tab leaves it
+✔ saving, two tabs: a copy saved into before the move is not the script that moved: it stays, by the moving tab's own words for it
+✔ saving, two tabs: a save into a copy and a cleanup of it never cross: a running save keeps the copy, a save that comes during the delete waits and is refused
+✔ saving: a left-behind copy that can't be read once stays kept and is tried again, not shown as a second script
+✔ saving: tabLocks stands in for navigator.locks in one tab: shared holders together, an exclusive one alone, in order, and ifAvailable never waits
+✔ saving: a save still runs, once, where the lock can't be asked for; and leaving a script before its lock came frees it
+✔ saving: every save into a browser script holds its name from its start to the end of its write, also the save of a script the person just left
+✔ saving: a name kept without a fingerprint (kept before copies had one) is never deleted: its copy shows again; a name whose copy is gone is freed with its fingerprint
+✔ saving: the changed-on-disk check goes by the file's words, never by its time
+✔ saving: a fingerprint is the SHA-256 of the words as a file holds them
+✔ saving: a left-behind copy is the script that moved only by its words: the same file time with other words stays, the same words under a newer time go
+✔ saving, two tabs: saves into one browser script run one at a time: the second waits for the first's whole save, then finds the file changed
+✔ saving, two tabs: a save that waited while its script took another name, and was then left, holds the file's own name: the other tab's save waits for it
+✔ saving, two tabs: a Save as never deletes the browser copy with words another tab saved into it, whatever file time the moving tab holds
+✔ saving, two tabs: two listings at once of a left-behind copy with newer words both show it, once, and neither deletes it
+✔ saving, two tabs: a new script and a renamed one never land on a name another tab is taking at the same moment
+✔ saving, two tabs: a new script left as it came is deleted only while it still holds those words and no other tab has it open or saves into it
+✔ saving: app.js makes, renames and discards browser scripts only through the locked steps
 ✔ site: pages may be indexed, with a description and the canonical address
 ✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
 ✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
@@ -481,9 +521,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 481
+ℹ tests 521
 ℹ suites 0
-ℹ pass 481
+ℹ pass 521
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

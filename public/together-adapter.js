@@ -1,8 +1,8 @@
 // The script editor's side of working together (step D). It turns the script into blocks for the room and back,
 // and wires Share to edit, joining with a name, the people in the top bar and other people's carets.
 // The room itself (public/together/) knows nothing about scripts; see docs/together.md.
-import * as D from "./doc.js";
-import * as C from "./changes.js";
+import * as Doc from "./doc.js";
+import * as Changes from "./changes.js";
 import { agentBrand } from "./agent-brand.js";
 import { newRoom, makeLink, parseLink } from "./together/link.js";
 import { applyOp, movePoint } from "./together/ops.js";
@@ -23,10 +23,10 @@ const ATTRS = ["type", "sep", "prefix"];
 // A block's text is its content (what the person edits, "\n" line breaks); its type, separator and "# " / "## "
 // marker are attrs. So a para that becomes a heading is an attrs change plus a text change, and carets keep the
 // same content offsets as asks.
-export const readBlocks = (doc) => doc.blocks.map((b) => ({ id: b.id, text: D.contentOf(b), attrs: { type: b.type, sep: b.sep, prefix: D.prefixOf(b) } }));
+export const readBlocks = (doc) => doc.blocks.map((b) => ({ id: b.id, text: Doc.contentOf(b), attrs: { type: b.type, sep: b.sep, prefix: Doc.prefixOf(b) } }));
 
 // The "# " / "## " marker belongs to its type: titles have "#", headings "##", every other block none. Like
-// D.prefixOf, any run of spaces and tabs after the hashes counts.
+// Doc.prefixOf, any run of spaces and tabs after the hashes counts.
 const PREFIX_MAX = 1000;
 const PREFIX = { title: /^#[ \t]+$/, heading: /^##[ \t]+$/ };
 const prefixFits = (type, prefix) => (PREFIX[type] ? PREFIX[type].test(prefix) : prefix === "");
@@ -62,10 +62,10 @@ export function validBlocks(blocks, before = null) {
 function scriptIO(doc) {
   const eolize = (t) => (doc.eol === "\r\n" ? t.replace(/\n/g, "\r\n") : t);
   return {
-    text: (b) => D.contentOf(b),
-    setText: (b, t) => { b.text = D.prefixOf(b) + eolize(t); },
+    text: (b) => Doc.contentOf(b),
+    setText: (b, t) => { b.text = Doc.prefixOf(b) + eolize(t); },
     setAttrs: (b, a) => {
-      const content = D.contentOf(b), prefix = a.prefix ?? D.prefixOf(b);
+      const content = Doc.contentOf(b), prefix = a.prefix ?? Doc.prefixOf(b);
       if (a.type) b.type = a.type;
       if (a.sep != null) b.sep = a.sep;
       b.text = prefix + eolize(content);
@@ -73,11 +73,11 @@ function scriptIO(doc) {
     make: (id, text, a) => ({ id, type: a.type, text: (a.prefix || "") + eolize(text), sep: a.sep }),
   };
 }
-/** Apply operations to the script document itself (D.serialize keeps working on it). */
+/** Apply operations to the script document itself (Doc.serialize keeps working on it). */
 export function applyToDoc(doc, ops, each = () => {}) {
   const io = scriptIO(doc);
   for (const op of ops) {
-    each(op, op.type === "merge" ? D.contentOf(D.blockById(doc, op.into) || { text: "", type: "para" }).length : undefined);
+    each(op, op.type === "merge" ? Doc.contentOf(Doc.blockById(doc, op.into) || { text: "", type: "para" }).length : undefined);
     applyOp(doc.blocks, op, io);
   }
   return doc;
@@ -93,18 +93,18 @@ export const GUEST_ACTIONS = ["like", "simpler", "shorter", "explain", "facts", 
  *  Returns { blockId, start, end, action, instruction? } or null. */
 export function guestAsk(doc, a) {
   if (!doc || !a || typeof a !== "object" || !GUEST_ACTIONS.includes(a.action)) return null;
-  const b = typeof a.blockId === "string" ? D.blockById(doc, a.blockId) : null;
-  if (!b || typeof a.quote !== "string" || !a.quote.trim() || a.quote.length > D.LIMITS.text || !Number.isInteger(a.start) || a.start < 0) return null;
+  const b = typeof a.blockId === "string" ? Doc.blockById(doc, a.blockId) : null;
+  if (!b || typeof a.quote !== "string" || !a.quote.trim() || a.quote.length > Doc.LIMITS.text || !Number.isInteger(a.start) || a.start < 0) return null;
   const typed = typeof a.instruction === "string" ? a.instruction.trim() : "";
-  if (a.action === "ask" && (!typed || typed.length > D.LIMITS.instruction)) return null;
-  if (a.action === "broll" && !D.spokenBlocks(doc).some((x) => x.id === b.id)) return null;
-  const r = D.reanchor({ start: a.start, quote: a.quote }, D.contentOf(b));
+  if (a.action === "ask" && (!typed || typed.length > Doc.LIMITS.instruction)) return null;
+  if (a.action === "broll" && !Doc.spokenBlocks(doc).some((x) => x.id === b.id)) return null;
+  const r = Doc.reanchor({ start: a.start, quote: a.quote }, Doc.contentOf(b));
   return r ? { blockId: b.id, start: r.start, end: r.end, action: a.action, ...(a.action === "ask" ? { instruction: typed } : {}) } : null;
 }
 /** The open asks a new ask closes where they overlap ("the newest ask wins"). The host's own ask closes any; a
  *  guest's ask (`onlyBy` = its asker id) closes only that guest's own, so nobody undoes someone else's answer. */
 export function overlappingAsks(asks, { blockId, start, end }, onlyBy = null) {
-  return asks.filter((a) => a.scope === "selection" && a.blockId === blockId && D.OPEN_STATUSES.includes(a.status) && a.answer?.kind !== "broll"
+  return asks.filter((a) => a.scope === "selection" && a.blockId === blockId && Doc.OPEN_STATUSES.includes(a.status) && a.answer?.kind !== "broll"
     && a.start < end && a.end > start && (!onlyBy || a.by?.id === onlyBy));
 }
 /** The host's check of a guest's Keep, Undo or dismiss: only on that guest's own open ask in the text (B-roll
@@ -112,44 +112,44 @@ export function overlappingAsks(asks, { blockId, start, end }, onlyBy = null) {
  *  undone while it is marked. */
 export function guestMayAct(ask, act, askerId) {
   if (!ask || !askerId || ask.by?.id !== askerId || ask.scope !== "selection" || ask.answer?.kind === "broll") return false;
-  if (C.isMarked(ask)) return act === "undo";
-  if (!D.OPEN_STATUSES.includes(ask.status)) return false;
+  if (Changes.isMarked(ask)) return act === "undo";
+  if (!Doc.OPEN_STATUSES.includes(ask.status)) return false;
   if (act === "keep") return ask.status === "answered";
   return act === "undo" || act === "dismiss";
 }
 /** May this person Keep, Undo or cancel this ask? The person who asked, and the host. */
 export const mayAct = (ask, { host = false, id = "" } = {}) => host || (!!id && ask?.by?.id === id);
 /** What the host shares: the open asks and the marked changes, copied; each marked change with its exact place in
- *  the host's `doc` (C.withContext), so a guest finds that place or shows no mark. */
+ *  the host's `doc` (Changes.withContext), so a guest finds that place or shows no mark. */
 // Guests get waiting pictures (step K) without the image: room messages stay small.
-export const shareAsks = (asks, doc) => C.withContext(asks.filter((a) => D.OPEN_STATUSES.includes(a.status) || C.isMarked(a)), doc).map(D.withoutPictures);
+export const shareAsks = (asks, doc) => Changes.withContext(asks.filter((a) => Doc.OPEN_STATUSES.includes(a.status) || Changes.isMarked(a)), doc).map(Doc.withoutPictures);
 /** A guest places the host's asks in its own copy of the script: each quote is found again near its place; a
- *  marked change only at its exact place (C.place), or where this guest's own copy of it (`prev`, the asks shown
+ *  marked change only at its exact place (Changes.place), or where this guest's own copy of it (`prev`, the asks shown
  *  now) has followed it since, while its text is there. An ask whose text is not here (yet) is left out; B-roll
  *  suggestions stay, as they live beside the lines. */
 export function fitAsks(asks, doc, prev = []) {
   const out = [];
   for (const a of Array.isArray(asks) ? asks : []) {
     if (!a || typeof a.id !== "string") continue;
-    if (C.isMarked(a)) {
+    if (Changes.isMarked(a)) {
       const change = a.change;
-      if (C.place(a, doc)) { out.push(a); continue; }
-      const p = prev.find((x) => x.id === a.id && C.isMarked(x) && x.change.text === change.text && x.change.at === change.at);
-      const b = p && D.blockById(doc, p.blockId);
-      if (b && D.contentOf(b).slice(p.start, p.end) === change.text) out.push(Object.assign(a, { change, blockId: p.blockId, start: p.start, end: p.end }));
+      if (Changes.place(a, doc)) { out.push(a); continue; }
+      const p = prev.find((x) => x.id === a.id && Changes.isMarked(x) && x.change.text === change.text && x.change.at === change.at);
+      const b = p && Doc.blockById(doc, p.blockId);
+      if (b && Doc.contentOf(b).slice(p.start, p.end) === change.text) out.push(Object.assign(a, { change, blockId: p.blockId, start: p.start, end: p.end }));
       continue;
     }
-    if (!D.OPEN_STATUSES.includes(a.status)) continue;
+    if (!Doc.OPEN_STATUSES.includes(a.status)) continue;
     if (a.scope === "selection") {
-      const b = D.blockById(doc, a.blockId);
-      const r = b && D.reanchor(a, D.contentOf(b));
+      const b = Doc.blockById(doc, a.blockId);
+      const r = b && Doc.reanchor(a, Doc.contentOf(b));
       if (r) Object.assign(a, r);
       else if (a.answer?.kind !== "broll") continue;
     } else if (a.scope === "script" && a.answer?.kind === "marks") {
       for (const m of a.answer.marks) {
         if (m.state !== "open") continue;
-        const b = D.blockById(doc, m.blockId);
-        const r = b && D.reanchor(m, D.contentOf(b));
+        const b = Doc.blockById(doc, m.blockId);
+        const r = b && Doc.reanchor(m, Doc.contentOf(b));
         if (r) Object.assign(m, r); else m.state = "gone";
       }
     }
@@ -225,13 +225,13 @@ export function createAskDesk({ people, sendTo, doc, asks, add, act }) {
  *  drawn as its model ("Claude" with Claude's logo; agent-brand.js), so guests work out the same from the shared
  *  asks. `askId` says which ask the caret's Undo is for. */
 export function agentCaret(asks, doc, may = () => false) {
-  const sel = asks.filter((a) => a.scope === "selection" && D.blockById(doc, a.blockId));
-  const marked = C.newestMarked(sel);
+  const sel = asks.filter((a) => a.scope === "selection" && Doc.blockById(doc, a.blockId));
+  const marked = Changes.newestMarked(sel);
   const a = sel.filter((x) => x.status === "taken").at(-1) || marked || sel.filter((x) => x.status === "answered" && x.answer && x.answer.kind !== "broll").at(-1);
   if (!a) return null;
   const { name, icon } = agentBrand(String((a.status === "taken" ? a.takenBy : a.answeredBy)?.name || "").slice(0, 200));
   const undo = a === marked && !!may(a);
-  return { pid: "agent", kind: "agent", name, icon, colour: null, blockId: a.blockId, offset: a === marked ? C.markRange(a).end : a.end, undo, askId: a.id };
+  return { pid: "agent", kind: "agent", name, icon, colour: null, blockId: a.blockId, offset: a === marked ? Changes.markRange(a).end : a.end, undo, askId: a.id };
 }
 export function docFromSnapshot({ blocks, meta }) {
   const doc = { blocks: [], tail: typeof meta?.tail === "string" && /^\s{0,200}$/.test(meta.tail) ? meta.tail : "\n", eol: meta?.eol === "\r\n" ? "\r\n" : "\n" };

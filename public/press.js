@@ -1,6 +1,5 @@
-// One press of a pointer, from its pointerdown to the moment it ends, whatever ends it. Three review findings were
-// about presses that did not end cleanly (a swipe that became a scroll, a mouse release lost outside the window, the
-// window losing focus), so every way out is here, once:
+// One press of a pointer, from its pointerdown to the moment it ends, whatever ends it (a swipe that becomes a scroll, a
+// mouse release outside the window, the window losing focus). Every way out is here, once:
 //   tap     released before it lifted (a click or a tap)
 //   drop    released after it lifted
 //   cancel  pointercancel (the browser took the pointer: a scroll, a gesture)

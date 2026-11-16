@@ -1,7 +1,7 @@
 // The B-roll list next to a script: parse its Markdown tables, match each shot's "Over" line to the
 // spoken blocks it covers, flag shots whose lines changed, and keep storyboard sketches in its
 // "## Sketches" section. Pure module: no DOM, no network. Imported by the app and by the tests.
-import { outline, contentOf, blockById, normalize, spokenBlocks, forAgent, withoutPictures, askForAgent } from "./doc.js";
+import { outline, contentOf, blockById, normalize, spokenBlocks, forAgent, withoutPictures, askForAgent, escHtml } from "./doc.js";
 import { spokenText, textLinks } from "./links.js";
 import { spokenWords, textCues, stripCues, plainView } from "./cues.js";
 
@@ -409,7 +409,6 @@ export function boardHeadState(link, status) {
 /* ---------- Export: the B-roll list and the storyboard ---------- */
 export const KIND_NAME = { broll: "B-roll", motion: "Motion plate", screen: "Screen recording" };
 const cell = (s) => String(s ?? "").replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
-const escHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // Kept sketches of the given shots in their order, then any others the list still holds.
 function sketchOrder(shots, sketches) {
   const ids = shots.map((s) => s.id).filter((id) => sketches[id]);
@@ -969,7 +968,6 @@ export function applyBrollChangesReport(markdown, changes) {
   }
   return { markdown: md, applied };
 }
-export const applyBrollChanges = (markdown, changes) => applyBrollChangesReport(markdown, changes).markdown;
 /** Open updates and removals for shots that are gone: they can no longer apply, so they become undone.
  *  skip(i): a change still being kept, which the Keep itself settles. */
 export function dropGone(answer, shots, skip = () => false) {

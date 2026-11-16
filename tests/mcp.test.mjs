@@ -386,3 +386,68 @@ test("open_script, set_script and list_scripts go to the tab with their argument
   assert.deepEqual(JSON.parse(l.body.result.content[0].text), { open: null, recent: [] });
   assert.deepEqual(list.ops.find((o) => o.op === "call").args, {});
 });
+
+test("mcp: a request body bigger than the largest allowed call is refused before it is read in full", async () => {
+  const { BODY_MAX } = await import("../worker/mcp.js");
+  const { SCRIPT_LIMITS } = await import("../public/doc.js");
+  // The largest call is unmark_cue's cueIds (each "<blockId>:<n>:<words>"), which overlap at most twice over (bold inside
+  // a link inside bold); JSON can make each character six bytes (\uXXXX).
+  assert.ok(BODY_MAX >= (2 * SCRIPT_LIMITS.markdown + 30 * 60) * 6, `BODY_MAX ${BODY_MAX}`);
+  assert.ok(BODY_MAX <= 3 * 1024 * 1024, `BODY_MAX ${BODY_MAX}`);
+  const markdown = "\u0001".repeat(SCRIPT_LIMITS.markdown);
+  const big = await call("set_script", { markdown });
+  assert.notEqual(big.status, 413, "the largest set_script still goes through");
+  // unmark_cue's 30 cueIds together hold at most one script's words: the largest such call goes through.
+  const words = "\u0001".repeat(SCRIPT_LIMITS.markdown / 30);
+  const cues = Array.from({ length: 30 }, (_, i) => ({ cueId: `b${String(i).padStart(9, "0")}:1:${words}` }));
+  const cueRelay = fakeRelay();
+  const unmark = await call("unmark_cue", { cues }, { relay: cueRelay });
+  assert.notEqual(unmark.status, 413, "the largest real unmark_cue goes through");
+  assert.ok(cueRelay.ops.some((o) => o.op === "call" && o.tool === "unmark_cue"), "it reaches the tab");
+  // cueIds longer together than a script can be are refused with a reason, not passed on.
+  const tooLong = fakeRelay();
+  const over = await call("unmark_cue", { cues: Array.from({ length: 3 }, () => ({ cueId: "x".repeat(135_000) })) }, { relay: tooLong });
+  assert.equal(over.body.result.isError, true);
+  assert.match(over.body.result.content[0].text, /split them over several unmark_cue calls/, "a batch limit: the agent splits the call (a large local file's cueIds can be this long)");
+  assert.doesNotMatch(over.body.result.content[0].text, /use cueIds from list_cues/);
+  assert.ok(!tooLong.ops.some((o) => o.op === "call"));
+  const huge = await rpc(null, { raw: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "get_script", arguments: { pad: "x".repeat(BODY_MAX) } } }) });
+  assert.equal(huge.status, 413);
+  assert.equal(huge.body.error.code, -32600);
+  assert.match(huge.body.error.message, /split/, "the agent is told to split the call");
+  assert.equal(huge.relay.ops.length, 0, "nothing reaches the relay");
+  // A body sent without its length (streamed) is cut off at the same size.
+  const chunk = new TextEncoder().encode("x".repeat(64 * 1024));
+  let sent = 0;
+  const stream = new ReadableStream({ pull(c) { if (sent > BODY_MAX + chunk.length) return c.close(); sent += chunk.length; c.enqueue(chunk); } });
+  const req = new Request(BASE, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` }, body: stream, duplex: "half" });
+  const res = await handleMcp(req, fakeRelay());
+  assert.equal(res.status, 413);
+  assert.ok(sent <= BODY_MAX + 2 * chunk.length, `read ${sent} bytes`);
+  // A stated length over the cap is refused without reading the body at all.
+  let pulled = 0;
+  const unread = new ReadableStream({ pull(c) { pulled++; c.enqueue(chunk); } }, { highWaterMark: 0 });
+  const relay = fakeRelay();
+  const stated = await handleMcp({ method: "POST", url: BASE, headers: new Headers({ "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}`, "Content-Length": String(BODY_MAX + 1) }), body: unread }, relay);
+  assert.equal(stated.status, 413);
+  assert.equal((await stated.json()).error.code, -32600);
+  assert.equal(pulled, 0, "the body is not read");
+  assert.equal(relay.ops.length, 0);
+});
+
+test("mcp: unmark_cue takes every cueId list_cues gives, also overlapping ones from bold inside a link inside bold", async () => {
+  const Doc = await import("../public/doc.js");
+  const Changes = await import("../public/changes.js");
+  const { SCRIPT_LIMITS } = Doc;
+  const words = "word ".repeat(12_000).trim(); // the outer cue holds the link, the inner cue and both of these
+  const md = `# T\n\n**a [${words} **${words}** ${words}](https://example.com) b**\n`;
+  assert.ok(md.length <= SCRIPT_LIMITS.markdown, `script ${md.length}`);
+  const cues = Changes.listCues(Doc.parse(md)).map((c) => ({ cueId: c.cueId }));
+  assert.equal(cues.length, 2);
+  assert.ok(cues.reduce((n, c) => n + c.cueId.length, 0) > md.length, "the cueIds overlap");
+  const relay = fakeRelay();
+  const r = await call("unmark_cue", { cues }, { relay });
+  assert.notEqual(r.status, 413);
+  assert.ok(!r.body.result?.isError, r.body.result?.content?.[0]?.text);
+  assert.ok(relay.ops.some((o) => o.op === "call" && o.tool === "unmark_cue"), "it reaches the tab");
+});
