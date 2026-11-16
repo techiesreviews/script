@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 // The saving module through its own interface, with a folder in memory, a clock the test moves and local storage in a
 // Map. The browser check `scripts/smoke-saving.mjs` runs the same paths in the real editor.
-const { createSaving, AUTOSAVE_MS } = await import("../public/saving.js");
+const { createSaving, createLeftCopies, AUTOSAVE_MS } = await import("../public/saving.js");
 
 function folder() {
   let tick = 1000;
@@ -455,4 +455,26 @@ test("saving: drafts are kept by script name, and move with a rename", () => {
   assert.deepEqual(saving.drafts.get("b.md"), { text: "t", at: 5, asks: [] });
   saving.drafts.del("b.md");
   assert.equal(store.size, 0);
+});
+
+test("saving: a browser copy left behind is deleted by a later listing; two listings at once never delete a script that took the freed name", async () => {
+  const store = new Map(), files = new Map([["stuck.md", "old copy"]]);
+  let refuse = true, gate = null;
+  const dir = { async removeEntry(name) { if (refuse) throw Object.assign(new Error("in use"), { name: "NoModificationAllowedError" }); if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" }); files.delete(name); } };
+  const ports = { store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => { if (gate) await gate; return dir; } };
+  const copies = createLeftCopies(ports);
+  await copies.afterMove("stuck.md");
+  assert.deepEqual(copies.names(), ["stuck.md"], "a refused delete keeps the name");
+  refuse = false;
+  // Listing A found the copy and stops for a moment; listing B (or another tab) deletes it and frees the name.
+  let open;
+  gate = new Promise((r) => { open = r; });
+  const a = copies.retry("stuck.md");
+  gate = null;
+  await copies.retry("stuck.md");
+  assert.deepEqual([copies.names(), files.has("stuck.md")], [[], false]);
+  files.set("stuck.md", "a new script"); // a new script may take the name now
+  open();
+  await a;
+  assert.equal(files.get("stuck.md"), "a new script", "the slower listing leaves the new script alone");
 });
