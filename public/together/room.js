@@ -7,6 +7,11 @@
 // rest unsent across a lost connection or an away host, and on rejoining catches up from its last confirmed
 // version (or rebases onto a snapshot) before sending them again.
 import { diff, applyOps, transformOps, cloneBlocks, validOps, validCaret, movePoint, opEnd, Conflict } from "./ops.js";
+import { random, ROOM_RE, SECRET_RE, KEY_RE, newRoom, makeLink, parseLink } from "./link.js";
+
+export { ROOM_RE, SECRET_RE, KEY_RE, newRoom, makeLink, parseLink };
+// This file loads on first use (Share to edit, or a guest's link); the app checks it speaks the same interface.
+export const SEAM = 1;
 
 export const PROTOCOL = "script-editor-room";
 export const CARET_MS = Math.ceil(1000 / 15); // at most 15 caret messages a second
@@ -65,21 +70,8 @@ export function sha256hex(text) {
   return [...h].map((x) => x.toString(16).padStart(8, "0")).join("");
 }
 
-/* ---------- Links and keys ---------- */
-const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const random = (n) => b64url(crypto.getRandomValues(new Uint8Array(n)));
-export const ROOM_RE = /^[A-Za-z0-9_-]{22}$/;
-export const SECRET_RE = /^[A-Za-z0-9_-]{32}$/;
-export const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
-/** A new room: its id, the edit key in the link, and the host key that never leaves the host's tab. */
-export const newRoom = () => ({ room: random(16), key: random(32), hostKey: random(32) });
-/** The edit link. The key stays after "#", so browsers never send it to a server. */
-export const makeLink = (origin, { room, key }) => `${String(origin).replace(/\/+$/, "")}/#room=${room}&k=${key}`;
-export function parseLink(hash) {
-  const p = new URLSearchParams(String(hash ?? "").replace(/^#/, ""));
-  const room = p.get("room") ?? "", key = p.get("k") ?? "";
-  return ROOM_RE.test(room) && KEY_RE.test(key) ? { room, key } : null;
-}
+/* ---------- Links and keys ----------
+   In together/link.js, which the page loads at startup (a guest's link is read before this file is needed). */
 /** The key is proved with WebSocket subprotocols, never in a URL. */
 export const protocols = ({ room, key, hostKey }) => [PROTOCOL, `r.${room}`, `k.${key}`, ...(hostKey ? [`h.${hostKey}`] : [])];
 

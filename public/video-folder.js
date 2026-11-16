@@ -1,14 +1,15 @@
 // "Save to video folder" (Lex, 2026-11-10, Orbit TOOLS-194): the script, the cue files, the B-roll data and its pictures
 // under the names a video folder uses (chat `youtube/workflow/project-files.md`), plus a short receipt. Pure but for
-// writeFolder, which takes a directory handle. Imported by the app and the tests; nothing here changes script text.
+// writeFolder, which takes a directory handle. Imported by export-pack.js and the tests; nothing here changes script text.
 // The B-roll helpers come in with a linked list (`broll`, the broll.js module): broll.js loads only once a script uses
-// B-roll (TOOLS-306), and this file loads at startup.
+// B-roll (TOOLS-306). This file loads on first use, through export-pack.js (TOOLS-311); the note on the menu item is in
+// folder-note.js, which loads at startup.
 import { exportPrompter, stats, prompterLink } from "./doc.js";
+import { plural, listState, settleFolder, folderNote } from "./folder-note.js";
+
+export { listState, settleFolder, folderNote };
 
 export const FOLDER_NAMES = ["script.md", "prompter.md", "recording-notes.md", "b-roll.md", "b-roll.json"];
-/** The B-roll list as a save sees it, from the editor's status: "none" (no list linked), "ok" (read), or "wait" (a linked
- *  list that is loading, blocked or unreadable: saving then would leave out B-roll the folder should have). */
-export const listState = (status) => (status === "none" ? "none" : status === "ok" ? "ok" : "wait");
 // Cue files are written by hand after the script is final; a folder that already has them keeps them.
 export const FOLDER_KEEP = ["prompter.md", "recording-notes.md"];
 export const RECEIPT_NAME = "save-receipt.md";
@@ -19,7 +20,6 @@ const PICTURES = "pictures";
 const EXT = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 const pad = (n) => String(n).padStart(2, "0");
 const day = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
 
 // A shot's id as a file name: letters, digits, dot, dash and underscore, starting with a letter (`shot-` is put in front otherwise), never twice.
 function fileStem(id, taken) {
@@ -153,24 +153,4 @@ export async function writeFolder(dir, files, { keep = FOLDER_KEEP, saved = null
   await put(dir, link.name, link.text);
   written.push(link.name);
   return { written, kept };
-}
-
-// What a linked list that is not ready needs, by the editor's status for it.
-const WAIT_NOTE = { loading: "B-roll list still loading", permission: "Allow the B-roll list first", error: "B-roll list can't be read" };
-
-/** A save the B-roll list stopped is over once the list is ready (`null`), so a later reload of the list brings no
- *  note back; any other result stays as it is. */
-export const settleFolder = (r, status) => (r?.wait && listState(status) !== "wait" ? null : r);
-
-/** The short note under "Save to video folder": what the last save did, or "". A save the B-roll list stopped follows
- *  the list's status now (`status`, when given): it says what the list needs, and nothing once the list is ready. */
-export function folderNote(r, status) {
-  if (!r) return "";
-  if (r.error && r.wait) {
-    const now = status ?? r.wait;
-    return listState(now) === "wait" ? WAIT_NOTE[now] || WAIT_NOTE.error : "";
-  }
-  if (r.error) return "Could not save";
-  if (r.saving) return "Saving…";
-  return `${r.zip ? "Downloaded" : "Saved"} ${r.date} · ${plural(r.words, "word")}${r.kept?.length ? " · cue files kept" : ""}${r.noLink ? " · no prompter link" : ""}`;
 }
