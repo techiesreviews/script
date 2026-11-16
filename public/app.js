@@ -2635,7 +2635,7 @@ async function saveAs() {
         store.del(draftKey());
         // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees its
         // name there, so its old keys are cleared; a file on disk or the demo keeps its own.
-        moveKeys(state.name, handle.name, { clear: !!was, link: brollApi?.link() ?? null });
+        moveKeys(state.name, handle.name, { clear: !!was, link: brollLink() });
         state.name = handle.name;
       }
       state.handle = handle;
@@ -2960,7 +2960,7 @@ async function saveInBrowser() {
   try {
     const { handle, modified } = await createBrowserScript(D.scriptFileName("", doc, await nameTaken(from)), text);
     if (state.doc === doc) {
-      moveKeys(from, handle.name, { link: brollApi?.link() ?? null });
+      moveKeys(from, handle.name, { link: brollLink() });
       Object.assign(state, { name: handle.name, handle, inBrowser: true, fileModified: modified, savedText: text, savedAt: Date.now(), needsPermission: false, conflict: false });
     }
     remember(handle, true);
@@ -3118,8 +3118,8 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 const BROLL_SEAM = 1;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
-// is being looked up, the draft's "Check" flags and, for a guest, the host's list as it came last.
-const brollPre = { token: 0, status: "none", flags: {}, room: null };
+// is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
+const brollPre = { token: 0, status: "none", link: null, flags: {}, room: null };
 // Asks that show B-roll: a plan or sketches, or suggestions beside the lines.
 const needsBroll = (a) => a.scope === "broll" || isBrollAnswer(a);
 const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
@@ -3207,6 +3207,8 @@ function brollIfAsks() {
 // "none" (no list linked), "loading", "ok", "permission" or "error" (also: the module could not load for this script).
 const brollStatus = () => (brollApi ? brollApi.status() : brollPre.status);
 const brollShots = () => brollApi?.shots() ?? [];
+// The script's link, also while the module is still on its way (a save under a new name takes it along, step J).
+const brollLink = () => brollApi?.link() ?? (brollApi && brollApi.status() !== "loading" ? null : brollPre.link);
 function brollFlags() {
   if (brollApi) return brollApi.flags();
   return Object.keys(brollPre.flags).length ? { ...brollPre.flags } : null;
@@ -3237,7 +3239,7 @@ function closeBroll() {
   ui.scriptY = 0;
   ui.scriptTop = null;
   if (brollApi) return brollApi.close();
-  Object.assign(brollPre, { status: "none", flags: {}, room: null });
+  Object.assign(brollPre, { status: "none", link: null, flags: {}, room: null });
   renderBroll();
 }
 // Opening a script: the module reads its list; without the module, its link is looked up here first, and the module
@@ -3252,6 +3254,7 @@ async function loadBroll() {
   if (token !== brollPre.token || brollApi) return;
   // The demo script links its own made-up list, unless it was unlinked.
   const linked = link ? !link.none : state.name === SAMPLE.name;
+  brollPre.link = linked ? link || { demo: true, name: SAMPLE_BROLL.name } : null;
   if (linked || state.asks.some(needsBroll) || ui.view === "board") return wantBroll();
   brollPre.status = "none";
   renderBroll();
