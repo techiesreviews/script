@@ -389,6 +389,29 @@ test("saving: scripts left one after another while Save as writes each get their
   }
 });
 
+test("saving: a Ctrl+S on the demo that waits for its Save as never saves or renames another script without a file", async () => {
+  const s = setup({ handle: null });
+  s.open(null, "# Demo\n");
+  s.ed.text = "# Demo\n\nMoving.\n";
+  const release = s.files.hold("moved.md");
+  s.files.port.pickSave = async () => ({ name: "moved.md" });
+  const run = s.saving.saveAs();
+  await settle();
+  s.ed.text = "# Demo\n\nMoving.\n\nPressed.\n";
+  s.saving.save(); // Ctrl+S on the demo while its file is written: it waits, with no file of its own
+  s.time.t = 77_000;
+  s.open(null, "# Other\n"); // another script without a file opens
+  release();
+  await run;
+  await until(() => !s.script.saving);
+  assert.equal(s.files.disk.get("moved.md").text, "# Demo\n\nMoving.\n", "the picked file holds the text from the click");
+  assert.equal(s.files.disk.has("from-title.md"), false, "the other script is not saved into the browser");
+  assert.ok(!s.events.some((e) => e[0] === "renamed"), "nothing is renamed");
+  assert.deepEqual([s.script.name, s.script.handle, s.script.inBrowser], ["demo.md", null, false]);
+  assert.deepEqual(s.store.get("draft:demo.md"), { text: "# Demo\n\nMoving.\n\nPressed.\n", at: 77_000, asks: [] }, "the demo's newer words are kept as its draft");
+  assert.deepEqual(s.saving.queued(), []);
+});
+
 test("saving: Ctrl+S where neither the browser nor a file picker can save downloads the script", async () => {
   const s = setup({ handle: null });
   s.open(null, "# Demo\n");
