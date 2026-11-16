@@ -36,11 +36,12 @@ export function checkToken(token, now = Date.now()) {
   if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
   return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
 }
-// unmark_cue's cueIds together hold at most twice a script's words, plus each one's block id and count: cues overlap
-// only where bold sits inside a link inside bold (bold nests in nothing else, links in nothing), so two levels at most.
+// One unmark_cue call takes cueIds that together hold at most twice an agent-sized script's words, plus each one's block
+// id and count (cues overlap only where bold sits inside a link inside bold, two levels at most). A file opened from
+// disk may be longer: its cues are then removed over several calls.
 const CUE_IDS_MAX = 2 * SCRIPT_LIMITS.markdown + CUE_LIMITS.cues * 60;
-// The largest call is unmark_cue's cueIds (a whole script in set_script is smaller), and JSON may spell each character
-// in six bytes (\uXXXX). A body bigger than that is refused before it is read in full; the per-field
+// The largest call within these limits is unmark_cue's cueIds (a whole script in set_script is smaller), and JSON may
+// spell each character in six bytes (\uXXXX); a bigger body is a batch to split. A body bigger than that is refused before it is read in full; the per-field
 // limits are checked after.
 export const BODY_MAX = (CUE_IDS_MAX + CUE_LIMITS.cues * LIMITS.quote) * 6 + 64 * 1024; // with a quote on every cue
 // The body, read with a running count: past `max` bytes it stops (null). No decoding (the picture upload passes the
@@ -405,7 +406,7 @@ export function checkArgs(name, args) {
       }
     }
     if (name === "unmark_cue" && a.cues.reduce((n, c) => n + (typeof c.cueId === "string" ? c.cueId.length : 0), 0) > CUE_IDS_MAX) {
-      return "The cueIds together are longer than a script's cues can be: use cueIds from list_cues.";
+      return `These cueIds hold more than ${CUE_IDS_MAX} characters together, too many for one call: split them over several unmark_cue calls.`;
     }
   }
   return "";
@@ -437,7 +438,7 @@ export async function handleMcp(request, { relayFor, now = Date.now }) {
   const unauthorized = () => rpcError(null, -32001, "Unauthorized: use the Authorization Bearer token from the script editor's Connect your agent menu.", 401, { "WWW-Authenticate": "Bearer" });
   if (!auth) return unauthorized();
 
-  const tooBig = () => rpcError(null, -32600, "The request is too large.", 413);
+  const tooBig = () => rpcError(null, -32600, "The request is too large: split it into smaller calls.", 413);
   if (Number(request.headers.get("Content-Length") || 0) > BODY_MAX) return tooBig();
   let msg;
   try {
