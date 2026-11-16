@@ -252,6 +252,11 @@
 ✔ the Tab key takes its room all the time, so showing it never changes the input's size
 ✔ phone: no zoom on focus, room for the thumb, and the bar clear of the home bar
 ✔ a panned phone page: the first free spot is the lower of the top bar's end and the pan, not their sum (TOOLS-52, step T follow-up)
+✔ headers: every file is checked with the server before it is reused, never kept blindly or refused
+✔ headers: a strict Content-Security-Policy that allows only what the editor uses
+✔ headers: the usual security headers
+✔ headers: the page needs nothing the CSP blocks
+✔ headers: the section list's people dots carry their colour as a key the CSS maps, not a style attribute
 ✔ kit.json lands on dev, releases to main, and the docs agree
 ✔ the GitHub checks workflow runs the kit's test command on pull requests and on dev
 ✔ kit deploy stops before wrangler when kit release-check fails
@@ -433,9 +438,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 435
+ℹ tests 440
 ℹ suites 0
-ℹ pass 435
+ℹ pass 440
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

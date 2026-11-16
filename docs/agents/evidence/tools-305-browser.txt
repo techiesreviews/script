@@ -1,0 +1,52 @@
+# TOOLS-305 browser run: node scripts/smoke-csp.mjs on wrangler dev (applies public/_headers) and headless Chrome, 2026-11-16. Real clicks over CDP at 1280 and 390 px; every CSP violation (securitypolicyviolation events and Chrome's console log) and every page error is collected after each flow.
+ok 1280 px: the page comes with the CSP
+ok 1280 px: the page is checked with the server each visit (no-cache, ETag)
+ok 1280 px: an unchanged file comes back as "not changed" (304)
+ok 1280 px: start screen: no CSP violation or error
+ok 1280 px: a request to another site is refused
+ok 1280 px: the refusal is the CSP's connect-src, and nothing else
+ok 1280 px: the console shows only that refusal
+ok 1280 px: a data: picture can be read back
+ok 1280 px: reading a data: picture: no CSP violation or error
+ok 1280 px: the agent reaches the tab over the live relay (WebSocket)
+ok 1280 px: open the demo with its B-roll list: no CSP violation or error
+ok 1280 px: the agent's picture shows as a data: image
+ok 1280 px: B-roll: an agent's drawing and picture: no CSP violation or error
+ok 1280 px: the storyboard shows
+ok 1280 px: storyboard: no CSP violation or error
+ok 1280 px: the selection bar is placed (CSSOM style)
+ok 1280 px: typing replaces the selected word
+ok 1280 px: edit: no CSP violation or error
+ok 1280 px: Open in prompter makes the prompter link
+ok 1280 px: prompter link and exports: no CSP violation or error
+ok 1280 px: the guest's dot has the guest's colour, with no style attribute
+ok 1280 px: guest: join and select: no CSP violation or error
+ok 1280 px: Share to edit: no CSP violation or error
+ok 1280 px: a new script is saved with what was typed
+ok 1280 px: new script and save: no CSP violation or error
+ok 390 px: the page comes with the CSP
+ok 390 px: the page is checked with the server each visit (no-cache, ETag)
+ok 390 px: an unchanged file comes back as "not changed" (304)
+ok 390 px: start screen: no CSP violation or error
+ok 390 px: a request to another site is refused
+ok 390 px: the refusal is the CSP's connect-src, and nothing else
+ok 390 px: the console shows only that refusal
+ok 390 px: a data: picture can be read back
+ok 390 px: reading a data: picture: no CSP violation or error
+ok 390 px: the agent reaches the tab over the live relay (WebSocket)
+ok 390 px: open the demo with its B-roll list: no CSP violation or error
+ok 390 px: the agent's picture shows as a data: image
+ok 390 px: B-roll: an agent's drawing and picture: no CSP violation or error
+ok 390 px: the storyboard shows
+ok 390 px: storyboard: no CSP violation or error
+ok 390 px: the selection bar is placed (CSSOM style)
+ok 390 px: typing replaces the selected word
+ok 390 px: edit: no CSP violation or error
+ok 390 px: Open in prompter makes the prompter link
+ok 390 px: prompter link and exports: no CSP violation or error
+ok 390 px: the guest's dot has the guest's colour, with no style attribute
+ok 390 px: guest: join and select: no CSP violation or error
+ok 390 px: Share to edit: no CSP violation or error
+ok 390 px: a new script is saved with what was typed
+ok 390 px: new script and save: no CSP violation or error
+ok all

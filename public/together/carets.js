@@ -59,6 +59,8 @@ function caretBox(el, offset, rangeAt) {
 const firstLetter = (name) => Array.from(String(name || "?").trim() || "?")[0].toUpperCase();
 const restOf = (name) => Array.from(String(name || "").trim()).slice(1).join("");
 export const colourVar = (p) => (p.kind === "agent" ? "var(--agent)" : `var(--rc-${(Number(p.colour) % 6) + 1})`);
+/** The same colour as a key for markup ("agent" or 1–6): the page's CSP allows no style attribute, so CSS maps `data-c`. */
+export const colourKey = (p) => (p.kind === "agent" ? "agent" : String((Number(p.colour) % 6) + 1));
 /** The icon key in an agent's circle: its own (`p.icon`), else "agent". People show their first letter instead (""). */
 export const markIcon = (p) => (p.kind === "agent" ? String(p.icon || "agent") : "");
 
