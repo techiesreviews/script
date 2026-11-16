@@ -228,11 +228,17 @@ async function newScript(page, title) {
   await sleep(300);
 }
 
-// Opens the script menu. Its list is drawn just after the menu opens (a frame later, or longer on a slow disk), which
-// moves "Open a script…" and "New script" down a row (TOOLS-309).
+// Opens the script menu and waits for this open's list. The list is drawn just after the menu opens (a frame later, or
+// longer on a slow disk), which moves "Open a script…" and "New script" down a row: a press found before that lands on
+// the row above (TOOLS-309). Drawn means the open script is the current row and New script stays put for two frames.
 async function openScriptMenu(page) {
   await page.click("#docSwitch");
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await page.until(`new Promise((done) => {
+    const y = () => document.querySelector("#menuNew").getBoundingClientRect().y, at = y(), now = document.querySelector("#fileName").textContent;
+    const drawn = () => [...document.querySelectorAll("#scriptList .scripts__open[aria-current]")].some((b) => b.querySelector(".scripts__name").textContent === now);
+    requestAnimationFrame(() => requestAnimationFrame(() => done(drawn() && y() === at)));
+  })`, "the script menu's list");
 }
 
 async function runEdges(width, height) {
