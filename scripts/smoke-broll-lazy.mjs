@@ -280,7 +280,7 @@ async function runEdges(width, height) {
   await failPage.click("#docSwitch");
   await failPage.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await failPage.click("#menuNew");
-  await failPage.until(`/^Untitled/.test(document.querySelector("#fileName").textContent) || /untitled/i.test(document.querySelector("#fileName").textContent)`, "another new script");
+  await failPage.until(`!window.__scriptEditor.markdown()?.includes("Fail check")`, "another new script");
   await failPage.until(`!document.querySelector("#scriptMenu").matches(":popover-open") && !document.querySelector("#exportBtn").hidden && document.querySelector("#saveState").dataset.state === ""`, "the new script settled");
   await sleep(500);
   await failPage.eval(`window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("video", { create: true }); true`);
@@ -307,7 +307,7 @@ async function runEdges(width, height) {
   await holdPage.click("#docSwitch");
   await holdPage.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await holdPage.click("#menuNew");
-  await holdPage.until(`/untitled/i.test(document.querySelector("#fileName").textContent)`, "script B");
+  await holdPage.until(`!window.__scriptEditor.markdown()?.includes("Hold check A")`, "script B");
   await holdPage.send("Input.insertText", { text: "Hold check B" });
   await holdPage.key("Enter", "Enter", 13, "\r");
   await holdPage.send("Input.insertText", { text: "Hello there my friend." });
@@ -319,6 +319,28 @@ async function runEdges(width, height) {
   check(await holdPage.eval(`!document.querySelector(".shot-frame[data-suggested]") && !window.__scriptEditor.asks().some((a) => a.scope === "broll")`), `${tag} the other script gets no suggestion`);
   await clean(holdPage, tag, "suggestion while the module loads");
   await holdPage.close();
+
+  // The demo saved under its own name while the module is on its way keeps its list (its link goes along).
+  const demoPage = await openPage(width, height, { holdBroll: true });
+  await startScreen(demoPage);
+  await demoPage.click("#emptySample");
+  for (let i = 0; i < 50 && !demoPage.held.length; i++) await sleep(100);
+  await demoPage.until(`document.querySelector("#fileName").textContent === "demo-good-script.md"`, "the demo");
+  await demoPage.eval(`document.querySelector('#script .block[data-type="para"]').focus()`);
+  for (const type of ["keyDown", "keyUp"]) await demoPage.send("Input.dispatchKeyEvent", { type, key: "s", code: "KeyS", windowsVirtualKeyCode: 83, modifiers: 2 });
+  check(await demoPage.until(`document.querySelector("#fileName").textContent !== "demo-good-script.md" && document.querySelector("#saveState").dataset.state === ""`, "saved in the browser"), `${tag} the demo is saved in the browser under its title's name while the module is held`);
+  await demoPage.release();
+  check(await demoPage.until(`document.querySelectorAll(".shot-frame").length >= 6`, "its shots"), `${tag} once the module is here, the saved demo shows its list`);
+  await sleep(800);
+  await demoPage.send("Page.reload");
+  await sleep(300);
+  await demoPage.until(`document.readyState === "complete" && !document.querySelector("#emptyReopen").hidden`, "Reopen on the start screen");
+  await demoPage.click("#emptyReopen");
+  // The reopened page asks for the module again: it is let through as it comes.
+  for (let i = 0; i < 50; i++) { if (demoPage.held.length) await demoPage.release(); if (await demoPage.eval(`document.querySelectorAll(".shot-frame").length >= 6`).catch(() => false)) break; await sleep(100); }
+  check(await demoPage.until(`document.querySelectorAll(".shot-frame").length >= 6`, "its shots after reopening"), `${tag} reopened, the saved demo still has its list`);
+  await clean(demoPage, tag, "demo saved while the module loads");
+  await demoPage.close();
 }
 
 await run(1280, 800);
