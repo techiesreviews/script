@@ -24,10 +24,10 @@ export async function writeHandle(handle, text) {
   await w.close();
   try { return (await handle.getFile()).lastModified; } catch { return Date.now(); }
 }
-// A script's fingerprint: the SHA-256 of its words as a file holds them (UTF-8, so half of a character pair counts
-// as the "\ufffd" the file gets). A file opened with a byte-order mark is read without it, here as everywhere.
+// A script's fingerprint: the SHA-256 of its words as a file gives them back (UTF-8, so half of a character pair
+// counts as the "\ufffd" the file gets, and a byte-order mark in front counts as nothing: a file is read without it).
 export async function fingerprint(text) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text));
   return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 const sameWords = async (a, b) => a === b || (await fingerprint(a)) === (await fingerprint(b));
@@ -268,7 +268,11 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // among the saves into that script in every tab: the cleanup of a left-behind browser copy never deletes one that
   // words are on their way into, and no other tab's save lands between this save's look at the file and its write. A
   // file on the computer has no such hold (other programs write it too); the changed-on-disk check is its guard.
-  const held = (browser, name, fn) => (browser && files.held ? files.held(name, fn) : fn());
+  // The name is the file's own, read as the hold is asked for: a save that waited may be for a script that took
+  // another name since (its title changed), and the other tabs know the file by the name it has now.
+  const held = (browser, handle, fn) => (browser && files.held ? files.held(handle.name, fn) : fn());
+  // The name a waiting request's draft goes by: its file's name now; the script's own for a request without a file.
+  const nameOf = (req) => req.handle?.name ?? req.name;
   const key = (name) => `draft:${name}`;
   const drafts = {
     get: (name) => store.get(key(name)),
@@ -310,7 +314,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // Write a left script's snapshot straight to its own file, with auto-save rules: no permission prompt, and the
   // changed-on-disk check. `script` is never touched.
   function writeLeft(snap) {
-    return held(snap.browser, snap.name, async () => {
+    return held(snap.browser, snap.handle, async () => {
       try {
         if (await files.permitted(snap.handle, false)) {
           if (!(await diskConflict(snap.handle, snap))) {
@@ -318,7 +322,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
           }
         }
       } catch { /* kept as a draft below */ }
-      keepDraft(snap.name, snap.text);
+      keepDraft(nameOf(snap), snap.text);
       return null;
     });
   }
@@ -334,14 +338,14 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     if (!script.handle && auto) return;
     if (!script.handle) return browser ? saveInBrowser() : saveAs();
     stop();
-    const { handle, name, savedText, inBrowser } = script;
+    const { handle, savedText, inBrowser } = script;
     const text = editor.text();
     let written = null;
     script.saving = true;
     script.autoSaving = auto;
     script.saveError = "";
     on.status();
-    await held(inBrowser, name, async () => {
+    await held(inBrowser, handle, async () => {
       try {
         // A click or key press may show the browser's permission prompt; auto-save may not, so it shows "Allow saving to …".
         if (!(await files.permitted(handle, !auto))) {
@@ -371,7 +375,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         if (handle === script.handle) script.saveError = e?.message || "Could not save.";
       }
     });
-    if (!written && handle !== script.handle) keepDraft(name, text);
+    if (!written && handle !== script.handle) keepDraft(handle.name, text);
     queue = SaveQueue.settleQueue(queue, written);
     return drain(false);
   }
