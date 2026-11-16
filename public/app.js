@@ -1,6 +1,6 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
 import * as Doc from "./doc.js";
-import { createSaving, writeHandle, permitted } from "./saving.js";
+import { createSaving, createLeftCopies, writeHandle, permitted } from "./saving.js";
 import * as Changes from "./changes.js";
 import * as Links from "./links.js";
 import * as Cues from "./cues.js";
@@ -2505,7 +2505,7 @@ const saving = createSaving({
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, browser = false }) {
       remember(handle, browser);
-      if (was) forget(was).then(() => dropCopy(was.name));
+      if (was) forget(was).then(() => copies.afterMove(was.name));
     },
   },
 });
@@ -2733,19 +2733,12 @@ function scriptsDir() {
   scriptsDirP ??= navigator.storage.getDirectory().then((root) => root.getDirectoryHandle("scripts", { create: true }));
   return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
 }
-// A browser copy left behind by a move to a file (the browser refused to delete it then) is kept off the list by name
-// and deleted on a later listing; until then no script may take its name (nameTaken).
-const COPIES = "movedCopies";
-const leftCopies = () => { const v = store.get(COPIES); return Array.isArray(v) ? v : []; };
-async function dropCopy(name) {
-  try { await (await scriptsDir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") { store.set(COPIES, [...new Set([...leftCopies(), name])]); return false; } }
-  if (leftCopies().includes(name)) store.set(COPIES, leftCopies().filter((n) => n !== name));
-  return true;
-}
+// Browser copies left behind by a move to a file: kept off the list, deleted on a later listing (saving.js).
+const copies = createLeftCopies({ store, dir: () => scriptsDir() });
 async function browserScripts() {
   if (!browserSaving) return [];
   const out = [];
-  const left = new Set(leftCopies()), stale = [];
+  const left = new Set(copies.names()), stale = [];
   try {
     for await (const handle of (await scriptsDir()).values()) {
       if (handle.kind !== "file") continue;
@@ -2755,7 +2748,7 @@ async function browserScripts() {
       out.push({ handle, name: handle.name, at, browser: true });
     }
   } catch { /* storage off: none */ }
-  for (const name of stale) await dropCopy(name);
+  for (const name of stale) await copies.retry(name);
   return out;
 }
 async function isInBrowser(handle) {
@@ -2767,7 +2760,7 @@ async function isInBrowser(handle) {
 // script (all by name, in any capitals; drafts and B-roll keys go by name). `own`: the script being named.
 async function nameTaken(own = "") {
   const names = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
-  for (const n of leftCopies()) names.add(n.toLowerCase());
+  for (const n of copies.names()) names.add(n.toLowerCase());
   for (const n of await keyed(idbLinkedNames)) names.add(n.toLowerCase());
   names.add(SAMPLE.name.toLowerCase()); // the demo's name brings the demo's own B-roll list
   try {

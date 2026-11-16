@@ -28,6 +28,24 @@ export async function permitted(handle, ask, mode = "readwrite") {
   } catch { return false; }
 }
 
+// A browser copy left behind by a move to a file (the browser refused to delete it then) is kept off the list by name
+// (in local storage, `store`) and deleted on a later listing; until then no script may take its name (app.js nameTaken).
+// `dir()`: the browser's scripts folder.
+export function createLeftCopies({ store, dir }) {
+  const KEY = "movedCopies";
+  const names = () => { const v = store.get(KEY); return Array.isArray(v) ? v : []; };
+  // Right after the move: the copy goes, or its name is kept for later.
+  async function afterMove(name) {
+    try { await (await dir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") store.set(KEY, [...new Set([...names(), name])]); }
+  }
+  // A later listing found the copy: it goes, and its name is free again.
+  async function retry(name) {
+    try { await (await dir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return; }
+    if (names().includes(name)) store.set(KEY, names().filter((n) => n !== name));
+  }
+  return { names, afterMove, retry };
+}
+
 /**
  * createSaving({ script, editor, files, browser, drafts, clock, on })
  * - editor: { ready(), doc(), text(), dirty(), paused() } — a script is open and the person may save it; its document
