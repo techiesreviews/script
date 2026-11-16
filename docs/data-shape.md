@@ -105,7 +105,7 @@ Lex (2026-11-04, fleet issue #14; always on since 2026-11-06, step S): a cue mar
 
 ## B-roll list and sketches (step C)
 
-`public/broll.js` reads a B-roll Markdown file linked to the script (IndexedDB store `handles`, key `broll:<script name>`: `{ handle, name }`, or `{ name, text }` without a file handle, or `{ none: true }` after unlinking the demo).
+`public/broll.js` reads a B-roll Markdown file linked to the script (IndexedDB store `handles`, key `broll:<script name>`: `{ handle, name }`, or `{ name, text }` without a file handle, or `{ none: true }` after unlinking the demo). `public/broll-app.js` shows and changes it; `app.js` loads it the first time a script needs it and talks to it through `createBroll` (step Z).
 
 ```js
 Shot { id, what, over, how, kind: "broll" | "motion" | "screen", blockIds: string[], check: boolean }

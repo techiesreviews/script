@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse, serialize, exportPrompter } from "../public/doc.js";
+import * as B from "../public/broll.js";
 import { parseBroll, matchShots, scriptOrder, exportBroll } from "../public/broll.js";
 import { makeZip } from "../public/zip.js";
 import { videoFolder, writeFolder, folderNote, settleFolder, listState, FOLDER_NAMES, prompterLinkFile, withPrompterLink, fileDay, scriptDay, LINK_NAME } from "../public/video-folder.js";
@@ -20,7 +21,7 @@ function build(over = {}) {
   const doc = parse(SCRIPT);
   const { shots, sketches } = parseBroll(LIST);
   matchShots(doc, shots);
-  return { doc, scriptText: serialize(doc), shots: scriptOrder(doc, shots), sketches, title: "Demo video", date: new Date(2026, 10, 10, 9, 30), linked: true, ...over };
+  return { doc, scriptText: serialize(doc), shots: scriptOrder(doc, shots), sketches, title: "Demo video", date: new Date(2026, 10, 10, 9, 30), linked: true, broll: B, ...over };
 }
 const names = (r) => r.files.map((f) => f.name);
 const byName = (r, n) => r.files.find((f) => f.name === n);

@@ -54,7 +54,8 @@ async function openPage(width, height, sameAs = null) {
     async until(expression, label, ms = 8000) {
       const end = Date.now() + ms;
       for (;;) {
-        if (await page.eval(expression)) return true;
+        // A page still navigating (a guest's link just opened) has no elements yet: keep waiting.
+        if (await page.eval(expression).catch(() => false)) return true;
         if (Date.now() > end) { check(false, `timed out: ${label}`); return false; }
         await sleep(60);
       }

@@ -1,0 +1,125 @@
+# TOOLS-306 browser check, 2026-11-16, wrangler dev (applies _headers) on 127.0.0.1:8791, headless Chrome "Chrome/157.0.8103.78"
+
+## curl -sI /broll-app.js
+HTTP/1.1 200 OK
+Content-Type: text/javascript; charset=utf-8
+Cache-Control: no-cache
+ETag: "fd60ee93e941a6c603ec866884e22a24"
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' wss://script.techies.tools data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'self'
+If-None-Match with that ETag -> 304
+
+## node scripts/smoke-broll-lazy.mjs
+ok 1280 px: a new script without B-roll fetches no B-roll code
+ok 1280 px: new script: no CSP violation or error
+ok 1280 px: opening the Storyboard shows Link B-roll list and Plan B-roll
+ok 1280 px: opening the Storyboard loads broll-app.js and broll.js
+ok 1280 px: storyboard on first use: no CSP violation or error
+ok 1280 px: the agent is connected and no B-roll code is loaded yet
+ok 1280 px: upload_image answers with an address once the module loads
+ok 1280 px: the agent's B-roll call loaded broll-app.js
+ok 1280 px: sketch_shot without a list says there is none
+ok 1280 px: agent's B-roll call: no CSP violation or error
+ok 1280 px: the demo shows its shots beside the lines
+ok 1280 px: a script with a linked list loads broll-app.js
+ok 1280 px: a frame opens its shot card
+ok 1280 px: Escape closes the shot card
+ok 1280 px: add b-roll opens the card
+ok 1280 px: the new shot is in the list
+ok 1280 px: its frame shows beside the line
+ok 1280 px: the storyboard shows every shot
+ok 1280 px: a storyboard frame goes back to its lit shot
+ok 1280 px: demo B-roll flows: no CSP violation or error
+ok 1280 px: after a reload broll-app.js is checked with the server and comes back "not changed" (304)
+ok 1280 px: reload: no CSP violation or error
+ok 390 px: a new script without B-roll fetches no B-roll code
+ok 390 px: new script: no CSP violation or error
+ok 390 px: opening the Storyboard shows Link B-roll list and Plan B-roll
+ok 390 px: opening the Storyboard loads broll-app.js and broll.js
+ok 390 px: storyboard on first use: no CSP violation or error
+ok 390 px: the agent is connected and no B-roll code is loaded yet
+ok 390 px: upload_image answers with an address once the module loads
+ok 390 px: the agent's B-roll call loaded broll-app.js
+ok 390 px: sketch_shot without a list says there is none
+ok 390 px: agent's B-roll call: no CSP violation or error
+ok 390 px: the demo shows its shots beside the lines
+ok 390 px: a script with a linked list loads broll-app.js
+ok 390 px: a frame opens its shot card
+ok 390 px: Escape closes the shot card
+ok 390 px: add b-roll opens the card
+ok 390 px: the new shot is in the list
+ok 390 px: its frame shows beside the line
+ok 390 px: the storyboard shows every shot
+ok 390 px: a storyboard frame goes back to its lit shot
+ok 390 px: demo B-roll flows: no CSP violation or error
+ok 390 px: after a reload broll-app.js is checked with the server and comes back "not changed" (304)
+ok 390 px: reload: no CSP violation or error
+ok 1280 px: the / menu offers B-roll on a spoken line
+ok 1280 px: before it is picked, no B-roll code is fetched
+ok 1280 px: picking B-roll loads the module and opens the Add card
+ok 1280 px: the / menu's B-roll loaded broll-app.js
+ok 1280 px: B-roll from the / menu: no CSP violation or error
+ok 1280 px: a B-roll suggestion shows beside the line
+ok 1280 px: the start screen fetches no B-roll code
+ok 1280 px: reopened, its draft's suggestion shows again
+ok 1280 px: the draft's B-roll asks loaded broll-app.js
+ok 1280 px: draft with B-roll asks: no CSP violation or error
+ok 1280 px: a module that can't load: the Storyboard says to reload
+ok 1280 px: the agent's B-roll call is told to ask for a reload
+ok 1280 px: after that, a script without B-roll saves to a video folder (no list linked)
+ok 1280 px: module that can't load: no CSP violation or error
+ok 1280 px: the module's download is held while the agent's suggestion waits
+ok 1280 px: the agent hears the person opened another script
+ok 1280 px: the other script gets no suggestion
+ok 1280 px: suggestion while the module loads: no CSP violation or error
+ok 1280 px: the demo's module download is held
+ok 1280 px: the demo is saved in the browser under its title's name while the module is held
+ok 1280 px: once the module is here, the saved demo shows its list
+ok 1280 px: reopened, the saved demo still has its list
+ok 1280 px: demo saved while the module loads: no CSP violation or error
+ok 390 px: the / menu offers B-roll on a spoken line
+ok 390 px: before it is picked, no B-roll code is fetched
+ok 390 px: picking B-roll loads the module and opens the Add card
+ok 390 px: the / menu's B-roll loaded broll-app.js
+ok 390 px: B-roll from the / menu: no CSP violation or error
+ok 390 px: a B-roll suggestion shows beside the line
+ok 390 px: the start screen fetches no B-roll code
+ok 390 px: reopened, its draft's suggestion shows again
+ok 390 px: the draft's B-roll asks loaded broll-app.js
+ok 390 px: draft with B-roll asks: no CSP violation or error
+ok 390 px: a module that can't load: the Storyboard says to reload
+ok 390 px: the agent's B-roll call is told to ask for a reload
+ok 390 px: after that, a script without B-roll saves to a video folder (no list linked)
+ok 390 px: module that can't load: no CSP violation or error
+ok 390 px: the module's download is held while the agent's suggestion waits
+ok 390 px: the agent hears the person opened another script
+ok 390 px: the other script gets no suggestion
+ok 390 px: suggestion while the module loads: no CSP violation or error
+ok 390 px: the demo's module download is held
+ok 390 px: the demo is saved in the browser under its title's name while the module is held
+ok 390 px: once the module is here, the saved demo shows its list
+ok 390 px: reopened, the saved demo still has its list
+ok 390 px: demo saved while the module loads: no CSP violation or error
+ok all
+
+## Failing first: the same check with handleCall's script guard taken out
+FAIL 1280 px: the agent hears the person opened another script (Change 1: the quote is not in the spoken text word for word: "Hello there my friend.".)
+FAIL 390 px: the agent hears the person opened another script (Change 1: the quote is not in the spoken text word for word: "Hello there my friend.".)
+FAIL 2
+
+## Failing first: the same check with the link kept only by the module (brollLink = brollApi?.link() ?? null)
+FAIL timed out: its shots
+FAIL 1280 px: once the module is here, the saved demo shows its list
+FAIL timed out: its shots after reopening
+FAIL 1280 px: reopened, the saved demo still has its list
+FAIL timed out: its shots
+FAIL 390 px: once the module is here, the saved demo shows its list
+FAIL timed out: its shots after reopening
+FAIL 390 px: reopened, the saved demo still has its list
+
+## Older suites, same server
+smoke-csp: 51 ok, 0 fail; last line: ok all
+smoke-keep-all: 933 ok, 0 fail; last line: RESULT: ok
+smoke-video-folder: 93 ok, 0 fail; last line: all ok
+smoke-room: 27 ok, 0 fail; last line: RESULT: ok smoke-room
+smoke-relay: 42 ok, 0 fail; last line: RESULT: ok smoke
+smoke-relay before its fix: FAIL tools/list has the ten tools (answer_ask,answer_broll,get_script,list_asks,list_cues,list_scripts,mark_cue,open_script,set_script,sketch_shot,unmark_cue,upload_image,wait_for_asks)

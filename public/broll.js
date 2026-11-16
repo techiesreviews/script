@@ -1,9 +1,11 @@
 // The B-roll list next to a script: parse its Markdown tables, match each shot's "Over" line to the
 // spoken blocks it covers, flag shots whose lines changed, and keep storyboard sketches in its
 // "## Sketches" section. Pure module: no DOM, no network. Imported by the app and by the tests.
-import { outline, contentOf, blockById } from "./doc.js";
+import { outline, contentOf, blockById, normalize, spokenBlocks, forAgent, withoutPictures, askForAgent } from "./doc.js";
 import { spokenText, textLinks } from "./links.js";
 import { spokenWords, textCues, stripCues, plainView } from "./cues.js";
+
+export { normalize, spokenBlocks, forAgent, withoutPictures, askForAgent };
 
 export const SKETCH_MAX = 8 * 1024;
 // A picture as a sketch (step K): a PNG, JPEG or WebP data address, shrunk by the tab first.
@@ -150,8 +152,6 @@ function scan(markdown) {
 }
 
 /* ---------- Match "Over" to the spoken blocks ---------- */
-// Lower case, no quotes, apostrophes or punctuation, single spaces.
-export const normalize = (s) => String(s).toLowerCase().normalize("NFKC").replace(/[’'`ʼ‘]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const unquote = (s) => s.trim().replace(/^["“”„]/, "").replace(/["“”]$/, "").trim();
 const fragments = (quote) => quote.split(/…|\.{3}/).map(normalize).filter(Boolean);
 
@@ -163,12 +163,6 @@ export function parseOver(over) {
   return { from, to: to?.length ? to : null };
 }
 
-/** The spoken paragraphs, in order, as the matcher sees them. */
-export function spokenBlocks(doc) {
-  return outline(doc).sections.filter((s) => s.spoken)
-    .flatMap((s) => s.blocks.filter((b) => b.type === "para"))
-    .map((b) => ({ id: b.id, n: ` ${normalize(spokenWords(contentOf(b)))} ` })); // a link or a cue counts as its words (step G)
-}
 // Where the fragments occur in order (as whole words): the index of the first, or -1.
 function fragsAt(n, frags) {
   let pos = 0, first = -1;
@@ -235,9 +229,6 @@ export function scriptOrder(doc, shots) {
   const first = (s) => Math.min(...(s.blockIds || []).map((id) => at.get(id) ?? Infinity), Infinity);
   return shots.map((s, i) => ({ s, i, k: first(s) })).sort((x, y) => x.k - y.k || x.i - y.i).map((x) => x.s);
 }
-
-/** What the agent sees in get_script. */
-export const forAgent = (s) => ({ id: s.id, what: s.what, over: s.over, how: s.how, kind: s.kind, blockIds: [...(s.blockIds || [])], check: !!s.check });
 
 /* ---------- Sketch sanitiser ---------- */
 const ELEMENTS = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text"]);
@@ -381,20 +372,6 @@ export function checkSketch(ask, args) {
   return { svg };
 }
 
-/** A copy of an ask without its waiting pictures (step K), for drafts and guests: a sketch ask's shot waits for its
- *  sketch again, an add keeps its suggestion without the picture. Asks without pictures come back as they are. */
-export function withoutPictures(ask) {
-  const a = ask?.answer;
-  const pic = (v) => typeof v === "string" && v.startsWith("data:");
-  if (a?.kind === "sketches" && Object.values(a.sketches || {}).some(pic)) {
-    const sketches = Object.fromEntries(Object.entries(a.sketches).filter(([, v]) => !pic(v)));
-    return { ...ask, answer: { ...a, sketches } };
-  }
-  if (a?.kind === "broll" && (a.changes || []).some((c) => pic(c?.sketch))) {
-    return { ...ask, answer: { ...a, changes: a.changes.map((c) => { if (!pic(c?.sketch)) return c; const { sketch, ...rest } = c; return rest; }) } };
-  }
-  return ask;
-}
 /** The list without its picture lines (step K), for guests when it is large. */
 export const withoutPictureLines = (markdown) => String(markdown ?? "").split(/(?<=\n)/).filter((l) => !IMAGE_LINE_RE.test(l.replace(/\r?\n$/, ""))).join("");
 
@@ -1002,17 +979,6 @@ export function dropGone(answer, shots, skip = () => false) {
   return dropped;
 }
 
-/** What the agent sees of an ask in wait_for_asks: a selection's quote and context, a sketch ask's shots, or the
- *  whole spoken text; a plan ask also gets the B-roll list; like and voice asks get the voice guide. */
-export function askForAgent(a, { spokenText = "", shots = null, voiceGuide = "" } = {}) {
-  const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, createdAt: a.createdAt };
-  if (a.scope === "selection") Object.assign(out, { quote: a.quote, context: a.context, section: a.section });
-  else if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots;
-  else out.spokenText = spokenText;
-  if (a.action === "plan") out.broll = (shots || []).map(forAgent);
-  if ((a.action === "like" || a.action === "voice") && voiceGuide) out.voiceGuide = voiceGuide;
-  return out;
-}
 /** The changes a Keep writes: only the ones still open. An undone change writes nothing. */
 export const changesToKeep = (answer, ns) => ns.map((n) => answer?.changes?.[n]).filter((c) => c?.state === "open");
 /**
