@@ -57,4 +57,4 @@ ok copy deleted later: no page error or CSP violation
 Before (the check as on dev), against a server running origin/dev, ONLY=runTwoTabs, 6 runs: FAIL 2, ok all, FAIL 2, FAIL 2, FAIL 2, ok all.
 Cause: the start screen shows "Reopen shared.md" once it has looked up the recent scripts, a moment after it appears; that
 button joins the centred row and moves "Open a script", so the press found before it landed beside it.
-After (openDisk waits until "Open a script" stays put for 250 ms): origin/dev 4 of 4 ok, this branch 9 of 9 ok, full suite 81 ok.
+After (openDisk waits until "Open a script" shows and stays put for 250 ms; the second tab first waits for "Reopen shared.md", review round 2): origin/dev 4 of 4 ok, this branch 12 of 12 ok, full suite 81 ok.
