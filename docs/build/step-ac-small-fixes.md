@@ -10,10 +10,10 @@ Lex (2026-11-16, Orbit TOOLS-315, pick 5 of the TOOLS-296 review): the review's 
 - **Facts written once for the Worker and the tab.** The agent token's eight hours and the "No asks yet" answer are in `public/agent-link.js` (new, 469 bytes), which `app.js` and `worker/mcp.js` import; the Worker takes the room id and key patterns from `public/together/link.js` and the room protocol from `public/together/room.js`, as it already did for the room's keep time.
 - **One HTML escape.** `escHtml` lives in `doc.js`; `app.js` and `broll.js` use it instead of their own copies (a missing value now escapes to nothing, never "null").
 - **No dead code.** `applyBrollChanges`, used only by tests, is gone; the tests use `applyBrollChangesReport(...).markdown` as the app does.
-- **A cap on the MCP request body** (review, info). `/mcp` refuses a body bigger than the largest allowed call (`unmark_cue`'s cueIds with their block ids, which hold at most twice a script's words since cues overlap only where bold sits inside a link inside bold, every character spelled as `\uXXXX`, plus 64 KB: 2,476,336 bytes) with 413 before reading it in full, by its stated length or while it streams. `unmark_cue` refuses cueIds whose total length is more than a script's cues can hold (the second look on PR #73 found overlapping cueIds from `list_cues` that a one-script limit refused; release review: its second look found a long-cueId call the first cap refused; Claude's review then found a 36 MB cap gave the protection away). `readUpTo` moved to `mcp.js`, so the picture upload and MCP read bodies the same way.
+- **A cap on the MCP request body** (review, info). `/mcp` refuses a body bigger than the largest allowed call (`unmark_cue`'s cueIds with their block ids, which hold at most twice a script's words since cues overlap only where bold sits inside a link inside bold, with a 500-character quote on every cue, every character spelled as `\uXXXX`, plus 64 KB: 2,566,336 bytes) with 413 before reading it in full, by its stated length or while it streams. `unmark_cue` refuses cueIds whose total length is more than a script's cues can hold (the second look on PR #73 found overlapping cueIds from `list_cues` that a one-script limit refused; release review: its second look found a long-cueId call the first cap refused; Claude's review then found a 36 MB cap gave the protection away). `readUpTo` moved to `mcp.js`, so the picture upload and MCP read bodies the same way.
 - **Module names.** The app's modules import each other as `Doc`, `Changes`, `Links`, `Cues`, `Broll` and `SaveQueue` instead of `D`, `C`, `L`, `K`, `B` and `Q` (`app.js`, `changes.js`, `together-adapter.js`, `broll-app.js`, `saving.js`).
 - **History comments.** The examples the review named in `cues.js` and `press.js` now say what the code does instead of how it was first built.
-- Sizes: the files the page needs before it runs went from 15 files and 429,605 bytes (at a100cf2, this step's base on `dev`) to 16 files and 434,612 bytes (+5,007: `agent-link.js`, the longer module names, the browser-copy code).
+- Sizes: the files the page needs before it runs went from 15 files and 429,605 bytes (at a100cf2, this step's base on `dev`) to 16 files and 434,677 bytes (+5,072: `agent-link.js`, the longer module names, the browser-copy code).
 
 ## Declined
 
@@ -37,9 +37,7 @@ All suites on `wrangler dev` and headless Chrome 157: `smoke-csp` 51 ok, `smoke-
 
 ## Done
 
-Feature list: one line under Files (a browser copy left behind after a move to a file is kept off the switcher and deleted later).
-
-Feature list: no change (the release review fixes, PR after #71, show nothing new; the line under Files came with #71)
+Feature list: no change (the release review fixes show nothing new; the one line under Files, a browser copy left behind after a move to a file is kept off the switcher and deleted later, came with #71)
 
 ### Proof
 
