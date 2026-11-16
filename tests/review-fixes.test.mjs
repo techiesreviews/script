@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// Facts the Worker and the tab both need are written once, in a small public module both import (TOOLS-315), so a
-// change can't reach one side only.
+// Small fixes from the code review of 2026-11-15 (TOOLS-315). Facts the Worker and the tab both need are written once,
+// in a small public module both import, so a change can't reach one side only.
 const src = (f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
 
 test("shared facts: the agent token's age and the no-asks answer come from public/agent-link.js", async () => {
@@ -41,4 +41,11 @@ test("one HTML escape: doc.js's escHtml, used by app.js and broll.js (no copy of
 test("no dead code: broll.js has no export that only the tests use", async () => {
   const broll = await import("../public/broll.js");
   assert.equal("applyBrollChanges" in broll, false, "applyBrollChanges: the app uses applyBrollChangesReport");
+});
+
+test("module names: the app's modules import each other under their own names, not one letter", () => {
+  for (const f of ["public/app.js", "public/changes.js", "public/together-adapter.js", "public/broll-app.js", "public/saving.js"]) {
+    const one = [...src(f).matchAll(/import \* as ([A-Za-z_$]+) from/g)].map((m) => m[1]).filter((n) => n.length === 1);
+    assert.deepEqual(one, [], `${f} imports a module under a one-letter name`);
+  }
 });
