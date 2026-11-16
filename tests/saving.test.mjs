@@ -460,6 +460,27 @@ test("saving: a waiting Ctrl+S without a file brings back no words the person to
   }
 });
 
+test("saving: a Ctrl+S on the demo that waits for another script's write never runs on the next script without a file", async () => {
+  const s = setup();
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nWriting.\n";
+  const run = s.saving.save(); // a.md is written
+  await settle();
+  s.open(null, "# Demo\n");
+  s.ed.text = "# Demo\n\nPressed.\n";
+  s.saving.save(); // Ctrl+S on the demo waits, with no file of its own
+  s.store.set("draft:demo.md", { text: s.ed.text, at: 1, asks: [] }); // kept on leaving (loadText)
+  s.open(null, "# Other\n");
+  release();
+  await run;
+  await until(() => !s.script.saving);
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nWriting.\n");
+  assert.equal(s.files.disk.has("from-title.md"), false, "nothing is saved into the browser");
+  assert.ok(!s.events.some((e) => e[0] === "renamed"));
+  assert.deepEqual(s.store.get("draft:demo.md"), { text: "# Demo\n\nPressed.\n", at: 1, asks: [] });
+  assert.deepEqual(s.saving.queued(), []);
+});
+
 test("saving: Ctrl+S where neither the browser nor a file picker can save downloads the script", async () => {
   const s = setup({ handle: null });
   s.open(null, "# Demo\n");

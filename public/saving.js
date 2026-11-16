@@ -30,28 +30,29 @@ export async function permitted(handle, ask, mode = "readwrite") {
 
 // A browser copy left behind by a move to a file (the browser refused to delete it then) is kept off the list by name
 // (in local storage, `store`) and deleted on a later listing; until then no script may take its name (app.js nameTaken).
-// `dir()`: the browser's scripts folder.
-export function createLeftCopies({ store, dir }) {
+// `dir()`: the browser's scripts folder. `lock(fn)`: runs fn alone among this site's tabs (navigator.locks), so one
+// cleanup checks, deletes and frees a name before another may look at it.
+export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
   const KEY = "movedCopies";
   const names = () => { const v = store.get(KEY); return Array.isArray(v) ? v : []; };
   // Right after the move: the copy goes, or its name is kept for later.
-  async function afterMove(name) {
+  const afterMove = (name) => lock(async () => {
     try { await (await dir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") store.set(KEY, [...new Set([...names(), name])]); }
-  }
-  // A later listing found the copy: it goes, and its name is free again. The name is read again just before the delete:
+  });
+  // A later listing found the copy: it goes, and its name is free again. The name is read again inside the lock:
   // another listing (or tab) may have deleted the copy meanwhile, and a new script may hold the name now.
-  async function retry(name) {
+  const retry = (name) => lock(async () => {
     const d = await dir();
     if (!names().includes(name)) return;
     try { await d.removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return; }
-    if (names().includes(name)) store.set(KEY, names().filter((n) => n !== name));
-  }
+    store.set(KEY, names().filter((n) => n !== name));
+  });
   // After a full listing of the folder (`found`: every file name in it): the copies named in `left` (the names as the
   // listing started) that are still there go; the names whose copy went some other way (an older tab, cleared storage)
   // are freed.
   async function listed(left, found) {
     const gone = left.filter((n) => !found.has(n));
-    if (gone.length) store.set(KEY, names().filter((n) => !gone.includes(n)));
+    if (gone.length) await lock(async () => store.set(KEY, names().filter((n) => !gone.includes(n))));
     for (const n of left) if (found.has(n)) await retry(n);
   }
   return { names, afterMove, listed };

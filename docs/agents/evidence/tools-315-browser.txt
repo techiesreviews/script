@@ -1,4 +1,4 @@
-# TOOLS-315 browser checks on wrangler dev (port 38315) and headless Chrome 157, 2026-11-16
+# TOOLS-315 browser checks (commits are named by their subject: the branch was rebased when it landed) on wrangler dev (port 38315) and headless Chrome 157, 2026-11-16
 
 ## TOOLS-309: smoke-broll-lazy's 1280 px "another new script" step
 Reproduced on live (https://script.techies.tools) with a copy of the saved older profile (.scratch/chrome, 2026-11-06), the edge runs only:
@@ -8,7 +8,7 @@ FAIL 1280 px: after that, a script without B-roll saves to a video folder (no li
 FAIL 3
 Measured on that profile: the first open of the script menu shows New script at y=148, one frame later (17-18 ms, 3 of 3 runs) at y=184 once the list is drawn: [[0,148],[17,184]].
 
-Failing first (40e9342, the press 150 ms after the spot is found, no wait), local:
+Failing first (the commit "test: smoke-broll-lazy presses New script a moment after finding it", the press 150 ms after the spot is found, no wait), local:
 FAIL timed out: another new script
 FAIL timed out: the folder's receipt
 FAIL 1280 px: after that, a script without B-roll saves to a video folder (no list linked) ( | note: B-roll list can't be read / menu open: false / file: fail-check.md)
@@ -23,14 +23,14 @@ FAIL 390 px: the agent hears the person opened another script (Shown to the pers
 FAIL 390 px: the other script gets no suggestion
 FAIL 12
 
-With the wait (3a5d246), live, older profile: 91 ok, ok all
+With the wait ("fix: smoke-broll-lazy waits for the script menu's list"), live, older profile: 91 ok, ok all
 
-## Browser copy that can't be deleted after Save as: failing first (f63bb91^, smoke-saving ONLY=runMoveCopyStays)
+## Browser copy that can't be deleted after Save as: failing first (the app before "fix: a browser copy that can't be deleted after Save as stays off the switcher", smoke-saving ONLY=runMoveCopyStays)
 FAIL copy stays: the switcher lists the script once, as a file (["file","Browser"])
 FAIL timed out: the copy goes
 FAIL copy stays: a later visit deletes the browser copy (stuck-copy.md)
 
-Review round 1 (P2), the new steps on f63bb91's app (failing first):
+Review round 1 (P2), the new steps on the app of that first fix (failing first):
 FAIL copy stays: a new script with the same title takes another name (stuck-copy.md)
 FAIL copy stays: the new script stays in the browser
 
