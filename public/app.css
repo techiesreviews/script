@@ -910,6 +910,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .share .share__btn[data-done] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 /* Sharing could not start: the warning icon in the warning colour; the button's name says why, and a click tries again. */
 .share .share__btn[data-failed] { background: var(--accent-faint); border-color: color-mix(in oklch, var(--accent) 45%, transparent); color: var(--accent-ink); }
+.share .share__btn[data-failed]:active { background: var(--accent-soft); }
 /* Share shows only its icon; its words stay for screen readers and as its title. */
 .share__btn .lbl { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
 .share__btn { position: relative; }
