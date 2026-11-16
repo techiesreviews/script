@@ -118,12 +118,18 @@ async function run(width, height) {
   await sleep(300);
   await page.until(`document.readyState === "complete" && !!document.querySelector("#emptySample")`, "the start screen");
 
-  // The CSP is on: another site is refused, a data: picture can be read back (the B-roll list's lighter pictures).
-  check(await page.eval(`fetch("https://example.com/").then(() => false, () => true)`), `${tag} a request to another site is refused`);
-  check((await page.eval(`window.__csp.splice(0).join(" ")`)).includes("connect-src"), `${tag} the refusal is the CSP's connect-src`);
-  page.log.splice(0);
-  check(await page.eval(`fetch("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==").then((r) => r.ok, () => false)`), `${tag} a data: picture can be read back`);
   await clean(page, tag, "start screen");
+
+  // The CSP is on: another site is refused (only that refusal is seen), a data: picture can be read back (the B-roll
+  // list's lighter pictures).
+  check(await page.eval(`fetch("https://example.com/").then(() => false, () => true)`), `${tag} a request to another site is refused`);
+  await sleep(200);
+  const refused = await page.eval(`window.__csp.splice(0)`);
+  check(refused.length === 1 && refused[0] === "connect-src https://example.com/", `${tag} the refusal is the CSP's connect-src, and nothing else`, refused.join(" | "));
+  const logged = page.log.splice(0);
+  check(logged.length > 0 && logged.every((t) => t.includes("https://example.com/")), `${tag} the console shows only that refusal`, logged.join(" | ").slice(0, 300));
+  check(await page.eval(`fetch("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==").then((r) => r.ok, () => false)`), `${tag} a data: picture can be read back`);
+  await clean(page, tag, "reading a data: picture");
 
   // Open: the demo and its B-roll list, with the agent connected over the live relay.
   await page.click("#emptySample");

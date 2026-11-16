@@ -2,10 +2,12 @@
 ok 1280 px: the page comes with the CSP
 ok 1280 px: the page is checked with the server each visit (no-cache, ETag)
 ok 1280 px: an unchanged file comes back as "not changed" (304)
-ok 1280 px: a request to another site is refused
-ok 1280 px: the refusal is the CSP's connect-src
-ok 1280 px: a data: picture can be read back
 ok 1280 px: start screen: no CSP violation or error
+ok 1280 px: a request to another site is refused
+ok 1280 px: the refusal is the CSP's connect-src, and nothing else
+ok 1280 px: the console shows only that refusal
+ok 1280 px: a data: picture can be read back
+ok 1280 px: reading a data: picture: no CSP violation or error
 ok 1280 px: the agent reaches the tab over the live relay (WebSocket)
 ok 1280 px: open the demo with its B-roll list: no CSP violation or error
 ok 1280 px: the agent's picture shows as a data: image
@@ -25,10 +27,12 @@ ok 1280 px: new script and save: no CSP violation or error
 ok 390 px: the page comes with the CSP
 ok 390 px: the page is checked with the server each visit (no-cache, ETag)
 ok 390 px: an unchanged file comes back as "not changed" (304)
-ok 390 px: a request to another site is refused
-ok 390 px: the refusal is the CSP's connect-src
-ok 390 px: a data: picture can be read back
 ok 390 px: start screen: no CSP violation or error
+ok 390 px: a request to another site is refused
+ok 390 px: the refusal is the CSP's connect-src, and nothing else
+ok 390 px: the console shows only that refusal
+ok 390 px: a data: picture can be read back
+ok 390 px: reading a data: picture: no CSP violation or error
 ok 390 px: the agent reaches the tab over the live relay (WebSocket)
 ok 390 px: open the demo with its B-roll list: no CSP violation or error
 ok 390 px: the agent's picture shows as a data: image
