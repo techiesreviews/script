@@ -3,7 +3,8 @@
 // folder writer or zip maker; opening the Export menu loads the export pack and Export all downloads the zip; Share to
 // edit copies the link in the click and loads the room (the pointer over it already fetches it), and a guest's edit
 // link loads it while the Join form shows;
-// after a reload each part answers 304. Sharing stopped while the room's part is held starts no room. A part that
+// after a reload each part answers 304. While the room's part is held, Ctrl+Z still undoes the person's typing, and
+// sharing stopped then starts no room and keeps the Undo steps from before. A part that
 // can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
 // a guest's Join. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
 // that fails after the video folder is picked writes nothing and says so; a folder saved while the pack loads holds the
@@ -224,10 +225,23 @@ async function run(width, height) {
   check(await held.until(`!!window.__link`, "the link while the room is held"), `${tag} with the room's part held, the link is still copied in the click`);
   for (let i = 0; i < 50 && !held.held.length; i++) await sleep(100);
   check(held.held.length > 0 && await held.eval(`!document.querySelector("#stopShare").hidden && window.__scriptEditor.room() === null`), `${tag} sharing shows as on while the part is held, with no room yet`);
+  // The person's own Undo works while the part is on its way.
+  const caretAtEnd = `(() => { const l = [...document.querySelectorAll('#script .block')].at(-1); l.focus(); const r = document.createRange(); r.selectNodeContents(l); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); })()`;
+  const undo = async () => { for (const type of ["keyDown", "keyUp"]) await held.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 }); };
+  await held.eval(caretAtEnd);
+  await sleep(1700); // a new Undo step (typing after a pause)
+  await held.send("Input.insertText", { text: " Undo me" });
+  await held.until(`(window.__scriptEditor.markdown() || "").includes("Undo me")`, "the typing while held");
+  await sleep(1700);
+  await undo();
+  check(await held.until(`!(window.__scriptEditor.markdown() || "").includes("Undo me") && (window.__scriptEditor.markdown() || "").includes("Hello there my friend.")`, "Undo while held"), `${tag} while the room's part is held, Ctrl+Z undoes the person's typing`);
   await held.click("#stopShare");
   await held.release();
   await sleep(800);
   check(await held.eval(`window.__scriptEditor.room() === null && document.querySelector("#shareLabel").textContent === "Share to edit"`), `${tag} sharing stopped before the part came: no room starts`);
+  await held.eval(caretAtEnd);
+  await undo();
+  check(await held.until(`!(window.__scriptEditor.markdown() || "").includes("Hello there my friend.")`, "Undo after the stopped share"), `${tag} after that, the Undo steps from before the share are still there`);
   await clean(held, tag, "room held, sharing stopped");
   await held.close();
 
