@@ -2738,20 +2738,7 @@ let copiesChain = Promise.resolve(); // one at a time in this tab where the brow
 const copies = createLeftCopies({ store, dir: () => scriptsDir(), lock: (fn) => (navigator.locks ? navigator.locks.request("script-editor:moved-copies", fn) : (copiesChain = copiesChain.then(fn, fn))) });
 async function browserScripts() {
   if (!browserSaving) return [];
-  const out = [];
-  const left = copies.names(), found = new Set();
-  try {
-    for await (const handle of (await scriptsDir()).values()) {
-      if (handle.kind !== "file") continue;
-      found.add(handle.name);
-      if (copies.names().includes(handle.name)) continue; // read live: another listing may have freed the name for a new script
-      let at = 0;
-      try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
-      out.push({ handle, name: handle.name, at, browser: true });
-    }
-    await copies.listed(left, found);
-  } catch { /* storage off: none */ }
-  return out;
+  try { return await copies.list(); } catch { return []; } // storage off: none
 }
 async function isInBrowser(handle) {
   if (!browserSaving || !handle) return false;
