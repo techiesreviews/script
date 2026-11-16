@@ -620,3 +620,28 @@ test("saving: a folder walk that fails partway still shows the scripts found so 
   assert.deepEqual((await copies.list()).map((r) => r.name), ["a.md"]);
   assert.deepEqual(copies.names(), ["gone.md"], "a partial walk is no proof the copy is gone");
 });
+
+test("saving: a left-behind copy that another tab saved into after the move is kept and shown again, never deleted", async () => {
+  const store = new Map(), files = new Map([["moved.md", { text: "at the move", lastModified: 100 }], ["other.md", { text: "untouched", lastModified: 100 }]]);
+  let refuse = true;
+  const notFound = () => Object.assign(new Error("gone"), { name: "NotFoundError" });
+  const handle = (name) => ({ kind: "file", name, async getFile() { if (!files.has(name)) throw notFound(); return { lastModified: files.get(name).lastModified }; } });
+  const dir = {
+    async *values() { for (const name of [...files.keys()]) yield handle(name); },
+    async removeEntry(name) { if (refuse) throw Object.assign(new Error("in use"), { name: "NoModificationAllowedError" }); if (!files.has(name)) throw notFound(); files.delete(name); },
+    async getFileHandle(name) { if (!files.has(name)) throw notFound(); return handle(name); },
+  };
+  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir });
+  await copies.afterMove("moved.md");
+  await copies.afterMove("other.md");
+  assert.deepEqual(copies.names(), ["moved.md", "other.md"]);
+  // Another tab still had moved.md open and saved newer words into the browser copy.
+  files.set("moved.md", { text: "newer words", lastModified: 200 });
+  refuse = false;
+  const rows = await copies.list();
+  assert.equal(files.get("moved.md")?.text, "newer words", "the copy with newer words is not deleted");
+  assert.equal(files.has("other.md"), false, "an unchanged copy goes");
+  assert.deepEqual(copies.names(), [], "both names are free: the changed copy shows again");
+  assert.deepEqual((await copies.list()).map((r) => r.name), ["moved.md"], "the next listing shows it as a browser script");
+  void rows;
+});
