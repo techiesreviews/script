@@ -39,6 +39,8 @@ All suites on `wrangler dev` and headless Chrome 157: `smoke-csp` 51 ok, `smoke-
 
 Feature list: one line under Files (a browser copy left behind after a move to a file is kept off the switcher and deleted later).
 
+Feature list: no change (the release review fixes, PR after #71, show nothing new; the line under Files came with #71)
+
 ### Proof
 
 - TOOLS-309, reproduce and fix or make the check robust: met. Reproduced on live with a copy of the older profile (3 FAIL, the release run's signature: menu closed, `fail-check.md` still open); measured New script moving down a row 17-18 ms after the menu opens (3 of 3 runs). Test-only: the check now waits for the drawn list. Failing first: with the press 150 ms late and no wait, 12 FAIL at both widths on every run (the commit "test: smoke-broll-lazy presses New script a moment after finding it"); with the wait, 91 ok locally and 91 ok on live with the older profile.
