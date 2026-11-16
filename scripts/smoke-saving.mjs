@@ -185,7 +185,7 @@ async function runNewScript() {
   // A new script left as it came is not kept when another one opens.
   await page.click("#docSwitch");
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
-  await page.click("#menuNew");
+  await page.eval(`document.querySelector("#menuNew").click(); true`); // the menu may still be settling under a pointer click
   await page.until(`document.querySelector("#fileName").textContent === "untitled-script.md"`, "a second new script");
   await switchTo(page, "saving-plan.md");
   await sleep(300);

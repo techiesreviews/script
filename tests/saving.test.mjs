@@ -360,6 +360,35 @@ test("saving: after a Save as that landed with another script open, that script'
   assert.ok(!f.events.some((e) => e[0] === "placed" || e[0] === "renamed"));
 });
 
+test("saving: scripts left one after another while Save as writes each get their own save, or a draft", async () => {
+  for (const refuse of [false, true]) {
+    const s = setup({ handle: null });
+    for (const n of ["a.md", "b.md", "c.md"]) s.files.outside(n, `# ${n}\n`);
+    s.saving.open({ handle: { name: "a.md" }, name: "a.md", browser: true, savedText: "# a.md\n", modified: 1 });
+    const release = s.files.hold("moved.md");
+    s.files.port.pickSave = async () => ({ name: "moved.md" });
+    const run = s.saving.saveAs();
+    await settle();
+    const B = { name: "b.md", fail: refuse }, C = { name: "c.md" };
+    s.open(B, "# b.md\n");
+    s.ed.text = "# b.md\n\nBee.\n";
+    s.saving.save();
+    s.open(C, "# c.md\n");
+    s.ed.text = "# c.md\n\nSea.\n";
+    s.saving.save();
+    s.time.t = 88_000;
+    release();
+    await run;
+    await until(() => !s.script.saving);
+    assert.equal(s.files.disk.get("c.md").text, "# c.md\n\nSea.\n");
+    assert.deepEqual(s.saving.queued(), []);
+    if (refuse) {
+      assert.equal(s.files.disk.get("b.md").text, "# b.md\n");
+      assert.deepEqual(s.store.get("draft:b.md"), { text: "# b.md\n\nBee.\n", at: 88_000, asks: [] });
+    } else assert.equal(s.files.disk.get("b.md").text, "# b.md\n\nBee.\n");
+  }
+});
+
 test("saving: Ctrl+S where neither the browser nor a file picker can save downloads the script", async () => {
   const s = setup({ handle: null });
   s.open(null, "# Demo\n");

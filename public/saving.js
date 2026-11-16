@@ -143,18 +143,22 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
       if (handle === script.handle) script.saveError = e?.message || "Could not save.";
     }
     if (!written && handle !== script.handle) keepDraft(name, text);
-    // Scripts the person left go straight to their own files; requests that arrive meanwhile keep waiting.
     queue = Q.settleQueue(queue, written);
+    return drain(false);
+  }
+  // Scripts the person left go straight to their own files; requests that arrive meanwhile keep waiting. Then the
+  // open script's own waiting request runs.
+  async function drain(moved) {
     for (;;) {
       const { left, current } = Q.splitQueue(queue, script.handle);
-      if (!left.length) { queue = Q.emptyQueue(); script.saving = false; finish(current); return; }
+      if (!left.length) { queue = Q.emptyQueue(); script.saving = false; finish(current, moved); return; }
       queue = { waiting: current, left: [] };
       for (const snap of left) queue = Q.settleQueue(queue, await writeLeft(snap));
     }
   }
-  function finish(current) {
+  function finish(current, moved) {
     script.autoSaving = false;
-    on.done(false);
+    on.done(moved);
     // The open script's own waiting request runs with its own flags.
     if (current) save({ force: current.force, auto: current.auto });
     else if (!script.saveError && !script.needsPermission) schedule();
@@ -213,14 +217,14 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     } catch (e) {
       if (mine === opened) script.saveError = e?.message || "Could not save.";
     }
+    // With another script open now, the saves made meanwhile run as after any save: scripts left go to their own
+    // files (or drafts), then the open script's own request with its own flags (a click may still show the prompt).
+    if (mine !== opened) return drain(true);
     script.saving = false;
-    // Requests made during a save-as belonged to the old place; the new file is now current. With another script open
-    // now, that script's own waiting request runs with its own flags (a click may still show the browser's prompt).
-    const current = mine === opened ? null : Q.splitQueue(queue, script.handle).current;
+    // Requests made during a save-as belonged to the old place; the new file is now current.
     queue = Q.emptyQueue();
     on.done(true);
-    if (current) save({ force: current.force, auto: current.auto });
-    else schedule();
+    schedule();
   }
   // Ctrl/Cmd+S on a script without a file (the demo, or a file opened where files can't be saved): into the browser.
   async function saveInBrowser() {
