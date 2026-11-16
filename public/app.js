@@ -3157,29 +3157,40 @@ const brollHost = () => ({
   hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
   getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle,
 });
-// Loads the module once (a failed load is tried again on the next use) and, the first time, reads the open script's
-// list; it settles once that first read is done.
+// Loads the module once and, the first time, reads the open script's list; it settles once that first read is done.
+// A load that failed stays failed until the page is reloaded: browsers keep a failed module for the page's life.
 function needBroll() {
   if (brollApi) return Promise.resolve(brollApi);
+  if (brollFailed) return Promise.reject(new Error("The B-roll part could not load."));
   brollLoading ??= import("./broll-app.js").then((m) => {
     if (m.SEAM !== BROLL_SEAM) throw new Error("The editor was updated: reload the page.");
     const api = m.createBroll(brollHost());
     api.setFlags(brollPre.flags);
     brollApi = api;
-    brollFailed = false;
+    return api;
+  }).then((api) => {
     let first = null;
     if (!state.guest) first = api.load();
     else if (brollPre.room) api.adoptRoom(brollPre.room);
     else api.render();
-    return Promise.resolve(first).then(() => api);
-  }).catch((e) => {
+    return Promise.resolve(first).then(() => api, () => api);
+  }, (e) => {
     brollLoading = null;
     brollFailed = true;
+    brollPre.status = "error"; // the open script needed it: nothing is added or saved over its list
     renderView();
     renderBroll();
     throw e;
   });
   return brollLoading;
+}
+// The open script needs the module (a linked list, B-roll asks, the Storyboard): it loads, or the script's B-roll
+// counts as unreadable when it could not load.
+function wantBroll() {
+  if (brollApi || brollLoading) return;
+  if (!brollFailed) return void needBroll().catch(() => {});
+  brollPre.status = "error";
+  renderBroll();
 }
 // Runs at once when the module is here, else once it has loaded (nothing happens if it can't load).
 function withBroll(fn) {
@@ -3188,10 +3199,10 @@ function withBroll(fn) {
 }
 // Loads it when asks that show B-roll came in (a restored draft, a guest's copy) and it isn't here yet.
 function brollIfAsks() {
-  if (!brollApi && state.asks.some(needsBroll)) needBroll().catch(() => {});
+  if (!brollApi && state.asks.some(needsBroll)) wantBroll();
 }
-// "none" (no list linked), "loading", "ok", "permission" or "error" (also: the module could not load).
-const brollStatus = () => (brollApi ? brollApi.status() : brollFailed ? "error" : brollPre.status);
+// "none" (no list linked), "loading", "ok", "permission" or "error" (also: the module could not load for this script).
+const brollStatus = () => (brollApi ? brollApi.status() : brollPre.status);
 const brollShots = () => brollApi?.shots() ?? [];
 function brollFlags() {
   if (brollApi) return brollApi.flags();
@@ -3238,7 +3249,7 @@ async function loadBroll() {
   if (token !== brollPre.token || brollApi) return;
   // The demo script links its own made-up list, unless it was unlinked.
   const linked = link ? !link.none : state.name === SAMPLE.name;
-  if (linked || state.asks.some(needsBroll) || ui.view === "board") return void needBroll().catch(() => {});
+  if (linked || state.asks.some(needsBroll) || ui.view === "board") return wantBroll();
   brollPre.status = "none";
   renderBroll();
 }
@@ -3248,7 +3259,7 @@ function setRoomBroll(b) {
   if (!state.guest || !state.doc) return;
   brollPre.room = b;
   brollPre.flags = b?.status === "ok" && b.flags && typeof b.flags === "object" ? { ...b.flags } : {};
-  if (b?.status === "ok" && typeof b.text === "string") needBroll().catch(() => {});
+  if (b?.status === "ok" && typeof b.text === "string") wantBroll();
   else renderBroll();
 }
 
@@ -3260,7 +3271,6 @@ function setView(v) {
   if (board) { ui.scriptY = scrollY; ui.scriptTop = sheetTop(); }
   ui.view = board ? "board" : "script";
   store.set("view", ui.view);
-  if (board) brollFailed = false; // a person opening the Storyboard tries a failed load again
   hideBar();
   closeCard();
   brollApi?.closeCard();
@@ -3281,7 +3291,7 @@ function renderView() {
   el.replaceChildren();
   if (!board) return;
   if (brollFailed) el.innerHTML = '<div class="board__bar"><p class="board__note">Couldn\'t load the storyboard. Reload the page.</p></div>';
-  else needBroll().catch(() => {});
+  else wantBroll();
 }
 $("#viewSwitch").addEventListener("click", (e) => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
 
@@ -3300,7 +3310,8 @@ function spokenSelection(range) {
   }
   return out;
 }
-const canAddBroll = () => !state.guest && (brollStatus() === "ok" || brollStatus() === "none");
+// Not once the module could not load: the card would never open.
+const canAddBroll = () => !state.guest && (brollApi ? brollApi.canAdd() : !brollFailed && brollPre.status === "none");
 // The typed command "add b-roll": the shot card opens on the selected spoken words (the module may load first).
 function addBrollHere() {
   const s = barSel;
@@ -3524,7 +3535,8 @@ function onRelayMessage(m) {
     if (agent.state !== "on") { agent.state = "on"; renderAgent(); }
     handleCall(m);
   } else if (m.type === "image" && typeof m.id === "string") {
-    withBroll((b) => b.pictureHead(m));
+    if (brollApi) brollApi.pictureHead(m);
+    else needBroll().then((b) => b.pictureHead(m), () => { try { agent.ws?.send(JSON.stringify({ type: "result", id: m.id, error: BROLL_GONE })); } catch { /* closed */ } });
   }
 }
 function forgetAgent() {

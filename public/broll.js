@@ -230,8 +230,6 @@ export function scriptOrder(doc, shots) {
   return shots.map((s, i) => ({ s, i, k: first(s) })).sort((x, y) => x.k - y.k || x.i - y.i).map((x) => x.s);
 }
 
-/** What the agent sees in get_script. */
-
 /* ---------- Sketch sanitiser ---------- */
 const ELEMENTS = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text"]);
 const GEOMETRY = new Set(["x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "width", "height", "d", "points", "dx", "dy", "viewbox"]);

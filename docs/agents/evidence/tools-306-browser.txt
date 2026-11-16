@@ -53,6 +53,34 @@ ok 390 px: a storyboard frame goes back to its lit shot
 ok 390 px: demo B-roll flows: no CSP violation or error
 ok 390 px: after a reload broll-app.js is checked with the server and comes back "not changed" (304)
 ok 390 px: reload: no CSP violation or error
+ok 1280 px: the / menu offers B-roll on a spoken line
+ok 1280 px: before it is picked, no B-roll code is fetched
+ok 1280 px: picking B-roll loads the module and opens the Add card
+ok 1280 px: the / menu's B-roll loaded broll-app.js
+ok 1280 px: B-roll from the / menu: no CSP violation or error
+ok 1280 px: a B-roll suggestion shows beside the line
+ok 1280 px: the start screen fetches no B-roll code
+ok 1280 px: reopened, its draft's suggestion shows again
+ok 1280 px: the draft's B-roll asks loaded broll-app.js
+ok 1280 px: draft with B-roll asks: no CSP violation or error
+ok 1280 px: a module that can't load: the Storyboard says to reload
+ok 1280 px: the agent's B-roll call is told to ask for a reload
+ok 1280 px: after that, a script without B-roll saves to a video folder (no list linked)
+ok 1280 px: module that can't load: no CSP violation or error
+ok 390 px: the / menu offers B-roll on a spoken line
+ok 390 px: before it is picked, no B-roll code is fetched
+ok 390 px: picking B-roll loads the module and opens the Add card
+ok 390 px: the / menu's B-roll loaded broll-app.js
+ok 390 px: B-roll from the / menu: no CSP violation or error
+ok 390 px: a B-roll suggestion shows beside the line
+ok 390 px: the start screen fetches no B-roll code
+ok 390 px: reopened, its draft's suggestion shows again
+ok 390 px: the draft's B-roll asks loaded broll-app.js
+ok 390 px: draft with B-roll asks: no CSP violation or error
+ok 390 px: a module that can't load: the Storyboard says to reload
+ok 390 px: the agent's B-roll call is told to ask for a reload
+ok 390 px: after that, a script without B-roll saves to a video folder (no list linked)
+ok 390 px: module that can't load: no CSP violation or error
 ok all
 
 ## Older suites, same server
