@@ -575,3 +575,30 @@ test("saving: a listing frees a name only when its copy is really gone, also if 
   await copies.listed(["x.md"], new Set());
   assert.deepEqual(copies.names(), []);
 });
+
+test("saving: a listing never shows a left-behind copy that another cleanup deleted while it walked the folder", async () => {
+  const store = new Map([["movedCopies", ["stuck.md"]]]), files = new Map([["stuck.md", "old copy"], ["a.md", "a script"]]);
+  const notFound = () => Object.assign(new Error("gone"), { name: "NotFoundError" });
+  const handle = (name) => ({ kind: "file", name, async getFile() { if (!files.has(name)) throw notFound(); return { lastModified: 5 }; } });
+  let pause = null;
+  const dir = {
+    async *values() { for (const name of ["stuck.md", "a.md"]) { if (pause) await pause.wait; yield handle(name); } },
+    async removeEntry(name) { if (!files.has(name)) throw notFound(); files.delete(name); },
+    async getFileHandle(name) { if (!files.has(name)) throw notFound(); return handle(name); },
+  };
+  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir });
+  // The walk stops before it yields stuck.md; meanwhile another cleanup deletes the copy and frees the name.
+  let go;
+  pause = { wait: new Promise((r) => { go = r; }) };
+  const listing = copies.list();
+  await settle();
+  pause = null;
+  files.delete("stuck.md");
+  store.set("movedCopies", []);
+  go();
+  const rows = await listing;
+  assert.deepEqual(rows.map((r) => r.name), ["a.md"], "the deleted copy is not listed");
+  // A new script that took the name is listed with its own file.
+  files.set("stuck.md", "a new script");
+  assert.deepEqual((await copies.list()).map((r) => [r.name, r.at]), [["stuck.md", 5], ["a.md", 5]]);
+});
