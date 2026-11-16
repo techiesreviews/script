@@ -90,7 +90,7 @@ function stage({ guest = false } = {}) {
     renderBlock: note("renderBlock"), getCaret: () => null, renderTocDots: note("renderTocDots"), renderAgent: note("renderAgent"),
     refreshBar: note("refreshBar"), brollChanged: note("brollChanged"), schedulePersist: note("schedulePersist"),
     hideBar: note("hideBar"), closeCard: note("closeCard"), editorJump: note("editorJump"), placeOverText: note("placeOverText"),
-    positionSlash: note("positionSlash"), scriptView: () => ({ top: 0, bottom: 800 }), personInput: note("personInput"),
+    positionSlash: note("positionSlash"), setView: note("setView"), scriptView: () => ({ top: 0, bottom: 800 }), personInput: note("personInput"),
     readContent: () => "", offsetIn: () => 0, agentBy: () => ({ id: "agent:test", name: "Test" }), agent: { token: "t", ws: null },
     getLinkKey: async () => null, setLinkKey: async () => {}, keyed: (fn) => fn(), listKey: (n) => `brollList:${n}`,
     readKept: async () => null, delKept: async () => {}, idbPut: async () => {}, permitted: async () => true, writeHandle: async () => {},

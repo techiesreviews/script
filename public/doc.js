@@ -820,3 +820,46 @@ export function keepIds(prev, next) {
   for (const b of next.blocks) if (!kept.has(b) && keptIds.has(b.id)) b.id = freshId(next);
   return next;
 }
+
+/* ---------- Spoken paragraphs and asks as drafts, guests and the agent see them ---------- */
+// The editor needs these from the start (the "/" menu, drafts, Share to edit, wait_for_asks), so they live here and
+// not in broll.js, which loads only once a script uses B-roll (TOOLS-306). broll.js passes them on.
+// Lower case, no quotes, apostrophes or punctuation, single spaces.
+export const normalize = (s) => String(s).toLowerCase().normalize("NFKC").replace(/[’'`ʼ‘]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/** The spoken paragraphs, in order, as the matcher sees them. */
+export function spokenBlocks(doc) {
+  return outline(doc).sections.filter((s) => s.spoken)
+    .flatMap((s) => s.blocks.filter((b) => b.type === "para"))
+    .map((b) => ({ id: b.id, n: ` ${normalize(spokenWords(contentOf(b)))} ` })); // a link or a cue counts as its words (step G)
+}
+
+/** A shot of the B-roll list as the agent sees it. */
+export const forAgent = (s) => ({ id: s.id, what: s.what, over: s.over, how: s.how, kind: s.kind, blockIds: [...(s.blockIds || [])], check: !!s.check });
+
+/** A copy of an ask without its waiting pictures (step K), for drafts and guests: a sketch ask's shot waits for its
+ *  sketch again, an add keeps its suggestion without the picture. Asks without pictures come back as they are. */
+export function withoutPictures(ask) {
+  const a = ask?.answer;
+  const pic = (v) => typeof v === "string" && v.startsWith("data:");
+  if (a?.kind === "sketches" && Object.values(a.sketches || {}).some(pic)) {
+    const sketches = Object.fromEntries(Object.entries(a.sketches).filter(([, v]) => !pic(v)));
+    return { ...ask, answer: { ...a, sketches } };
+  }
+  if (a?.kind === "broll" && (a.changes || []).some((c) => pic(c?.sketch))) {
+    return { ...ask, answer: { ...a, changes: a.changes.map((c) => { if (!pic(c?.sketch)) return c; const { sketch, ...rest } = c; return rest; }) } };
+  }
+  return ask;
+}
+
+/** What the agent sees of an ask in wait_for_asks: a selection's quote and context, a sketch ask's shots, or the
+ *  whole spoken text; a plan ask also gets the B-roll list; like and voice asks get the voice guide. */
+export function askForAgent(a, { spokenText = "", shots = null, voiceGuide = "" } = {}) {
+  const out = { id: a.id, scope: a.scope, action: a.action, instruction: a.instruction, createdAt: a.createdAt };
+  if (a.scope === "selection") Object.assign(out, { quote: a.quote, context: a.context, section: a.section });
+  else if (a.scope === "broll" && a.action === "sketch") out.shots = a.shots;
+  else out.spokenText = spokenText;
+  if (a.action === "plan") out.broll = (shots || []).map(forAgent);
+  if ((a.action === "like" || a.action === "voice") && voiceGuide) out.voiceGuide = voiceGuide;
+  return out;
+}
