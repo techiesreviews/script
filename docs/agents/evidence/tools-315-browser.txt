@@ -30,8 +30,12 @@ FAIL copy stays: the switcher lists the script once, as a file (["file","Browser
 FAIL timed out: the copy goes
 FAIL copy stays: a later visit deletes the browser copy (stuck-copy.md)
 
+Review round 1 (P2), the new steps on f63bb91's app (failing first):
+FAIL copy stays: a new script with the same title takes another name (stuck-copy.md)
+FAIL copy stays: the new script stays in the browser
+
 ## scripts/smoke-csp.mjs: 51 ok, 0 FAIL; last line: ok all
-## scripts/smoke-saving.mjs: 79 ok, 0 FAIL; last line: ok all
+## scripts/smoke-saving.mjs: 76 ok, 0 FAIL; last line: ok all (run again after review round 1)
 ## scripts/smoke-broll-lazy.mjs: 91 ok, 0 FAIL; last line: ok all
 ## scripts/smoke-rare-parts.mjs: 122 ok, 0 FAIL; last line: ok all
 ## scripts/smoke-video-folder.mjs: 93 ok, 0 FAIL; last line: all ok
@@ -39,10 +43,12 @@ FAIL copy stays: a later visit deletes the browser copy (stuck-copy.md)
 ## scripts/smoke-room.mjs: 27 ok, 0 FAIL; last line: RESULT: ok smoke-room
 ## scripts/smoke-relay.mjs: 42 ok, 0 FAIL; last line: RESULT: ok smoke
 
-## scripts/smoke-saving.mjs, the new run
+## scripts/smoke-saving.mjs, the new run (after review round 1)
 ok copy stays: the browser kept its copy
 ok copy stays: the switcher lists the script once, as a file
+ok copy stays: a new script with the same title takes another name
 ok copy stays: no page error or CSP violation
 ok copy stays: a later visit deletes the browser copy
-ok copy stays: the start screen still offers the file
+ok copy stays: the new script stays in the browser
+ok copy stays: the file on the computer holds the moved script
 ok copy deleted later: no page error or CSP violation
