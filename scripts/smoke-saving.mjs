@@ -139,7 +139,7 @@ async function openDisk(page, name) {
     await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
     await page.eval(`document.querySelector("#menuOpen").click(); true`); // the menu may still be settling under a pointer click
   } else {
-    await page.until(`!!document.querySelector("#reopenLabel")`, "the start screen");
+    await page.until(`document.querySelector("#emptyOpen").offsetParent !== null`, "Open a script on the start screen");
     await page.steady("#emptyOpen");
     await page.click("#emptyOpen");
   }
@@ -497,6 +497,7 @@ async function runTwoTabs() {
   await openDisk(one, "shared.md");
   const two = await profile.tab();
   await two.open();
+  await two.until(`!document.querySelector("#emptyReopen").hidden`, "Reopen shared.md"); // the recent scripts are looked up
   await openDisk(two, "shared.md");
   await one.send("Page.bringToFront");
   await one.typeAtEnd(" From tab one.");
