@@ -402,6 +402,10 @@ export function createTogether(app, { loadRoom = () => import("./together/room.j
     },
   });
 
+  // The room's part is fetched as the pointer or the focus reaches Share to edit, so the click seldom waits for it: the
+  // room then starts about as soon after the copied link as it did when it loaded with the page.
+  for (const type of ["pointerenter", "pointerdown", "focusin"]) $("#share").addEventListener(type, () => { if (app.doc()) part().catch(() => {}); });
+
   /* People in the top bar: you, then the others (and the agent while it has a caret). Clicking one scrolls to their caret. */
   function renderPeople() {
     const el = $("#people");

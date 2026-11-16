@@ -285,3 +285,16 @@ test("share room: a share stopped before its part failed: the next Share to edit
   assert.equal(t.sharing, false);
   assert.equal(held.made.length, 0);
 });
+
+test("share room: the pointer or the focus reaching Share to edit fetches the room's part before the click", async () => {
+  const { createTogether } = await import("../public/together-adapter.js");
+  for (const type of ["pointerenter", "pointerdown", "focusin"]) {
+    const held = heldRoom();
+    const p = page({});
+    createTogether(p.app, { loadRoom: held.load });
+    await p.$("#share").fire(type);
+    assert.equal(held.asked, 1, type);
+    await p.$("#shareBtn").fire("click");
+    assert.equal(held.asked, 1, `${type}: the click uses the same load`);
+  }
+});

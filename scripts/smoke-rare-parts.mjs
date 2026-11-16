@@ -1,7 +1,8 @@
 // Browser check for TOOLS-311: the parts a person uses rarely load on first use. With real clicks over CDP at 1280 and
 // 390 px, watching every request: a new script with typing fetches no share room (together/room.js), export pack,
 // folder writer or zip maker; opening the Export menu loads the export pack and Export all downloads the zip; Share to
-// edit copies the link in the click and loads the room, and a guest's edit link loads it while the Join form shows;
+// edit copies the link in the click and loads the room (the pointer over it already fetches it), and a guest's edit
+// link loads it while the Join form shows;
 // after a reload each part answers 304. Sharing stopped while the room's part is held starts no room. A part that
 // can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
 // a guest's Join. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
@@ -164,7 +165,14 @@ async function run(width, height) {
   await page.key("Escape", "Escape", 27);
   await clean(page, tag, "Export menu and Export all");
 
-  // Share to edit: the link is copied in the click and the room's part loads; a guest's link loads it before the join.
+  // Share to edit: the pointer reaching it fetches the room's part; the link is copied in the click; a guest's link loads
+  // the part before the join.
+  if (width >= 500) {
+    const at = await page.eval(`(() => { const r = document.querySelector("#shareBtn").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+    for (let i = 0; i < 50 && !page.asked.includes("/together/room.js"); i++) await sleep(100);
+    check(page.asked.includes("/together/room.js") && await page.eval(`!window.__link`), `${tag} the pointer over Share to edit fetches together/room.js before any click`);
+  }
   await page.click("#shareBtn");
   check(await page.until(`/#room=[\\w-]{22}&k=[\\w-]{43}$/.test(window.__link || "")`, "the share link"), `${tag} Share to edit copies an edit link`);
   for (let i = 0; i < 50 && !page.asked.includes("/together/room.js"); i++) await sleep(100);

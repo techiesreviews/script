@@ -10,6 +10,7 @@ ok 1280 px: Export all downloads one file
 ok 1280 px: it is the script's zip
 ok 1280 px: no note on Export all or Save to video folder
 ok 1280 px: Export menu and Export all: no CSP violation or error
+ok 1280 px: the pointer over Share to edit fetches together/room.js before any click
 ok 1280 px: Share to edit copies an edit link
 ok 1280 px: Share to edit loads together/room.js
 ok 1280 px: the room started is the one in the copied link
