@@ -51,3 +51,17 @@ Feature list: no change (B-roll code loads on first use; nothing on screen chang
 - R2 (gaps): no browser check yet for a seam-version mismatch (it throws into the same handler as a refused request, which is checked) or for a failed load that lands after the person switched scripts (the status rule is two lines: unreadable only for the script that asked, or one opened since that is still waiting for it). Test gaps; not worth another round.
 - GPT second look (gaps): a version-mismatch test and a delayed-failure test with a script switch, as in R2 above; test gaps only.
 - R3 (gaps): browser checks for a seam-version mismatch, a failed load after a script switch, and the card guards after a switch or an undo; test gaps only, and the review budget (3 rounds) is used.
+
+### Follow-ups
+
+- Validation gaps (gap): R3-8 still open: there is still no browser check for the guards on "add b-roll" and the "/" menu's B-roll after a switch, or after an undo now that R3-5 is fixed.
+- Validation gaps (gap): R3-7 still open: same gap as R3-1; no delayed failure after a switch.
+- Validation gaps (gap): R3-6 still open: same gap as R3-2; no version-mismatch page in `runEdges`.
+- Validation gaps (gap): R3-2 still open: nothing runs `m.SEAM !== BROLL_SEAM` (`public/app.js:3167`). The step doc declines it again under "R3 (gaps)".
+- Validation gaps (gap): R3-1 still open: no browser check fails the held request after a switch through `#menuNew`. `holdBroll` still only releases the request, and the step doc declines this again under "R3 (gaps)".
+- Validation gaps (gap): The browser evidence was not run again after this round's guard change. The latest changes rewrite the guard in all three places but leave `docs/agents/evidence/tools-306-browser.txt` as it was, so its "ok all" and the doc's "80 checks ok" come from 4a945b9, before the token guard. Test: run `node scripts/smoke-broll-lazy.mjs` on `wrangler dev` again and refresh the evidence file. The "the agent hears the person opened another script" checks at 1280 and 390 px are the ones that cover the new token comparison.
+- Validation gaps (gap): An undo must not count as "another script" (this guards the R3-5 fix). Test: in the `holdBroll` page, open a script without a list, hold the module download, and send `answer_broll` for a spoken line. Type a word, press Ctrl+Z, then release the request. Expect the call to succeed and the suggestion to show beside the line, with no `SCRIPT_MOVED` error. Do the same with the agent's `set_script` (same text) in place of the undo.
+- Validation gaps (gap): R3-1 / R3-7 (delayed failure after a switch): in `holdBroll`, open the demo so the download is held, switch through `#menuNew`, then answer the held request with `Fetch.failRequest`. Expect `window.scriptEditor.broll()` to be `null`, and Save to video folder to write "B-roll: no list linked".
+- Validation gaps (gap): R3-2 / R3-6 (version mismatch): in `runEdges`, catch `broll-app.js` in `Fetch.requestPaused`. Answer with the real body through `Fetch.fulfillRequest`, with `export const SEAM = 1` changed to `2`. Expect what the refused-request case expects: the Storyboard note, `BROLL_GONE` for `sketch_shot`, and a later folder save with "no list linked".
+- Validation gaps (gap): R3-8 (the card guards): with the download held, pick B-roll from the "/" menu on a spoken line, open a new script through `#menuNew`, then release the request. Expect no Add card. Repeat with "add b-roll" from the selection bar.
+
