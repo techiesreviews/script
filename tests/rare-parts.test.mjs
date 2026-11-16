@@ -243,7 +243,7 @@ test("share room: a guest joins once the part is here; a join replaced before th
   assert.equal(guest.room, g.made[0]);
 });
 
-test("share room: a room part that speaks another seam version counts as not loaded, for the host and a guest", async () => {
+test("share room: a room part that speaks another seam version counts as not loaded and says to reload, for the host and a guest", async () => {
   const { createTogether } = await import("../public/together-adapter.js");
   const held = heldRoom();
   const p = page({});
@@ -254,7 +254,14 @@ test("share room: a room part that speaks another seam version counts as not loa
   assert.equal(held.made.length, 0);
   assert.equal(t.sharing, false);
   assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "no room started: the app's Undo stays");
-  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Click to try again.");
+  // A part from a newer release comes the same on every retry: only a reload helps, so the button says that.
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
+  await p.$("#shareBtn").fire("click");
+  assert.equal(held.asked, 2, "a click still asks again");
+  held.release(2);
+  await tick();
+  assert.equal(held.made.length, 0);
+  assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.", "the same newer part again: still says to reload");
 
   const g = heldRoom();
   const q = page({});
@@ -451,22 +458,30 @@ const luminance = ({ l, c, h }) => {
 };
 const ratio = (x, y) => { const [a, b] = [luminance(x), luminance(y)].sort((p, q) => q - p); return (a + 0.05) / (b + 0.05); };
 
+// The primary action's hovered or pressed background, as the CSS mixes it: color-mix(in oklch, var(--accent) N%, var(--ink)).
+const primary = (state) => {
+  const m = new RegExp(`:is\\(\\.tb\\.tb--primary, \\.menu-action\\.menu-action--primary\\):${state}\\s*\\{\\s*background:\\s*color-mix\\(in oklch, var\\(--accent\\) ([\\d.]+)%, var\\(--ink\\)\\)`).exec(CSS);
+  assert.ok(m, `the primary action's :${state} background mixes the orange with the ink`);
+  return Number(m[1]) / 100;
+};
 test("export menu: a note inside Export all (the orange primary action) reads at 4.5:1 in light and dark, at rest, hovered and pressed", () => {
   // The note's colour inside the primary action: a rule for it, else the notes' own muted colour.
   const own = /(?:^|\})\s*[^{}]*\.menu-action--primary[^{}]*\.menu-action__note[^{}]*\{[^}]*?\bcolor:\s*([^;}]+)/m.exec(CSS)?.[1].trim();
   for (const mode of ["light", "dark"]) {
     const accent = oklch(token("accent", mode)), ink = oklch(token("ink", mode));
     const text = !own ? oklch(token("muted", mode)) : own === "inherit" || own === "currentColor" ? oklch(token("on-accent", mode)) : oklch(token(/var\(--([\w-]+)\)/.exec(own)[1], mode));
-    for (const [state, bg] of [["at rest", accent], ["hovered", mix(accent, 0.9, ink)], ["pressed", mix(accent, 0.85, ink)]]) {
+    for (const [state, bg] of [["at rest", accent], ["hovered", mix(accent, primary("hover"), ink)], ["pressed", mix(accent, primary("active"), ink)]]) {
       assert.ok(ratio(text, bg) >= 4.5, `${mode}, ${state}: the note on the orange is ${ratio(text, bg).toFixed(2)}:1`);
     }
   }
 });
 
-test("share button: hovering the failed button keeps its warning background; pressing it still shows the pressed one", () => {
+test("share button: hovering the failed button keeps a warning background, a little stronger; pressing it still shows the pressed one", () => {
   const rules = [...CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m, i) => ({ i, sel: m[1].trim(), body: m[2] }));
-  const hover = rules.find((r) => /\.share__btn\[data-failed\]:hover/.test(r.sel) && /background:\s*var\(--accent-faint\)/.test(r.body));
-  assert.ok(hover, "a hover rule for the failed share button keeps --accent-faint");
+  const hover = rules.find((r) => /\.share__btn\[data-failed\]:hover/.test(r.sel));
+  assert.ok(hover, "a hover rule for the failed share button");
+  const tint = /background:\s*color-mix\(in oklch, var\(--accent\) ([\d.]+)%, transparent\)/.exec(hover.body);
+  assert.ok(tint && +tint[1] > 8 && +tint[1] < 15, `hovered, it stays orange, between rest (8 %) and pressed (15 %): ${hover.body.trim()}`);
   // The plain buttons' hover (.tb:not(.tb--ink, .tb--primary):enabled:hover, four classes) comes first, so the failed one wins.
   const plain = rules.find((r) => r.sel.startsWith(".tb:not(.tb--ink, .tb--primary):enabled:hover"));
   assert.ok(hover.i > plain.i, "the failed hover comes after the plain buttons' hover");
