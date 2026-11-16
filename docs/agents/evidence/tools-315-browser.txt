@@ -146,3 +146,11 @@ ok same moment (two): no page error or CSP violation
 Full suites with the fix: smoke-csp 51 ok, smoke-saving 102 ok (92 before runSameMoment), smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, smoke-video-folder 93 ok, smoke-keep-all 933 ok, smoke-room 27 ok, smoke-relay 42 ok, 0 FAIL
 
 Seen in this run and left as it is (older than this step): while another tab's write into a browser script is on its way, Chrome keeps its swap file in the same folder (`<name>.crswap`), and a listing made in that moment shows it as a row. A write takes a few milliseconds; the check slowed it to a second to see it.
+
+## The second look on a172820 (P0: a waiting save of a renamed script held the old name; P3: a byte-order mark)
+Unit tests failing first (tests/saving.test.mjs, on a172820):
+✖ saving, two tabs: a save that waited while its script took another name, and was then left, holds the file's own name: the other tab's save waits for it
+  AssertionError: tab B's save waited and then found the file changed: it holds no words for saved that were written over (actual [false, "# Y\n\nFirst. Tab B's words.\n"], expected [true, "# Y\n\nFirst.\n"])
+✖ saving: the changed-on-disk check goes by the file's words, never by its time (the byte-order-mark step: actual [true, "# A\n\nOne.\n"])
+✖ saving: a fingerprint is the SHA-256 of the words as a file holds them (a byte-order mark in front is no word)
+With the fix: node --test tests/*.test.mjs: 521 pass, 0 fail. Browser suites again: smoke-csp 51 ok, smoke-saving 102 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, 0 FAIL.

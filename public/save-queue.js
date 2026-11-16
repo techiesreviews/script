@@ -1,8 +1,9 @@
 // Saves that wait while another save runs, kept per script. Pure: no DOM, no files. Imported by the app and the tests.
 //
 // A request is { handle, name, text, browser, savedText, force, auto }: everything needed to write that script to
-// its own file later, even after the person has opened another script. `savedText` is the file's words as the tab last
-// wrote or read them: the changed-on-disk check (saving.js) goes by them.
+// its own file later, even after the person has opened another script. A file's name is its handle's (a script may
+// take another name while a request waits); `name` is for a request without a file. `savedText` is the file's words
+// as the tab last wrote or read them: the changed-on-disk check (saving.js) goes by them.
 // The queue is { waiting, left }: `waiting` is the newest script's request; `left` holds snapshots of scripts
 // the person has left, at most one per file.
 
