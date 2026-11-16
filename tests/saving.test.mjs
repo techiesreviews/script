@@ -612,3 +612,11 @@ test("saving: a listing keeps a script it can't read the time of, and still show
   assert.deepEqual((await copies.list()).map((r) => [r.name, r.at]), [["a.md", 9], ["b.md", 0]]);
   assert.deepEqual(copies.names(), ["stuck.md"], "the copy's name stays kept for the next listing");
 });
+
+test("saving: a folder walk that fails partway still shows the scripts found so far, and frees no kept name", async () => {
+  const store = new Map([["movedCopies", ["gone.md"]]]);
+  const dir = { async *values() { yield { kind: "file", name: "a.md", async getFile() { return { lastModified: 3 }; } }; throw new Error("the folder stopped listing"); } };
+  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir });
+  assert.deepEqual((await copies.list()).map((r) => r.name), ["a.md"]);
+  assert.deepEqual(copies.names(), ["gone.md"], "a partial walk is no proof the copy is gone");
+});
