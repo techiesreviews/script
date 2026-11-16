@@ -275,12 +275,15 @@ export function scriptAdapter(app, { busy = () => false } = {}) {
     },
   };
 }
-export function createTogether(app, { loadRoom = () => import("./together/room.js") } = {}) {
+// A retry asks under a new address: a browser keeps a module that failed to load as failed under its own address.
+const importRoom = (retry) => (retry ? import(`./together/room.js?retry=${retry}`) : import("./together/room.js"));
+export function createTogether(app, { loadRoom = importRoom } = {}) {
   let room = null, composing = false, last = "", shared = { asks: "", broll: "" };
-  // The room's part, fetched once (a failed load stays failed for the page's life, as browsers keep it); `starting` is
-  // a room waiting for it: the host's share or a guest's join, dropped when sharing stops or a newer join replaces it.
-  let roomPart = null, roomFailed = false, starting = null;
-  const part = () => (roomPart ??= loadRoom().then((m) => {
+  // The room's part, fetched once (a failed load stays failed until the host clicks Share to edit again, which asks
+  // again); `starting` is a room waiting for it: the host's share or a guest's join, dropped when sharing stops or a
+  // newer join replaces it.
+  let roomPart = null, roomFailed = false, retries = 0, starting = null;
+  const part = () => (roomPart ??= loadRoom(retries).then((m) => {
     if (m?.SEAM !== ROOM_SEAM || typeof m.RoomClient !== "function") throw new Error("The room part speaks another version.");
     return m;
   }).catch((e) => { roomFailed = true; throw e; }));
@@ -380,11 +383,11 @@ export function createTogether(app, { loadRoom = () => import("./together/room.j
   /* Share to edit (host) */
   const share = createShareButton({
     button: $("#shareBtn"), stop: $("#stopShare"), iconSlot: $("#shareIcon"), label: $("#shareLabel"),
-    icons: { share: app.icon("share"), link: app.icon("link"), check: app.icon("check") },
+    icons: { share: app.icon("share"), link: app.icon("link"), check: app.icon("check"), warn: app.icon("warn") },
     // The link is made (and copied) inside the click; the room with its keys starts once its part is here.
     share: () => {
       if (!app.doc()) return null;
-      if (roomFailed) { share.fail(ROOM_GONE); return null; } // also after a share that stopped before its part failed
+      if (roomFailed) { roomPart = null; roomFailed = false; retries++; } // the part failed (also for a stopped share): ask again
       if (room) return room.link(location.origin);
       if (starting?.role === "host") return makeLink(location.origin, starting);
       const name = app.me.name && app.me.name !== "You" ? app.me.name : "Host";
