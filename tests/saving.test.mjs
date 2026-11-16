@@ -98,6 +98,7 @@ test("saving: auto-save waits 1.5 s on the clock it is given, then writes to the
   assert.deepEqual(files.disk.get("a.md").text, ed.text);
   assert.ok(events.some((e) => e[0] === "written" && e[1] === "a.md"));
   // An auto-save never shows the browser's permission prompt.
+  assert.deepEqual(script.handle.asked, [false]);
   assert.deepEqual(saving.queued(), []);
 });
 
@@ -118,6 +119,35 @@ test("saving: nothing is scheduled while a \"/\" command is typed, for a clean s
   assert.equal(time.timers.size, 1);
   saving.stop();
   assert.equal(time.timers.size, 0, "stop clears it");
+});
+
+test("saving: opening another script stops a waiting auto-save and starts the record from the new file", async () => {
+  const s = setup();
+  s.files.outside("b.md", "# B\n");
+  s.ed.text = "# A\n\nOne. Waiting.\n";
+  s.saving.schedule();
+  Object.assign(s.script, { conflict: true, saveError: "x", needsPermission: true });
+  s.open({ name: "b.md" }, "# B\n");
+  s.time.run(AUTOSAVE_MS);
+  await settle();
+  assert.equal(s.time.timers.size, 0);
+  assert.equal(s.files.log.length, 0);
+  assert.deepEqual([s.script.name, s.script.conflict, s.script.saveError, s.script.needsPermission, s.script.savedText], ["b.md", false, "", false, "# B\n"]);
+});
+
+test("saving: a click that waits for an auto-save of the same script runs after it, with its own flags", async () => {
+  const s = setup();
+  const A = s.script.handle, release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Auto.\n";
+  s.saving.save({ auto: true });
+  await settle();
+  s.ed.text = "# A\n\nOne. Auto. Click.\n";
+  s.saving.save();
+  release();
+  await until(() => !s.script.saving && s.files.log.length === 2);
+  assert.deepEqual(s.files.log.map(([, t]) => t), ["# A\n\nOne. Auto.\n", "# A\n\nOne. Auto. Click.\n"]);
+  assert.deepEqual(A.asked, [false, true], "the click may show the browser's prompt");
+  assert.equal(s.script.savedText, "# A\n\nOne. Auto. Click.\n");
 });
 
 test("saving: a save always goes to the script it was made for, also when another script opens while it runs", async () => {
@@ -246,6 +276,13 @@ test("saving: Save as moves a browser script to a file: renamed with its keys cl
   ]);
   assert.equal(s.store.has("draft:move-me.md"), false, "the old name's draft goes");
   assert.deepEqual([s.script.name, s.script.inBrowser, s.script.savedText], ["moved.md", false, s.ed.text]);
+  // A failed write keeps the script where it was and says why.
+  const f = setup({ handle: null });
+  f.saving.open({ handle: { name: "keep.md" }, name: "keep.md", browser: true, savedText: "", modified: 1 });
+  f.files.port.pickSave = async () => ({ name: "x.md", fail: true });
+  await f.saving.saveAs();
+  assert.deepEqual([f.script.saveError, f.script.saving, f.script.name, f.script.inBrowser], ["The disk is full.", false, "keep.md", true]);
+  assert.ok(!f.events.some((e) => e[0] === "renamed" || e[0] === "placed"));
   // A cancelled picker changes nothing.
   s.files.port.pickSave = async () => { throw Object.assign(new Error("x"), { name: "AbortError" }); };
   s.ed.text += "More.\n";

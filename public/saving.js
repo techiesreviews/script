@@ -34,7 +34,7 @@ export async function permitted(handle, ask, mode = "readwrite") {
  *   object; its text as it would be saved; changed since the last save; a "/" command is being typed.
  * - files: { write(handle, text) → modified, file(handle) → { lastModified, text() }, permitted(handle, ask),
  *   pickSave(suggestedName) → handle (null where files can't be picked), download(text, name) }
- * - browser: { name(from) → a free name from the title, create(name, text) → { handle, modified } }
+ * - browser: { name(from, doc) → a free name from the title, create(name, text) → { handle, modified } }
  * - drafts: local storage { get(key), set(key, value), del(key) }
  * - clock: { now(), later(fn, ms) → id, cancel(id) }
  * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }), placed(handle, how) }
