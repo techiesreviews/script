@@ -63,7 +63,21 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
     });
     for (const n of left) if (found.has(n)) await retry(n);
   }
-  return { names, afterMove, listed };
+  // The scripts in the browser's folder, without the copies left behind; then those copies are cleaned (listed).
+  async function list() {
+    const out = [], left = names(), found = new Set();
+    for await (const handle of (await dir()).values()) {
+      if (handle.kind !== "file") continue;
+      found.add(handle.name);
+      if (names().includes(handle.name)) continue; // read live: another listing may have freed the name for a new script
+      let at = 0;
+      try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
+      out.push({ handle, name: handle.name, at, browser: true });
+    }
+    await listed(left, found);
+    return out;
+  }
+  return { names, afterMove, listed, list };
 }
 
 /**
