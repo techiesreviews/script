@@ -133,11 +133,11 @@ function page({ loadRoom }) {
   };
   return { $, app, calls, copied, loadRoom };
 }
-// A room module that arrives when the test lets it; `made` collects the rooms the adapter starts.
+// A room module that arrives when the test lets it (each load is a new request; release and fail answer the latest);
+// `made` collects the rooms the adapter starts and `retries` what each load was asked with.
 function heldRoom() {
-  const made = [];
-  let release, fail;
-  const arrived = new Promise((res, rej) => { release = res; fail = rej; });
+  const made = [], retries = [];
+  let release, fail, arrived;
   class RoomClient {
     constructor(o) { Object.assign(this, o); made.push(this); }
     start() { return this; }
@@ -147,7 +147,12 @@ function heldRoom() {
     caretList() { return []; }
   }
   let asked = 0;
-  return { made, get asked() { return asked; }, load: () => { asked++; return arrived; }, release: (seam = 1) => release({ SEAM: seam, RoomClient }), fail: () => fail(new Error("offline")) };
+  const load = (retry) => {
+    asked++;
+    retries.push(retry);
+    return (arrived = new Promise((res, rej) => { release = res; fail = rej; }));
+  };
+  return { made, retries, get asked() { return asked; }, load, release: (seam = 1) => release({ SEAM: seam, RoomClient }), fail: () => fail(new Error("offline")) };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -201,7 +206,17 @@ test("share room: a part that can't load ends sharing and the button says so; a 
   assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
   assert.equal(p.$("#shareBtn").title, "Couldn't share. Reload the page.");
   await p.$("#shareBtn").fire("click");
-  assert.equal(p.copied.length, 1, "no new link is copied once the part has failed");
+  assert.equal(held.asked, 2, "a click on the failed button asks for the part again");
+  assert.deepEqual(held.retries, [0, 1], "the retry asks under a new address");
+  assert.equal(p.copied.length, 2, "the retry copies a new link");
+  assert.notEqual(p.copied[1], p.copied[0]);
+  assert.equal(t.sharing, true);
+  held.release();
+  await tick();
+  assert.equal(held.made.length, 1, "the part came this time: the room starts");
+  assert.equal(held.made[0].link("https://script.test"), p.copied[1], "the room is the one in the newly copied link");
+  assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [["sharing", true]]);
+  assert.equal(p.$("#shareLabel").textContent, "Link copied");
 
   const g = heldRoom();
   const q = page({});
@@ -270,7 +285,26 @@ test("share button: a copy that lands after sharing failed says nothing was copi
   assert.equal(stop.hidden, true);
 });
 
-test("share room: a share stopped before its part failed: the next Share to edit says to reload, copies nothing and starts no room", async () => {
+test("share button: a failed share shows a warning icon and data-failed on the button; a click that shares again clears them", async () => {
+  const { createShareButton } = await import("../public/together/share-button.js");
+  const el = () => ({ ...stubEl(), attrs: new Set(), toggleAttribute(n, on) { if (on) this.attrs.add(n); else this.attrs.delete(n); } });
+  const button = el(), stop = el(), iconSlot = el(), label = el();
+  const share = createShareButton({
+    button, stop, iconSlot, label, icons: { share: "s", link: "l", check: "c", warn: "w" },
+    share: () => "https://script.test/#room=x&k=y", end() {}, copy: async () => {}, timers: { setTimeout: () => 0, clearTimeout() {} },
+  });
+  assert.ok(!button.attrs.has("data-failed"));
+  share.fail("Couldn't share. Reload the page.");
+  assert.ok(button.attrs.has("data-failed"), "the button is marked failed");
+  assert.equal(iconSlot.innerHTML, "w", "the warning icon replaces the share icon");
+  assert.equal(button.title, "Couldn't share. Reload the page.");
+  await button.fire("click");
+  assert.ok(!button.attrs.has("data-failed"), "sharing again clears the failed look");
+  assert.equal(iconSlot.innerHTML, "c");
+  assert.equal(label.textContent, "Link copied");
+});
+
+test("share room: a share stopped before its part failed: the next Share to edit asks for the part again; failing again says to reload", async () => {
   const { createTogether } = await import("../public/together-adapter.js");
   const held = heldRoom();
   const p = page({});
@@ -281,7 +315,9 @@ test("share room: a share stopped before its part failed: the next Share to edit
   await tick();
   assert.equal(p.$("#shareLabel").textContent, "Share to edit", "the stopped share heard nothing");
   await p.$("#shareBtn").fire("click");
-  assert.equal(p.copied.length, 1, "no new link is copied");
+  assert.equal(held.asked, 2, "the next share asks for the part again");
+  held.fail();
+  await tick();
   assert.equal(p.$("#shareLabel").textContent, "Couldn't share. Reload the page.");
   assert.equal(p.$("#shareBtn").title, "Couldn't share. Reload the page.");
   assert.equal(t.sharing, false);
