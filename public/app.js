@@ -2504,10 +2504,7 @@ const saving = createSaving({
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, browser = false }) {
       remember(handle, browser);
-      if (was) {
-        const gone = was.name;
-        forget(was).then(() => scriptsDir()).then((d) => d.removeEntry(gone)).catch(() => {});
-      }
+      if (was) forget(was).then(() => dropCopy(was.name));
     },
   },
 });
@@ -2735,12 +2732,23 @@ function scriptsDir() {
   scriptsDirP ??= navigator.storage.getDirectory().then((root) => root.getDirectoryHandle("scripts", { create: true }));
   return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
 }
+// A browser copy left behind by a move to a file (the browser refused to delete it then) is kept off the list by name
+// and deleted on a later listing; a new script that takes its name deletes it first.
+const COPIES = "movedCopies";
+const leftCopies = () => { const v = store.get(COPIES); return Array.isArray(v) ? v : []; };
+async function dropCopy(name) {
+  try { await (await scriptsDir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") { store.set(COPIES, [...new Set([...leftCopies(), name])]); return false; } }
+  if (leftCopies().includes(name)) store.set(COPIES, leftCopies().filter((n) => n !== name));
+  return true;
+}
 async function browserScripts() {
   if (!browserSaving) return [];
   const out = [];
+  const left = new Set(leftCopies());
   try {
     for await (const handle of (await scriptsDir()).values()) {
       if (handle.kind !== "file") continue;
+      if (left.has(handle.name)) { dropCopy(handle.name); continue; }
       let at = 0;
       try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
       out.push({ handle, name: handle.name, at, browser: true });
@@ -2774,6 +2782,7 @@ async function nameTaken(own = "") {
 let keepAsked = false;
 async function createBrowserScript(name, text) {
   const dir = await scriptsDir();
+  if (leftCopies().includes(name)) await dropCopy(name);
   // Never over another script: getFileHandle with create would open it.
   try { await dir.getFileHandle(name); throw new Error(`${name} is in the browser already.`); } catch (e) { if (e?.name !== "NotFoundError") throw e; }
   const handle = await dir.getFileHandle(name, { create: true });
