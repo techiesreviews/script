@@ -36,10 +36,11 @@ export function checkToken(token, now = Date.now()) {
   if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
   return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
 }
-// unmark_cue's cueIds together hold at most one script's words, plus each one's block id and count.
-const CUE_IDS_MAX = SCRIPT_LIMITS.markdown + CUE_LIMITS.cues * 60;
-// The largest calls hold one script's words (a whole script in set_script, or unmark_cue's cueIds), and JSON may spell
-// each character in six bytes (\uXXXX). A body bigger than that is refused before it is read in full; the per-field
+// unmark_cue's cueIds together hold at most twice a script's words, plus each one's block id and count: cues overlap
+// only where bold sits inside a link inside bold (bold nests in nothing else, links in nothing), so two levels at most.
+const CUE_IDS_MAX = 2 * SCRIPT_LIMITS.markdown + CUE_LIMITS.cues * 60;
+// The largest call is unmark_cue's cueIds (a whole script in set_script is smaller), and JSON may spell each character
+// in six bytes (\uXXXX). A body bigger than that is refused before it is read in full; the per-field
 // limits are checked after.
 export const BODY_MAX = CUE_IDS_MAX * 6 + 64 * 1024;
 // The body, read with a running count: past `max` bytes it stops (null). No decoding (the picture upload passes the
@@ -404,7 +405,7 @@ export function checkArgs(name, args) {
       }
     }
     if (name === "unmark_cue" && a.cues.reduce((n, c) => n + (typeof c.cueId === "string" ? c.cueId.length : 0), 0) > CUE_IDS_MAX) {
-      return "The cueIds together are longer than a script can be: use cueIds from list_cues.";
+      return "The cueIds together are longer than a script's cues can be: use cueIds from list_cues.";
     }
   }
   return "";

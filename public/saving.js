@@ -30,8 +30,9 @@ export async function permitted(handle, ask, mode = "readwrite") {
 
 // A browser copy left behind by a move to a file (the browser refused to delete it then) is kept off the list by name
 // (in local storage, `store`) and deleted on a later listing; until then no script may take its name (app.js nameTaken).
-// `dir()`: the browser's scripts folder. `lock(fn)`: runs fn alone among this site's tabs (navigator.locks), so one
-// cleanup checks, deletes and frees a name before another may look at it.
+// `dir()`: the browser's scripts folder. `lock(fn)`: runs fn alone among this site's tabs (navigator.locks; one at a
+// time in this tab where the browser has no Web Locks), so one cleanup checks, deletes and frees a name before another
+// may look at it.
 export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
   const KEY = "movedCopies";
   const names = () => { const v = store.get(KEY); return Array.isArray(v) ? v : []; };
