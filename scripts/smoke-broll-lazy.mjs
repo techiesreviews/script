@@ -42,7 +42,7 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
   cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
 });
 
-async function openPage(width, height, { failBroll = false } = {}) {
+async function openPage(width, height, { failBroll = false, holdBroll = false } = {}) {
   const { browserContextId } = await send("Target.createBrowserContext");
   const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -73,6 +73,8 @@ async function openPage(width, height, { failBroll = false } = {}) {
     // Every B-roll file the page asked for, with the answer's status.
     broll: [],
     asked: [],
+    held: [],
+    release: () => Promise.all(page.held.splice(0).map((requestId) => page.send("Fetch.continueRequest", { requestId }))),
     close: () => send("Target.disposeBrowserContext", { browserContextId }),
   };
   await page.send("Page.enable");
@@ -80,7 +82,8 @@ async function openPage(width, height, { failBroll = false } = {}) {
   await page.send("Log.enable");
   await page.send("Network.enable");
   // The B-roll module's request refused, as a network blip or a server that can't send it would.
-  if (failBroll) await page.send("Fetch.enable", { patterns: [{ urlPattern: "*broll-app.js*" }] });
+  // Or held until the check lets it go (page.release()).
+  if (failBroll || holdBroll) await page.send("Fetch.enable", { patterns: [{ urlPattern: "*broll-app.js*" }] });
   await page.send("Page.addScriptToEvaluateOnNewDocument", { source: COLLECT });
   page.log = [];
   cdp.addEventListener("message", (e) => {
@@ -92,7 +95,8 @@ async function openPage(width, height, { failBroll = false } = {}) {
     if (m.method === "Network.responseReceived" && BROLL_FILES.test(m.params.response.url)) page.broll.push({ url: new URL(m.params.response.url).pathname, status: m.params.response.status });
     if (m.method === "Network.requestWillBeSent" && BROLL_FILES.test(m.params.request.url)) page.asked.push(new URL(m.params.request.url).pathname);
     if (m.method === "Page.javascriptDialogOpening") page.send("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
-    if (m.method === "Fetch.requestPaused") page.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "Failed" }).catch(() => {});
+    if (m.method === "Fetch.requestPaused" && holdBroll) page.held.push(m.params.requestId);
+    else if (m.method === "Fetch.requestPaused") page.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "Failed" }).catch(() => {});
   });
   await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 500 });
   return page;
@@ -287,6 +291,34 @@ async function runEdges(width, height) {
   check(await failPage.until(`${receipt}.then((t) => t.includes("B-roll: no list linked"))`, "the folder's receipt"), `${tag} after that, a script without B-roll saves to a video folder (no list linked)`, `${await failPage.eval(receipt)} | note: ${await failPage.eval(`document.querySelector("#folderNote").textContent + " / menu open: " + document.querySelector("#exportMenu").matches(":popover-open") + " / file: " + document.querySelector("#fileName").textContent`)}`);
   await clean(failPage, tag, "module that can't load");
   await failPage.close();
+
+  // An agent's suggestion sent while the module loads is for the script open then: another script opened meanwhile
+  // gets nothing, and the agent is told.
+  const { token: t2 } = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
+  const holdPage = await openPage(width, height, { holdBroll: true });
+  await startScreen(holdPage, t2);
+  await newScript(holdPage, "Hold check A");
+  let on = false;
+  for (let i = 0; i < 40 && !on; i++) { on = !(await mcp(t2, "get_script", {})).error; if (!on) await sleep(150); }
+  const sent = mcp(t2, "answer_broll", { changes: [{ op: "add", kind: "broll", what: "Held shot", how: "Stock clip", quote: "Hello there my friend." }] });
+  await holdPage.until(`true`, "the page");
+  for (let i = 0; i < 50 && !holdPage.held.length; i++) await sleep(100);
+  check(holdPage.held.length > 0, `${tag} the module's download is held while the agent's suggestion waits`);
+  await holdPage.click("#docSwitch");
+  await holdPage.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await holdPage.click("#menuNew");
+  await holdPage.until(`/untitled/i.test(document.querySelector("#fileName").textContent)`, "script B");
+  await holdPage.send("Input.insertText", { text: "Hold check B" });
+  await holdPage.key("Enter", "Enter", 13, "\r");
+  await holdPage.send("Input.insertText", { text: "Hello there my friend." });
+  await sleep(300);
+  await holdPage.release();
+  const reply = await sent;
+  check(reply.error && /opened another script meanwhile/.test(reply.text), `${tag} the agent hears the person opened another script`, reply.text.slice(0, 200));
+  await sleep(500);
+  check(await holdPage.eval(`!document.querySelector(".shot-frame[data-suggested]") && !window.__scriptEditor.asks().some((a) => a.scope === "broll")`), `${tag} the other script gets no suggestion`);
+  await clean(holdPage, tag, "suggestion while the module loads");
+  await holdPage.close();
 }
 
 await run(1280, 800);
