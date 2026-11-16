@@ -2505,7 +2505,7 @@ const saving = createSaving({
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, browser = false }) {
       remember(handle, browser);
-      if (was) forget(was).then(() => copies.afterMove(was.name));
+      if (was) forget(was).then(() => copies.afterMove(was.name)); // neither rejects: afterMove keeps a refused delete for later
     },
   },
 });
@@ -2734,7 +2734,7 @@ function scriptsDir() {
   return scriptsDirP.catch((e) => { scriptsDirP = null; throw e; });
 }
 // Browser copies left behind by a move to a file: kept off the list, deleted on a later listing (saving.js).
-const copies = createLeftCopies({ store, dir: () => scriptsDir() });
+const copies = createLeftCopies({ store, dir: () => scriptsDir(), lock: (fn) => (navigator.locks ? navigator.locks.request("script-editor:moved-copies", fn) : fn()) });
 async function browserScripts() {
   if (!browserSaving) return [];
   const out = [];
@@ -2743,7 +2743,7 @@ async function browserScripts() {
     for await (const handle of (await scriptsDir()).values()) {
       if (handle.kind !== "file") continue;
       found.add(handle.name);
-      if (left.includes(handle.name)) continue;
+      if (copies.names().includes(handle.name)) continue; // read live: another listing may have freed the name for a new script
       let at = 0;
       try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
       out.push({ handle, name: handle.name, at, browser: true });

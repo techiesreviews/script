@@ -36,9 +36,10 @@ export function checkToken(token, now = Date.now()) {
   if (born > now + FUTURE_SLACK_MS) return { ok: false, reason: "invalid" };
   return now - born < MAX_AGE_MS ? { ok: true, born } : { ok: false, reason: "expired" };
 }
-// The largest call is a whole script in set_script, and JSON may spell each of its characters in six bytes (\uXXXX).
-// A body bigger than that is refused before it is read in full; the per-field limits are checked after.
-export const BODY_MAX = SCRIPT_LIMITS.markdown * 6 + 64 * 1024;
+// The largest call is unmark_cue with its 30 cueIds, each as long as a script can be (a whole script in set_script is
+// smaller), and JSON may spell each character in six bytes (\uXXXX). A body bigger than that is refused before it is
+// read in full; the per-field limits are checked after.
+export const BODY_MAX = Math.max(SCRIPT_LIMITS.markdown, CUE_LIMITS.cues * CUE_ID_MAX) * 6 + 64 * 1024;
 // The body, read with a running count: past `max` bytes it stops (null). No decoding (the picture upload passes the
 // bytes on as they are).
 export async function readUpTo(body, max) {
