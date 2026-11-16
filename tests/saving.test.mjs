@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 // The saving module through its own interface, with a folder in memory, a clock the test moves and local storage in a
 // Map. The browser check `scripts/smoke-saving.mjs` runs the same paths in the real editor.
-const { createSaving, createLeftCopies, AUTOSAVE_MS } = await import("../public/saving.js");
+const { createSaving, createLeftCopies, tabLocks, AUTOSAVE_MS } = await import("../public/saving.js");
 
 function folder() {
   let tick = 1000;
@@ -274,7 +274,7 @@ test("saving: Save as moves a browser script to a file: renamed with its keys cl
   await s.saving.saveAs();
   assert.equal(s.files.disk.get("moved.md").text, "# Move me\n\nLine.\n");
   assert.deepEqual(s.events.filter((e) => ["picked", "renamed", "placed"].includes(e[0])), [
-    ["picked", "move-me.md"], ["renamed", "move-me.md", "moved.md", { clear: true }], ["placed", "moved.md", { was: { name: "move-me.md" } }],
+    ["picked", "move-me.md"], ["renamed", "move-me.md", "moved.md", { clear: true }], ["placed", "moved.md", { was: { name: "move-me.md" }, at: 1 }], // at: the browser copy's time as this tab last read or wrote it
   ]);
   assert.equal(s.store.has("draft:move-me.md"), false, "the old name's draft goes");
   assert.deepEqual([s.script.name, s.script.inBrowser, s.script.savedText], ["moved.md", false, s.ed.text]);
@@ -513,7 +513,7 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   };
   const ports = { store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => { if (gate) await gate; return dir; } };
   const copies = createLeftCopies(ports);
-  await copies.afterMove("stuck.md");
+  await copies.afterMove("stuck.md", 1);
   assert.deepEqual(copies.names(), ["stuck.md"], "a refused delete keeps the name");
   refuse = false;
   // Listing A found the copy and stops for a moment; listing B (or another tab) deletes it and frees the name.
@@ -530,8 +530,8 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   // A full listing frees the names whose copy went some other way (an older tab, cleared storage), and deletes the rest.
   refuse = true;
   files.set("kept.md", "copy"); files.set("other.md", "a script");
-  await copies.afterMove("kept.md");
-  await copies.afterMove("gone.md");
+  await copies.afterMove("kept.md", 1);
+  await copies.afterMove("gone.md", 1);
   store.set("movedCopies", [...copies.names(), "later.md"]);
   refuse = false;
   await copies.listed(["kept.md", "gone.md"], new Set(["kept.md", "other.md", "stuck.md"]));
@@ -546,9 +546,7 @@ test("saving: a second cleanup waits until the first has freed the name, and lea
     if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" });
     files.delete(name);
   } };
-  let chain = Promise.resolve();
-  const lock = (fn) => { const run = chain.then(fn); chain = run.catch(() => {}); return run; }; // as navigator.locks does
-  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir, lock });
+  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir, locks: tabLocks() });
   const a = copies.listed(["stuck.md"], new Set(["stuck.md"]));
   const b = copies.listed(["stuck.md"], new Set(["stuck.md"]));
   for (let i = 0; i < 20; i++) await settle();
@@ -621,7 +619,7 @@ test("saving: a folder walk that fails partway still shows the scripts found so 
   assert.deepEqual(copies.names(), ["gone.md"], "a partial walk is no proof the copy is gone");
 });
 
-test("saving: a left-behind copy that another tab saved into after the move is kept and shown again, never deleted", async () => {
+test("saving: a left-behind copy that was saved into after the move is kept and shows again on the listing that finds it", async () => {
   const store = new Map(), files = new Map([["moved.md", { text: "at the move", lastModified: 100 }], ["other.md", { text: "untouched", lastModified: 100 }]]);
   let refuse = true;
   const notFound = () => Object.assign(new Error("gone"), { name: "NotFoundError" });
@@ -632,16 +630,203 @@ test("saving: a left-behind copy that another tab saved into after the move is k
     async getFileHandle(name) { if (!files.has(name)) throw notFound(); return handle(name); },
   };
   const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir });
-  await copies.afterMove("moved.md");
-  await copies.afterMove("other.md");
+  await copies.afterMove("moved.md", 100);
+  await copies.afterMove("other.md", 100);
   assert.deepEqual(copies.names(), ["moved.md", "other.md"]);
-  // Another tab still had moved.md open and saved newer words into the browser copy.
+  assert.deepEqual(store.get("movedCopyTimes"), { "moved.md": 100, "other.md": 100 });
+  // Newer words were saved into the browser copy since.
   files.set("moved.md", { text: "newer words", lastModified: 200 });
   refuse = false;
   const rows = await copies.list();
   assert.equal(files.get("moved.md")?.text, "newer words", "the copy with newer words is not deleted");
   assert.equal(files.has("other.md"), false, "an unchanged copy goes");
-  assert.deepEqual(copies.names(), [], "both names are free: the changed copy shows again");
-  assert.deepEqual((await copies.list()).map((r) => r.name), ["moved.md"], "the next listing shows it as a browser script");
-  void rows;
+  assert.deepEqual([copies.names(), store.get("movedCopyTimes")], [[], {}], "both names are free, with their times");
+  assert.deepEqual(rows.map((r) => [r.name, r.at, r.browser]), [["moved.md", 200, true]], "the listing that found it changed shows it as a browser script");
+  assert.deepEqual((await copies.list()).map((r) => r.name), ["moved.md"], "and so does the next one, once");
+});
+
+// Two tabs of one browser: one scripts folder, one local storage and one lock manager between them. `hooks.remove(name)`
+// runs as a delete starts (after the cleanup found the copy unchanged); `hooks.read(name)` may refuse a read.
+function tabs(files, kept = {}) {
+  const store = new Map([["movedCopies", Object.keys(kept)], ["movedCopyTimes", { ...kept }]]), locks = tabLocks(), hooks = {};
+  const notFound = () => Object.assign(new Error("gone"), { name: "NotFoundError" });
+  const handle = (name) => ({ kind: "file", name, async getFile() { if (!files.has(name)) throw notFound(); hooks.read?.(name); return { lastModified: files.get(name).lastModified }; } });
+  const dir = {
+    async *values() { for (const name of [...files.keys()]) yield handle(name); },
+    async removeEntry(name) { await hooks.remove?.(name); if (!files.has(name)) throw notFound(); files.delete(name); },
+    async getFileHandle(name) { if (!files.has(name)) throw notFound(); return handle(name); },
+  };
+  const tab = () => createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir, locks });
+  // A tab's save into a browser script, as writeHandle does it: a file that is gone can't be written.
+  const write = (name, text, lastModified) => async () => { if (!files.has(name)) throw notFound(); files.set(name, { text, lastModified }); };
+  return { store, hooks, tab, write, notFound };
+}
+
+test("saving, two tabs: a browser copy another tab has open is never deleted, not by the move and not by a cleanup; it shows again with that tab's words once the tab leaves it", async () => {
+  const files = new Map([["x.md", { text: "at the move", lastModified: 100 }], ["same.md", { text: "never changed", lastModified: 100 }]]);
+  const { tab, write } = tabs(files);
+  const a = tab(), b = tab(), c = tab();
+  // Tabs A and B have the browser script x.md open; tab A moves it to a file.
+  a.open("x.md");
+  b.open("x.md");
+  await a.open(null);
+  await a.afterMove("x.md", 100);
+  assert.equal(files.get("x.md")?.text, "at the move", "the move leaves the copy tab B has open");
+  assert.deepEqual(a.names(), ["x.md"], "its name is kept off the list");
+  // Tab B keeps saving into it; cleanups from tab A (and from tab B's own switcher) leave it alone.
+  assert.deepEqual((await a.list()).map((r) => r.name), ["same.md"]);
+  await b.saving("x.md", write("x.md", "tab B's words", 200));
+  assert.deepEqual([(await a.list()).map((r) => r.name), (await b.list()).map((r) => r.name)], [["same.md"], ["same.md"]]);
+  assert.equal(files.get("x.md")?.text, "tab B's words");
+  // Tab B leaves the script: the next listing shows it again, as a browser script with tab B's words.
+  await b.open("other.md");
+  assert.deepEqual((await a.list()).map((r) => [r.name, r.at]), [["same.md", 100], ["x.md", 200]]);
+  assert.deepEqual([files.get("x.md")?.text, a.names()], ["tab B's words", []]);
+  // A copy nobody saved into goes once the other tab has left it.
+  a.open("same.md");
+  c.open("same.md");
+  await a.open(null);
+  await a.afterMove("same.md", 100);
+  assert.deepEqual([files.has("same.md"), a.names()], [true, ["same.md"]], "kept while tab C has it open");
+  await c.open(null);
+  assert.deepEqual((await a.list()).map((r) => r.name), ["x.md"]);
+  assert.deepEqual([files.has("same.md"), a.names()], [false, []], "deleted by the next listing");
+});
+
+test("saving, two tabs: a copy saved into before the move is not the script that moved: it stays, by the moving tab's own time for it", async () => {
+  const files = new Map([["early.md", { text: "tab B saved this and left", lastModified: 200 }], ["open.md", { text: "tab B saved this and has it open", lastModified: 200 }]]);
+  const { tab, store } = tabs(files);
+  const a = tab(), b = tab();
+  // Tab A last read both scripts at time 100; tab B saved into them since. Nobody has early.md open now.
+  a.open("early.md");
+  await a.open(null);
+  await a.afterMove("early.md", 100);
+  assert.deepEqual([files.get("early.md")?.text, a.names()], ["tab B saved this and left", []], "kept, and listed as a browser script");
+  assert.deepEqual((await a.list()).map((r) => r.name), ["early.md", "open.md"]);
+  // Tab B still has open.md open: the time kept with the name is tab A's, not the newer time of the copy.
+  b.open("open.md");
+  a.open("open.md");
+  await a.open(null);
+  await a.afterMove("open.md", 100);
+  assert.deepEqual([a.names(), store.get("movedCopyTimes")], [["open.md"], { "open.md": 100 }]);
+  await b.open(null);
+  assert.deepEqual((await a.list()).map((r) => r.name), ["early.md", "open.md"], "shown again once tab B leaves it");
+  assert.equal(files.get("open.md")?.text, "tab B saved this and has it open");
+});
+
+test("saving, two tabs: a save into a copy and a cleanup of it never cross: a running save keeps the copy, a save that comes during the delete waits and is refused", async () => {
+  const files = new Map([["x.md", { text: "at the move", lastModified: 100 }], ["y.md", { text: "at the move", lastModified: 100 }]]);
+  const { tab, write, hooks } = tabs(files, { "x.md": 100, "y.md": 100 });
+  const a = tab(), b = tab();
+  // Tab B left x.md, and its last save is still running when tab A's listing comes by.
+  let land;
+  const running = b.saving("x.md", async () => { await new Promise((r) => { land = r; }); await write("x.md", "the last words", 200)(); });
+  await settle();
+  hooks.remove = (name) => { assert.notEqual(name, "x.md", "no delete while a save into the copy runs"); };
+  await a.list();
+  assert.equal(files.has("x.md"), true);
+  land();
+  await running;
+  // A save that starts while the cleanup is between "unchanged" and the delete waits for it, then finds no file:
+  // the tab shows it could not save (or keeps a draft), and no words land in a file about to be deleted.
+  const order = [];
+  let late;
+  hooks.remove = async (name) => {
+    if (name !== "y.md") return;
+    late = b.saving("y.md", async () => { order.push("save"); await write("y.md", "too late", 300)(); });
+    for (let i = 0; i < 5; i++) await settle();
+    order.push("delete");
+  };
+  const rows = await a.list();
+  await assert.rejects(late, { name: "NotFoundError" });
+  assert.deepEqual(order, ["delete", "save"]);
+  assert.deepEqual([rows.map((r) => r.name), files.get("x.md")?.text, files.has("y.md"), a.names()], [["x.md"], "the last words", false, []]);
+});
+
+test("saving: a left-behind copy whose time can't be read once stays kept and is tried again, not shown as a second script", async () => {
+  const files = new Map([["x.md", { text: "unchanged", lastModified: 100 }]]);
+  const { tab, hooks, store } = tabs(files, { "x.md": 100 });
+  const copies = tab();
+  hooks.read = () => { hooks.read = null; throw Object.assign(new Error("busy"), { name: "NotReadableError" }); };
+  assert.deepEqual((await copies.list()).map((r) => r.name), []);
+  assert.deepEqual([copies.names(), store.get("movedCopyTimes"), files.has("x.md")], [["x.md"], { "x.md": 100 }, true], "kept, with its time, for the next listing");
+  assert.deepEqual((await copies.list()).map((r) => r.name), []);
+  assert.deepEqual([copies.names(), files.has("x.md")], [[], false], "the unchanged copy goes on the next listing");
+  // The same on the move itself: the copy is kept for later, not left as a second script.
+  files.set("y.md", { text: "moved", lastModified: 100 });
+  hooks.read = () => { hooks.read = null; throw Object.assign(new Error("busy"), { name: "NotReadableError" }); };
+  await copies.afterMove("y.md", 100);
+  assert.deepEqual([copies.names(), files.has("y.md")], [["y.md"], true]);
+  assert.deepEqual((await copies.list()).map((r) => r.name), []);
+  assert.equal(files.has("y.md"), false);
+});
+
+test("saving: tabLocks stands in for navigator.locks in one tab: shared holders together, an exclusive one alone, in order, and ifAvailable never waits", async () => {
+  const locks = tabLocks(), log = [];
+  const hold = (name, mode, label) => { let end; const done = locks.request(name, { mode }, async () => { log.push(label); await new Promise((r) => { end = r; }); return label; }); return { done, end: () => end() }; };
+  const s1 = hold("n", "shared", "s1"), s2 = hold("n", "shared", "s2");
+  await settle();
+  assert.deepEqual(log, ["s1", "s2"]);
+  assert.equal(await locks.request("n", { ifAvailable: true }, (l) => l), null, "not available while shared holders have it");
+  assert.equal((await locks.request("n", { mode: "shared", ifAvailable: true }, (l) => l?.mode)), "shared");
+  const x = hold("n", "exclusive", "x"), s3 = hold("n", "shared", "s3");
+  await settle();
+  assert.deepEqual(log, ["s1", "s2"], "the exclusive request waits, and the shared one behind it too");
+  s1.end(); s2.end();
+  assert.deepEqual(await Promise.all([s1.done, s2.done]), ["s1", "s2"]);
+  await settle();
+  assert.deepEqual(log, ["s1", "s2", "x"]);
+  x.end();
+  await x.done;
+  await settle();
+  assert.deepEqual(log, ["s1", "s2", "x", "s3"]);
+  s3.end();
+  await s3.done;
+  assert.equal(await locks.request("n", { ifAvailable: true }, (l) => l?.mode), "exclusive", "free again; a request without a mode is exclusive");
+  await assert.rejects(locks.request("n", async () => { throw new Error("inside"); }), /inside/);
+  assert.equal(await locks.request("n", () => "after a failure"), "after a failure");
+});
+
+test("saving: a save still runs, once, where the lock can't be asked for; and leaving a script before its lock came frees it", async () => {
+  const refused = { request: async () => { throw Object.assign(new Error("no locks here"), { name: "SecurityError" }); } };
+  const copies = createLeftCopies({ store: { get: () => null, set: () => {} }, dir: async () => ({}), locks: refused });
+  let runs = 0;
+  assert.equal(await copies.saving("a.md", async () => { runs++; return "written"; }), "written");
+  await assert.rejects(createLeftCopies({ store: { get: () => null, set: () => {} }, dir: async () => ({}) }).saving("a.md", async () => { runs++; throw new Error("The disk is full."); }), /disk is full/);
+  assert.equal(runs, 2, "a save that fails is not run a second time");
+  await copies.open("a.md"); // never rejects
+  // Opened and left at once, before the lock was granted: nothing stays held.
+  const locks = tabLocks(), quick = createLeftCopies({ store: { get: () => null, set: () => {} }, dir: async () => ({}), locks });
+  quick.open("b.md");
+  await quick.open(null);
+  assert.equal(await locks.request("script-editor:script:b.md", { ifAvailable: true }, (l) => !!l), true);
+});
+
+test("saving: every save holds its script's name from its start to the end of its write, also the save of a script the person just left", async () => {
+  const s = setup();
+  const held = [];
+  let inside = 0;
+  s.ports.files.held = async (name, fn) => { held.push(name); inside++; try { return await fn(); } finally { inside--; } };
+  const write = s.files.port.write;
+  s.files.port.write = async (h, t) => { assert.equal(inside > 0, true, `${h.name} is written while its name is held`); return write(h, t); };
+  // Leaving a.md with words not saved yet, as loadText does: flush, then open the next script.
+  s.ed.text = "# A\n\nOne. Two.\n";
+  s.saving.flush();
+  assert.deepEqual(held, ["a.md"], "the name is held before the script is left, with no wait in between");
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  await until(() => !s.script.saving);
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Two.\n");
+  // A save that waited while another ran, for a script left meanwhile, holds its name too.
+  const release = s.files.hold("b.md");
+  s.ed.text = "# B\n\nFirst.\n";
+  s.saving.save();
+  s.ed.text = "# B\n\nSecond.\n";
+  s.saving.save();
+  s.files.outside("c.md", "# C\n");
+  s.open({ name: "c.md" }, "# C\n");
+  release();
+  await until(() => !s.script.saving);
+  assert.equal(s.files.disk.get("b.md").text, "# B\n\nSecond.\n");
+  assert.deepEqual(held, ["a.md", "b.md", "b.md"]);
 });

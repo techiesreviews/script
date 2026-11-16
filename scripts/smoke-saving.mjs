@@ -397,6 +397,78 @@ async function runMoveCopyStays() {
   await profile.close();
 }
 
+// 4c. Two tabs have one browser script open and one moves it to a file (TOOLS-315): the copy stays for the other tab,
+// which keeps saving into it; no later visit deletes it; once that tab leaves it, it shows again as a browser script
+// with that tab's words. A copy nobody saved into goes once the other tab has left it.
+async function runMoveOpenElsewhere() {
+  const profile = await openProfile();
+  const one = await profile.tab();
+  const newScript = async (page, title, line, name) => {
+    await page.click("#emptyNew");
+    await page.until(`!document.querySelector("#layout").hidden`, "the new script");
+    await page.send("Input.insertText", { text: title });
+    await page.typeAtEnd(line);
+    await page.until(`document.querySelector("#fileName").textContent === ${JSON.stringify(name)}`, "named after its title", 6000);
+    await page.settled();
+  };
+  const reopenIn = async (page, name) => {
+    await page.open();
+    await page.until(`!document.querySelector("#emptyReopen").hidden`, `Reopen ${name}`);
+    await page.steady("#emptyReopen");
+    await page.click("#emptyReopen");
+    await page.until(`document.querySelector("#fileName")?.textContent === ${JSON.stringify(name)} && !document.querySelector("#layout").hidden`, `${name} is open in the other tab`);
+  };
+  const rowsFor = (page, name) => page.eval(`[...document.querySelectorAll("#scriptList .scripts__open")].filter((b) => b.querySelector(".scripts__name").textContent === ${JSON.stringify(name)}).map((b) => b.querySelector(".scripts__tag")?.textContent || "file").sort()`);
+  await one.open();
+  await newScript(one, "Two tabs", "First words.", "two-tabs.md");
+  const two = await profile.tab();
+  await reopenIn(two, "two-tabs.md");
+  // Tab one moves the script to a file; tab two still has the browser copy open.
+  await one.send("Page.bringToFront");
+  await exportItem(one, "markdown");
+  await one.until(`document.querySelector("#saveAsAction").hidden`, "the script is a file now");
+  await sleep(500);
+  check((await read(one, "scripts", "two-tabs.md"))?.includes("First words."), "open elsewhere: the move leaves the copy the other tab has open", (await list(one, "scripts")).join());
+  await two.send("Page.bringToFront");
+  await two.typeAtEnd(" Tab two's words.");
+  await two.settled("tab two saved");
+  check((await read(two, "scripts", "two-tabs.md"))?.includes("Tab two's words."), "open elsewhere: the other tab keeps saving into its copy", await two.eval(`document.querySelector("#saveState").textContent`));
+  // A later visit in tab one (its start screen lists the scripts and cleans up) leaves the copy alone.
+  await one.send("Page.bringToFront");
+  await one.reload();
+  await one.until(`!document.querySelector("#emptyReopen").hidden`, "the start screen's scripts");
+  await sleep(500);
+  check((await read(one, "scripts", "two-tabs.md"))?.includes("Tab two's words."), "open elsewhere: a later visit does not delete the copy in use", (await list(one, "scripts")).join());
+  // Tab two leaves the script: its own switcher shows the copy again, as a browser script, beside the file.
+  await two.send("Page.bringToFront");
+  await two.click("#docSwitch");
+  await two.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await two.eval(`document.querySelector("#menuNew").click(); true`);
+  await two.until(`document.querySelector("#fileName").textContent === "untitled-script.md"`, "a new script in tab two");
+  await two.click("#docSwitch");
+  await two.until(`document.querySelector("#scriptMenu").matches(":popover-open") && [...document.querySelectorAll("#scriptList .scripts__open")].some((b) => b.querySelector(".scripts__name").textContent === "two-tabs.md")`, "the switcher");
+  check(await two.until(`(() => { const tags = [...document.querySelectorAll("#scriptList .scripts__open")].filter((b) => b.querySelector(".scripts__name").textContent === "two-tabs.md").map((b) => b.querySelector(".scripts__tag")?.textContent || "file").sort(); return JSON.stringify(tags) === '["Browser","file"]'; })()`, "the copy back in the switcher"), "open elsewhere: once the other tab leaves it, the copy shows again as a browser script", JSON.stringify(await rowsFor(two, "two-tabs.md")));
+  check((await read(two, "scripts", "two-tabs.md"))?.includes("Tab two's words."), "open elsewhere: with the other tab's words");
+  check((await read(one, "disk", "two-tabs.md"))?.includes("First words.") && !(await read(one, "disk", "two-tabs.md")).includes("Tab two's words."), "open elsewhere: the file on the computer holds what tab one moved");
+  await two.press("Escape", "Escape", 27);
+  // A copy the other tab only had open, and never saved into, goes once that tab leaves it.
+  await one.send("Page.bringToFront");
+  await newScript(one, "Just open", "Nothing more.", "just-open.md");
+  await reopenIn(two, "just-open.md");
+  await one.send("Page.bringToFront");
+  await exportItem(one, "markdown");
+  await one.until(`document.querySelector("#saveAsAction").hidden`, "the second script is a file now");
+  await sleep(500);
+  check((await list(one, "scripts")).includes("just-open.md"), "open elsewhere: an unchanged copy stays too while the other tab has it open", (await list(one, "scripts")).join());
+  await two.send("Page.bringToFront");
+  await two.open(); // tab two leaves it: its start screen lists the scripts and cleans up
+  check(await two.until(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); for await (const n of d.keys()) if (n === "just-open.md") return false; return true; })()`, "the unchanged copy goes"), "open elsewhere: an unchanged copy goes once the other tab has left it", (await list(two, "scripts")).join());
+  check((await read(two, "scripts", "two-tabs.md"))?.includes("Tab two's words."), "open elsewhere: the copy with words stays");
+  await noErrors(one, "open elsewhere (one)");
+  await noErrors(two, "open elsewhere (two)");
+  await profile.close();
+}
+
 // 5. Switching scripts while a save runs: every save goes to the script it was made for, a script whose write fails
 // keeps its words as unsaved changes, and a B-roll link never moves to another script.
 async function runSwitch() {
@@ -545,7 +617,7 @@ async function runShare() {
 }
 
 const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
-for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runMoveCopyStays, runSwitch, runBrollLink, runPageHide, runTwoTabs, runShare]) {
+for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runMoveCopyStays, runMoveOpenElsewhere, runSwitch, runBrollLink, runPageHide, runTwoTabs, runShare]) {
   if (only && !only.includes(run.name)) continue;
   try { await run(); } catch (e) { check(false, `${run.name} stopped`, e.message); }
 }
