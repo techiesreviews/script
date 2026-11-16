@@ -386,3 +386,26 @@ test("open_script, set_script and list_scripts go to the tab with their argument
   assert.deepEqual(JSON.parse(l.body.result.content[0].text), { open: null, recent: [] });
   assert.deepEqual(list.ops.find((o) => o.op === "call").args, {});
 });
+
+test("mcp: a request body bigger than the largest allowed call is refused before it is read in full", async () => {
+  const { BODY_MAX } = await import("../worker/mcp.js");
+  const { SCRIPT_LIMITS } = await import("../public/doc.js");
+  // The largest call is a whole script in set_script; JSON can make each character six bytes (\uXXXX).
+  assert.ok(BODY_MAX >= SCRIPT_LIMITS.markdown * 6, `BODY_MAX ${BODY_MAX}`);
+  assert.ok(BODY_MAX <= 4 * 1024 * 1024, `BODY_MAX ${BODY_MAX}`);
+  const markdown = "\u0001".repeat(SCRIPT_LIMITS.markdown);
+  const big = await call("set_script", { markdown });
+  assert.notEqual(big.status, 413, "the largest set_script still goes through");
+  const huge = await rpc(null, { raw: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "get_script", arguments: { pad: "x".repeat(BODY_MAX) } } }) });
+  assert.equal(huge.status, 413);
+  assert.equal(huge.body.error.code, -32600);
+  assert.equal(huge.relay.ops.length, 0, "nothing reaches the relay");
+  // A body sent without its length (streamed) is cut off at the same size.
+  const chunk = new TextEncoder().encode("x".repeat(64 * 1024));
+  let sent = 0;
+  const stream = new ReadableStream({ pull(c) { if (sent > BODY_MAX + chunk.length) return c.close(); sent += chunk.length; c.enqueue(chunk); } });
+  const req = new Request(BASE, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` }, body: stream, duplex: "half" });
+  const res = await handleMcp(req, fakeRelay());
+  assert.equal(res.status, 413);
+  assert.ok(sent <= BODY_MAX + 2 * chunk.length, `read ${sent} bytes`);
+});
