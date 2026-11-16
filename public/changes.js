@@ -3,7 +3,7 @@
 // (and until it is scrolled past or 60 minutes are over: step M, at the end of this file):
 //   ask.start/end  the changed text in its block (content offsets), ask.change = { text, removed, at, ctx? }
 // Undo puts `removed` back in place of `text` (only while the text is exactly there) and makes the ask `undone`.
-// The change stays inside its block: blank lines in the answer are already one space (D.cleanAnswer), and a text
+// The change stays inside its block: blank lines in the answer are already one space (Doc.cleanAnswer), and a text
 // that would turn the block into another kind (a "## " at its start, brackets around it) goes in on one line,
 // without the marks at its start (and a "]" at its end). An answer that still can't keep the type is refused.
 // Kept with a draft or shared with guests, a change carries ctx = { index, before, after }: its block's place and
@@ -13,9 +13,9 @@
 // from the script ask (`from`), so every mark and Undo works as above; the landing is still one Ctrl/Cmd+Z step.
 // Links never land in text other open work points at (open asks, "Sounds like me" marks, marked changes).
 // Pure: no DOM. The editor (app.js) calls these and draws the mark; the room carries the text like any change.
-import * as D from "./doc.js";
-import * as L from "./links.js";
-import * as K from "./cues.js";
+import * as Doc from "./doc.js";
+import * as Links from "./links.js";
+import * as Cues from "./cues.js";
 import { diff, movePoint } from "./together/ops.js";
 
 export const STRAIGHT_IN = ["replace", "add", "links"];
@@ -25,18 +25,18 @@ export const isMarked = (a) => !!a && a.scope === "selection" && a.status === "k
 export const goesStraightIn = (ask, answer) => ask?.scope === "selection" && STRAIGHT_IN.includes(answer?.kind);
 
 /** The script as { id, text, attrs } for following marks (content, like asks and carets). */
-export const blocksOf = (doc) => doc.blocks.map((b) => ({ id: b.id, text: D.contentOf(b), attrs: { type: b.type } }));
+export const blocksOf = (doc) => doc.blocks.map((b) => ({ id: b.id, text: Doc.contentOf(b), attrs: { type: b.type } }));
 
 // Does this content still read as one block of this type (as parse() would read it)?
 export function keepsType(content, type) {
   if (type === "title" || type === "heading") return !content.includes("\n");
-  const p = D.parse(content);
+  const p = Doc.parse(content);
   return p.blocks.length <= 1 && (p.blocks[0]?.type ?? "para") === type;
 }
 /** Would settling bold marks change how this text reads, beyond what the edit itself made? `now`: the text as edited,
  *  `settled`: with its marks settled. Plain paragraphs are always fine; so is a list pasted on purpose, a list either way. */
 export function settlingChangesKind(now, settled) {
-  const kinds = (text) => D.parse(text).blocks.map((b) => b.type);
+  const kinds = (text) => Doc.parse(text).blocks.map((b) => b.type);
   const after = kinds(settled);
   return !after.every((t) => t === "para") && kinds(now).join() !== after.join();
 }
@@ -52,7 +52,7 @@ const LEAD_MARKS = /^\s*(?:(?:#{1,6}|[-*+]|\d+[.)])\s+|[_>|`~[<]\s*)+/;
 export function fitText(content, ask, type) {
   let text = ask.answer.text;
   if (type === "title" || type === "heading") text = text.replace(/\s*\n\s*/g, " ");
-  const ok = (t) => keepsType(D.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: t } }).content, type);
+  const ok = (t) => keepsType(Doc.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: t } }).content, type);
   if (ok(text)) return text;
   text = text.replace(/\s*\n\s*/g, " ").replace(LEAD_MARKS, "").replace(/\]\s*$/, "");
   return text.trim() && ok(text) ? text : null;
@@ -60,9 +60,9 @@ export function fitText(content, ask, type) {
 /** Does this answer fit its ask's block without changing its type (for the agent's answer_ask)? */
 export function fits(doc, ask, answer) {
   if (!goesStraightIn(ask, answer) || answer.kind === "links") return true;
-  const b = D.blockById(doc, ask.blockId);
-  const r = b && D.reanchor(ask, D.contentOf(b));
-  return !r || fitText(D.contentOf(b), { ...ask, ...r, answer }, b.type) !== null;
+  const b = Doc.blockById(doc, ask.blockId);
+  const r = b && Doc.reanchor(ask, Doc.contentOf(b));
+  return !r || fitText(Doc.contentOf(b), { ...ask, ...r, answer }, b.type) !== null;
 }
 /** What the tab tells the agent after answer_ask, per kind. For links: how many went in, and the quotes skipped. */
 export function answerResult(kind, { linked = 0, skipped = [], cuesDropped = 0 } = {}) {
@@ -85,7 +85,7 @@ function busyRanges(asks, except, { marked = true } = {}) {
   const add = (id, start, end) => { if (!out.has(id)) out.set(id, []); out.get(id).push([start, end]); };
   for (const a of asks || []) {
     if (a.id === except) continue;
-    if (a.scope === "selection" && D.OPEN_STATUSES.includes(a.status) && a.action !== "broll" && a.answer?.kind !== "broll") add(a.blockId, a.start, a.end); // kind "broll": a free Ask answered with B-roll
+    if (a.scope === "selection" && Doc.OPEN_STATUSES.includes(a.status) && a.action !== "broll" && a.answer?.kind !== "broll") add(a.blockId, a.start, a.end); // kind "broll": a free Ask answered with B-roll
     else if (marked && isMarked(a)) add(a.blockId, a.start, a.end);
     else if (a.scope === "script" && a.status === "answered" && Array.isArray(a.answer?.marks)) {
       for (const m of a.answer.marks) if (m.state === "open" && m.blockId) add(m.blockId, m.start, m.end);
@@ -93,19 +93,19 @@ function busyRanges(asks, except, { marked = true } = {}) {
   }
   return out;
 }
-const cueRanges = (content) => K.textCues(content).map((c) => [c.start, c.end]);
+const cueRanges = (content) => Cues.textCues(content).map((c) => [c.start, c.end]);
 // Blocks a whole-script "Find links" may link: the spoken paragraphs; the other blocks only explain a skip.
 function scriptSegments(doc, busy) {
-  const spoken = new Set(D.outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para").map((b) => b.id)));
+  const spoken = new Set(Doc.outline(doc).sections.filter((s) => s.spoken).flatMap((s) => s.blocks.filter((b) => b.type === "para").map((b) => b.id)));
   const segments = [], others = [];
   for (const b of doc.blocks) {
-    const content = D.contentOf(b);
+    const content = Doc.contentOf(b);
     if (spoken.has(b.id)) segments.push({ id: b.id, content, from: 0, to: content.length, avoid: busy.get(b.id) || [], cues: cueRanges(content) });
     else if (b.type !== "para") others.push(content);
   }
   return { segments, others };
 }
-/** What a links answer would do now, without changing anything: { segments, skipped } (L.planLinks). The selection's
+/** What a links answer would do now, without changing anything: { segments, skipped } (Links.planLinks). The selection's
  *  quote must still be there (else null). `asks`: all the asks, so that links stay out of other open work. A
  *  paragraph whose links would turn it into another kind of block gets none; its quotes are skipped. */
 export function planFor(doc, ask, answer = ask.answer, { asks = [] } = {}) {
@@ -113,18 +113,18 @@ export function planFor(doc, ask, answer = ask.answer, { asks = [] } = {}) {
   let plan;
   if (ask.scope === "script") {
     const { segments, others } = scriptSegments(doc, busy);
-    plan = L.planLinks(segments, answer.links, { others });
+    plan = Links.planLinks(segments, answer.links, { others });
   } else {
-    const b = D.blockById(doc, ask.blockId);
-    const r = b && D.reanchor(ask, D.contentOf(b));
+    const b = Doc.blockById(doc, ask.blockId);
+    const r = b && Doc.reanchor(ask, Doc.contentOf(b));
     if (!r) return null;
-    const content = D.contentOf(b);
+    const content = Doc.contentOf(b);
     const segment = b.type === "para" ? [{ id: b.id, content, from: r.start, to: r.end, avoid: busy.get(b.id) || [], cues: cueRanges(content) }] : [];
-    plan = L.planLinks(segment, answer.links, { others: b.type === "para" ? [] : [content] });
+    plan = Links.planLinks(segment, answer.links, { others: b.type === "para" ? [] : [content] });
   }
   const segments = [], skipped = [...plan.skipped];
   for (const seg of plan.segments) {
-    if (keepsType(seg.content, D.blockById(doc, seg.id)?.type)) segments.push(seg);
+    if (keepsType(seg.content, Doc.blockById(doc, seg.id)?.type)) segments.push(seg);
     else for (const l of seg.links) skipped.push({ quote: l.quote.slice(0, 80), why: "its paragraph would become another kind of block" });
   }
   return { segments, skipped };
@@ -133,31 +133,31 @@ export function planFor(doc, ask, answer = ask.answer, { asks = [] } = {}) {
 /**
  * Apply an answered ask's replace or add to the document, as one change, on its quote found again near its place
  * (null, and nothing changes, when the quote is gone). Returns { blockId, at, delta, result, mark } (result:
- * D.setContent's, for following splits) and sets the ask `kept`. When the change stays inside its block (no new
+ * Doc.setContent's, for following splits) and sets the ask `kept`. When the change stays inside its block (no new
  * paragraphs, the same type), `mark` is { start, end, change: { text, removed, at: now } } for `setMark` (after the
  * other marks followed this change); otherwise (a safety net: fitText keeps it so) it is null and the change goes
  * in unmarked. A change of only spaces is not marked.
  */
 export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
-  const b = D.blockById(doc, ask.blockId);
+  const b = Doc.blockById(doc, ask.blockId);
   if (!b || !goesStraightIn(ask, ask.answer)) return null;
   if (ask.answer.kind === "links") return landLinks(doc, ask, now, asks);
-  const content = D.contentOf(b), type = b.type;
+  const content = Doc.contentOf(b), type = b.type;
   // The quote must still be there (found again near its place); otherwise nothing changes.
-  const r = D.reanchor(ask, content);
+  const r = Doc.reanchor(ask, content);
   if (!r) return null;
   Object.assign(ask, r);
   let text = fitText(content, ask, type);
   if (text === null) return null;
   // Cues live only in paragraphs: in a heading or the title "**" is plain text, and a rewrite leaves it alone.
-  const cuesHere = type === "para" ? K.textCues(content) : [];
+  const cuesHere = type === "para" ? Cues.textCues(content) : [];
   // The agent reads the asked text with its "**" marks and may send one back alone: it goes (cues.js). Only when the ask
   // reaches a real bold stretch: "**kwargs" in ordinary text stays.
-  if (cuesHere.some((c) => ask.start < c.end && ask.end > c.start)) text = K.dropLoneMarks(text);
+  if (cuesHere.some((c) => ask.start < c.end && ask.end > c.start)) text = Cues.dropLoneMarks(text);
   // A replace that reaches into a cue takes the whole cue in (its outside words stay, plain), and an add inside a cue
   // goes after it, so no lone "**" is left (cues.js).
   if (type === "para" && ask.answer.kind === "replace") {
-    const w = K.widenOverCues(content, ask.start, ask.end);
+    const w = Cues.widenOverCues(content, ask.start, ask.end);
     if (w) {
       // The cue's outside words join the new text, so its fit is checked again on the wider range.
       ask.start = w.start;
@@ -170,29 +170,29 @@ export function land(doc, ask, now = Date.now(), { asks = [] } = {}) {
     if (c) ask.end = c.end;
   }
   // A replace over cues keeps each cue whose words survive (cues.js); the agent is told how many went.
-  const kept = type === "para" && ask.answer.kind === "replace" ? K.keepCues(content.slice(ask.start, ask.end), text) : { text, dropped: 0 };
-  if (kept.text !== text && keepsType(D.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: kept.text } }).content, type)) text = kept.text;
-  else if (kept.text !== text) kept.dropped = Math.max(0, K.textCues(content.slice(ask.start, ask.end)).length - K.textCues(text).length);
+  const kept = type === "para" && ask.answer.kind === "replace" ? Cues.keepCues(content.slice(ask.start, ask.end), text) : { text, dropped: 0 };
+  if (kept.text !== text && keepsType(Doc.applyAnswer(content, { ...ask, answer: { ...ask.answer, text: kept.text } }).content, type)) text = kept.text;
+  else if (kept.text !== text) kept.dropped = Math.max(0, Cues.textCues(content.slice(ask.start, ask.end)).length - Cues.textCues(text).length);
   ask.answer = { ...ask.answer, text };
-  const res = D.applyAnswer(content, ask);
+  const res = Doc.applyAnswer(content, ask);
   // The whole changed stretch: for "add" that includes the spaces put around the text, so Undo removes them too.
   const from = ask.answer.kind === "add" ? ask.end : ask.start;
   const to = from + res.content.length - content.length + (ask.answer.kind === "add" ? 0 : ask.end - ask.start);
   const removed = content.slice(from, ask.answer.kind === "add" ? from : ask.end);
   const at = ask.end, delta = res.content.length - content.length;
   ask.status = "kept";
-  const result = D.setContent(doc, b.id, res.content);
-  const inPlace = !result.changed && !result.created.length && b.type === type && D.contentOf(b) === res.content;
+  const result = Doc.setContent(doc, b.id, res.content);
+  const inPlace = !result.changed && !result.created.length && b.type === type && Doc.contentOf(b) === res.content;
   const mark = inPlace && res.content.slice(from, to).trim() ? { start: from, end: to, change: { text: res.content.slice(from, to), removed, at: now } } : null;
   return { blockId: b.id, at, delta, result, mark, cuesDropped: kept.dropped };
 }
 // One plan segment into its block: { at, delta, result, mark } (null when the block would change its type).
 function landSegment(doc, seg, now) {
-  const b = D.blockById(doc, seg.id);
+  const b = Doc.blockById(doc, seg.id);
   if (!b || !keepsType(seg.content, b.type)) return null;
-  const old = D.contentOf(b);
+  const old = Doc.contentOf(b);
   const end = seg.to + seg.delta;
-  const result = D.setContent(doc, b.id, seg.content);
+  const result = Doc.setContent(doc, b.id, seg.content);
   const mark = { start: seg.from, end, change: { text: seg.content.slice(seg.from, end), removed: old.slice(seg.from, seg.to), at: now } };
   return { blockId: b.id, at: seg.to, delta: seg.delta, result, mark };
 }
@@ -222,8 +222,8 @@ export function landScript(doc, ask, now = Date.now(), { asks = [] } = {}) {
   for (const seg of segs) {
     const res = landSegment(doc, seg, now);
     const part = {
-      id: D.newId(10), scope: "selection", action: "links", from: ask.id, instruction: ask.instruction, by: ask.by, createdAt: ask.createdAt,
-      status: "kept", blockId: seg.id, quote: res.mark.change.text, section: D.sectionOfBlock(doc, seg.id),
+      id: Doc.newId(10), scope: "selection", action: "links", from: ask.id, instruction: ask.instruction, by: ask.by, createdAt: ask.createdAt,
+      status: "kept", blockId: seg.id, quote: res.mark.change.text, section: Doc.sectionOfBlock(doc, seg.id),
       answer: { kind: "links", links: seg.links }, ...(ask.answeredBy ? { answeredBy: ask.answeredBy } : {}),
     };
     setMark(part, res.mark);
@@ -244,11 +244,11 @@ export function setMark(ask, mark) {
  *  change is no longer exactly there (then it is no longer marked either). The ask becomes `undone`. */
 export function undo(doc, ask) {
   if (!isMarked(ask)) return null;
-  const b = D.blockById(doc, ask.blockId);
-  const content = b ? D.contentOf(b) : "";
+  const b = Doc.blockById(doc, ask.blockId);
+  const content = b ? Doc.contentOf(b) : "";
   if (!b || content.slice(ask.start, ask.end) !== ask.change.text) { delete ask.change; return null; }
   const { removed } = ask.change;
-  D.setContent(doc, b.id, content.slice(0, ask.start) + removed + content.slice(ask.end));
+  Doc.setContent(doc, b.id, content.slice(0, ask.start) + removed + content.slice(ask.end));
   const out = { blockId: b.id, at: ask.end, delta: removed.length - (ask.end - ask.start) };
   ask.status = "undone";
   ask.end = ask.start + removed.length;
@@ -297,7 +297,7 @@ export function withContext(asks, doc) {
   return structuredClone(asks).map((a) => {
     if (!isMarked(a)) return a;
     const index = doc ? doc.blocks.findIndex((b) => b.id === a.blockId) : -1;
-    const content = index < 0 ? "" : D.contentOf(doc.blocks[index]);
+    const content = index < 0 ? "" : Doc.contentOf(doc.blocks[index]);
     if (index < 0 || content.slice(a.start, a.end) !== a.change.text) delete a.change;
     else a.change.ctx = { index, ...around(content, a.start, a.end) };
     return a;
@@ -313,8 +313,8 @@ export function place(ask, doc, { byIndex = false } = {}) {
   if (!isMarked(ask)) return false;
   const { text, ctx } = ask.change;
   const b = !ctx || typeof ctx.before !== "string" || typeof ctx.after !== "string" ? null
-    : byIndex ? (Number.isInteger(ctx.index) ? doc.blocks[ctx.index] : null) : D.blockById(doc, ask.blockId);
-  const content = b ? D.contentOf(b) : "";
+    : byIndex ? (Number.isInteger(ctx.index) ? doc.blocks[ctx.index] : null) : Doc.blockById(doc, ask.blockId);
+  const content = b ? Doc.contentOf(b) : "";
   const hits = [];
   for (let i = b ? content.indexOf(text) : -1; i >= 0; i = content.indexOf(text, i + 1)) {
     const c = around(content, i, i + text.length);
@@ -345,7 +345,7 @@ export function landStep(asks, land) {
 /** The newest marked change (the agent's caret sits there and its name tag offers Undo). */
 export function newestMarked(asks, doc = null) {
   let best = null;
-  for (const a of asks) if (isMarked(a) && (!doc || D.blockById(doc, a.blockId)) && (!best || (a.change.at || 0) >= (best.change.at || 0))) best = a;
+  for (const a of asks) if (isMarked(a) && (!doc || Doc.blockById(doc, a.blockId)) && (!best || (a.change.at || 0) >= (best.change.at || 0))) best = a;
   return best;
 }
 /** The mark as drawn: without the spaces at its ends. */
@@ -392,7 +392,7 @@ function spokenSegments(doc, asks) {
 /** Would a cue toggle over from…to (content offsets in the block) touch text open asks or "Sounds like me" marks point
  *  at? Then the person's Ctrl/Cmd+B changes nothing, so that work keeps its text. The agent's marked changes don't
  *  stop it (like typing there, it ends their mark), so Ctrl/Cmd+B takes off a cue the agent just marked. */
-export const cueBlocked = (asks, blockId, from, to) => L.overlaps(busyRanges(asks, null, { marked: false }).get(blockId) || [], from, to);
+export const cueBlocked = (asks, blockId, from, to) => Links.overlaps(busyRanges(asks, null, { marked: false }).get(blockId) || [], from, to);
 /** Where a range goes through one room edit, by offsets: it moves when the edit lies wholly before it (typed right before
  *  it too), and stays when the edit lies after it. null when nothing moves it or the edit fell inside it: then the old
  *  rules decide, as for any edit there. So a host's ask stays on its own word when a guest marks an earlier copy of it. */
@@ -427,7 +427,7 @@ export function alignChars(a, b) {
   }
   return map;
 }
-const WORDISH = K.WORD_CHAR; // a word, as cues.js reads one
+const WORDISH = Cues.WORD_CHAR; // a word, as cues.js reads one
 /** Where a host's ask or mark (`range`: start, end) goes through one room edit: as followTextOp says;
  *  but when the edit fell inside it, it is closed (null), not searched for again by its old words. `old`: the block's text
  *  before the edit, when known. One edit can span words nobody changed (several edits sent as one, or one diff from the first
@@ -458,28 +458,28 @@ export function followRoomEdit(range, op, old = null) {
   if (hi < op.at + op.del ? map[hi - op.at] < 0 || !marks.test(now.slice(start + len, op.at + map[hi - op.at])) : !marks.test(now.slice(start + len, op.at + op.ins.length))) return null;
   return { start, end: start + len };
 }
-/** May the person's Ctrl/Cmd+B do this toggle (K.toggleCue's result) in this block? Not over open work, and not when
+/** May the person's Ctrl/Cmd+B do this toggle (Cues.toggleCue's result) in this block? Not over open work, and not when
  *  the new text would read as another kind of block ("**- item**" without its marks is a list line). */
 export const canToggleCue = (asks, blockId, type, res) => !!res && !cueBlocked(asks, blockId, res.from, res.to) && keepsType(res.content, type);
 /** Every cue in the spoken text: [{ cueId, quote, section, before, after }] (before/after: up to 40 characters). */
 export function listCues(doc) {
   const out = [];
   for (const s of spokenSegments(doc, []).segments) {
-    K.textCues(s.content).forEach((c, i) => out.push({
-      cueId: `${s.id}:${i + 1}:${c.label}`, quote: c.label, section: D.sectionOfBlock(doc, s.id),
+    Cues.textCues(s.content).forEach((c, i) => out.push({
+      cueId: `${s.id}:${i + 1}:${c.label}`, quote: c.label, section: Doc.sectionOfBlock(doc, s.id),
       before: s.content.slice(Math.max(0, c.start - 40), c.start), after: s.content.slice(c.end, c.end + 40),
     }));
   }
   return out;
 }
-/** What mark_cue (mode "mark") or unmark_cue ("unmark") would do now, without changing anything (K.planCues).
+/** What mark_cue (mode "mark") or unmark_cue ("unmark") would do now, without changing anything (Cues.planCues).
  *  A paragraph whose change would turn it into another kind of block is left out; its quotes are skipped. */
 export function planCues(doc, mode, items, { asks = [] } = {}) {
   const { segments, others } = spokenSegments(doc, asks);
-  const plan = K.planCues(segments, items, mode, { others });
+  const plan = Cues.planCues(segments, items, mode, { others });
   const out = [], skipped = [...plan.skipped];
   for (const seg of plan.segments) {
-    if (keepsType(seg.content, D.blockById(doc, seg.id)?.type)) out.push(seg);
+    if (keepsType(seg.content, Doc.blockById(doc, seg.id)?.type)) out.push(seg);
     else for (const c of seg.cues) skipped.push({ quote: c.quote.slice(0, 80), why: "its paragraph would become another kind of block" });
   }
   return { segments: out, skipped };
@@ -494,7 +494,7 @@ export function landCues(doc, plan, mode, by, now = Date.now()) {
   for (const seg of plan.segments) {
     const res = landSegment(doc, seg, now);
     if (!res) continue;
-    const ask = D.makeAsk(doc, { blockId: seg.id, start: res.mark.start, end: res.mark.end, action: "cue", instruction: mode === "mark" ? "Bold" : "Remove bold", by, now: new Date(now) });
+    const ask = Doc.makeAsk(doc, { blockId: seg.id, start: res.mark.start, end: res.mark.end, action: "cue", instruction: mode === "mark" ? "Bold" : "Remove bold", by, now: new Date(now) });
     Object.assign(ask, { status: "kept", answer: { kind: "cue", cues: seg.cues }, answeredBy: by });
     setMark(ask, res.mark);
     parts.push({ ask, blockId: res.blockId, at: res.at, delta: res.delta, result: res.result });
