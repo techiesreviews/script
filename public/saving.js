@@ -252,6 +252,9 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // Another script opens: its record starts from its file (a pending auto-save of the last one was flushed before).
   function open({ handle = null, name, browser: inBrowser = false, savedText, modified = 0, fresh = false }) {
     opened++;
+    // A waiting click without a file (the demo's Ctrl+S during its Save as) has nowhere to go once its script is left:
+    // its words become that script's draft, and it never runs on the script opened now.
+    if (queue.waiting && !queue.waiting.handle) { keepDraft(queue.waiting.name, queue.waiting.text); queue = { ...queue, waiting: null }; }
     Object.assign(script, {
       name, handle, inBrowser: !!handle && inBrowser, blank: "", savedText, savedAt: fresh ? 0 : modified,
       fileModified: modified, saveError: "", needsPermission: false, conflict: false,
