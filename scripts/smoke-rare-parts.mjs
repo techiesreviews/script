@@ -1,0 +1,254 @@
+// Browser check for TOOLS-311: the parts a person uses rarely load on first use. With real clicks over CDP at 1280 and
+// 390 px, watching every request: a new script with typing fetches no share room (together/room.js), export pack,
+// folder writer or zip maker; opening the Export menu loads the export pack and Export all downloads the zip; Share to
+// edit copies the link in the click and loads the room, and a guest's edit link loads it while the Join form shows;
+// after a reload each part answers 304. Sharing stopped while the room's part is held starts no room. A part that
+// can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
+// a guest's Join. No CSP violation and no page error.
+// Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; it applies _headers and runs the
+// rooms) and a headless Chrome, then: node scripts/smoke-rare-parts.mjs <base URL> <Chrome debugging port>
+import { setMaxListeners } from "node:events";
+
+const BASE = (process.argv[2] || "http://127.0.0.1:8787").replace(/\/$/, "");
+const PORT = process.argv[3] || "9222";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let failures = 0;
+const check = (ok, label, extra = "") => {
+  console.log(`${ok ? "ok" : "FAIL"} ${label}${extra !== "" && !ok ? ` (${extra})` : ""}`);
+  if (!ok) failures++;
+};
+const COLLECT = `window.__csp = []; document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + (e.blockedURI || "inline")));`;
+
+const version = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
+const cdp = new WebSocket(version.webSocketDebuggerUrl);
+setMaxListeners(64, cdp); // one listener per page this check opens
+await new Promise((resolve, reject) => { cdp.addEventListener("open", resolve); cdp.addEventListener("error", reject); });
+let nextId = 0;
+const waiting = new Map();
+cdp.addEventListener("message", (e) => {
+  const m = JSON.parse(e.data);
+  if (!m.id || !waiting.has(m.id)) return;
+  const { resolve, reject } = waiting.get(m.id);
+  waiting.delete(m.id);
+  if (m.error) reject(new Error(JSON.stringify(m.error))); else resolve(m.result);
+});
+const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+  const id = ++nextId;
+  const timer = setTimeout(() => { waiting.delete(id); reject(new Error(`Chrome didn't answer ${method}`)); }, 20000);
+  waiting.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
+  cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+});
+
+
+// The parts that load on first use, and the small startup files that stand in for them.
+const RARE = ["/together/room.js", "/export-pack.js", "/video-folder.js", "/zip.js"];
+const WATCHED = /\/(?:together\/(?:room|link)|export-pack|video-folder|zip|folder-note)\.js(?:\?|$)/;
+const PACK = ["/export-pack.js", "/video-folder.js", "/zip.js"];
+
+// fail / hold: URL patterns whose requests are refused (as a network blip would) or held until page.release().
+async function openPage(width, height, { fail = [], hold = [] } = {}) {
+  const { browserContextId } = await send("Target.createBrowserContext");
+  const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
+  const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
+  const page = {
+    send: (method, params) => send(method, params, sessionId),
+    async eval(expression) {
+      const r = await page.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+      return r.result.value;
+    },
+    async until(expression, label, ms = 8000) {
+      const end = Date.now() + ms;
+      for (;;) {
+        if (await page.eval(expression).catch(() => false)) return true;
+        if (Date.now() > end) { check(false, `timed out: ${label}`); return false; }
+        await sleep(60);
+      }
+    },
+    async click(selector) {
+      const box = await page.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "nearest" }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      if (!box) throw new Error(`nothing to press: ${selector}`);
+      for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
+    },
+    async key(key, code, keyCode, text) {
+      for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: keyCode, ...(type === "keyDown" && text ? { text } : {}) });
+    },
+    asked: [], // the watched files the page asked for
+    got: [], // their answers on the wire: { url, status }
+    held: [],
+    failing: fail.length > 0,
+    release: () => Promise.all(page.held.splice(0).map((requestId) => page.send("Fetch.continueRequest", { requestId }))),
+    close: () => send("Target.disposeBrowserContext", { browserContextId }),
+  };
+  await page.send("Page.enable");
+  await page.send("Runtime.enable");
+  await page.send("Log.enable");
+  await page.send("Network.enable");
+  const patterns = [...fail, ...hold].map((urlPattern) => ({ urlPattern }));
+  if (patterns.length) await page.send("Fetch.enable", { patterns });
+  await page.send("Page.addScriptToEvaluateOnNewDocument", { source: COLLECT });
+  page.log = [];
+  const urls = new Map(); // requestId → path, for the watched files
+  const held = (url) => hold.some((p) => url.includes(p.replace(/\*/g, "")));
+  cdp.addEventListener("message", (e) => {
+    const m = JSON.parse(e.data);
+    if (m.sessionId !== sessionId) return;
+    if (m.method === "Log.entryAdded" && /Content Security Policy|Refused to/i.test(m.params.entry.text)) page.log.push(m.params.entry.text);
+    if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") page.log.push(m.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
+    if (m.method === "Runtime.exceptionThrown") page.log.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
+    if (m.method === "Network.requestWillBeSent" && WATCHED.test(m.params.request.url)) { page.asked.push(new URL(m.params.request.url).pathname); urls.set(m.params.requestId, new URL(m.params.request.url).pathname); }
+    // The status on the wire (a 304 that Chrome then answers from its cache can show as 200 in responseReceived).
+    if (m.method === "Network.responseReceivedExtraInfo" && urls.has(m.params.requestId)) page.got.push({ url: urls.get(m.params.requestId), status: m.params.statusCode });
+    if (m.method === "Page.javascriptDialogOpening") page.send("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+    if (m.method === "Fetch.requestPaused" && held(m.params.request.url)) page.held.push(m.params.requestId);
+    else if (m.method === "Fetch.requestPaused") page.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "Failed" }).catch(() => {});
+  });
+  await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 500 });
+  return page;
+}
+async function clean(page, tag, what) {
+  const seen = [...(await page.eval(`window.__csp.splice(0)`).catch(() => [])), ...page.log.splice(0)];
+  // A request refused on purpose is the check's doing, not the page's.
+  if (page.failing) seen.splice(0, seen.length, ...seen.filter((t) => !/room\.js|export-pack\.js|ERR_FAILED/.test(t)));
+  check(seen.length === 0, `${tag} ${what}: no CSP violation or error`, [...new Set(seen)].join(" | ").slice(0, 400));
+}
+const asked = (page, files) => files.every((f) => page.asked.includes(f));
+async function startScreen(page, url = `${BASE}/`) {
+  await page.send("Page.navigate", { url });
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyNew")`, "the start screen");
+}
+async function newScript(page, title) {
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "the new script");
+  await page.send("Input.insertText", { text: title });
+  await page.key("Enter", "Enter", 13, "\r");
+  await page.send("Input.insertText", { text: "Hello there my friend." });
+  await sleep(300);
+}
+// The clipboard and downloads, stood in for: the copied link lands in window.__link, each download's name and first
+// bytes in window.__downloads.
+const STANDINS = `Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__link = t; } } });
+  window.__downloads = []; const blobs = new Map(), make = URL.createObjectURL;
+  URL.createObjectURL = (b) => { const u = make(b); blobs.set(u, b); return u; };
+  HTMLAnchorElement.prototype.click = function () { const name = this.download; blobs.get(this.href).arrayBuffer().then((b) => window.__downloads.push({ name, head: [...new Uint8Array(b).slice(0, 2)].map((c) => String.fromCharCode(c)).join("") })); }; true`;
+async function openExport(page) {
+  await page.click("#exportBtn");
+  return page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu");
+}
+
+async function run(width, height) {
+  const tag = `${width} px:`;
+
+  // A new script, typed in: none of the rare parts is fetched; the small startup files are.
+  const page = await openPage(width, height);
+  await startScreen(page);
+  await newScript(page, "Rare parts check");
+  check(RARE.every((f) => !page.asked.includes(f)), `${tag} a new script with typing fetches no share room, zip maker or folder writer`, page.asked.join(", "));
+  check(asked(page, ["/together/link.js", "/folder-note.js"]), `${tag} the small startup files (edit links, folder note) load with the page`, page.asked.join(", "));
+  await clean(page, tag, "start and typing");
+
+  // Opening the Export menu loads the export pack; Export all downloads a zip.
+  await page.eval(STANDINS);
+  await openExport(page);
+  check(await page.until(`true`, "") && (await (async () => { for (let i = 0; i < 50 && !asked(page, PACK); i++) await sleep(100); return asked(page, PACK); })()), `${tag} opening the Export menu loads export-pack.js, video-folder.js and zip.js`, page.asked.join(", "));
+  check(!page.asked.includes("/together/room.js"), `${tag} the Export menu fetches no share room`);
+  await page.click('[data-export="all"]');
+  check(await page.until(`window.__downloads.length === 1`, "the zip"), `${tag} Export all downloads one file`);
+  const dl = await page.eval(`window.__downloads[0]`);
+  check(/^[\w-]+\.zip$/.test(dl?.name) && !/video-folder/.test(dl.name) && dl.head === "PK", `${tag} it is the script's zip`, JSON.stringify(dl));
+  await openExport(page);
+  check(await page.eval(`document.querySelector("#zipNote").hidden && document.querySelector("#folderNote").hidden`), `${tag} no note on Export all or Save to video folder`);
+  await page.key("Escape", "Escape", 27);
+  await clean(page, tag, "Export menu and Export all");
+
+  // Share to edit: the link is copied in the click and the room's part loads; a guest's link loads it before the join.
+  await page.click("#shareBtn");
+  check(await page.until(`/#room=[\\w-]{22}&k=[\\w-]{43}$/.test(window.__link || "")`, "the share link"), `${tag} Share to edit copies an edit link`);
+  for (let i = 0; i < 50 && !page.asked.includes("/together/room.js"); i++) await sleep(100);
+  check(page.asked.includes("/together/room.js"), `${tag} Share to edit loads together/room.js`);
+  check(await page.until(`window.__scriptEditor.room()?.role === "host" && window.__scriptEditor.room().link === window.__link`, "the host's room"), `${tag} the room started is the one in the copied link`);
+  check(await page.until(`document.querySelector("#shareLabel").textContent === "Link copied" && !document.querySelector("#stopShare").hidden`, "the button"), `${tag} the button says Link copied, with Stop sharing beside it`);
+  const link = await page.eval(`window.__link`);
+  const guest = await openPage(width, height);
+  await guest.send("Page.navigate", { url: link });
+  await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+  for (let i = 0; i < 50 && !guest.asked.includes("/together/room.js"); i++) await sleep(100);
+  check(guest.asked.includes("/together/room.js"), `${tag} a guest's edit link loads together/room.js while the Join form shows`);
+  check(!PACK.some((f) => guest.asked.includes(f)), `${tag} the guest fetches no export pack`);
+  await guest.eval(`document.querySelector("#joinName").value = "Guest"`);
+  await guest.click("#joinForm button");
+  check(await guest.until(`(window.__scriptEditor.markdown() || "").includes("Hello there my friend.")`, "the guest's script", 12000), `${tag} the guest joins and gets the host's script`);
+  check(await page.until(`window.__scriptEditor.room()?.people.length === 2`, "the guest with the host"), `${tag} the host sees the guest`);
+  await clean(guest, `${tag} guest:`, "join");
+  await clean(page, tag, "Share to edit");
+  await guest.close();
+  await page.click("#stopShare");
+  check(await page.until(`!window.__scriptEditor.room() || window.__scriptEditor.room().status === "ended"`, "sharing stopped"), `${tag} Stop sharing ends the room`);
+
+  // After a reload the parts come back as "not changed" (304).
+  await page.send("Page.reload");
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyNew")`, "the start screen after a reload");
+  page.got.splice(0);
+  page.asked.splice(0);
+  await newScript(page, "Rare parts again");
+  await page.eval(STANDINS);
+  await openExport(page);
+  await page.key("Escape", "Escape", 27);
+  await page.click("#shareBtn");
+  await page.until(`!!window.__link`, "the share link after a reload");
+  for (let i = 0; i < 50 && page.got.filter((r) => RARE.includes(r.url)).length < 4; i++) await sleep(100);
+  const again = page.got.filter((r) => RARE.includes(r.url));
+  check(again.length === 4 && again.every((r) => r.status === 304), `${tag} after a reload each part answers 304`, JSON.stringify(again));
+  await page.click("#stopShare");
+  await clean(page, tag, "after a reload");
+  await page.close();
+
+  // Sharing stopped while the room's part is on its way: no room starts.
+  const held = await openPage(width, height, { hold: ["*together/room.js*"] });
+  await startScreen(held);
+  await newScript(held, "Held room");
+  await held.eval(STANDINS);
+  await held.click("#shareBtn");
+  check(await held.until(`!!window.__link`, "the link while the room is held"), `${tag} with the room's part held, the link is still copied in the click`);
+  for (let i = 0; i < 50 && !held.held.length; i++) await sleep(100);
+  check(held.held.length > 0 && await held.eval(`!document.querySelector("#stopShare").hidden && window.__scriptEditor.room() === null`), `${tag} sharing shows as on while the part is held, with no room yet`);
+  await held.click("#stopShare");
+  await held.release();
+  await sleep(800);
+  check(await held.eval(`window.__scriptEditor.room() === null && document.querySelector("#shareLabel").textContent === "Share to edit"`), `${tag} sharing stopped before the part came: no room starts`);
+  await clean(held, tag, "room held, sharing stopped");
+  await held.close();
+
+  // Parts that can't load: each control says so, and nothing else breaks.
+  const failing = await openPage(width, height, { fail: ["*together/room.js*", "*export-pack.js*"] });
+  await startScreen(failing);
+  await newScript(failing, "Failing parts");
+  await failing.eval(STANDINS);
+  await failing.click("#shareBtn");
+  check(await failing.until(`document.querySelector("#shareLabel").textContent === "Couldn't share. Reload the page." && document.querySelector("#shareBtn").title === "Couldn't share. Reload the page."`, "the share failure"), `${tag} a room that can't load: the share button says to reload`);
+  check(await failing.eval(`document.querySelector("#stopShare").hidden && window.__scriptEditor.room() === null`), `${tag} sharing is off again`);
+  await openExport(failing);
+  check(await failing.until(`document.querySelector("#zipNote").textContent === "Couldn't load. Reload the page." && !document.querySelector("#zipNote").hidden && document.querySelector("#folderNote").textContent === "Couldn't load. Reload the page."`, "the export notes"), `${tag} an export pack that can't load: Export all and Save to video folder say to reload`);
+  await failing.click('[data-export="all"]');
+  await sleep(400);
+  check(await failing.eval(`window.__downloads.length === 0`), `${tag} Export all then downloads nothing`);
+  await failing.click("#exportBtn").catch(() => {});
+  await clean(failing, tag, "parts that can't load");
+  await failing.close();
+
+  const lost = await openPage(width, height, { fail: ["*together/room.js*"] });
+  await lost.send("Page.navigate", { url: link });
+  await lost.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+  await lost.eval(`document.querySelector("#joinName").value = "Guest"`);
+  await lost.click("#joinForm button");
+  check(await lost.until(`document.querySelector("#emptyNote").textContent === "Couldn't load the edit link. Reload the page." && !document.querySelector("#emptyNote").hidden && document.querySelector("#joinForm").hidden`, "the guest's note"), `${tag} a guest whose room can't load is told to reload`);
+  await clean(lost, `${tag} guest:`, "room that can't load");
+  await lost.close();
+}
+
+await run(1280, 800);
+await run(390, 844);
+cdp.close();
+console.log(failures ? `FAIL ${failures}` : "ok all");
+process.exit(failures ? 1 : 0);

@@ -2537,7 +2537,8 @@ function needPack() {
   }).catch((e) => { packFailed = true; renderFolderNote(); throw e; });
   return packLoading;
 }
-$("#exportMenu").addEventListener("toggle", (e) => { if (e.newState === "open") needPack().catch(() => {}); });
+// beforetoggle, not toggle: a menu opened and closed at once still asks for it (toggle events are merged).
+$("#exportMenu").addEventListener("beforetoggle", (e) => { if (e.newState === "open") needPack().catch(() => {}); });
 function exportFile(kind) {
   if (!state.doc || state.guest) return;
   if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");

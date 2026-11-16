@@ -1,0 +1,465 @@
+# TOOLS-311 browser checks on wrangler dev (port 8811) and headless Chrome 157, 2026-11-16
+
+## scripts/smoke-rare-parts.mjs
+ok 1280 px: a new script with typing fetches no share room, zip maker or folder writer
+ok 1280 px: the small startup files (edit links, folder note) load with the page
+ok 1280 px: start and typing: no CSP violation or error
+ok 1280 px: opening the Export menu loads export-pack.js, video-folder.js and zip.js
+ok 1280 px: the Export menu fetches no share room
+ok 1280 px: Export all downloads one file
+ok 1280 px: it is the script's zip
+ok 1280 px: no note on Export all or Save to video folder
+ok 1280 px: Export menu and Export all: no CSP violation or error
+ok 1280 px: Share to edit copies an edit link
+ok 1280 px: Share to edit loads together/room.js
+ok 1280 px: the room started is the one in the copied link
+ok 1280 px: the button says Link copied, with Stop sharing beside it
+ok 1280 px: a guest's edit link loads together/room.js while the Join form shows
+ok 1280 px: the guest fetches no export pack
+ok 1280 px: the guest joins and gets the host's script
+ok 1280 px: the host sees the guest
+ok 1280 px: guest: join: no CSP violation or error
+ok 1280 px: Share to edit: no CSP violation or error
+ok 1280 px: Stop sharing ends the room
+ok 1280 px: after a reload each part answers 304
+ok 1280 px: after a reload: no CSP violation or error
+ok 1280 px: with the room's part held, the link is still copied in the click
+ok 1280 px: sharing shows as on while the part is held, with no room yet
+ok 1280 px: sharing stopped before the part came: no room starts
+ok 1280 px: room held, sharing stopped: no CSP violation or error
+ok 1280 px: a room that can't load: the share button says to reload
+ok 1280 px: sharing is off again
+ok 1280 px: an export pack that can't load: Export all and Save to video folder say to reload
+ok 1280 px: Export all then downloads nothing
+ok 1280 px: parts that can't load: no CSP violation or error
+ok 1280 px: a guest whose room can't load is told to reload
+ok 1280 px: guest: room that can't load: no CSP violation or error
+ok 390 px: a new script with typing fetches no share room, zip maker or folder writer
+ok 390 px: the small startup files (edit links, folder note) load with the page
+ok 390 px: start and typing: no CSP violation or error
+ok 390 px: opening the Export menu loads export-pack.js, video-folder.js and zip.js
+ok 390 px: the Export menu fetches no share room
+ok 390 px: Export all downloads one file
+ok 390 px: it is the script's zip
+ok 390 px: no note on Export all or Save to video folder
+ok 390 px: Export menu and Export all: no CSP violation or error
+ok 390 px: Share to edit copies an edit link
+ok 390 px: Share to edit loads together/room.js
+ok 390 px: the room started is the one in the copied link
+ok 390 px: the button says Link copied, with Stop sharing beside it
+ok 390 px: a guest's edit link loads together/room.js while the Join form shows
+ok 390 px: the guest fetches no export pack
+ok 390 px: the guest joins and gets the host's script
+ok 390 px: the host sees the guest
+ok 390 px: guest: join: no CSP violation or error
+ok 390 px: Share to edit: no CSP violation or error
+ok 390 px: Stop sharing ends the room
+ok 390 px: after a reload each part answers 304
+ok 390 px: after a reload: no CSP violation or error
+ok 390 px: with the room's part held, the link is still copied in the click
+ok 390 px: sharing shows as on while the part is held, with no room yet
+ok 390 px: sharing stopped before the part came: no room starts
+ok 390 px: room held, sharing stopped: no CSP violation or error
+ok 390 px: a room that can't load: the share button says to reload
+ok 390 px: sharing is off again
+ok 390 px: an export pack that can't load: Export all and Save to video folder say to reload
+ok 390 px: Export all then downloads nothing
+ok 390 px: parts that can't load: no CSP violation or error
+ok 390 px: a guest whose room can't load is told to reload
+ok 390 px: guest: room that can't load: no CSP violation or error
+ok all
+
+## scripts/smoke-csp.mjs
+ok 1280 px: the page comes with the CSP
+ok 1280 px: the page is checked with the server each visit (no-cache, ETag)
+ok 1280 px: an unchanged file comes back as "not changed" (304)
+ok 1280 px: start screen: no CSP violation or error
+ok 1280 px: a request to another site is refused
+ok 1280 px: the refusal is the CSP's connect-src, and nothing else
+ok 1280 px: the console shows only that refusal
+ok 1280 px: a data: picture can be read back
+ok 1280 px: reading a data: picture: no CSP violation or error
+ok 1280 px: the agent reaches the tab over the live relay (WebSocket)
+ok 1280 px: open the demo with its B-roll list: no CSP violation or error
+ok 1280 px: the agent's picture shows as a data: image
+ok 1280 px: B-roll: an agent's drawing and picture: no CSP violation or error
+ok 1280 px: the storyboard shows
+ok 1280 px: storyboard: no CSP violation or error
+ok 1280 px: the selection bar is placed (CSSOM style)
+ok 1280 px: typing replaces the selected word
+ok 1280 px: edit: no CSP violation or error
+ok 1280 px: Open in prompter makes the prompter link
+ok 1280 px: prompter link and exports: no CSP violation or error
+ok 1280 px: the guest's dot has the guest's colour, with no style attribute
+ok 1280 px: guest: join and select: no CSP violation or error
+ok 1280 px: Share to edit: no CSP violation or error
+ok 1280 px: a new script is saved with what was typed
+ok 1280 px: new script and save: no CSP violation or error
+ok 390 px: the page comes with the CSP
+ok 390 px: the page is checked with the server each visit (no-cache, ETag)
+ok 390 px: an unchanged file comes back as "not changed" (304)
+ok 390 px: start screen: no CSP violation or error
+ok 390 px: a request to another site is refused
+ok 390 px: the refusal is the CSP's connect-src, and nothing else
+ok 390 px: the console shows only that refusal
+ok 390 px: a data: picture can be read back
+ok 390 px: reading a data: picture: no CSP violation or error
+ok 390 px: the agent reaches the tab over the live relay (WebSocket)
+ok 390 px: open the demo with its B-roll list: no CSP violation or error
+ok 390 px: the agent's picture shows as a data: image
+ok 390 px: B-roll: an agent's drawing and picture: no CSP violation or error
+ok 390 px: the storyboard shows
+ok 390 px: storyboard: no CSP violation or error
+ok 390 px: the selection bar is placed (CSSOM style)
+ok 390 px: typing replaces the selected word
+ok 390 px: edit: no CSP violation or error
+ok 390 px: Open in prompter makes the prompter link
+ok 390 px: prompter link and exports: no CSP violation or error
+ok 390 px: the guest's dot has the guest's colour, with no style attribute
+ok 390 px: guest: join and select: no CSP violation or error
+ok 390 px: Share to edit: no CSP violation or error
+ok 390 px: a new script is saved with what was typed
+ok 390 px: new script and save: no CSP violation or error
+ok all
+
+## scripts/smoke-broll-lazy.mjs
+ok 1280 px: a new script without B-roll fetches no B-roll code
+ok 1280 px: new script: no CSP violation or error
+ok 1280 px: opening the Storyboard shows Link B-roll list and Plan B-roll
+ok 1280 px: opening the Storyboard loads broll-app.js and broll.js
+ok 1280 px: storyboard on first use: no CSP violation or error
+ok 1280 px: the agent is connected and no B-roll code is loaded yet
+ok 1280 px: upload_image answers with an address once the module loads
+ok 1280 px: the agent's B-roll call loaded broll-app.js
+ok 1280 px: sketch_shot without a list says there is none
+ok 1280 px: agent's B-roll call: no CSP violation or error
+ok 1280 px: the demo shows its shots beside the lines
+ok 1280 px: a script with a linked list loads broll-app.js
+ok 1280 px: a frame opens its shot card
+ok 1280 px: Escape closes the shot card
+ok 1280 px: add b-roll opens the card
+ok 1280 px: the new shot is in the list
+ok 1280 px: its frame shows beside the line
+ok 1280 px: the storyboard shows every shot
+ok 1280 px: a storyboard frame goes back to its lit shot
+ok 1280 px: demo B-roll flows: no CSP violation or error
+ok 1280 px: after a reload broll-app.js is checked with the server and comes back "not changed" (304)
+ok 1280 px: reload: no CSP violation or error
+ok 390 px: a new script without B-roll fetches no B-roll code
+ok 390 px: new script: no CSP violation or error
+ok 390 px: opening the Storyboard shows Link B-roll list and Plan B-roll
+ok 390 px: opening the Storyboard loads broll-app.js and broll.js
+ok 390 px: storyboard on first use: no CSP violation or error
+ok 390 px: the agent is connected and no B-roll code is loaded yet
+ok 390 px: upload_image answers with an address once the module loads
+ok 390 px: the agent's B-roll call loaded broll-app.js
+ok 390 px: sketch_shot without a list says there is none
+ok 390 px: agent's B-roll call: no CSP violation or error
+ok 390 px: the demo shows its shots beside the lines
+ok 390 px: a script with a linked list loads broll-app.js
+ok 390 px: a frame opens its shot card
+ok 390 px: Escape closes the shot card
+ok 390 px: add b-roll opens the card
+ok 390 px: the new shot is in the list
+ok 390 px: its frame shows beside the line
+ok 390 px: the storyboard shows every shot
+ok 390 px: a storyboard frame goes back to its lit shot
+ok 390 px: demo B-roll flows: no CSP violation or error
+ok 390 px: after a reload broll-app.js is checked with the server and comes back "not changed" (304)
+ok 390 px: reload: no CSP violation or error
+ok 1280 px: the / menu offers B-roll on a spoken line
+ok 1280 px: before it is picked, no B-roll code is fetched
+ok 1280 px: picking B-roll loads the module and opens the Add card
+ok 1280 px: the / menu's B-roll loaded broll-app.js
+ok 1280 px: B-roll from the / menu: no CSP violation or error
+ok 1280 px: a B-roll suggestion shows beside the line
+ok 1280 px: the start screen fetches no B-roll code
+ok 1280 px: reopened, its draft's suggestion shows again
+ok 1280 px: the draft's B-roll asks loaded broll-app.js
+ok 1280 px: draft with B-roll asks: no CSP violation or error
+ok 1280 px: a module that can't load: the Storyboard says to reload
+ok 1280 px: the agent's B-roll call is told to ask for a reload
+ok 1280 px: after that, a script without B-roll saves to a video folder (no list linked)
+ok 1280 px: module that can't load: no CSP violation or error
+ok 1280 px: the module's download is held while the agent's suggestion waits
+ok 1280 px: the agent hears the person opened another script
+ok 1280 px: the other script gets no suggestion
+ok 1280 px: suggestion while the module loads: no CSP violation or error
+ok 1280 px: the demo's module download is held
+ok 1280 px: the demo is saved in the browser under its title's name while the module is held
+ok 1280 px: once the module is here, the saved demo shows its list
+ok 1280 px: reopened, the saved demo still has its list
+ok 1280 px: demo saved while the module loads: no CSP violation or error
+ok 390 px: the / menu offers B-roll on a spoken line
+ok 390 px: before it is picked, no B-roll code is fetched
+ok 390 px: picking B-roll loads the module and opens the Add card
+ok 390 px: the / menu's B-roll loaded broll-app.js
+ok 390 px: B-roll from the / menu: no CSP violation or error
+ok 390 px: a B-roll suggestion shows beside the line
+ok 390 px: the start screen fetches no B-roll code
+ok 390 px: reopened, its draft's suggestion shows again
+ok 390 px: the draft's B-roll asks loaded broll-app.js
+ok 390 px: draft with B-roll asks: no CSP violation or error
+ok 390 px: a module that can't load: the Storyboard says to reload
+ok 390 px: the agent's B-roll call is told to ask for a reload
+ok 390 px: after that, a script without B-roll saves to a video folder (no list linked)
+ok 390 px: module that can't load: no CSP violation or error
+ok 390 px: the module's download is held while the agent's suggestion waits
+ok 390 px: the agent hears the person opened another script
+ok 390 px: the other script gets no suggestion
+ok 390 px: suggestion while the module loads: no CSP violation or error
+ok 390 px: the demo's module download is held
+ok 390 px: the demo is saved in the browser under its title's name while the module is held
+ok 390 px: once the module is here, the saved demo shows its list
+ok 390 px: reopened, the saved demo still has its list
+ok 390 px: demo saved while the module loads: no CSP violation or error
+ok all
+
+## scripts/smoke-saving.mjs
+ok new script: saved in the browser at once
+ok new script: the file takes the title's name
+ok new script: the old name is gone from the browser
+ok new script: the file holds the typed title
+ok auto-save: nothing is written while typing goes on
+ok auto-save: the dot shows unsaved changes meanwhile
+ok auto-save: the text is written after the pause
+ok auto-save: it waits about 1.5 s
+ok Ctrl+S: written at once, before the auto-save pause
+ok a new script left untouched is not kept
+ok reload: the start screen offers to reopen the browser script
+ok reload: the reopened browser script has its saved text
+ok reload: no unsaved-changes line for a saved script
+ok new script: no page error or CSP violation
+ok draft: kept in local storage with its time
+ok draft: the demo is not saved to a file by auto-save
+ok draft: after a reload the demo offers Restore and Discard
+ok draft: the script shows the file until Restore
+ok draft: Restore brings the typed words back
+ok draft: Discard keeps the file's text
+ok draft: Discard removes the kept draft
+ok Ctrl+S on the demo saves it in the browser
+ok Ctrl+S on the demo: the file holds what was typed
+ok draft: no page error or CSP violation
+ok disk file: auto-save writes to the opened file
+ok disk file: no copy in the browser
+ok changed on disk: the line says when
+ok changed on disk: the other version is not written over
+ok changed on disk: auto-save waits for the person's choice
+ok changed on disk: Save mine writes this version
+ok Open that version: the screen's text waits as unsaved changes
+ok Open that version, then Restore: saved to the file again
+ok reload: the start screen offers to reopen the file
+ok reload: the reopened file shows its saved text
+ok disk file: no page error or CSP violation
+ok permission: auto-save asks with Allow saving to talk.md
+ok permission: nothing is written without access
+ok permission: Allow saving writes the file and goes away
+ok permission: a refused Ctrl+S shows Not saved with the reason
+ok Save as: the picker suggests the script's name
+ok Save as: the file on the computer holds the script
+ok Save as: the browser copy is gone
+ok Save as: later typing saves to the new file
+ok Save as: the switcher no longer tags it Browser
+ok prompter link: carries the script's latest text
+ok video folder: script.md is the saved script
+ok video folder: prompter-link.txt is written
+ok move to file: no page error or CSP violation
+ok switch: alpha.md gets all of Alpha's words
+ok switch: bravo.md gets only Bravo's words
+ok switch: no write ever went to the other script's file
+ok switch: Alpha reopens with no unsaved changes
+ok failed write: alpha.md could not be written
+ok failed write: Alpha's problem does not show on Bravo
+ok failed write: reopening Alpha offers its unsaved words
+ok failed write: Restore saves the words to alpha.md
+ok switch: no page error or CSP violation
+ok B-roll link: the script is saved in the browser under its title's name
+ok B-roll link: the saved script does not take the demo's list
+ok B-roll link: no demo shots beside the saved script
+ok page hide: the file is written at once
+ok page hide: no page error or CSP violation
+ok two tabs: the second tab sees the first tab's save
+ok two tabs: the first tab's words are not written over
+ok two tabs (one): no page error or CSP violation
+ok two tabs (two): no page error or CSP violation
+ok share: the guest's words are saved to the host's file
+ok share: the guest's browser keeps no copy
+ok share: the guest's Ctrl+S writes nothing
+ok share: the guest keeps no draft
+ok share (host): no page error or CSP violation
+ok share (guest): no page error or CSP violation
+ok all
+
+## scripts/smoke-video-folder.mjs
+ok 1280 px: Save to video folder is second, after Export all
+ok 1280 px: no note before a save
+ok 1280 px: the menu fits the width
+ok 1280 px: script.md is written
+ok 1280 px: prompter.md is written
+ok 1280 px: recording-notes.md is written
+ok 1280 px: b-roll.md is written
+ok 1280 px: b-roll.json is written
+ok 1280 px: save-receipt.md is written
+ok 1280 px: pictures are in pictures/
+ok 1280 px: the two cue files are the same
+ok 1280 px: the script is a Markdown script
+ok 1280 px: prompter-link.txt is written
+ok 1280 px: prompter-link.txt is one prompter link ending in &d=
+ok 1280 px: the link carries the saved prompter.md text
+ok 1280 px: the link's day is the day of this save (the demo has no file of its own)
+ok 1280 px: b-roll.json has the shots
+ok 1280 px: every picture b-roll.json names is a file
+ok 1280 px: b-roll.md links each picture file
+ok 1280 px: no embedded picture in b-roll.md
+ok 1280 px: the receipt has date and word count
+ok 1280 px: the item's note says what happened
+ok 1280 px: the picker asks for write access
+ok 1280 px: no toast
+ok 1280 px: hand-written cue files are kept
+ok 1280 px: the script is saved again, the same
+ok 1280 px: the link follows the kept cue file
+ok 1280 px: a cancelled picker leaves the item as it was
+ok 1280 px: a refused picker says "Could not save" on the item
+ok 1280 px: two quick clicks open the picker once
+ok 1280 px: a cancelled picker keeps the last note
+ok 1280 px: the label says it is a zip here
+ok 1280 px: a zip named video-folder.zip is downloaded
+ok 1280 px: the demo's B-roll list is held back while it loads
+ok 1280 px: a list still loading: the item says "B-roll list still loading"
+ok 1280 px: and the folder picker does not open
+ok 1280 px: once the list is read, the note is gone without another click
+ok 1280 px: then a save works
+ok 1280 px: the picker opened once, for that save
+ok 390 px: Save to video folder is second, after Export all
+ok 390 px: no note before a save
+ok 390 px: the menu fits the width
+ok 390 px: script.md is written
+ok 390 px: prompter.md is written
+ok 390 px: recording-notes.md is written
+ok 390 px: b-roll.md is written
+ok 390 px: b-roll.json is written
+ok 390 px: save-receipt.md is written
+ok 390 px: pictures are in pictures/
+ok 390 px: the two cue files are the same
+ok 390 px: the script is a Markdown script
+ok 390 px: prompter-link.txt is written
+ok 390 px: prompter-link.txt is one prompter link ending in &d=
+ok 390 px: the link carries the saved prompter.md text
+ok 390 px: the link's day is the day of this save (the demo has no file of its own)
+ok 390 px: b-roll.json has the shots
+ok 390 px: every picture b-roll.json names is a file
+ok 390 px: b-roll.md links each picture file
+ok 390 px: no embedded picture in b-roll.md
+ok 390 px: the receipt has date and word count
+ok 390 px: the item's note says what happened
+ok 390 px: the picker asks for write access
+ok 390 px: no toast
+ok 390 px: hand-written cue files are kept
+ok 390 px: the script is saved again, the same
+ok 390 px: the link follows the kept cue file
+ok 320 px: Save to video folder is second, after Export all
+ok 320 px: no note before a save
+ok 320 px: the menu fits the width
+ok 320 px: script.md is written
+ok 320 px: prompter.md is written
+ok 320 px: recording-notes.md is written
+ok 320 px: b-roll.md is written
+ok 320 px: b-roll.json is written
+ok 320 px: save-receipt.md is written
+ok 320 px: pictures are in pictures/
+ok 320 px: the two cue files are the same
+ok 320 px: the script is a Markdown script
+ok 320 px: prompter-link.txt is written
+ok 320 px: prompter-link.txt is one prompter link ending in &d=
+ok 320 px: the link carries the saved prompter.md text
+ok 320 px: the link's day is the day of this save (the demo has no file of its own)
+ok 320 px: b-roll.json has the shots
+ok 320 px: every picture b-roll.json names is a file
+ok 320 px: b-roll.md links each picture file
+ok 320 px: no embedded picture in b-roll.md
+ok 320 px: the receipt has date and word count
+ok 320 px: the item's note says what happened
+ok 320 px: the picker asks for write access
+ok 320 px: no toast
+ok 320 px: hand-written cue files are kept
+ok 320 px: the script is saved again, the same
+ok 320 px: the link follows the kept cue file
+all ok
+
+## scripts/smoke-keep-all.mjs
+ok lines: 933
+
+## scripts/smoke-room.mjs
+ok /api/room without a WebSocket gets 426
+ok the host opens the room
+ok the host proves its keys with subprotocols
+ok the socket URL holds no room id and no key
+ok the room answers with the script-editor-room subprotocol
+ok two guests join
+ok guests get the script
+ok a guest sends no host key
+ok guests get the file name
+ok everyone sees three people
+ok a wrong key is refused
+ok everyone ends on the same text
+ok no typed word is lost
+ok the host gave each batch a version
+ok a guest's typing survives a lost connection
+ok and arrives once
+ok guests see the host is away
+ok typing while the host is away arrives when it is back
+ok a caret reaches everyone
+ok the host's caret reaches the guests
+ok a guest's ask reaches the host
+ok the agent's change reaches everyone
+ok as the agent's change, not the host's
+ok the kept ask with its marked change reaches everyone
+ok in order, once each
+ok stop sharing ends the room for guests
+ok an ended room refuses new joins
+RESULT: ok smoke-room
+
+## scripts/smoke-relay.mjs
+ok POST /api/agent-token gives a token with its birth time inside
+ok GET /api/agent-token gets 405
+ok POST /api/agent-token from another site gets 403
+ok a token 9 hours old: the relay closes the tab with 4003
+ok a token 9 hours old: /mcp gets 401
+ok a token 1 hour in the future: the relay closes the tab with 4003
+ok a token 1 hour in the future: /mcp gets 401
+ok unknown token gets 401
+ok no token gets 401
+ok GET /mcp gets 405
+ok relay answers with the script-editor subprotocol
+ok initialize echoes the protocol version
+ok serverInfo is script-editor
+ok notification gets 202
+ok tab learns the agent's name
+ok foreign Origin is refused
+ok tools/list has the thirteen tools (the cue tools since step P)
+ok get_script returns the tab's script
+ok wait_for_asks returns the new ask
+ok answer_ask reaches the tab
+ok tab received the answer
+ok over-long text is refused before the tab
+ok list_asks shows the replace as kept at once
+ok wait_for_asks returns the B-roll ask
+ok answer_broll: the tab refuses a quote that is not in the script
+ok answer_broll: a screen recording with how is refused before the tab
+ok answer_broll reaches the tab
+ok tab received the B-roll changes
+ok list_asks shows each B-roll change's state
+ok wait_for_asks returns the Find links ask
+ok answer_ask links: javascript: is refused before the tab
+ok answer_ask links: data: is refused before the tab
+ok answer_ask links: an address without https:// is refused before the tab
+ok answer_ask links: more than 30 are refused before the tab
+ok answer_ask links reaches the tab, with the skipped quote listed back
+ok tab received the links
+ok list_asks shows the links as kept at once
+ok wait_for_asks says no asks yet after its wait
+ok an older tab is closed with 4001
+ok a revoked token gets 401
+ok a revoked token stays refused for a new tab
+ok with no tab, tools say the editor is not open
+RESULT: ok smoke
