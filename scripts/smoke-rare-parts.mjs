@@ -360,7 +360,7 @@ async function run(width, height) {
   check(failing.asked.filter((f) => f === "/together/room.js").length > before, `${tag} the retry asked for together/room.js again`, failing.asked.join(", "));
   const back = await failing.eval(LOOK);
   check(!back.failed && back.color !== broken.color, `${tag} the button loses its failed look once sharing works`, JSON.stringify(back));
-  check(await failing.eval(`window.__scriptEditor.room()?.link(location.origin) === window.__link`), `${tag} the room started is the one in the copied link`);
+  check(await failing.eval(`window.__scriptEditor.room()?.role === "host" && window.__scriptEditor.room().link === window.__link`), `${tag} the retried share: the room started is the one in the copied link`);
   await failing.click("#stopShare");
   await clean(failing, tag, "parts that can't load");
   await failing.close();

@@ -167,7 +167,7 @@ test("share room: Share to edit copies the link inside the click; the room start
   assert.match(p.copied[0], /^https:\/\/script\.test\/#room=[\w-]{22}&k=[\w-]{43}$/);
   assert.equal(held.made.length, 0);
   assert.deepEqual(p.calls.filter(([k]) => k === "sharing"), [], "the app's Undo stays until the room starts");
-  assert.equal(t.sharing, true, "sharing counts as on while the part loads (another script may not open over it)");
+  assert.equal(t.sharing, true, "sharing counts as on while the part loads (the agent may not open another script over it; the person opening one stops it)");
   assert.equal(t.active, false, "no room runs yet: the person's own Undo still works");
   held.release();
   await tick();
