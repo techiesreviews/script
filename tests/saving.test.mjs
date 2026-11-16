@@ -456,7 +456,7 @@ test("saving: a waiting Ctrl+S without a file brings back no words the person to
     release();
     await run;
     await until(() => !s.script.saving);
-    assert.deepEqual(s.store.get("draft:demo.md"), kept, "the Ctrl+S words do not come back as unsaved changes");
+    assert.deepEqual(s.store.get("draft:demo.md") ?? null, kept, "the Ctrl+S words do not come back as unsaved changes");
   }
 });
 
@@ -495,9 +495,9 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   // Listing A found the copy and stops for a moment; listing B (or another tab) deletes it and frees the name.
   let open;
   gate = new Promise((r) => { open = r; });
-  const a = copies.retry("stuck.md");
+  const a = copies.listed(["stuck.md"], new Set(["stuck.md"]));
   gate = null;
-  await copies.retry("stuck.md");
+  await copies.listed(["stuck.md"], new Set(["stuck.md"]));
   assert.deepEqual([copies.names(), files.has("stuck.md")], [[], false]);
   files.set("stuck.md", "a new script"); // a new script may take the name now
   open();

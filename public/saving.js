@@ -46,11 +46,20 @@ export function createLeftCopies({ store, dir }) {
     try { await d.removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return; }
     if (names().includes(name)) store.set(KEY, names().filter((n) => n !== name));
   }
-  return { names, afterMove, retry };
+  // After a full listing of the folder (`found`: every file name in it): the copies named in `left` (the names as the
+  // listing started) that are still there go; the names whose copy went some other way (an older tab, cleared storage)
+  // are freed.
+  async function listed(left, found) {
+    const gone = left.filter((n) => !found.has(n));
+    if (gone.length) store.set(KEY, names().filter((n) => !gone.includes(n)));
+    for (const n of left) if (found.has(n)) await retry(n);
+  }
+  return { names, afterMove, listed };
 }
 
 /**
  * createSaving({ script, editor, files, browser, drafts, clock, on })
+ * The caller keeps the open script's draft before it calls open() for another script.
  * - editor: { ready(), doc(), text(), dirty(), paused() } — a script is open and the person may save it; its document
  *   object; its text as it would be saved; changed since the last save; a "/" command is being typed.
  * - files: { write(handle, text) → modified, file(handle) → { lastModified, text() }, permitted(handle, ask),
@@ -89,7 +98,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
 
   const request = (force, auto) => ({
     handle: script.handle, name: script.name, text: editor.text(),
-    savedText: script.savedText, fileModified: script.fileModified, force, auto, at: clock.now(),
+    savedText: script.savedText, fileModified: script.fileModified, force, auto,
   });
   // A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
   function keepDraft(name, text) {
@@ -273,15 +282,10 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // Another script opens: its record starts from its file (a pending auto-save of the last one was flushed before).
   function open({ handle = null, name, browser: inBrowser = false, savedText, modified = 0, fresh = false }) {
     opened++;
-    // A waiting click without a file (the demo's Ctrl+S during its Save as) has nowhere to go once its script is left:
-    // its words become that script's draft, unless the draft the app kept on leaving is as new, and it never runs on the
-    // script opened now.
-    const w = queue.waiting;
-    if (w && !w.handle) {
-      const draft = drafts.get(w.name);
-      if (!(draft?.text != null && draft.at >= w.at)) keepDraft(w.name, w.text);
-      queue = { ...queue, waiting: null };
-    }
+    // A waiting click without a file (the demo's Ctrl+S during its Save as) has nowhere to go once its script is left,
+    // and never runs on the script opened now. Its words are in the draft the app keeps on leaving (loadText), which is
+    // as new or newer, or the app found nothing unsaved.
+    if (queue.waiting && !queue.waiting.handle) queue = { ...queue, waiting: null };
     Object.assign(script, {
       name, handle, inBrowser: !!handle && inBrowser, blank: "", savedText, savedAt: fresh ? 0 : modified,
       fileModified: modified, saveError: "", needsPermission: false, conflict: false,

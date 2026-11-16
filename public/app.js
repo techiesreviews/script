@@ -2738,17 +2738,18 @@ const copies = createLeftCopies({ store, dir: () => scriptsDir() });
 async function browserScripts() {
   if (!browserSaving) return [];
   const out = [];
-  const left = new Set(copies.names()), stale = [];
+  const left = copies.names(), found = new Set();
   try {
     for await (const handle of (await scriptsDir()).values()) {
       if (handle.kind !== "file") continue;
-      if (left.has(handle.name)) { stale.push(handle.name); continue; }
+      found.add(handle.name);
+      if (left.includes(handle.name)) continue;
       let at = 0;
       try { at = (await handle.getFile()).lastModified; } catch { /* listed without a time */ }
       out.push({ handle, name: handle.name, at, browser: true });
     }
+    await copies.listed(left, found);
   } catch { /* storage off: none */ }
-  for (const name of stale) await copies.retry(name);
   return out;
 }
 async function isInBrowser(handle) {
