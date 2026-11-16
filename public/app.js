@@ -3117,8 +3117,8 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
 const BROLL_SEAM = 1;
 let brollApi = null, brollLoading = null, brollFailed = false;
-// Before the module is here: whether the script's link is being looked up, the draft's "Check" flags and, for a guest,
-// the host's list as it came last.
+// Before the module is here: the open script (`token`, which only opening another script changes), whether its link
+// is being looked up, the draft's "Check" flags and, for a guest, the host's list as it came last.
 const brollPre = { token: 0, status: "none", flags: {}, room: null };
 // Asks that show B-roll: a plan or sketches, or suggestions beside the lines.
 const needsBroll = (a) => a.scope === "broll" || isBrollAnswer(a);
@@ -3321,8 +3321,8 @@ function addBrollHere() {
   if (!s?.range || !canAddBroll()) return;
   const sel = spokenSelection(s.range);
   if (!sel.length) return;
-  const range = s.range.cloneRange(), doc = state.doc;
-  withBroll((b) => { if (state.doc === doc) b.openCard({ mode: "add", sel, anchor: () => range }); });
+  const range = s.range.cloneRange(), asked = brollPre.token;
+  withBroll((b) => { if (brollPre.token === asked) b.openCard({ mode: "add", sel, anchor: () => range }); });
 }
 
 /* ---------- Parts with "/" while typing (step C5) ---------- */
@@ -3408,8 +3408,8 @@ function pickSlash(partId) {
     changed();
     const text = D.contentOf(byId(id));
     const words = D.snapToWords(text, 0, text.length);
-    const doc = state.doc;
-    return void withBroll((b) => { if (state.doc === doc) b.openCard({ mode: "add", sel: [{ id, start: words.start, end: words.end }], anchor: () => blockNode(id) }); });
+    const asked = brollPre.token;
+    return void withBroll((b) => { if (brollPre.token === asked) b.openCard({ mode: "add", sel: [{ id, start: words.start, end: words.end }], anchor: () => blockNode(id) }); });
   }
   // A line that held only the command gives its place to the part.
   const replaceId = D.lineToReplace(state.doc, id, state.asks);
@@ -3650,8 +3650,8 @@ function handleCall(call, ws = agent.ws) {
     // The B-roll tools go to the B-roll module, which loads first if it isn't here yet. A sketch or suggestion is for
     // the script open when it was sent: if the person opened another one meanwhile, it goes nowhere.
     if (tool === "upload_image" || tool === "sketch_shot" || tool === "answer_broll") {
-      const doc = state.doc;
-      if (!brollApi) return void needBroll().then(() => (tool === "upload_image" || state.doc === doc ? handleCall(call, ws) : send({ error: SCRIPT_MOVED })), () => send({ error: BROLL_GONE }));
+      const asked = brollPre.token; // the open script (undo or the agent's whole text keep it; opening another changes it)
+      if (!brollApi) return void needBroll().then(() => (tool === "upload_image" || brollPre.token === asked ? handleCall(call, ws) : send({ error: SCRIPT_MOVED })), () => send({ error: BROLL_GONE }));
       return brollApi.agentTool(tool, args, send, NO_SCRIPT);
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
