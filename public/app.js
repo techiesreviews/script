@@ -3162,6 +3162,7 @@ const brollHost = () => ({
 function needBroll() {
   if (brollApi) return Promise.resolve(brollApi);
   if (brollFailed) return Promise.reject(new Error("The B-roll part could not load."));
+  const asked = brollPre.token; // the script that asked for it, unless another opened since
   brollLoading ??= import("./broll-app.js").then((m) => {
     if (m.SEAM !== BROLL_SEAM) throw new Error("The editor was updated: reload the page.");
     const api = m.createBroll(brollHost());
@@ -3177,7 +3178,9 @@ function needBroll() {
   }, (e) => {
     brollLoading = null;
     brollFailed = true;
-    brollPre.status = "error"; // the open script needed it: nothing is added or saved over its list
+    // Unreadable for the script that needed it (nothing is added or saved over its list), or for a script opened since
+    // that waits for it too; one opened since without B-roll keeps "none".
+    if (brollPre.token === asked || brollPre.status === "loading") brollPre.status = "error";
     renderView();
     renderBroll();
     throw e;

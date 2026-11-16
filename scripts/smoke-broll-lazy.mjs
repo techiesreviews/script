@@ -100,7 +100,7 @@ async function openPage(width, height, { failBroll = false } = {}) {
 async function clean(page, tag, what) {
   const seen = [...(await page.eval(`window.__csp.splice(0)`).catch(() => [])), ...page.log.splice(0)];
   // The module's request refused on purpose (failBroll) is the check's doing, not the page's.
-  if (page.failBroll) seen.splice(0, seen.length, ...seen.filter((t) => !/broll-app\.js|ERR_FAILED/.test(t)));
+  if (page.failBroll) seen.splice(0, seen.length, ...seen.filter((t) => !/broll-app\.js/.test(t)));
   check(seen.length === 0, `${tag} ${what}: no CSP violation or error`, [...new Set(seen)].join(" | ").slice(0, 400));
 }
 const loaded = (page) => new Set(page.broll.map((r) => r.url));
