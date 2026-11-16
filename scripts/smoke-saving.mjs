@@ -345,6 +345,39 @@ async function runMoveToFile() {
   await profile.close();
 }
 
+// 4b. The browser copy can't be deleted when the script moves to a file (TOOLS-315): the switcher still lists the script
+// once, as a file, and the copy goes on a later visit.
+async function runMoveCopyStays() {
+  const profile = await openProfile();
+  const page = await profile.tab();
+  await page.open();
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "the new script");
+  await page.send("Input.insertText", { text: "Stuck copy" });
+  await page.typeAtEnd("A line to move.");
+  await page.until(`document.querySelector("#fileName").textContent === "stuck-copy.md"`, "named after its title", 6000);
+  await page.settled();
+  // The browser refuses to delete its copy this time.
+  await page.eval(`(() => { const remove = FileSystemDirectoryHandle.prototype.removeEntry; FileSystemDirectoryHandle.prototype.removeEntry = function (name, ...a) { return name === "stuck-copy.md" ? Promise.reject(new DOMException("The file is in use.", "NoModificationAllowedError")) : remove.call(this, name, ...a); }; return true; })()`);
+  await exportItem(page, "markdown");
+  await page.until(`document.querySelector("#saveAsAction").hidden`, "the script is a file now");
+  await sleep(400);
+  check((await list(page, "scripts")).includes("stuck-copy.md"), "copy stays: the browser kept its copy", (await list(page, "scripts")).join());
+  await page.click("#docSwitch");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open") && [...document.querySelectorAll("#scriptList .scripts__open[aria-current]")].some((b) => b.querySelector(".scripts__name").textContent === "stuck-copy.md")`, "the switcher");
+  await sleep(300);
+  const rows = await page.eval(`[...document.querySelectorAll("#scriptList .scripts__open")].filter((b) => b.querySelector(".scripts__name").textContent === "stuck-copy.md").map((b) => b.querySelector(".scripts__tag")?.textContent || "file")`);
+  check(JSON.stringify(rows) === '["file"]', "copy stays: the switcher lists the script once, as a file", JSON.stringify(rows));
+  await page.press("Escape", "Escape", 27);
+  await noErrors(page, "copy stays");
+  // The next visit deletes the copy (the browser lets it now).
+  await page.reload();
+  check(await page.until(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); for await (const n of d.keys()) if (n === "stuck-copy.md") return false; return true; })()`, "the copy goes"), "copy stays: a later visit deletes the browser copy", (await list(page, "scripts")).join());
+  check(await page.eval(`document.querySelector("#reopenLabel").textContent`) === "Reopen stuck-copy.md", "copy stays: the start screen still offers the file", await page.eval(`document.querySelector("#reopenLabel").textContent`));
+  await noErrors(page, "copy deleted later");
+  await profile.close();
+}
+
 // 5. Switching scripts while a save runs: every save goes to the script it was made for, a script whose write fails
 // keeps its words as unsaved changes, and a B-roll link never moves to another script.
 async function runSwitch() {
@@ -492,7 +525,7 @@ async function runShare() {
 }
 
 const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
-for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runSwitch, runBrollLink, runPageHide, runTwoTabs, runShare]) {
+for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runMoveCopyStays, runSwitch, runBrollLink, runPageHide, runTwoTabs, runShare]) {
   if (only && !only.includes(run.name)) continue;
   try { await run(); } catch (e) { check(false, `${run.name} stopped`, e.message); }
 }
