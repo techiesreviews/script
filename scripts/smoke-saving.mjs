@@ -420,6 +420,22 @@ async function runBrollLink() {
   await profile.close();
 }
 
+// 6b. Hiding the page (switching apps, closing the tab) saves at once, without the auto-save pause. Added after GPT's
+// second look; it passed on the code from before the move too (evidence).
+async function runPageHide() {
+  const profile = await openProfile();
+  const page = await profile.tab();
+  await page.open();
+  await writeOutside(page, "hide.md", FILE("Hide", "Before."));
+  await openDisk(page, "hide.md");
+  await page.typeAtEnd(" Hidden.");
+  await page.eval(`dispatchEvent(new PageTransitionEvent("pagehide")); true`);
+  await sleep(400);
+  check((await read(page, "disk", "hide.md")) === FILE("Hide", "Before. Hidden."), "page hide: the file is written at once", await read(page, "disk", "hide.md"));
+  await noErrors(page, "page hide");
+  await profile.close();
+}
+
 // 7. Two tabs on one file: the second tab's save sees the first tab's write and asks instead of writing over it.
 async function runTwoTabs() {
   const profile = await openProfile();
@@ -476,7 +492,7 @@ async function runShare() {
 }
 
 const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
-for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runSwitch, runBrollLink, runTwoTabs, runShare]) {
+for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runSwitch, runBrollLink, runPageHide, runTwoTabs, runShare]) {
   if (only && !only.includes(run.name)) continue;
   try { await run(); } catch (e) { check(false, `${run.name} stopped`, e.message); }
 }
