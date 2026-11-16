@@ -602,3 +602,13 @@ test("saving: a listing never shows a left-behind copy that another cleanup dele
   files.set("stuck.md", "a new script");
   assert.deepEqual((await copies.list()).map((r) => [r.name, r.at]), [["stuck.md", 5], ["a.md", 5]]);
 });
+
+test("saving: a listing keeps a script it can't read the time of, and still shows the scripts when a cleanup fails", async () => {
+  const store = new Map([["movedCopies", ["stuck.md"]]]);
+  const handle = (name, fail) => ({ kind: "file", name, async getFile() { if (fail) throw Object.assign(new Error("denied"), { name: fail }); return { lastModified: 9 }; } });
+  let calls = 0;
+  const dir = { async *values() { yield handle("stuck.md"); yield handle("a.md"); yield handle("b.md", "NotAllowedError"); } };
+  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => { if (++calls > 1) throw new Error("storage went away"); return dir; } });
+  assert.deepEqual((await copies.list()).map((r) => [r.name, r.at]), [["a.md", 9], ["b.md", 0]]);
+  assert.deepEqual(copies.names(), ["stuck.md"], "the copy's name stays kept for the next listing");
+});
