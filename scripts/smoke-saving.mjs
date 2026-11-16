@@ -3,7 +3,9 @@
 // module (and after: these checks must pass unchanged). Real typing and clicks over CDP at 1280 px.
 // Files on the computer are stood in for by a folder "disk" in the browser's private file system: the page's
 // `showOpenFilePicker` and `showSaveFilePicker` hand back real FileSystemFileHandles there, which the check reads back.
-// Writes can be slowed down or refused per file name (window.__slow / window.__fail) to catch saves that cross.
+// Writes can be slowed down or refused per file name (window.__slow / window.__fail) to catch saves that cross, and
+// the read of a file's time right after a write can be slowed down (window.__slowTime), which is where another tab's
+// save once slipped in.
 // Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`; Share to edit needs its rooms) and a
 // headless Chrome, then: node scripts/smoke-saving.mjs <base URL> <Chrome debugging port>
 // Its traffic goes to the base URL and the debugging port only.
@@ -46,14 +48,23 @@ const STUBS = `(() => {
   window.__pick = null; // the "disk" file the open picker hands back
   window.showOpenFilePicker = async () => { if (!window.__pick) throw new DOMException("", "AbortError"); return [await (await disk()).getFileHandle(window.__pick, { create: true })]; };
   window.showSaveFilePicker = async (o) => { window.__saveAsked = o?.suggestedName; return (await disk()).getFileHandle(window.__saveAs || o.suggestedName, { create: true }); };
-  window.__slow = {}; window.__fail = {}; window.__writes = [];
+  window.__slow = {}; window.__fail = {}; window.__writes = []; window.__slowTime = {};
+  window.__writing = 0; // writes on their way (an auto-save shows nothing while it runs)
+  let closed = null; // the file this tab just wrote: its next read is the save's read of the file's time
+  const getFile = FileSystemFileHandle.prototype.getFile;
+  FileSystemFileHandle.prototype.getFile = async function (...a) {
+    const ms = window.__slowTime[this.name];
+    if (ms && closed === this.name) { closed = null; await new Promise((r) => setTimeout(r, ms)); }
+    return getFile.apply(this, a);
+  };
   const create = FileSystemFileHandle.prototype.createWritable;
   FileSystemFileHandle.prototype.createWritable = async function (...a) {
     if (window.__fail[this.name]) throw new DOMException("The file could not be written.", "NotAllowedError");
     const w = await create.apply(this, a), name = this.name, ms = window.__slow[name];
+    window.__writing++;
     const write = w.write.bind(w), close = w.close.bind(w);
     w.write = (data) => { window.__writes.push({ name, text: typeof data === "string" ? data : "(bytes)" }); return write(data); };
-    if (ms) w.close = async () => { await new Promise((r) => setTimeout(r, ms)); return close(); };
+    w.close = async () => { try { if (ms) await new Promise((r) => setTimeout(r, ms)); await close(); closed = name; } finally { window.__writing--; } };
     return w;
   };
   window.__errors = [];
@@ -159,6 +170,27 @@ async function exportItem(page, kind) {
 }
 const FILE = (title, line) => `# ${title}\n\n${line}\n`;
 const noErrors = async (page, what) => { const e = await page.errors(); check(!e.length, `${what}: no page error or CSP violation`, e.join(" | ")); };
+
+// A new script from the start screen, named after its title and saved in the browser; and the same script opened in
+// another tab of the profile ("Reopen …" on its start screen).
+async function newScript(page, title, line, name) {
+  await page.steady("#emptyNew"); // "Reopen …" joins its row a moment after the start screen shows
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "the new script");
+  await page.send("Input.insertText", { text: title });
+  await page.typeAtEnd(line);
+  await page.until(`document.querySelector("#fileName").textContent === ${JSON.stringify(name)}`, "named after its title", 6000);
+  await page.settled();
+}
+async function reopenIn(page, name) {
+  await page.open();
+  await page.until(`!document.querySelector("#emptyReopen").hidden`, `Reopen ${name}`);
+  await page.steady("#emptyReopen");
+  await page.click("#emptyReopen");
+  await page.until(`document.querySelector("#fileName")?.textContent === ${JSON.stringify(name)} && !document.querySelector("#layout").hidden`, `${name} is open in the other tab`);
+}
+// The tags of the switcher's rows for one name ("Browser", or "file"), once this open's list is drawn.
+const rowTags = (name) => `[...document.querySelectorAll("#scriptList .scripts__open")].filter((b) => b.querySelector(".scripts__name").textContent === ${JSON.stringify(name)}).map((b) => b.querySelector(".scripts__tag")?.textContent || "file").sort()`;
 
 // 1. A new script is saved in the browser at once, its file follows the title, typing auto-saves after a short pause
 // and Ctrl+S saves at once.
@@ -403,23 +435,6 @@ async function runMoveCopyStays() {
 async function runMoveOpenElsewhere() {
   const profile = await openProfile();
   const one = await profile.tab();
-  const newScript = async (page, title, line, name) => {
-    await page.steady("#emptyNew"); // "Reopen …" joins its row a moment after the start screen shows
-    await page.click("#emptyNew");
-    await page.until(`!document.querySelector("#layout").hidden`, "the new script");
-    await page.send("Input.insertText", { text: title });
-    await page.typeAtEnd(line);
-    await page.until(`document.querySelector("#fileName").textContent === ${JSON.stringify(name)}`, "named after its title", 6000);
-    await page.settled();
-  };
-  const reopenIn = async (page, name) => {
-    await page.open();
-    await page.until(`!document.querySelector("#emptyReopen").hidden`, `Reopen ${name}`);
-    await page.steady("#emptyReopen");
-    await page.click("#emptyReopen");
-    await page.until(`document.querySelector("#fileName")?.textContent === ${JSON.stringify(name)} && !document.querySelector("#layout").hidden`, `${name} is open in the other tab`);
-  };
-  const rowsFor = (page, name) => page.eval(`[...document.querySelectorAll("#scriptList .scripts__open")].filter((b) => b.querySelector(".scripts__name").textContent === ${JSON.stringify(name)}).map((b) => b.querySelector(".scripts__tag")?.textContent || "file").sort()`);
   await one.open();
   await newScript(one, "Two tabs", "First words.", "two-tabs.md");
   const two = await profile.tab();
@@ -448,7 +463,7 @@ async function runMoveOpenElsewhere() {
   await two.until(`document.querySelector("#fileName").textContent === "untitled-script.md"`, "a new script in tab two");
   await two.click("#docSwitch");
   await two.until(`document.querySelector("#scriptMenu").matches(":popover-open") && [...document.querySelectorAll("#scriptList .scripts__open")].some((b) => b.querySelector(".scripts__name").textContent === "two-tabs.md")`, "the switcher");
-  check(await two.until(`(() => { const tags = [...document.querySelectorAll("#scriptList .scripts__open")].filter((b) => b.querySelector(".scripts__name").textContent === "two-tabs.md").map((b) => b.querySelector(".scripts__tag")?.textContent || "file").sort(); return JSON.stringify(tags) === '["Browser","file"]'; })()`, "the copy back in the switcher"), "open elsewhere: once the other tab leaves it, the copy shows again as a browser script", JSON.stringify(await rowsFor(two, "two-tabs.md")));
+  check(await two.until(`JSON.stringify(${rowTags("two-tabs.md")}) === '["Browser","file"]'`, "the copy back in the switcher"), "open elsewhere: once the other tab leaves it, the copy shows again as a browser script", JSON.stringify(await two.eval(rowTags("two-tabs.md"))));
   check((await read(two, "scripts", "two-tabs.md"))?.includes("Tab two's words."), "open elsewhere: with the other tab's words");
   check((await read(one, "disk", "two-tabs.md"))?.includes("First words.") && !(await read(one, "disk", "two-tabs.md")).includes("Tab two's words."), "open elsewhere: the file on the computer holds what tab one moved");
   await two.press("Escape", "Escape", 27);
@@ -468,6 +483,61 @@ async function runMoveOpenElsewhere() {
   check((await read(two, "scripts", "two-tabs.md"))?.includes("Tab two's words."), "open elsewhere: the copy with words stays");
   await noErrors(one, "open elsewhere (one)");
   await noErrors(two, "open elsewhere (two)");
+  await profile.close();
+}
+
+// 4c. Two tabs save into one browser script at the same moment (the P0 of PR #75's second look). Tab two's write
+// takes a while; tab one's save starts meanwhile, and tab one reads the file's time late. Before, tab one's save
+// ran alongside: its words were written over, it took tab two's file time for its own, and its later move to a file
+// deleted the browser copy with tab two's words. Now saves into one script run one at a time in every tab: tab one's
+// save waits, finds tab two's words and says the file changed; its move to a file leaves the copy with those words.
+async function runSameMoment() {
+  const profile = await openProfile();
+  const one = await profile.tab();
+  await one.open();
+  await newScript(one, "Same moment", "First words.", "same-moment.md");
+  const two = await profile.tab();
+  await reopenIn(two, "same-moment.md");
+  // Tab two's Ctrl+S and the auto-save behind it take a second each; tab one reads the file's time after both.
+  await two.eval(`window.__slow["same-moment.md"] = 1000; true`);
+  await one.eval(`window.__slowTime["same-moment.md"] = 6000; true`);
+  await two.send("Page.bringToFront");
+  await two.typeAtEnd(" Tab two's words.");
+  await two.saveKey();
+  await two.until(`window.__writes.some((w) => w.text.includes("Tab two's words."))`, "tab two's write is on its way");
+  await one.send("Page.bringToFront");
+  await one.typeAtEnd(" Tab one's words.");
+  await one.saveKey();
+  await sleep(600);
+  check(!(await one.eval(`window.__writes`)).some((w) => w.text.includes("Tab one's words.")), "same moment: tab one's save waits while tab two's save runs", JSON.stringify(await one.eval(`window.__writes`)));
+  check(await one.until(`/^The file changed on disk at/.test(document.querySelector("#banner").hidden ? "" : document.querySelector("#banner").textContent)`, "tab one's changed-on-disk line", 12000), "same moment: tab one is told the file changed, once tab two's save is through");
+  // Tab two's auto-save (the typing's own, behind its Ctrl+S) ran after tab one's look at the file: wait it out.
+  await two.until(`new Promise((done) => { if (window.__writing) return done(false); setTimeout(() => done(!window.__writing), 400); })`, "tab two's saves are through");
+  check((await read(one, "scripts", "same-moment.md"))?.endsWith("First words. Tab two's words.\n"), "same moment: the script holds tab two's words, not written over", await read(one, "scripts", "same-moment.md"));
+  check(!(await one.eval(`window.__writes`)).some((w) => w.text.includes("Tab one's words.")), "same moment: tab one wrote nothing over them");
+  // Tab two leaves the script; tab one moves its own version to a file.
+  await two.send("Page.bringToFront");
+  await two.click("#docSwitch");
+  await two.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await two.eval(`document.querySelector("#menuNew").click(); true`);
+  await two.until(`document.querySelector("#fileName").textContent === "untitled-script.md"`, "a new script in tab two");
+  await one.send("Page.bringToFront");
+  await one.eval(`window.__slowTime = {}; true`);
+  await exportItem(one, "markdown");
+  await one.until(`document.querySelector("#saveAsAction").hidden`, "tab one's script is a file now");
+  await sleep(800);
+  check((await read(one, "disk", "same-moment.md"))?.includes("Tab one's words."), "same moment: the file on the computer holds tab one's words", await read(one, "disk", "same-moment.md"));
+  check((await read(one, "scripts", "same-moment.md"))?.includes("Tab two's words."), "same moment: the move leaves the browser copy with tab two's words", (await list(one, "scripts")).join());
+  await one.click("#docSwitch");
+  check(await one.until(`document.querySelector("#scriptMenu").matches(":popover-open") && JSON.stringify(${rowTags("same-moment.md")}) === '["Browser","file"]'`, "both rows in tab one's switcher"), "same moment: the copy shows in the switcher as a browser script, beside the file");
+  await one.press("Escape", "Escape", 27);
+  // A later visit (the start screen lists the scripts and cleans up) leaves it too.
+  await one.reload();
+  await one.until(`!document.querySelector("#emptyReopen").hidden`, "the start screen's scripts");
+  await sleep(500);
+  check((await read(one, "scripts", "same-moment.md"))?.includes("Tab two's words."), "same moment: a later visit does not delete it");
+  await noErrors(one, "same moment (one)");
+  await noErrors(two, "same moment (two)");
   await profile.close();
 }
 
@@ -619,7 +689,7 @@ async function runShare() {
 }
 
 const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
-for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runMoveCopyStays, runMoveOpenElsewhere, runSwitch, runBrollLink, runPageHide, runTwoTabs, runShare]) {
+for (const run of [runNewScript, runDraft, runDiskFile, runMoveToFile, runMoveCopyStays, runMoveOpenElsewhere, runSameMoment, runSwitch, runBrollLink, runPageHide, runTwoTabs, runShare]) {
   if (only && !only.includes(run.name)) continue;
   try { await run(); } catch (e) { check(false, `${run.name} stopped`, e.message); }
 }
