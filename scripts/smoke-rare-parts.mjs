@@ -7,7 +7,7 @@
 // sharing stopped then starts no room and keeps the Undo steps from before. A part that
 // can't load (its request refused) says so on its control: the share button, Export all and Save to video folder, and
 // a guest's Join; the failed share button is marked data-failed with a warning icon in the warning colour, its
-// accessible name says why ("Couldn't share. Click to try again."), hovering it keeps its warning background, and a
+// accessible name says why ("Couldn't share. Click to try again."), hovering it keeps a warning background, and a
 // click on it once the network is back loads the room and shares; with copying blocked while the room's part is held,
 // the box to copy the link by hand shows, and closes with its link cleared when the part then fails; the note under
 // Export all reads at 4.5:1 on its orange in light and dark, at rest, hovered and pressed. Export all clicked while the pack is held zips the script of the click, even after another opens; a pack
@@ -385,7 +385,8 @@ async function run(width, height) {
     const away = await bg();
     await failing.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...(await centre(failing, "#shareBtn")) });
     const over = await bg();
-    check(over === away && await failing.eval(`document.querySelector("#shareBtn").matches(":hover")`), `${tag} hovering the failed share button keeps its warning background`, `${away} → ${over}`);
+    const orange = (c) => /0\.704 0\.1915 37\.1/.test(c);
+    check(orange(away) && orange(over) && over !== away && await failing.eval(`document.querySelector("#shareBtn").matches(":hover")`), `${tag} hovering the failed share button keeps a warning background, a little stronger (not the plain hover grey)`, `${away} → ${over}`);
   }
   await openExport(failing);
   check(await failing.until(`document.querySelector("#zipNote").textContent === "Couldn't load. Reload the page." && !document.querySelector("#zipNote").hidden && document.querySelector("#folderNote").textContent === "Couldn't load. Reload the page."`, "the export notes"), `${tag} an export pack that can't load: Export all and Save to video folder say to reload`);

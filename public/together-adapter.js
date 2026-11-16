@@ -13,7 +13,9 @@ export { parseLink };
 // The room itself (together/room.js) loads on first use: the host's first Share to edit, or a guest's edit link. It
 // must speak this interface version; a tab from before a release that gets a newer room counts it as not loaded.
 export const ROOM_SEAM = 1;
+// A part that didn't arrive may come on a retry; one from a newer release (another seam version) comes the same every time.
 const ROOM_GONE = "Couldn't share. Click to try again.";
+const ROOM_STALE = "Couldn't share. Reload the page.";
 const TYPES = ["title", "heading", "note", "raw", "para"];
 const ATTRS = ["type", "sep", "prefix"];
 
@@ -284,7 +286,7 @@ export function createTogether(app, { loadRoom = importRoom } = {}) {
   // newer join replaces it.
   let roomPart = null, roomFailed = false, retries = 0, starting = null;
   const part = () => (roomPart ??= loadRoom(retries).then((m) => {
-    if (m?.SEAM !== ROOM_SEAM || typeof m.RoomClient !== "function") throw new Error("The room part speaks another version.");
+    if (m?.SEAM !== ROOM_SEAM || typeof m.RoomClient !== "function") throw Object.assign(new Error("The room part speaks another version."), { stale: true });
     return m;
   }).catch((e) => { roomFailed = true; throw e; }));
   function startRoom(opts, failed) {
@@ -296,10 +298,10 @@ export function createTogether(app, { loadRoom = importRoom } = {}) {
       if (opts.role === "host") app.sharing(true);
       room = new m.RoomClient({ ...opts, url: wsUrl(), adapter, on }).start();
       render();
-    }, () => {
+    }, (e) => {
       if (starting !== mine) return;
       starting = null;
-      failed();
+      failed(e);
       render();
     });
     return mine;
@@ -406,11 +408,12 @@ export function createTogether(app, { loadRoom = importRoom } = {}) {
     },
   });
 
-  // Sharing could not start: a box to copy the link by hand (opened while the part loaded) closes, as its link leads nowhere.
-  function shareFailed() {
+  // Sharing could not start: a box to copy the link by hand (opened while the part loaded) closes, as its link leads nowhere;
+  // the button says to try again, or to reload when the part is from a newer release.
+  function shareFailed(e) {
     const box = $("#shareLink");
     if (box.value) { $("#shareMenu").hidePopover(); box.value = ""; }
-    share.fail(ROOM_GONE);
+    share.fail(e?.stale ? ROOM_STALE : ROOM_GONE);
   }
 
   // The room's part is fetched as the pointer or the focus reaches Share to edit, so the click seldom waits for it: the
