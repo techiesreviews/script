@@ -49,3 +49,11 @@ test("module names: the app's modules import each other under their own names, n
     assert.deepEqual(one, [], `${f} imports a module under a one-letter name`);
   }
 });
+
+test("left-behind copies: app.js cleans them one at a time with one named Web Lock, and one at a time in the tab without it", () => {
+  const app = src("public/app.js");
+  const call = app.match(/createLeftCopies\(\{[^\n]*\}\)/)?.[0] ?? "";
+  assert.match(call, /lock:/, "createLeftCopies gets a lock");
+  assert.match(call, /navigator\.locks\.request\("script-editor:moved-copies"/);
+  assert.ok(!/: fn\(\)\)/.test(call), "no lock-free fallback");
+});

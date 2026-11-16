@@ -535,7 +535,7 @@ test("saving: a browser copy left behind is deleted by a later listing; two list
   assert.deepEqual([copies.names(), files.has("kept.md"), files.has("other.md")], [["later.md"], false, true], "a name added after the listing started stays");
 });
 
-test("saving: two cleanups that both pass the name check never delete a script that took the freed name", async () => {
+test("saving: a second cleanup waits until the first has freed the name, and leaves a script that took it alone", async () => {
   const store = new Map([["movedCopies", ["stuck.md"]]]), files = new Map([["stuck.md", "old copy"]]);
   let held = null;
   const dir = { async removeEntry(name) {
@@ -554,5 +554,22 @@ test("saving: two cleanups that both pass the name check never delete a script t
   held.open();
   await Promise.all([a, b]);
   if (taken) assert.equal(files.get("stuck.md"), "a new script", "the delete still waiting leaves the new script alone");
-  else assert.deepEqual([files.has("stuck.md"), copies.names()], [false, []]);
+  assert.equal(taken, false, "the name stays kept until the waiting delete is done");
+  assert.deepEqual([files.has("stuck.md"), copies.names()], [false, []]);
+});
+
+test("saving: a listing frees a name only when its copy is really gone, also if the name was kept again meanwhile", async () => {
+  const store = new Map([["movedCopies", ["x.md"]]]), files = new Map();
+  const dir = {
+    async removeEntry(name) { throw Object.assign(new Error("in use"), { name: "NoModificationAllowedError" }); },
+    async getFileHandle(name) { if (!files.has(name)) throw Object.assign(new Error("gone"), { name: "NotFoundError" }); return { name }; },
+  };
+  const copies = createLeftCopies({ store: { get: (k) => store.get(k) ?? null, set: (k, v) => store.set(k, v) }, dir: async () => dir });
+  // The listing started with x.md kept and did not find it; meanwhile another script's copy x.md was left behind again.
+  files.set("x.md", "a newer copy");
+  await copies.listed(["x.md"], new Set());
+  assert.deepEqual(copies.names(), ["x.md"], "the newer copy keeps its name kept");
+  files.delete("x.md");
+  await copies.listed(["x.md"], new Set());
+  assert.deepEqual(copies.names(), []);
 });
