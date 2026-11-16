@@ -6,8 +6,7 @@ import * as L from "./links.js";
 import * as K from "./cues.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
-import { makeZip } from "./zip.js";
-import * as V from "./video-folder.js";
+import { listState, settleFolder, folderNote } from "./folder-note.js";
 import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -2526,6 +2525,19 @@ function download(text, name, type) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+// Export all and Save to video folder use the export pack (the zip maker and the folder writer, TOOLS-311). It loads
+// when the Export menu first opens, so a click finds it here (a folder picker or download still runs in the click);
+// a pack that can't load (or speaks another version) says so on both items until a reload.
+const PACK_SEAM = 1;
+let packLoading = null, packFailed = false;
+function needPack() {
+  packLoading ??= import("./export-pack.js").then((m) => {
+    if (m.SEAM !== PACK_SEAM) throw new Error("The export pack speaks another version.");
+    return m;
+  }).catch((e) => { packFailed = true; renderFolderNote(); throw e; });
+  return packLoading;
+}
+$("#exportMenu").addEventListener("toggle", (e) => { if (e.newState === "open") needPack().catch(() => {}); });
 function exportFile(kind) {
   if (!state.doc || state.guest) return;
   if (kind === "camera") download(D.exportCamera(state.doc), `${baseName()}-camera.txt`, "text/plain");
@@ -2541,7 +2553,8 @@ function exportFile(kind) {
 }
 // "Export all" (Lex, 2026-10-29): one zip with the script, the camera script, the prompter file and, with a B-roll
 // list, the list and the storyboard.
-function exportAll() {
+// The files are read in the click: the zip holds the script that was on screen, even if another opens meanwhile.
+async function exportAll() {
   const base = baseName();
   const files = [
     { name: /\.(md|markdown|txt)$/i.test(state.name) ? state.name : `${base}.md`, text: saveText() },
@@ -2549,22 +2562,26 @@ function exportAll() {
     { name: `${base}-prompter.md`, text: D.exportPrompter(state.doc) },
   ];
   if (brollStatus() === "ok") files.push(...brollApi.exports());
-  download(makeZip(files), `${base}.zip`, "application/zip");
+  let pack;
+  try { pack = await needPack(); } catch { return; } // the note on the item says it
+  download(pack.zipAll(files), `${base}.zip`, "application/zip");
 }
 
 // "Save to video folder" (Lex, 2026-11-10, TOOLS-194): the video-folder names in a folder the person picks (a zip with the
 // same names where the browser can't write to a folder). What happened shows on the menu item itself.
 let folderSaved = null;
 function renderFolderNote() {
-  folderSaved = V.settleFolder(folderSaved, brollStatus()); // once the list is ready, a save it stopped is over
-  const note = V.folderNote(folderSaved?.for === state.name ? folderSaved : null, brollStatus());
+  folderSaved = settleFolder(folderSaved, brollStatus()); // once the list is ready, a save it stopped is over
+  const note = folderNote(packFailed ? { unloaded: true } : folderSaved?.for === state.name ? folderSaved : null, brollStatus());
   $("#folderNote").textContent = note;
   $("#folderNote").hidden = !note;
+  $("#zipNote").textContent = packFailed ? folderNote({ unloaded: true }) : "";
+  $("#zipNote").hidden = !packFailed;
   $("#folderLabel").textContent = "showDirectoryPicker" in window ? "Save to video folder" : "Save to video folder (.zip)";
 }
 async function saveToFolder() {
-  if (folderSaved?.saving) return; // one save at a time: a second click would race the first one's writes
-  const list = V.listState(brollStatus());
+  if (folderSaved?.saving || packFailed) return; // one save at a time: a second click would race the first one's writes
+  const list = listState(brollStatus());
   if (list === "wait") { folderSaved = { for: state.name, error: true, wait: brollStatus() }; return renderFolderNote(); }
   const prior = folderSaved, mine = (folderSaved = { for: state.name, saving: true });
   let dir = null;
@@ -2581,21 +2598,22 @@ async function saveToFolder() {
   if (!state.doc) { folderSaved = prior; return renderFolderNote(); }
   const name = state.name, zipName = `${baseName()}-video-folder.zip`; // both read before any waiting: the script on screen may change meanwhile
   // A list that was still loading or blocked while the picker was open is not left out of the folder.
-  if (V.listState(brollStatus()) === "wait") { folderSaved = { for: name, error: true, wait: brollStatus() }; return renderFolderNote(); }
+  if (listState(brollStatus()) === "wait") { folderSaved = { for: name, error: true, wait: brollStatus() }; return renderFolderNote(); }
   try {
+    // Everything is read from the script before the pack is awaited: it is this script that is saved, whatever opens next.
     const doc = slash.open ? D.withoutCommand(state.doc, slash) : state.doc;
-    // A linked list brings its shots in script order, its sketches and the B-roll helpers (the module is loaded then).
-    const { files, receipt } = V.videoFolder({
-      doc, scriptText: saveText(), title: D.titleOf(doc) || baseName(), ...(brollApi?.folder(doc) ?? { linked: false }),
-    });
-    // The prompter link carries the day the script was saved (its file's own day, else the day of this save).
-    const saved = V.scriptDay({ modified: state.fileModified, dirty: isDirty() });
-    if (dir) folderSaved = { for: name, ...receipt, ...(await V.writeFolder(dir, files, { saved })) };
-    else {
-      const withLink = await V.withPrompterLink(files, saved);
-      download(makeZip(withLink), zipName, "application/zip");
-      folderSaved = { for: name, ...receipt, zip: true, ...(withLink.noLink && { noLink: true }) };
-    }
+    const what = {
+      dir, doc, scriptText: saveText(), title: D.titleOf(doc) || baseName(),
+      // A linked list brings its shots in script order, its sketches and the B-roll helpers (the module is loaded then).
+      broll: brollApi?.folder(doc) ?? { linked: false },
+      // The prompter link carries the day the script was saved (its file's own day, else the day of this save).
+      modified: state.fileModified, dirty: isDirty(),
+    };
+    const pack = await needPack().catch(() => null);
+    if (!pack) { folderSaved = prior; return renderFolderNote(); } // the note says the pack can't load
+    const { zip, ...result } = await pack.saveFolder(what);
+    if (zip) download(zip, zipName, "application/zip");
+    folderSaved = { for: name, ...result, ...(zip && { zip: true }) };
   } catch { folderSaved = { for: name, error: true }; }
   renderFolderNote();
 }
@@ -3917,7 +3935,7 @@ function guestEnded(status) {
 function joinFailed(status) {
   $("#joinForm").hidden = true;
   const note = $("#emptyNote");
-  note.textContent = status === "full" ? "This script already has 20 guests" : "This edit link has ended";
+  note.textContent = status === "full" ? "This script already has 20 guests" : status === "unloaded" ? "Couldn't load the edit link. Reload the page." : "This edit link has ended";
   note.hidden = false;
 }
 if (roomLink) {
@@ -3966,6 +3984,7 @@ together = createTogether({
   scriptEl,
   icon,
 });
+if (roomLink) together.preload(); // a guest's edit link: the room's part comes while they type a name
 
 // The Script/Storyboard switch stays centred on the bar whenever the actions fit beside it.
 function fitTop() {

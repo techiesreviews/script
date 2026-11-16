@@ -90,7 +90,7 @@ test("export pack: Save to video folder writes the script's folder, or gives a z
   const dir = memoryDir();
   const saved = await pack.saveFolder({ ...args, dir });
   assert.equal(saved.zip, undefined);
-  assert.equal(saved.words, D.stats(doc).spoken);
+  assert.equal(saved.words, D.stats(doc).words);
   assert.ok(saved.written.includes("script.md") && saved.written.includes("prompter.md"), saved.written.join(", "));
   assert.equal(dir.files.get("script.md"), SCRIPT);
   const zipped = await pack.saveFolder({ ...args, dir: null });

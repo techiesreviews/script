@@ -4,10 +4,10 @@
 export const COPIED_MS = 2400;
 
 export function createShareButton({ button, stop, iconSlot, label, icons, share, end, fallback, copy = (t) => navigator.clipboard.writeText(t), timers = globalThis }) {
-  let sharing = false, copied = false, timer = 0;
+  let sharing = false, copied = false, timer = 0, failed = "";
   function render() {
     iconSlot.innerHTML = icons[copied ? "check" : sharing ? "link" : "share"];
-    label.textContent = copied ? "Link copied" : sharing ? "Copy edit link" : "Share to edit";
+    label.textContent = copied ? "Link copied" : sharing ? "Copy edit link" : failed || "Share to edit";
     button.title = label.textContent; // the button shows only its icon (Lex, 2026-10-29)
     button.toggleAttribute("data-done", copied);
     stop.hidden = !sharing;
@@ -18,11 +18,12 @@ export function createShareButton({ button, stop, iconSlot, label, icons, share,
     sharing = true;
     try {
       await copy(link);
+      if (!sharing) return; // sharing ended while the link was copied (its room could not start)
       copied = true;
       timers.clearTimeout(timer);
       timer = timers.setTimeout(() => { copied = false; render(); }, COPIED_MS);
     } catch {
-      fallback?.(link);
+      if (sharing) fallback?.(link);
     }
     render();
   });
@@ -32,6 +33,11 @@ export function createShareButton({ button, stop, iconSlot, label, icons, share,
     if (!on) { copied = false; timers.clearTimeout(timer); }
     render();
   }
+  /** Sharing could not start: the button says why (`text`) until the page reloads. */
+  function fail(text) {
+    failed = text;
+    set(false);
+  }
   render();
-  return { set, get sharing() { return sharing; } };
+  return { set, fail, get sharing() { return sharing; } };
 }
