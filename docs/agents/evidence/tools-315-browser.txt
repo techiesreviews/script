@@ -1,0 +1,48 @@
+# TOOLS-315 browser checks on wrangler dev (port 38315) and headless Chrome 157, 2026-11-16
+
+## TOOLS-309: smoke-broll-lazy's 1280 px "another new script" step
+Reproduced on live (https://script.techies.tools) with a copy of the saved older profile (.scratch/chrome, 2026-11-06), the edge runs only:
+FAIL timed out: another new script
+FAIL timed out: the folder's receipt
+FAIL 1280 px: after that, a script without B-roll saves to a video folder (no list linked) ( | note: B-roll list can't be read / menu open: false / file: fail-check.md)
+FAIL 3
+Measured on that profile: the first open of the script menu shows New script at y=148, one frame later (17-18 ms, 3 of 3 runs) at y=184 once the list is drawn: [[0,148],[17,184]].
+
+Failing first (40e9342, the press 150 ms after the spot is found, no wait), local:
+FAIL timed out: another new script
+FAIL timed out: the folder's receipt
+FAIL 1280 px: after that, a script without B-roll saves to a video folder (no list linked) ( | note: B-roll list can't be read / menu open: false / file: fail-check.md)
+FAIL timed out: script B
+FAIL 1280 px: the agent hears the person opened another script (Shown to the person beside the script lines and in the storyboard. They choose Keep or Undo per change; a kept add keeps its sketch.)
+FAIL 1280 px: the other script gets no suggestion
+FAIL timed out: another new script
+FAIL timed out: the folder's receipt
+FAIL 390 px: after that, a script without B-roll saves to a video folder (no list linked) ( | note: B-roll list can't be read / menu open: false / file: fail-check.md)
+FAIL timed out: script B
+FAIL 390 px: the agent hears the person opened another script (Shown to the person beside the script lines and in the storyboard. They choose Keep or Undo per change; a kept add keeps its sketch.)
+FAIL 390 px: the other script gets no suggestion
+FAIL 12
+
+With the wait (3a5d246), live, older profile: 91 ok, ok all
+
+## Browser copy that can't be deleted after Save as: failing first (f63bb91^, smoke-saving ONLY=runMoveCopyStays)
+FAIL copy stays: the switcher lists the script once, as a file (["file","Browser"])
+FAIL timed out: the copy goes
+FAIL copy stays: a later visit deletes the browser copy (stuck-copy.md)
+
+## scripts/smoke-csp.mjs: 51 ok, 0 FAIL; last line: ok all
+## scripts/smoke-saving.mjs: 79 ok, 0 FAIL; last line: ok all
+## scripts/smoke-broll-lazy.mjs: 91 ok, 0 FAIL; last line: ok all
+## scripts/smoke-rare-parts.mjs: 122 ok, 0 FAIL; last line: ok all
+## scripts/smoke-video-folder.mjs: 93 ok, 0 FAIL; last line: all ok
+## scripts/smoke-keep-all.mjs: 933 ok, 0 FAIL; last line: RESULT: ok
+## scripts/smoke-room.mjs: 27 ok, 0 FAIL; last line: RESULT: ok smoke-room
+## scripts/smoke-relay.mjs: 42 ok, 0 FAIL; last line: RESULT: ok smoke
+
+## scripts/smoke-saving.mjs, the new run
+ok copy stays: the browser kept its copy
+ok copy stays: the switcher lists the script once, as a file
+ok copy stays: no page error or CSP violation
+ok copy stays: a later visit deletes the browser copy
+ok copy stays: the start screen still offers the file
+ok copy deleted later: no page error or CSP violation
