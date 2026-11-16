@@ -408,11 +408,13 @@ test("mcp: a request body bigger than the largest allowed call is refused before
   const tooLong = fakeRelay();
   const over = await call("unmark_cue", { cues: Array.from({ length: 3 }, () => ({ cueId: "x".repeat(135_000) })) }, { relay: tooLong });
   assert.equal(over.body.result.isError, true);
-  assert.match(over.body.result.content[0].text, /cueIds together/);
+  assert.match(over.body.result.content[0].text, /split them over several unmark_cue calls/, "a batch limit: the agent splits the call (a large local file's cueIds can be this long)");
+  assert.doesNotMatch(over.body.result.content[0].text, /use cueIds from list_cues/);
   assert.ok(!tooLong.ops.some((o) => o.op === "call"));
   const huge = await rpc(null, { raw: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "get_script", arguments: { pad: "x".repeat(BODY_MAX) } } }) });
   assert.equal(huge.status, 413);
   assert.equal(huge.body.error.code, -32600);
+  assert.match(huge.body.error.message, /split/, "the agent is told to split the call");
   assert.equal(huge.relay.ops.length, 0, "nothing reaches the relay");
   // A body sent without its length (streamed) is cut off at the same size.
   const chunk = new TextEncoder().encode("x".repeat(64 * 1024));
