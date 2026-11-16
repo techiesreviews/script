@@ -73,3 +73,5 @@ scripts/smoke-relay.mjs: RESULT: ok smoke (body cap 2,566,336 bytes)
 ## After the second release review fix (a copy deleted mid-listing is skipped): smoke-saving 81 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, smoke-csp 51 ok, 0 FAIL
 
 ## After the listing fixes of PR #74: smoke-saving 81 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, 0 FAIL
+
+## After keeping a copy saved into since the move (PR #72 third review): smoke-saving 81 ok, smoke-broll-lazy 91 ok, smoke-rare-parts 122 ok, smoke-csp 51 ok, 0 FAIL

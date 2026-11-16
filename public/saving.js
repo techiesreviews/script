@@ -34,19 +34,38 @@ export async function permitted(handle, ask, mode = "readwrite") {
 // time in this tab where the browser has no Web Locks), so one cleanup checks, deletes and frees a name before another
 // may look at it.
 export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
-  const KEY = "movedCopies";
+  const KEY = "movedCopies", TIMES = "movedCopyTimes"; // the names, and each copy's file time when it was left behind
   const names = () => { const v = store.get(KEY); return Array.isArray(v) ? v : []; };
-  // Right after the move: the copy goes, or its name is kept for later.
+  const times = () => { const v = store.get(TIMES); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; };
+  const free = (gone) => {
+    store.set(KEY, names().filter((n) => !gone.includes(n)));
+    store.set(TIMES, Object.fromEntries(Object.entries(times()).filter(([n]) => !gone.includes(n))));
+  };
+  const fileTime = async (d, name) => (await (await d.getFileHandle(name)).getFile()).lastModified;
+  // Right after the move: the copy goes, or its name is kept for later with the copy's file time.
   const afterMove = (name) => lock(async () => {
-    try { await (await dir()).removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") store.set(KEY, [...new Set([...names(), name])]); }
+    const d = await dir();
+    try { await d.removeEntry(name); } catch (e) {
+      if (e?.name === "NotFoundError") return;
+      let at = null;
+      try { at = await fileTime(d, name); } catch { /* unknown: the copy is kept, never deleted */ }
+      store.set(KEY, [...new Set([...names(), name])]);
+      store.set(TIMES, { ...times(), [name]: at });
+    }
   });
   // A later listing found the copy: it goes, and its name is free again. The name is read again inside the lock:
-  // another listing (or tab) may have deleted the copy meanwhile, and a new script may hold the name now.
+  // another listing (or tab) may have deleted the copy meanwhile, and a new script may hold the name now. A copy saved
+  // into since it was left behind (another tab still had the script open) is not deleted: its name is freed, so it shows
+  // in the switcher again with those words.
   const retry = (name) => lock(async () => {
     const d = await dir();
     if (!names().includes(name)) return;
+    const at = times()[name];
+    let now = null;
+    try { now = await fileTime(d, name); } catch (e) { if (e?.name === "NotFoundError") return free([name]); }
+    if (typeof at !== "number" || now !== at) return free([name]);
     try { await d.removeEntry(name); } catch (e) { if (e?.name !== "NotFoundError") return; }
-    store.set(KEY, names().filter((n) => n !== name));
+    free([name]);
   });
   // After a full listing of the folder (`found`: every file name in it): the copies named in `left` (the names as the
   // listing started) that are still there go; the names whose copy went some other way (an older tab, cleared storage)
@@ -55,11 +74,11 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
     const gone = left.filter((n) => !found.has(n));
     // Looked up again inside the lock: the name may have been kept again for a newer copy since the folder was read.
     if (gone.length) await lock(async () => {
-      const d = await dir(), free = [];
+      const d = await dir(), missing = [];
       for (const n of gone) {
-        try { await d.getFileHandle(n); } catch (e) { if (e?.name === "NotFoundError") free.push(n); }
+        try { await d.getFileHandle(n); } catch (e) { if (e?.name === "NotFoundError") missing.push(n); }
       }
-      if (free.length) store.set(KEY, names().filter((n) => !free.includes(n)));
+      if (missing.length) free(missing);
     });
     for (const n of left) if (found.has(n)) await retry(n);
   }
