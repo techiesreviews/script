@@ -10,7 +10,7 @@ The host shares a script with a link; guests type a name and edit it live, each 
 | `public/together/room.js` | `RoomClient`: the connection, the protocol, the host and guest roles, per-person Undo. Loaded on first use (the host's first Share to edit, or a guest's link; TOOLS-311). |
 | `public/together/link.js` | Edit links and room keys (`newRoom`, `makeLink`, `parseLink`); loaded at startup, `room.js` passes them on. |
 | `public/together/carets.js` + `carets.css` | Other people's carets and selections, drawn in a layer over any `contenteditable`. |
-| `public/together/share-button.js` | Share to edit → Link copied ✓ (2.4 s) → Copy edit link, with × Stop sharing; "Couldn't share. Reload the page." when the room's part can't load. |
+| `public/together/share-button.js` | Share to edit → Link copied ✓ (2.4 s) → Copy edit link, with × Stop sharing; "Couldn't share. Reload the page." with a warning icon on the button when the room's part can't load; a click tries again. |
 | `public/together-adapter.js` | The script editor's adapter and UI wiring (the only file that knows about scripts). |
 | `worker/room.js` | The `Room` Durable Object (hibernation API, migration `v2`). |
 

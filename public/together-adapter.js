@@ -466,7 +466,7 @@ export function createTogether(app, { loadRoom = importRoom } = {}) {
 
   return {
     get active() { return !!room && !room.stopped; },
-    /** Sharing is on: a running room, or the host's share waiting for its part (another script may not open over it). */
+    /** Sharing is on: a running room, or the host's share waiting for its part (the agent may not open another script over it; the person opening one stops it). */
     get sharing() { return (!!room && !room.stopped) || starting?.role === "host"; },
     get guest() { return isGuest(); },
     get room() { return room; },
