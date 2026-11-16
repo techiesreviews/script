@@ -73,10 +73,11 @@ export function createLeftCopies({ store, dir, lock = (fn) => fn() }) {
       let at = 0;
       try { at = (await handle.getFile()).lastModified; } catch (e) {
         if (e?.name === "NotFoundError") continue; // deleted meanwhile (a copy another cleanup took away)
-      } // otherwise listed without a time
+        // otherwise listed without a time
+      }
       out.push({ handle, name: handle.name, at, browser: true });
     }
-    await listed(left, found);
+    try { await listed(left, found); } catch { /* the cleanup waits for the next listing; the scripts found still show */ }
     return out;
   }
   return { names, afterMove, listed, list };
