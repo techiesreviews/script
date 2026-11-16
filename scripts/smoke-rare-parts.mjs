@@ -361,6 +361,9 @@ async function run(width, height) {
   check(failing.asked.filter((f) => f === "/together/room.js").length > before, `${tag} the retry asked for together/room.js again`, failing.asked.join(", "));
   const back = await failing.eval(LOOK);
   check(!back.failed && back.color !== broken.color, `${tag} the button loses its failed look once sharing works`, JSON.stringify(back));
+  check(await failing.until(`document.querySelector("#shareLabel").textContent === "Copy edit link"`, "the plain sharing look", 6000), `${tag} after Link copied the button says Copy edit link`);
+  const on = await failing.eval(LOOK);
+  check(!on.failed && on.icon !== broken.icon && on.icon !== idle.icon && on.color === idle.color, `${tag} sharing then has the plain look with the link icon, not the warning look`, JSON.stringify(on));
   check(await failing.eval(`window.__scriptEditor.room()?.role === "host" && window.__scriptEditor.room().link === window.__link`), `${tag} the retried share: the room started is the one in the copied link`);
   await failing.click("#stopShare");
   await clean(failing, tag, "parts that can't load");

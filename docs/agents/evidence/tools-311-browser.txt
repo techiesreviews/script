@@ -1,6 +1,6 @@
 # TOOLS-311 browser checks on wrangler dev (port 8811) and headless Chrome 157, 2026-11-16
 
-## scripts/smoke-rare-parts.mjs
+## scripts/smoke-rare-parts.mjs (run again after the release review's share-button fix, 2026-11-16)
 ok 1280 px: a new script with typing fetches no share room, zip maker or folder writer
 ok 1280 px: the small startup files (edit links, folder note) load with the page
 ok 1280 px: start and typing: no CSP violation or error
@@ -42,8 +42,18 @@ ok 1280 px: a folder saved while the pack loads holds the script as it was at th
 ok 1280 px: folder saved while the pack loads: no CSP violation or error
 ok 1280 px: a room that can't load: the share button says to reload
 ok 1280 px: sharing is off again
+ok 1280 px: the failed share button is marked data-failed
+ok 1280 px: the failed share button shows a warning icon in place of the share icon
+ok 1280 px: the failed share button takes the warning colour
+ok 1280 px: the failed share button's name (what a screen reader says) is the failure
 ok 1280 px: an export pack that can't load: Export all and Save to video folder say to reload
 ok 1280 px: Export all then downloads nothing
+ok 1280 px: a click on the failed share button loads the room again and shares
+ok 1280 px: the retry asked for together/room.js again
+ok 1280 px: the button loses its failed look once sharing works
+ok 1280 px: after Link copied the button says Copy edit link
+ok 1280 px: sharing then has the plain look with the link icon, not the warning look
+ok 1280 px: the retried share: the room started is the one in the copied link
 ok 1280 px: parts that can't load: no CSP violation or error
 ok 1280 px: a guest whose room can't load is told to reload
 ok 1280 px: guest: room that can't load: no CSP violation or error
@@ -87,14 +97,24 @@ ok 390 px: a folder saved while the pack loads holds the script as it was at the
 ok 390 px: folder saved while the pack loads: no CSP violation or error
 ok 390 px: a room that can't load: the share button says to reload
 ok 390 px: sharing is off again
+ok 390 px: the failed share button is marked data-failed
+ok 390 px: the failed share button shows a warning icon in place of the share icon
+ok 390 px: the failed share button takes the warning colour
+ok 390 px: the failed share button's name (what a screen reader says) is the failure
 ok 390 px: an export pack that can't load: Export all and Save to video folder say to reload
 ok 390 px: Export all then downloads nothing
+ok 390 px: a click on the failed share button loads the room again and shares
+ok 390 px: the retry asked for together/room.js again
+ok 390 px: the button loses its failed look once sharing works
+ok 390 px: after Link copied the button says Copy edit link
+ok 390 px: sharing then has the plain look with the link icon, not the warning look
+ok 390 px: the retried share: the room started is the one in the copied link
 ok 390 px: parts that can't load: no CSP violation or error
 ok 390 px: a guest whose room can't load is told to reload
 ok 390 px: guest: room that can't load: no CSP violation or error
 ok all
 
-## scripts/smoke-csp.mjs
+## scripts/smoke-csp.mjs (run again after the release review's share-button fix, 2026-11-16)
 ok 1280 px: the page comes with the CSP
 ok 1280 px: the page is checked with the server each visit (no-cache, ETag)
 ok 1280 px: an unchanged file comes back as "not changed" (304)
@@ -415,7 +435,7 @@ all ok
 ok lines: 933, FAIL lines: 0
 RESULT: ok
 
-## scripts/smoke-room.mjs
+## scripts/smoke-room.mjs (run again after the release review's share-button fix, 2026-11-16)
 ok /api/room without a WebSocket gets 426
 ok the host opens the room
 ok the host proves its keys with subprotocols
@@ -494,3 +514,12 @@ RESULT: ok smoke
 FAIL 1280 px: a folder saved while the pack loads holds the script as it was at the click, in every file ({"script":"# Snapshot check\n\nHello there my friend.\n","prompter":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n","notes":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n"})
 FAIL 390 px: a folder saved while the pack loads holds the script as it was at the click, in every file ({"script":"# Snapshot check\n\nHello there my friend.\n","prompter":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n","notes":"# Snapshot check\n\n---\n\n### **SCRIPT**\n\nHello there my friend.\nTyped later.\n"})
 FAIL 2
+
+## Failing first: the new share-button checks of smoke-rare-parts.mjs on origin/dev d4dd99e (the run stopped at 1280 px when the retried room was missing)
+FAIL 1280 px: the failed share button is marked data-failed ({"failed":false,"icon":"<path d=\"M16 5l3 3-3 3\"></path><path d=\"M19 8h-6a6 6 0 0 0-6 6v4\"></path>","iconShown":true,"color":"oklch(0.22 0 none)","warn":"oklch(0.52 0.17 37)"})
+FAIL 1280 px: the failed share button shows a warning icon in place of the share icon ({"failed":false,"icon":"<path d=\"M16 5l3 3-3 3\"></path><path d=\"M19 8h-6a6 6 0 0 0-6 6v4\"></path>","iconShown":true,"color":"oklch(0.22 0 none)","warn":"oklch(0.52 0.17 37)"})
+FAIL 1280 px: the failed share button takes the warning colour (oklch(0.22 0 none) → oklch(0.22 0 none), warning oklch(0.52 0.17 37))
+FAIL timed out: the retried share
+FAIL 1280 px: a click on the failed share button loads the room again and shares
+FAIL 1280 px: the retry asked for together/room.js again (/folder-note.js, /together/link.js, /together/room.js, /export-pack.js)
+FAIL 1280 px: the button loses its failed look once sharing works ({"failed":false,"icon":"<path d=\"M16 5l3 3-3 3\"></path><path d=\"M19 8h-6a6 6 0 0 0-6 6v4\"></path>","iconShown":true,"color":"oklch(0.22 0 none)","warn":"oklch(0.52 0.17 37)"})
