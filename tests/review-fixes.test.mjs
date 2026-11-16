@@ -50,10 +50,14 @@ test("module names: the app's modules import each other under their own names, n
   }
 });
 
-test("left-behind copies: app.js cleans them one at a time with one named Web Lock, and one at a time in the tab without it", () => {
+test("left-behind copies: app.js gives them the browser's Web Locks (a stand-in in the tab without them), holds the open browser script, and saves with the name held", () => {
   const app = src("public/app.js");
   const call = app.match(/createLeftCopies\(\{[^\n]*\}\)/)?.[0] ?? "";
-  assert.match(call, /lock:/, "createLeftCopies gets a lock");
-  assert.match(call, /navigator\.locks\.request\("script-editor:moved-copies"/);
-  assert.ok(!/: fn\(\)\)/.test(call), "no lock-free fallback");
+  assert.match(call, /locks: navigator\.locks \?\? tabLocks\(\)/, "the real lock manager, or one tab's stand-in: never no lock");
+  assert.match(app, /const holdOpen = \(\) => copies\.open\(state\.inBrowser && state\.handle \? state\.name : null\);/);
+  const body = (name) => app.slice(app.indexOf(name), app.indexOf("\n}\n", app.indexOf(name)));
+  assert.match(body("function loadText("), /saving\.open\([^\n]*\n\s*holdOpen\(\);/, "a script that opens is held (or the last one let go) at once");
+  assert.match(body("async function followTitle("), /state\.name = name; holdOpen\(\);/, "a renamed script is held under its new name");
+  assert.match(app, /placed\(handle, \{ was = null, at, browser = false \}\) \{[^}]*const let = holdOpen\(\);[^}]*Promise\.all\(\[let, forget\(was\)\]\)\.then\(\(\) => copies\.afterMove\(was\.name, at\)\)/s, "a moved script is let go before its copy is cleaned, with the copy's time");
+  assert.match(app, /held: \(name, fn\) => copies\.saving\(name, fn\),/, "every save holds its script's name");
 });
