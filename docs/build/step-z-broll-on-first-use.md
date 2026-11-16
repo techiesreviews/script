@@ -63,3 +63,18 @@ Browser checks still to add to `scripts/smoke-broll-lazy.mjs` (test gaps from th
 - The card guards: with the download held, pick B-roll in the "/" menu (or "add b-roll"), open another script, release; expect no Add card. After an undo in the same script instead, expect the card.
 - An undo or a same-text `set_script` while an agent's `answer_broll` waits for the module: expect the call to go through.
 - A save during the next script's link lookup once the module is here: hold the lookup (`IDBObjectStore.prototype.get` for `broll:` keys), save under a new name, release; expect no list linked to the saved script.
+- Validation gaps (gap): R6-16 still open: same as R6-1.
+- Validation gaps (gap): R6-15 still open: same as R6-2.
+- Validation gaps (gap): R6-12 still open: there is still no check that the "/" menu's B-roll or "add b-roll" opens no card after a switch through `#menuNew`.
+- Validation gaps (gap): R6-11 still open: `runEdges` still has no page that serves `broll-app.js` with a different `SEAM`.
+- Validation gaps (gap): R6-10 still open: `holdBroll` still only lets the held request through.
+- Validation gaps (gap): R6-9 still open: there is still no check that an undo or a same-text `set_script` lets a held `answer_broll` through. It is now listed as a task (line 64).
+- Validation gaps (gap): R6-8 still open: same as R6-5. `scripts/smoke-broll-lazy.mjs` did not change.
+- Validation gaps (gap): R6-7 still open: nothing runs `m.SEAM !== BROLL_SEAM` (`public/app.js:3167`) yet.
+- Validation gaps (gap): R6-6 still open: there is still no page that serves a module with a different seam version. It is now listed as a task (line 61).
+- Validation gaps (gap): R6-5 still open: there is still no check that fails the held request after a switch. It is now listed as a task (line 62).
+- Validation gaps (gap): R6-4 still open: there is still no card-guard check for a switch or an undo. It is now listed as a task (line 63).
+- Validation gaps (gap): R6-2 still open: nothing in `scripts/smoke-broll-lazy.mjs` changed, so the stale-link fix still has no browser check. It is now listed as a task (`docs/build/step-z-broll-on-first-use.md:65`).
+- Validation gaps (gap): R6-1 still open: the commits since beb33d1 change only the step doc. Gaps R5-1 to R5-9 have no browser checks yet. They are now written down as tasks under "Follow-ups" in the step doc.
+- Validation gaps (gap): These gaps are still open and are listed as tasks under "Follow-ups" in `docs/build/step-z-broll-on-first-use.md:60-65`. Each one names its test there: a module with a different seam version, through `Fetch.fulfillRequest` with `SEAM = 2`; a failed load after a switch through `#menuNew`, through `Fetch.failRequest` on the held request; the card guards after a switch, and after an undo; an undo or a same-text `set_script` while an `answer_broll` is held; a save during the next script's link lookup, with `IDBObjectStore.prototype.get` held for `broll:` keys.
+- Validation gaps (gap): No new gaps. This round changed only the doc.
