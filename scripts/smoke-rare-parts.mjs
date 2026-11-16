@@ -136,6 +136,21 @@ const STANDINS = `Object.defineProperty(navigator, "clipboard", { configurable: 
   window.__downloads = []; const blobs = new Map(), make = URL.createObjectURL;
   URL.createObjectURL = (b) => { const u = make(b); blobs.set(u, b); return u; };
   HTMLAnchorElement.prototype.click = function () { const name = this.download; blobs.get(this.href).arrayBuffer().then((b) => { const text = [...new Uint8Array(b)].map((c) => String.fromCharCode(c)).join(""); window.__downloads.push({ name, head: text.slice(0, 2), text }); }); }; true`;
+// How the share button looks: marked failed or not, its icon (and whether it shows), its text colour, and the colour of
+// the save line's error state (the theme's warning look) for comparison.
+const LOOK = `(() => {
+  const b = document.querySelector("#shareBtn"), svg = b.querySelector("#shareIcon svg"), r = svg?.getBoundingClientRect();
+  const probe = document.createElement("span"); probe.className = "save-state"; probe.dataset.state = "error"; document.body.append(probe);
+  const warn = getComputedStyle(probe).color; probe.remove();
+  return { failed: b.hasAttribute("data-failed"), icon: svg?.innerHTML || "", iconShown: !!r && r.width > 0 && r.height > 0, color: getComputedStyle(b).color, warn };
+})()`;
+// The button's accessible name as Chrome computes it (what a screen reader says).
+async function axName(page, selector) {
+  const { root } = await page.send("DOM.getDocument", { depth: 0 });
+  const { nodeId } = await page.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+  const { nodes } = await page.send("Accessibility.getPartialAXTree", { nodeId, fetchRelatives: false });
+  return nodes.find((n) => !n.ignored)?.name?.value ?? "";
+}
 async function openExport(page) {
   await page.click("#exportBtn");
   return page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu");
@@ -321,15 +336,32 @@ async function run(width, height) {
   await startScreen(failing);
   await newScript(failing, "Failing parts");
   await failing.eval(STANDINS);
+  const idle = await failing.eval(LOOK);
   await failing.click("#shareBtn");
   check(await failing.until(`document.querySelector("#shareLabel").textContent === "Couldn't share. Reload the page." && document.querySelector("#shareBtn").title === "Couldn't share. Reload the page."`, "the share failure"), `${tag} a room that can't load: the share button says to reload`);
   check(await failing.eval(`document.querySelector("#stopShare").hidden && window.__scriptEditor.room() === null`), `${tag} sharing is off again`);
+  // The failure shows on the button itself, at every width: its own look and icon, and its name says what happened.
+  const broken = await failing.eval(LOOK);
+  check(broken.failed && !idle.failed, `${tag} the failed share button is marked data-failed`, JSON.stringify(broken));
+  check(broken.icon !== idle.icon && broken.iconShown, `${tag} the failed share button shows a warning icon in place of the share icon`, JSON.stringify(broken));
+  check(broken.color !== idle.color && broken.color === broken.warn, `${tag} the failed share button takes the warning colour`, `${idle.color} → ${broken.color}, warning ${broken.warn}`);
+  check(await axName(failing, "#shareBtn") === "Couldn't share. Reload the page.", `${tag} the failed share button's name (what a screen reader says) is the failure`, await axName(failing, "#shareBtn"));
   await openExport(failing);
   check(await failing.until(`document.querySelector("#zipNote").textContent === "Couldn't load. Reload the page." && !document.querySelector("#zipNote").hidden && document.querySelector("#folderNote").textContent === "Couldn't load. Reload the page."`, "the export notes"), `${tag} an export pack that can't load: Export all and Save to video folder say to reload`);
   await failing.click('[data-export="all"]');
   await sleep(400);
   check(await failing.eval(`window.__downloads.length === 0`), `${tag} Export all then downloads nothing`);
   await failing.click("#exportBtn").catch(() => {});
+  // The network is back: a click on the failed share button tries the room's part again, and sharing starts.
+  await failing.send("Fetch.enable", { patterns: [{ urlPattern: "*export-pack.js*" }] });
+  const before = failing.asked.filter((f) => f === "/together/room.js").length;
+  await failing.click("#shareBtn");
+  check(await failing.until(`!!window.__scriptEditor.room() && document.querySelector("#shareLabel").textContent === "Link copied" && !document.querySelector("#stopShare").hidden`, "the retried share"), `${tag} a click on the failed share button loads the room again and shares`);
+  check(failing.asked.filter((f) => f === "/together/room.js").length > before, `${tag} the retry asked for together/room.js again`, failing.asked.join(", "));
+  const back = await failing.eval(LOOK);
+  check(!back.failed && back.color !== broken.color, `${tag} the button loses its failed look once sharing works`, JSON.stringify(back));
+  check(await failing.eval(`window.__scriptEditor.room()?.link(location.origin) === window.__link`), `${tag} the room started is the one in the copied link`);
+  await failing.click("#stopShare");
   await clean(failing, tag, "parts that can't load");
   await failing.close();
 
