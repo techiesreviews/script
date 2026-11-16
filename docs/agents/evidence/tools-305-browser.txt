@@ -17,15 +17,32 @@ ok 1280 px: typing replaces the selected word
 ok 1280 px: edit: no CSP violation or error
 ok 1280 px: Open in prompter makes the prompter link
 ok 1280 px: prompter link and exports: no CSP violation or error
-file:///home/ubulex/Projects/script-editor-tools-305/scripts/smoke-csp.mjs:46
-      if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
-                                    ^
-
-Error: TypeError: Cannot read properties of null (reading 'hidden')
-    at <anonymous>:1:37
-    at Object.eval (file:///home/ubulex/Projects/script-editor-tools-305/scripts/smoke-csp.mjs:46:37)
-    at async Object.until (file:///home/ubulex/Projects/script-editor-tools-305/scripts/smoke-csp.mjs:52:13)
-    at async run (file:///home/ubulex/Projects/script-editor-tools-305/scripts/smoke-csp.mjs:190:3)
-    at async file:///home/ubulex/Projects/script-editor-tools-305/scripts/smoke-csp.mjs:222:1
-
-Node.js v24.22.2
+ok 1280 px: the guest's dot has the guest's colour, with no style attribute
+ok 1280 px: guest: join and select: no CSP violation or error
+ok 1280 px: Share to edit: no CSP violation or error
+ok 1280 px: a new script is saved with what was typed
+ok 1280 px: new script and save: no CSP violation or error
+ok 390 px: the page comes with the CSP
+ok 390 px: the page is checked with the server each visit (no-cache, ETag)
+ok 390 px: an unchanged file comes back as "not changed" (304)
+ok 390 px: a request to another site is refused
+ok 390 px: the refusal is the CSP's connect-src
+ok 390 px: a data: picture can be read back
+ok 390 px: start screen: no CSP violation or error
+ok 390 px: the agent reaches the tab over the live relay (WebSocket)
+ok 390 px: open the demo with its B-roll list: no CSP violation or error
+ok 390 px: the agent's picture shows as a data: image
+ok 390 px: B-roll: an agent's drawing and picture: no CSP violation or error
+ok 390 px: the storyboard shows
+ok 390 px: storyboard: no CSP violation or error
+ok 390 px: the selection bar is placed (CSSOM style)
+ok 390 px: typing replaces the selected word
+ok 390 px: edit: no CSP violation or error
+ok 390 px: Open in prompter makes the prompter link
+ok 390 px: prompter link and exports: no CSP violation or error
+ok 390 px: the guest's dot has the guest's colour, with no style attribute
+ok 390 px: guest: join and select: no CSP violation or error
+ok 390 px: Share to edit: no CSP violation or error
+ok 390 px: a new script is saved with what was typed
+ok 390 px: new script and save: no CSP violation or error
+ok all
