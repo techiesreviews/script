@@ -2415,6 +2415,7 @@ function leaveScript(next) {
   if (kept) {
     kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check }));
     kept.brollFlags = brollFlags(); // its own "Check" flags: never read back from a draft another script may hold
+    draftOwners.set(kept.name, kept); // the draft written as it is left (persistDraft) is its own
     asides.push(kept);
   }
   else places.push({ handle: state.handle, place });
@@ -2538,9 +2539,11 @@ function saveKept(s) {
 // Its own B-roll "Check" flags: the ones it had when it was left, and the ones its answers gave.
 const keptFlags = (s) => (s.brollFlags || s.flags ? { ...s.brollFlags, ...s.flags } : null);
 function persistKept(s) {
-  // Another script holds the name now: the draft waits in memory (s.draftHeld) until the name is free.
+  // Another script holds the name now: the draft waits in memory (s.draftHeld) until the name is free. A draft already
+  // under the name that is not this script's (left there by another script of that name, open or not) is never taken.
   const owner = draftOwners.get(s.name);
-  if ((state.doc && state.name === s.name) || (owner && owner !== s)) { s.draftHeld = true; return; }
+  const taken = owner !== s && saving.drafts.get(s.name) != null;
+  if ((state.doc && state.name === s.name) || (owner && owner !== s) || taken) { s.draftHeld = true; return; }
   draftOwners.set(s.name, s);
   s.draftHeld = false;
   const draft = keptDraft(s);
