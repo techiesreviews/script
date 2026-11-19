@@ -80,6 +80,9 @@ ok the menu marks A as the open script, not B
 ok no page error or CSP violation
 --- two scripts called script.md (1280 px)
 ok the agent takes an ask in the bread script.md
+ok the bread script.md leaves no copy under the shared name as it goes to the background
+ok the walk script.md takes none of the bread script's asks or words
+ok the shared-words ask is answered in the bread script.md, in the background
 ok the answer lands in the closed bread script.md
 ok the open walk script.md keeps its own draft and Check flags
 ok the bread file changed elsewhere is not written over
