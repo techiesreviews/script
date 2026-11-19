@@ -2319,7 +2319,10 @@ function persistDraft() {
 function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null, draft: given = null, foreign = false }) {
   // Leaving a script: keep its place (and the script itself while its agent works in it), write what is still waiting
   // to its own file, and keep a draft as a safety net.
+  const left = state.doc ? state.handle : null;
   if (state.doc) { leaveScript(handle); persistDraft(); saving.flush(); }
+  // The script just left wrote its draft under this same name (another file called script.md): not this script's.
+  if (left && left !== handle && state.name === name && draftOwners.get(name) === left) foreign = true;
   // A new script left as it came is not kept: empty ones would pile up in the browser. It goes once this tab has let
   // go of its name (below), and only while no other tab has it open or has saved words into it.
   const unused = state.doc && state.inBrowser && state.blank && handle !== state.handle && Doc.serialize(state.doc) === state.blank && !state.asks.length
@@ -3107,6 +3110,7 @@ async function deleteBrowserScript(r) {
 }
 function dropKeys(name) {
   saving.drafts.del(name);
+  draftOwners.delete(name); // no draft under the name now
   delKept(name);
   setLinkKey(null, name);
 }
