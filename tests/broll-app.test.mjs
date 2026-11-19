@@ -88,7 +88,7 @@ function stage({ guest = false } = {}) {
     byId: (id) => D.blockById(state.doc, id), wrapOf: () => null, baseName: () => "demo-good-script",
     emit: note("emit"), changed: note("changed"), closeAsk: note("closeAsk"), validBy: (by) => by, offerAsks: note("offerAsks"),
     renderBlock: note("renderBlock"), getCaret: () => null, renderTocDots: note("renderTocDots"), renderAgent: note("renderAgent"),
-    checkpointBrollMove: () => () => {}, refreshBar: note("refreshBar"), brollChanged: note("brollChanged"), schedulePersist: note("schedulePersist"),
+    checkpointBrollMove: () => () => {}, queueBrollHistory: (run) => run(), refreshBar: note("refreshBar"), brollChanged: note("brollChanged"), schedulePersist: note("schedulePersist"),
     hideBar: note("hideBar"), closeCard: note("closeCard"), editorJump: note("editorJump"), placeOverText: note("placeOverText"),
     positionSlash: note("positionSlash"), setView: note("setView"), scriptView: () => ({ top: 0, bottom: 800 }), personInput: note("personInput"),
     readContent: () => "", offsetIn: () => 0, agentBy: () => ({ id: "agent:test", name: "Test" }), agent: { token: "t", ws: null },

@@ -874,6 +874,11 @@ function checkpointBrollMove(move) {
   };
 }
 let brollHistoryWrites = Promise.resolve();
+function queueBrollHistory(run) {
+  const pending = brollHistoryWrites.then(run);
+  brollHistoryWrites = pending.catch(() => {});
+  return pending;
+}
 const staleMove = (snap) => snap.brollMove && (snap.brollMove.cancelled || !snap.brollMove.valid());
 function restore(snap, from, to) {
   if (snap.brollMove) {
@@ -882,8 +887,9 @@ function restore(snap, from, to) {
     move.stacks.add(to);
     to.push(back); // Redo is available immediately; later typing can invalidate it while the list saves.
     state.lastStep = null;
-    // Include the initial-save wait in this queue: two moves must undo in keypress order.
-    brollHistoryWrites = brollHistoryWrites.then(() => move[snap.moveRedo ? "redo" : "undo"]()).then((ok) => {
+    // A following text Undo can remove an intermediate paragraph before its queued shot write runs.
+    const paragraphs = Doc.cloneDoc(state.doc);
+    queueBrollHistory(() => move[snap.moveRedo ? "redo" : "undo"](paragraphs)).then((ok) => {
       const i = to.indexOf(back);
       if (ok || i < 0) return;
       to.splice(i, 1);
@@ -3401,7 +3407,7 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // when a script has a linked list or B-roll asks, when the Storyboard opens, or when the agent sends B-roll; opening a
 // script without any of that downloads none of it. Until it is here, the app answers for it below: no list.
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
-const BROLL_SEAM = 3;
+const BROLL_SEAM = 4;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
 // is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
@@ -3439,7 +3445,7 @@ const brollHost = () => ({
   state, ui, scriptEl, $, $$, h, icon, esc, me, reduced, FILE_TYPES, SAMPLE, SAMPLE_BROLL, canPick, agent,
   isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
   emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
-  refreshBar, brollChanged, checkpointBrollMove, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
+  refreshBar, brollChanged, checkpointBrollMove, queueBrollHistory, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
   hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
   getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle, scriptKey,
 });

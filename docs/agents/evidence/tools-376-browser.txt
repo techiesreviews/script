@@ -125,3 +125,27 @@ RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 RESULT: ok specs (551/551 tests passed)
 RESULT: ok bg stop se01-chrome-last pgid 363541
 RESULT: ok bg stop se01-local-last pgid 362218
+
+Final ordering follow-up:
+The final automatic second look exhausted the free model's allowance and used GPT again under the kit's documented
+fallback. It found text Undo overtaking pending shot inverses and a new drag capturing its origin before Undo saved.
+Both were reproduced with combined real history/move regression tests before this correction.
+Text Undo while a move saves: met — the regression inserts a paragraph, moves onto it then elsewhere, holds Undo's
+save, and presses Undo three times. It failed first. Move inverses now retain the paragraph context from their
+keypress, so an intermediate paragraph removed by later text Undo does not invalidate those inverses. They use
+current words while anchors survive; the retained context is used only for missing intermediate anchors. No
+retained script text is ever assigned back by shot Undo. All three Redos survive.
+Drag while Undo saves: met — the regression holds Undo's write, drags again, releases the write, then undoes that
+new drag. It failed first. Initial moves now use the same history write queue and capture a changed origin from
+the actual sidecar at their queued write. The new drag's Undo returns to the position restored by preceding Undo.
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T231156Z
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T231558Z
+RESULT: fail unit 6/8 (1 files) log .scratch/unit/20261119T231731-827201.log
+RESULT: ok unit 20/20 (3 files) log .scratch/unit/20261119T231807-847995.log
+RESULT: ok specs (553/553 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-order pid 879867
+RESULT: ok bg se01-chrome-order pid 880614
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-order pgid 880614
+RESULT: ok bg stop se01-local-order pgid 879867
