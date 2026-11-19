@@ -158,16 +158,20 @@ async function start(width, height) {
   return { page, mcp, A: nameOf(WALK), B: nameOf(BREAD) };
 }
 // An ask ("Shorter") on the paragraph that starts with `words` in the open script, taken by the agent.
-async function askShorter(page, mcp, words) {
-  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith(${JSON.stringify(words)})); el.scrollIntoView({ block: "center" }); const t = el.firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, t.data.length); getSelection().removeAllRanges(); getSelection().addRange(r); })()`);
+// `part`: [from, to] of the paragraph's text to ask on (default all of it).
+async function askShorter(page, mcp, words, part = null) {
+  const asksBefore = await page.eval(`document.querySelectorAll("#script .ask").length`);
+  await page.eval(`getSelection().removeAllRanges(); document.activeElement?.blur(); true`);
+  await page.until(`document.querySelector("#editBar").hidden`, "the edit bar from before has gone");
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith(${JSON.stringify(words)})); el.scrollIntoView({ block: "center" }); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), nodes = []; let n; while ((n = w.nextNode())) if (!n.parentElement.closest("[contenteditable='false']")) nodes.push(n); const total = nodes.reduce((x, y) => x + y.data.length, 0); const part = ${JSON.stringify(part)} || [0, total]; const point = (at) => { for (const x of nodes) { if (at <= x.data.length) return [x, at]; at -= x.data.length; } }; const r = document.createRange(); r.setStart(...point(part[0])); r.setEnd(...point(part[1])); getSelection().removeAllRanges(); getSelection().addRange(r); })()`);
   await page.until(`!document.querySelector("#editBar").hidden`, "the edit bar shows on the selection");
   await page.click("#askInput");
   await page.send("Input.insertText", { text: "Shorter" });
   await sleep(80);
   await page.key("Enter", "Enter", 13, "\r");
-  await page.until(`!!document.querySelector("#script .ask")`, "the ask shows");
+  await page.until(`document.querySelectorAll("#script .ask").length > ${asksBefore}`, "the ask shows");
   const asks = JSON.parse(toolText(await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 5 } })) || "{}").asks || [];
-  return asks.find((a) => a.quote?.startsWith(words));
+  return asks.find((a) => (part ? true : a.quote?.startsWith(words)));
 }
 const fileHas = (name, words) => `(async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); return (await (await (await d.getFileHandle(${JSON.stringify(name)})).getFile()).text()).includes(${JSON.stringify(words)}); } catch { return false; } })()`;
 
@@ -348,16 +352,24 @@ async function runSlash(width, height) {
   await page.key("Escape", "Escape", 27);
 
   // Switching through the menu while a command is typed; meanwhile the agent shortens the words before it.
-  const ask2 = await askShorter(page, mcp, "Bread note 4");
+  // Two asks in the line the command goes into: its first words (answered while the menu is open) and the rest
+  // (answered while A opens: the answer puts the caret back in that line).
+  const ask2 = await askShorter(page, mcp, "Bread note 4", [0, 12]);
+  const ask4 = await askShorter(page, mcp, "Bread note 4", [14, 33]); // "a short spoken line"
   await typeCommand(page, "Bread note 4", " /on");
   await page.click("#docSwitch"); // a real click: focus goes to the menu (its search box on a desktop, the button on a phone)
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open") && document.querySelector("#scriptList .scripts__open[aria-current]")`, "the script menu");
-  const r2 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask2?.id, kind: "replace", text: "Bread note four." } });
+  const r2 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask2?.id, kind: "replace", text: "Bread note four" } });
   check(!r2?.result?.isError, "an answer lands before the command while the menu is open", toolText(r2));
-  const before = "Bread note four.";
+  const before = "Bread note four: a short line that only fills the page so it can scroll."; // both answers in, no command
   await sleep(2000); // longer than the auto-save pause
   check(await fileLacks(page, B, " /on"), "with the file-name menu open, /on is not saved into B's file");
+  // A opens slowly; meanwhile the agent answers in B, which puts the caret back in B's text.
+  await page.eval(`(() => { const get = FileSystemFileHandle.prototype.getFile; window.__slowOpen = true; FileSystemFileHandle.prototype.getFile = async function (...a) { if (window.__slowOpen && this.name === ${JSON.stringify(A)}) { window.__slowOpen = false; await new Promise((r) => setTimeout(r, 1500)); } return get.apply(this, a); }; })()`);
   await page.eval(`(${row(A)}).querySelector(".scripts__open").click()`);
+  await sleep(300);
+  const r4 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask4?.id, kind: "replace", text: "a short line" } });
+  check(!r4?.result?.isError, "an answer lands in B while A is still opening", toolText(r4));
   await page.until(isOpen(A), "A opens");
   await sleep(500);
   check(await fileLacks(page, B, " /on"), "leaving B through the menu does not save /on into B's file");
