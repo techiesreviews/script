@@ -3106,7 +3106,8 @@ async function followTitle(handle) {
 }
 // Is another script known that goes by this name (not the file `handle`): the open one, one kept aside, one whose place
 // is kept, or a browser script on the list? A script open without a file counts too (keep the data). Files on the
-// computer have keys of their own (TOOLS-361) and count only where they still go by their name (storage refused).
+// computer have keys of their own (TOOLS-361): one open, kept aside or with a kept place counts only while it still
+// goes by its name (storage refused); files on the list do not.
 async function nameShared(name, handle) {
   if (state.doc && state.name === name && !state.handle) return true;
   const known = [
@@ -3115,11 +3116,11 @@ async function nameShared(name, handle) {
     ...places.map((p) => ({ name: p.handle?.name, handle: p.handle })),
     ...(await recentScripts()).filter((x) => x.browser).map((x) => ({ name: x.name, handle: x.handle })),
   ].filter((k) => scriptKeys.keyOf(k.handle, k.name) === name);
-  for (const k of known) if (k.name === name && k.handle && !(await sameFile(k.handle, handle))) return true;
+  for (const k of known) if (k.handle && !(await sameFile(k.handle, handle))) return true;
   return false;
 }
 // Its draft and B-roll keys go too: a browser script's keys are by its name (a script opened later under the same name
-// starts without them), unless another script of that name is known (nameShared; when in doubt they stay).
+// starts without them), unless another script that goes by that name is known (nameShared; when in doubt they stay).
 async function deleteBrowserScript(r) {
   // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
   deleting.push(r.handle); // it can't be opened while it goes

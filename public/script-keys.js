@@ -2,7 +2,7 @@
 // kept in the browser, and with the draft its "Check" flags. Before, all of these went by file name, and Save to video
 // folder calls every script script.md, so two scripts could share them.
 // - A file on the computer gets an id of its own the first time it opens here, kept with its handle in IndexedDB
-//   (`fileIds`: [{ handle, id }], newest first): its key is `file:<id>`. The same file opened again (the switcher hands
+//   (`fileIds`: [{ handle, id }], the file opened most recently first): its key is `file:<id>`. The same file opened again (the switcher hands
 //   over a fresh handle) is found by `isSameEntry` and keeps its key; another file of the same name gets another.
 // - A script in the browser goes by its name: names there are unique, and a rename moves its keys (app.js moveKeys).
 // - A script without a file (the demo, a file opened where files can't be saved) goes by its name, as before.
@@ -65,8 +65,9 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
         await store.put(IDS_KEY, [{ handle, id }, ...list].slice(0, IDS_MAX));
         await hand(handle.name, [fileKey(id)]);
       } else if (list[0].id !== id) {
-        // Opened again: to the front, so a full list lets go of the files not opened here for longest.
-        await store.put(IDS_KEY, [...list.filter((r) => r.id === id), ...list.filter((r) => r.id !== id)]);
+        // Opened again: to the front, so a full list lets go of the files not opened here for longest. Best effort: a
+        // write that fails leaves it where it is, and it keeps its key.
+        await store.put(IDS_KEY, [...list.filter((r) => r.id === id), ...list.filter((r) => r.id !== id)]).catch(() => {});
       }
       known.set(handle, fileKey(id));
       return fileKey(id);
