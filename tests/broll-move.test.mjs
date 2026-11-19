@@ -117,3 +117,13 @@ test("B-roll move history: regenerated quotes between two moves keep the older i
   m.redo(); m.redo(); await settle();
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
 });
+
+test("B-roll move history: Undo preserves an original hand-written quote that still matches", async () => {
+  const m = movement();
+  const original = '"spoken paragraph."';
+  m.replace((text) => Broll.updateShot(text, "B1", { over: original }));
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  await m.moveShot();
+  m.undo(); await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, original);
+});
