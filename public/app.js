@@ -2589,6 +2589,7 @@ async function openHandle(handle) {
     // read from the file like any other, and its draft has the agent's change (TOOLS-358).
     const asIs = kept && (await sameWords(text, kept.savedText));
     const place = kept ? kept.place : await takePlace(handle);
+    if (kept?.gone) throw new Error("deleted while it opened"); // the person deleted it meanwhile: it stays gone
     if (kept) dropKept(handle);
     loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place });
     remember(handle, browser);
