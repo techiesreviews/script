@@ -2258,7 +2258,8 @@ async function idbGet(k) {
 // Like idbGet, but a failed read is an error, never "nothing stored" (the files' ids must not be written over, TOOLS-361).
 async function idbRead(k) {
   const db = await idb();
-  return new Promise((res, rej) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => rej(q.error || new Error("IndexedDB read failed")); });
+  // Nothing stored gives undefined; a link or list removed on purpose is a stored null.
+  return new Promise((res, rej) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error || new Error("IndexedDB read failed")); });
 }
 // Like idbSet, but a failed write is an error (a B-roll list kept in the browser must not vanish silently).
 async function idbPut(k, v) {
@@ -3026,17 +3027,19 @@ async function handOver(name, keys, { moving = false } = {}) {
   if (name === SAMPLE.name) return;
   const plan = legacyPlan(keys, { browser: (await browserScripts()).some((b) => b.name === name), moving });
   if (!plan) return;
-  // Only empty places are filled (a try again after a full storage never writes over what a file has since), the list
-  // before its link, and the name lets go only once every copy is kept: a full storage must not lose or hide them.
+  // Only places never written are filled (a try again after a full storage never writes over what a file has since,
+  // also a link removed on purpose), the list before its link, and the name lets go only once every copy is kept: a
+  // full storage must not lose or hide them. A file with a draft of its own keeps it; the name's goes.
   let kept = !plan.draft || saving.drafts.get(plan.draft) != null || saving.drafts.move(name, plan.draft);
   await keyed(async () => {
     const link = await idbRead(brollKey(name)), list = await readKept(name);
     const put = (k, v) => idbPut(k, v).then(() => true, () => false);
     for (const k of plan.broll) {
-      if (list != null && (await idbRead(listKey(k))) == null && !(await put(listKey(k), list))) { kept = false; continue; }
-      if (link != null && (await idbRead(brollKey(k))) == null) kept = (await put(brollKey(k), link)) && kept;
+      if (list != null && (await idbRead(listKey(k))) === undefined && !(await put(listKey(k), list))) { kept = false; continue; }
+      if (link != null && (await idbRead(brollKey(k))) === undefined) kept = (await put(brollKey(k), link)) && kept;
     }
     if (!plan.clear || !kept) return;
+    saving.drafts.del(name);
     if (link != null) await idbSet(brollKey(name), null);
     if (list != null) { await idbSet(listKey(name), null); store.del(listKey(name)); }
   });
