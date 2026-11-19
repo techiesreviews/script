@@ -44,6 +44,8 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
     for (const r of list) if (await sameFile(r.handle, handle)) return r.id;
     return null;
   }
+  // The old keys that could not be handed over stay under the name; the file keeps its own key either way.
+  const hand = (name, keys) => Promise.resolve().then(() => handOver(name, keys)).catch(() => {});
   // The key a script goes by now: a file looked up here has its own; any other script goes by its name.
   const keyOf = (handle, name) => (handle && known.get(handle)) || name;
 
@@ -58,7 +60,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
       if (!id) {
         id = newId();
         await store.put(IDS_KEY, [{ handle, id }, ...list].slice(0, IDS_MAX));
-        await handOver(handle.name, [fileKey(id)]);
+        await hand(handle.name, [fileKey(id)]);
       }
       known.set(handle, fileKey(id));
       return fileKey(id);
@@ -91,7 +93,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
         if (!byName.get(f.name).includes(fileKey(id))) byName.get(f.name).push(fileKey(id));
       }
       await store.put(IDS_KEY, [...added, ...list].slice(0, IDS_MAX));
-      for (const [name, keys] of byName) await handOver(name, keys);
+      for (const [name, keys] of byName) await hand(name, keys);
       await store.put(MIGRATED_KEY, Date.now());
     })).catch(() => {});
     return ready;
