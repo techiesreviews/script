@@ -118,6 +118,9 @@ const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 
 // Several scripts (TOOLS-358): scripts left while the agent works in them (aside.js), and where each script left was
 // scrolled and its caret ({ handle, place }). In this tab's memory only.
 const asides = [], places = [];
+// The files whose words the app keeps itself since they were kept aside: their saves never fall back to a draft by name,
+// also a save still on its way after the script left memory (taken off the list). Until the script opens again.
+const keptWords = new WeakSet();
 let lastCaret = null; // the caret in the open script, kept while focus is in the menu
 let lookFor = null; // the agent's changes made while this script was aside, until they have been on screen
 let menuSlash = null; // a "/" command being typed when focus went to the file-name menu (commandNow)
@@ -2332,6 +2335,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.doc = kept ? kept.doc : Doc.parse(text);
   saving.open({ handle, name, browser, savedText: kept ? kept.savedText : fresh ? Doc.serialize(state.doc) : text, modified, fresh });
   const freed = holdOpen();
+  if (handle) keptWords.delete(handle); // open again: its own draft is its safety net again
   if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle); dropKeys(unused.name); } }).catch(() => {});
   state.undo = kept ? kept.undo : [];
   state.redo = kept ? kept.redo : [];
@@ -2413,6 +2417,7 @@ function leaveScript(next) {
   if (kept) {
     kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check }));
     kept.brollFlags = brollFlags(); // its own "Check" flags: never read back from a draft another script may hold
+    keptWords.add(kept.handle);
     asides.push(kept);
   }
   else places.push({ handle: state.handle, place });
@@ -2454,6 +2459,7 @@ function adoptKept(kept) {
 function goToPlace(kept, place) {
   const first = kept && Aside.firstUnseen(kept);
   const el = first && scriptEl.querySelector(`[data-ask="${CSS.escape(first)}"]`);
+  if (el && ui.view !== "script") setView("script"); // from the Storyboard: the change shows in the Script view
   const fold = el?.closest("details"); // a change in the folded lines at the top opens them, as the caret does
   if (fold && !fold.open && ui.view === "script") { fold.open = true; state.frontOpen = true; }
   if (el && ui.view === "script") {
@@ -2724,7 +2730,7 @@ const saving = createSaving({
       else if (handle === state.handle) { Object.assign(state, { savedText: text, fileModified: modified }); renderSaveState(); }
     },
     // A script kept aside keeps its words in memory: its failed saves leave no draft under its name.
-    keepsWords: (handle) => asides.some((s) => s.handle === handle),
+    keepsWords: (handle) => keptWords.has(handle),
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, words, browser = false }) {
       remember(handle, browser);
@@ -3060,7 +3066,9 @@ async function deleteBrowserScript(r) {
     await saving.idle();
     await forget(r.handle);
     try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-    dropKeys(r.name);
+    // Keys go by name: an open file of the same name (Save to video folder calls every one script.md) keeps its own.
+    const sameNameOpen = !!state.doc && state.name === r.name && !(await sameFile(state.handle, r.handle));
+    if (!sameNameOpen) dropKeys(r.name);
   } finally {
     deleting.splice(deleting.indexOf(r.handle), 1);
   }
