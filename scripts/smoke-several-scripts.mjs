@@ -53,7 +53,7 @@ const STUBS = `(() => {
   };
 })();`;
 
-async function openTab(width, height) {
+async function openTab(width, height, extra = "") {
   const { browserContextId } = await send("Target.createBrowserContext");
   const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -90,6 +90,7 @@ async function openTab(width, height) {
   await page.send("Page.enable");
   await page.send("Runtime.enable");
   await page.send("Page.addScriptToEvaluateOnNewDocument", { source: STUBS });
+  if (extra) await page.send("Page.addScriptToEvaluateOnNewDocument", { source: extra });
   await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 500 });
   return page;
 }
@@ -141,8 +142,8 @@ const readScript = (page, name) => page.eval(`(async () => { try { const d = awa
 const where = (page) => page.eval(`(() => { const s = getSelection(), el = document.activeElement; const r = s.rangeCount ? s.getRangeAt(0) : null; return { y: Math.round(scrollY), focus: el?.dataset?.id ? el.textContent.slice(0, 40) : el?.id || el?.tagName, at: r ? r.startOffset : -1, text: document.querySelector("#script").textContent }; })()`);
 
 // A fresh profile with the agent connected.
-async function connect(width, height) {
-  const page = await openTab(width, height);
+async function connect(width, height, extra = "") {
+  const page = await openTab(width, height, extra);
   const minted = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
   const mcp = agentFor(minted.token);
   await page.send("Page.navigate", { url: `${BASE}/` });
@@ -156,8 +157,8 @@ async function connect(width, height) {
   return { page, mcp };
 }
 // ...and two made-up scripts saved in the browser; B is open.
-async function start(width, height) {
-  const { page, mcp } = await connect(width, height);
+async function start(width, height, extra = "") {
+  const { page, mcp } = await connect(width, height, extra);
 
   // Two made-up scripts, both saved in the browser.
   await page.steady("#emptyNew");
@@ -693,6 +694,37 @@ async function runOpenCancelled() {
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
+
+  // Where the browser has no file picker (Firefox, Safari), "Open a script…" uses a file field and returns at once.
+  console.log("--- the same where the browser has no file picker (1280 px)");
+  const fb = await start(1280, 800, "delete window.showOpenFilePicker;");
+  await fb.page.send("Page.setInterceptFileChooserDialog", { enabled: true }); // the chooser is answered below
+  const fileInput = async () => (await fb.page.send("DOM.querySelector", { nodeId: (await fb.page.send("DOM.getDocument", {})).root.nodeId, selector: "#fileInput" })).nodeId;
+  // (a) A file is picked: focus moves while the dialog is open, and the "/" command still stays out of B.
+  await typeCommand(fb.page, "Bread note 4", " /on");
+  await fb.page.click("#docSwitch");
+  await fb.page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await fb.page.eval(`document.querySelector("#menuOpen").click(); true`);
+  await sleep(300);
+  await fb.page.eval(`document.querySelector("#exportBtn").focus(); true`); // focus comes back elsewhere after the dialog
+  const pickPath = new URL("../.scratch/tools-358/picked.md", import.meta.url).pathname;
+  writeFileSync(pickPath, "# Picked\n\nA picked script.\n");
+  await fb.page.send("DOM.setFileInputFiles", { files: [pickPath], nodeId: await fileInput() });
+  await fb.page.until(`document.querySelector("#fileName").textContent === "picked.md"`, "the picked script opens");
+  await sleep(800);
+  check(await fileLacks(fb.page, fb.B, " /on"), "with no file picker, picking a file still leaves the / command out of B");
+  // (b) The file field is cancelled: back in B, the typed words save as usual.
+  await openFromMenu(fb.page, fb.B);
+  await typeCommand(fb.page, "Bread note 5", " /sil");
+  await fb.page.click("#docSwitch");
+  await fb.page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await fb.page.eval(`document.querySelector("#menuOpen").click(); true`);
+  await sleep(300);
+  await fb.page.eval(`document.querySelector("#fileInput").dispatchEvent(new Event("cancel")); document.querySelector("#exportBtn").focus(); true`);
+  await fb.page.until(fileHas(fb.B, " /sil"), "with no file picker, after a cancel the typed words save as usual", 6000);
+  const fbErrs = await fb.page.errors();
+  check(!fbErrs.length, "no page error or CSP violation (no file picker)", fbErrs.join(" | "));
+  await fb.page.close();
 }
 
 // SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel) runs one part.
