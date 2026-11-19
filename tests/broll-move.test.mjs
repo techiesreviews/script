@@ -19,16 +19,17 @@ function movement() {
   const adopt = () => { broll.shots = Broll.parseBroll(text).shots; Broll.matchShots(state.doc, broll.shots); };
   adopt();
   broll.shots[0].check = true;
-  let move, queue = Promise.resolve(), writes = 0, hold = null;
+  let move, queue = Promise.resolve(), writes = 0, hold = null, broken = false;
   const shotById = (id) => broll.shots.find((shot) => shot.id === id);
   const context = { state, broll, Doc, Broll, shotById, covered: (shot) => shot.blockIds,
     Changes, Date, UNDO_LIMIT: 300, TYPING_GROUP_MS: 1000, together: null,
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
     followAnchors() {}, reanchorAll() {}, renderAll() {}, hideBar() {}, changed() {}, emit() {},
     changeList: (mutate) => {
-      const gate = hold; hold = null;
+      const gate = hold, fails = broken; hold = null; broken = false;
       const run = queue.then(async () => {
         if (gate) await gate;
+        if (fails) throw new Error("Not saved.");
         text = mutate(text); writes++; adopt();
         return text;
       });
@@ -50,6 +51,8 @@ function movement() {
       const block = Doc.parse("Temporary inserted paragraph.\n").blocks.find((b) => b.type === "para");
       state.doc.blocks.push(block); paras.push({ id: block.id }); return paras.length - 1;
     },
+    rewrite: (index, words) => { context.checkpoint("rewrite", paras[index].id); Doc.setContent(state.doc, paras[index].id, words); },
+    failNextWrite: () => { broken = true; },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
     moveShot: (index = 1) => context.moveShot("B1", Broll.wholeParas(state.doc, [paras[index].id])),
     replace: (mutate) => { text = mutate(text); adopt(); },
@@ -182,4 +185,41 @@ test("B-roll move history: surviving targets use current words after text Undo r
   release(); await settle();
   assert.doesNotMatch(Doc.serialize(m.state.doc), /UNDO-SENTINEL|Temporary inserted/);
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+});
+
+test("B-roll move history: a recorded rewrite between two moves undoes and redoes step by step", async () => {
+  const m = movement();
+  const saved = () => Broll.matchOver(Broll.spokenBlocks(m.state.doc), Broll.parseBroll(m.text).shots[0].over);
+  await m.moveShot(1);
+  m.rewrite(1, "Rewritten middle paragraph while the shot covers it.");
+  await m.moveShot(2);
+  for (let i = 0; i < 3; i++) { m.undo(); await settle(); }
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the third Undo reaches the first paragraph");
+  assert.deepEqual(saved(), [m.paras[0].id], "the saved quote matches the first paragraph");
+  assert.doesNotMatch(Doc.serialize(m.state.doc), /Rewritten middle/);
+  assert.equal(m.state.redo.length, 3, "all three changes can be redone");
+  for (let i = 0; i < 3; i++) { m.redo(); await settle(); }
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+  assert.deepEqual(saved(), [m.paras[2].id]);
+  assert.match(Doc.serialize(m.state.doc), /Rewritten middle/);
+  assert.equal(m.state.undo.length, 3);
+});
+
+test("B-roll move history: a failed Undo save stops the Undo waiting behind it, and both positions stay reachable", async () => {
+  const m = movement();
+  await m.moveShot(1); await m.moveShot(2);
+  const release = m.holdNextWrite();
+  m.failNextWrite();
+  m.undo(); await settle();
+  m.undo();
+  release(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id], "nothing moved: the save failed");
+  assert.equal(m.state.undo.length, 2, "both moves keep their Undo, in their order");
+  assert.equal(m.state.redo.length, 0);
+  m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id], "the retry reaches the middle position");
+  m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the first position is still reachable");
+  m.redo(); m.redo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
 });
