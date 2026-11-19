@@ -676,7 +676,26 @@ async function runBoardCaret() {
   await page.close();
 }
 
-// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret) runs one part.
+// Release review on PR #78 (SL-1): a "/" command is being typed, "Open a script…" is chosen and the picker is cancelled.
+// Nothing opened, so focus elsewhere makes the command ordinary text again, and it saves as usual.
+async function runOpenCancelled() {
+  console.log("--- a / command, then Open a script… cancelled (1280 px)");
+  const { page, B } = await start(1280, 800);
+  await typeCommand(page, "Bread note 4", " /on");
+  await page.eval(`window.__pick = null; true`); // the picker is cancelled
+  await page.click("#docSwitch");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await page.eval(`document.querySelector("#menuOpen").click(); true`);
+  await sleep(500);
+  check(await page.eval(`document.querySelector("#fileName").textContent === ${JSON.stringify(B)}`), "B is still open");
+  await page.eval(`document.querySelector("#exportBtn").focus(); true`); // focus moves to another button
+  await page.until(fileHas(B, " /on"), "after the cancelled picker, the typed words save as usual", 6000);
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -690,6 +709,7 @@ try {
   if (!only || only === "board") await runBoard();
   if (!only || only === "deletekept") await runDeleteKeptSameName();
   if (!only || only === "boardcaret") await runBoardCaret();
+  if (!only || only === "opencancel") await runOpenCancelled();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
