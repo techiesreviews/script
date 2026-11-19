@@ -53,6 +53,7 @@
 ✔ B-roll move history: Undo preserves an original hand-written quote that still matches
 ✔ B-roll move history: text Undo during held move Undo preserves both inverses and all Redos
 ✔ B-roll move history: dragging during a held Undo returns to the restored origin
+✔ B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
