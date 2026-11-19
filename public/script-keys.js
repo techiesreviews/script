@@ -105,14 +105,18 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
       const list = await read(), added = [], byName = new Map();
       for (const f of await listFiles()) {
         let id = await idIn([...added, ...list], f.handle);
-        if (!id) { id = newId(); added.push({ handle: f.handle, id }); }
+        if (!id) { id = newId(); added.push({ handle: f.handle, id, name: f.name }); }
         if (!byName.has(f.name)) byName.set(f.name, []);
         if (!byName.get(f.name).includes(fileKey(id))) byName.get(f.name).push(fileKey(id));
       }
-      await store.put(IDS_KEY, [...added, ...list].slice(0, IDS_MAX));
-      let all = true;
-      for (const [name, keys] of byName) all = (await hand(name, keys, { moving: true })) && all;
-      if (all) await store.put(MIGRATED_KEY, Date.now());
+      const entry = ({ handle, id }) => ({ handle, id });
+      await store.put(IDS_KEY, [...added.map(entry), ...list].slice(0, IDS_MAX));
+      const failed = new Set();
+      for (const [name, keys] of byName) if (!(await hand(name, keys, { moving: true }))) failed.add(name);
+      if (!failed.size) return void (await store.put(MIGRATED_KEY, Date.now()));
+      // A name not handed over keeps no new ids: its files go by that name, where its old keys still are, until the
+      // next page tries again (a file opened meanwhile tries again too).
+      await store.put(IDS_KEY, [...added.filter((r) => !failed.has(r.name)).map(entry), ...list].slice(0, IDS_MAX));
     })).catch(() => {});
     return ready;
   }

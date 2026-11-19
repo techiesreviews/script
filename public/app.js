@@ -3025,7 +3025,7 @@ const scriptKey = () => scriptKeys.keyOf(state.handle, state.name);
 // name (then they are its own; only the files on the list at the move get a copy). The demo keeps its own.
 async function handOver(name, keys, { moving = false } = {}) {
   if (name === SAMPLE.name) return;
-  const plan = legacyPlan(keys, { browser: (await browserScripts()).some((b) => b.name === name), moving });
+  const plan = legacyPlan(keys, { browser: await browserHas(name), moving });
   if (!plan) return;
   // Only places never written are filled (a try again after a full storage never writes over what a file has since,
   // also a link removed on purpose), the list before its link, the draft last (a hand-over that stops before it leaves
@@ -3048,6 +3048,12 @@ async function handOver(name, keys, { moving = false } = {}) {
     if (list != null) { await idbSet(listKey(name), null); store.del(listKey(name)); }
   });
   if (!kept) throw new Error("Not every key could be handed over.");
+}
+// Is there a script in the browser with this name? A folder that can't be read is an error (the hand-over stops and is
+// tried again), never "no".
+async function browserHas(name) {
+  if (!browserSaving) return false;
+  try { await (await scriptsDir()).getFileHandle(name); return true; } catch (e) { if (e?.name === "NotFoundError" || e?.name === "TypeError") return false; throw e; }
 }
 // Once per browser profile, before any file opens: the files on the recent list take what was kept under their names.
 scriptKeys.migrate(async () => (await recentScripts()).filter((r) => !r.browser && r.handle).map((r) => ({ handle: r.handle, name: r.name })));
