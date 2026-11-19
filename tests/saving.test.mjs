@@ -373,6 +373,18 @@ test("saving: saveLeft never writes over a file changed on disk: its words wait 
   assert.equal(s.store.get("draft:a.md").at, 88_000);
 });
 
+test("saving: saveLeft with noDraft keeps no draft under the name when the file can't be written (release review on PR #78)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.store.set("draft:a.md", { text: null, at: 1, asks: [], broll: { B9: true } }); // another a.md's own draft
+  s.files.outside("a.md", "# A\n\nChanged elsewhere.\n");
+  const written = await s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n", noDraft: true });
+  assert.equal(written, null);
+  assert.deepEqual(s.store.get("draft:a.md"), { text: null, at: 1, asks: [], broll: { B9: true } });
+});
+
 test("saving: a file changed on disk is not written over; Save mine writes this version", async () => {
   const s = setup();
   s.files.outside("a.md", "# A\n\nElsewhere.\n");

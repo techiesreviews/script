@@ -118,6 +118,9 @@ const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 
 // Several scripts (TOOLS-358): scripts left while the agent works in them (aside.js), and where each script left was
 // scrolled and its caret ({ handle, place }). In this tab's memory only.
 const asides = [], places = [];
+// Drafts go by file name, and Save to video folder names every script script.md: a script kept aside writes its draft
+// only while no other script holds that name (the open script always does), name -> that kept script.
+const draftOwners = new Map();
 let lastCaret = null; // the caret in the open script, kept while focus is in the menu
 let lookFor = null; // the agent's changes made while this script was aside, until they have been on screen
 let menuSlash = null; // a "/" command being typed when focus went to the file-name menu (commandNow)
@@ -2308,7 +2311,8 @@ function persistDraft() {
 }
 
 // `kept`: a script kept aside (TOOLS-358), opened again as it is in memory; `place`: where it was scrolled and its caret.
-function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null }) {
+// `draft`: this script's own draft, handed over (a script kept aside whose file changed), instead of the one by its name.
+function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null, draft: given = null }) {
   // Leaving a script: keep its place (and the script itself while its agent works in it), write what is still waiting
   // to its own file, and keep a draft as a safety net.
   if (state.doc) { leaveScript(handle); persistDraft(); saving.flush(); }
@@ -2340,8 +2344,12 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.pendingDraft = null;
   state.frontOpen = false;
   state.hint = null;
-  const draft = saving.drafts.get(name);
-  setBrollFlags(draft?.broll);
+  // A script kept aside that wrote its draft under this name is another file (Save to video folder names every script
+  // script.md): its draft goes back to its memory, and this script never reads it.
+  const holder = draftOwners.get(name);
+  if (holder && holder !== kept) { draftOwners.delete(name); holder.draftHeld = true; saving.drafts.del(name); }
+  const draft = given ?? saving.drafts.get(name);
+  setBrollFlags(kept ? keptFlags(kept) : draft?.broll);
   hideBanner();
   if (kept) adoptKept(kept);
   else if (draft?.text != null && draft.text !== text && (draft.at || 0) > modified) {
@@ -2356,6 +2364,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   editorJump();
   goToPlace(kept, place);
   renderKept();
+  releaseDrafts(); // the name just left may be free for a draft that waited
   loadBroll();
   together?.local();
   offerAsks(); // a waiting agent hears of asks left waiting in the script just left (or in this one)
@@ -2403,7 +2412,11 @@ function leaveScript(next) {
     savedText: state.savedText, fileModified: state.fileModified, place, unseen: lookFor ? [...lookFor] : [],
   });
   // Its B-roll shots, as matched to its lines now: an answer there that changes a covered line gives its shot "Check".
-  if (kept) { kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check })); asides.push(kept); }
+  if (kept) {
+    kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check }));
+    kept.brollFlags = brollFlags(); // its own "Check" flags: never read back from a draft another script may hold
+    asides.push(kept);
+  }
   else places.push({ handle: state.handle, place });
   if (places.length > RECENT_MAX) places.shift();
 }
@@ -2426,6 +2439,8 @@ function dropKept(handle) {
     const i = list.findIndex((x) => x.handle === handle);
     if (i >= 0) list.splice(i, 1);
   }
+  for (const [name, s] of draftOwners) if (s.handle === handle) draftOwners.delete(name); // its name is free again
+  releaseDrafts();
   renderKept();
 }
 // A script kept aside opens with its own asks and the agent's changes, marked as they landed.
@@ -2477,7 +2492,7 @@ document.addEventListener("selectionchange", () => { const c = getCaret(); if (c
 function renderKept() {
   const done = asides.filter((s) => Aside.status(s) === "done");
   $("#aiDot").hidden = !done.length || state.guest;
-  if ($("#scriptMenu").matches(":popover-open")) renderScriptList();
+  if ($("#scriptMenu").matches(":popover-open")) refreshRows();
 }
 // The agent's answer to an ask in a script kept aside: it lands there as in the open script, and goes to its file.
 function answerKept(s, ask, args) {
@@ -2511,7 +2526,7 @@ function saveKept(s) {
   s.writes = (s.writes || Promise.resolve())
     .then(() => {
       const text = Doc.serialize(s.doc);
-      return s.gone || text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText });
+      return s.gone || text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText, noDraft: true });
     })
     .then((w) => {
       // What the file holds now, also for a script taken off the list meanwhile (on.left no longer finds it there).
@@ -2520,12 +2535,27 @@ function saveKept(s) {
     })
     .catch(() => {});
 }
+// Its own B-roll "Check" flags: the ones it had when it was left, and the ones its answers gave.
+const keptFlags = (s) => (s.brollFlags || s.flags ? { ...s.brollFlags, ...s.flags } : null);
 function persistKept(s) {
+  // Another script holds the name now: the draft waits in memory (s.draftHeld) until the name is free.
+  const owner = draftOwners.get(s.name);
+  if ((state.doc && state.name === s.name) || (owner && owner !== s)) { s.draftHeld = true; return; }
+  draftOwners.set(s.name, s);
+  s.draftHeld = false;
+  const draft = keptDraft(s);
+  if (draft) saving.drafts.set(s.name, draft); else saving.drafts.del(s.name);
+}
+// A kept script's own draft: its words when the file does not hold them, its open asks and marked changes, its flags.
+function keptDraft(s) {
   const open = Changes.withContext(s.asks.filter((a) => isOpen(a) || Changes.isMarked(a)), s.doc).map(Doc.withoutPictures);
-  const old = saving.drafts.get(s.name), text = Doc.serialize(s.doc), dirty = text !== s.savedText;
-  const broll = old?.broll || s.flags ? { ...old?.broll, ...s.flags } : null;
-  if (!dirty && !open.length && !broll) return void saving.drafts.del(s.name);
-  saving.drafts.set(s.name, { text: dirty ? text : null, at: Date.now(), asks: open, ...(broll ? { broll } : {}) });
+  const text = Doc.serialize(s.doc), dirty = text !== s.savedText;
+  const broll = keptFlags(s);
+  return dirty || open.length || broll ? { text: dirty ? text : null, at: Date.now(), asks: open, ...(broll ? { broll } : {}) } : null;
+}
+// A name came free (another script opened, or a kept one left memory): the drafts waiting for it are written.
+function releaseDrafts() {
+  for (const s of asides) if (s.draftHeld && !s.gone) persistKept(s);
 }
 function showBanner(text, actions) {
   replaced = null;
@@ -2627,7 +2657,9 @@ async function openOne(handle, was) {
     if (kept?.gone) throw new Error("deleted while it opened"); // the person deleted it meanwhile: it stays gone
     if (browser && deleting.some((d) => d.name === handle.name)) return false; // being deleted: it does not open
     if (kept) dropKept(handle);
-    loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place });
+    // From its file after all: its own words that could not be written come along as its draft ("Unsaved changes").
+    const own = kept && !asIs ? keptDraft(kept) : null;
+    loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place, draft: own });
     remember(handle, browser);
     if (kept) { kept.opening.resolve(true); delete kept.opening; }
     return true;
@@ -3049,6 +3081,36 @@ function dropKeys(name) {
   setLinkKey(null, name);
 }
 
+// The end of a row: for a script kept aside (TOOLS-358) a spinner and "AI working", then "AI done" and the orange dot
+// until its change is seen; else when it was last opened.
+function rowEnd(li, r) {
+  const end = h("span", "scripts__end");
+  li.toggleAttribute("data-unseen", r.ai === "done");
+  if (r.ai) {
+    const note = h("span", "scripts__ai");
+    note.textContent = r.ai === "working" ? "AI working" : "AI done";
+    if (r.ai === "working") end.append(h("span", "scripts__spin", { "aria-hidden": "true" }), note);
+    else end.append(note, h("span", "ai-dot", { "aria-hidden": "true" }));
+  } else if (r.at && !r.current) {
+    const when = h("span", "scripts__when");
+    when.textContent = clock(r.at);
+    end.append(when);
+  }
+  return end;
+}
+const rowData = new WeakMap(); // each drawn row's script
+// While the menu is open, an answer changes only the rows whose state changed, in place: keyboard focus on a row, and a
+// mouse press that has started on it, stay put (release review on PR #78).
+async function refreshRows() {
+  for (const li of $$("#scriptList .scripts__row")) {
+    const r = rowData.get(li);
+    if (!r || r.current || !r.handle) continue;
+    const kept = await keptFor(r.handle), ai = kept ? Aside.status(kept) : "";
+    if (ai === r.ai || !li.isConnected) continue;
+    r.ai = ai;
+    li.querySelector(".scripts__end")?.replaceWith(rowEnd(li, r));
+  }
+}
 let listToken = 0;
 async function renderScriptList() {
   const token = ++listToken;
@@ -3079,17 +3141,8 @@ async function renderScriptList() {
       tag.textContent = "Browser";
       open.append(tag);
     }
-    // The agent at work in a script kept aside (TOOLS-358): a spinner, then the orange dot until its change is seen.
-    if (r.ai) {
-      const note = h("span", "scripts__ai");
-      note.textContent = r.ai === "working" ? "AI working" : "AI done";
-      if (r.ai === "working") open.append(h("span", "scripts__spin", { "aria-hidden": "true" }), note);
-      else { li.dataset.unseen = ""; open.append(note, h("span", "ai-dot", { "aria-hidden": "true" })); }
-    } else if (r.at && !r.current) {
-      const when = h("span", "scripts__when");
-      when.textContent = clock(r.at);
-      open.append(when);
-    }
+    open.append(rowEnd(li, r));
+    rowData.set(li, r);
     if (r.current) open.insertAdjacentHTML("beforeend", icon("check"));
     open.addEventListener("click", async () => {
       if (menuSlash && !r.current && r.handle) menuSlash.switching = true; // the "/" command stays out of the script left

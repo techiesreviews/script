@@ -605,6 +605,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
    up; no number in it. The menu row says it in words: a small spinner and "AI working", then "AI done" and the dot. */
 .ai-dot { display: inline-block; flex: none; inline-size: 0.62rem; block-size: 0.62rem; border-radius: 50%; background: var(--accent); }
 .doc__title .ai-dot { margin-inline-start: 0.05rem; translate: 0 -0.38rem; box-shadow: 0 0 0 2px var(--bg); }
+.scripts__end { display: contents; } /* a row's end, drawn again on its own when the agent's state changes */
 .scripts__ai { flex: none; color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
 .scripts__row[data-unseen] .scripts__ai { color: var(--text); font-weight: 600; }
 .scripts__spin { flex: none; inline-size: 0.8rem; block-size: 0.8rem; border: 2px solid var(--line-strong); border-block-start-color: var(--accent); border-radius: 50%; }
