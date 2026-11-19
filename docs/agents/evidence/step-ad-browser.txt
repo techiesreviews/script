@@ -1,4 +1,4 @@
-# Step AD browser check (TOOLS-358): node scripts/smoke-several-scripts.mjs against wrangler dev, headless Chrome 158, 2026-11-19. Also passed on this head: scripts/smoke-saving.mjs (102 ok); scripts/smoke-keep-all.mjs (RESULT: ok) and scripts/smoke-broll-lazy.mjs (91 ok) on 599a71b.
+# Step AD browser check (TOOLS-358): node scripts/smoke-several-scripts.mjs against wrangler dev, headless Chrome 158, 2026-11-19. Also passed on this head: scripts/smoke-saving.mjs (102 ok).
 --- desktop (1280 px)
 ok the agent gets B's ask (the open script's: no file name with it)
 ok B's row: spinner and "AI working", no dot
