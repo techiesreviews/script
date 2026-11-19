@@ -919,12 +919,13 @@ export function createBroll(host) {
         await changeList((md) => {
           const now = placeNow(md), spoken = Broll.spokenBlocks(state.doc);
           if (now?.ids.join() !== from.join() || !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid))) {
-            invalid = true; // The shot was changed since: this step will never fit again, so trying again cannot help.
+            invalid = true; // The shot was changed since: this step will never fit again, so history skips it.
             throw new Error("The shot changed.");
           }
           // Keep the exact quote while it matches; a stale one follows the same paragraphs' current words.
           const quote = redo ? over : before;
-          return Broll.updateShot(md, id, { over: Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids)) });
+          const keep = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+          return Broll.updateShot(md, id, { over: keep });
         });
         if (token !== broll.token) return false;
         const shot = shotById(id);

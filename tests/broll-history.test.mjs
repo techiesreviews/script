@@ -90,6 +90,22 @@ test("B-roll move: typing while a move's Undo saves stops the Undo waiting behin
   assert.equal(h.state.undo.length, 2);
 });
 
+test("B-roll move: opening another script while a move's Undo saves stops the Undo waiting behind it", async () => {
+  const h = history();
+  h.type(" UNDO-SENTINEL-A");
+  const typed = h.words();
+  let finish;
+  const saved = new Promise((resolve) => { finish = resolve; });
+  h.checkpointBrollMove({ valid: () => true, undo: () => saved, redo: async () => true });
+  h.undo(); h.undo();
+  const left = h.state.undo;
+  h.state.undo = []; h.state.redo = []; // as opening another script does
+  finish(true); await settle();
+  assert.equal(h.words(), typed, "the waiting Undo does not put the other script's words into this one");
+  assert.equal(h.state.undo.length + h.state.redo.length, 0);
+  assert.equal(left.length, 1, "the script left behind keeps its typing step");
+});
+
 test("B-roll move: an Undo pressed while the move's first save fails undoes nothing, and a changed list invalidates old moves", async () => {
   const h = history();
   h.type(" UNDO-SENTINEL-A");

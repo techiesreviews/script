@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 17 files, 483733 bytes; on first use: broll-app.js + broll.js, 152302 bytes
+ℹ startup: 17 files, 483853 bytes; on first use: broll-app.js + broll.js, 152323 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -45,9 +45,11 @@
 ✔ B-roll move: an Undo waiting for its save cannot restore old script words over new typing
 ✔ B-roll move: a failed Undo keeps the step available and preserves script history
 ✔ B-roll move: typing while a move's Undo saves stops the Undo waiting behind it
+✔ B-roll move: opening another script while a move's Undo saves stops the Undo waiting behind it
 ✔ B-roll move: an Undo pressed while the move's first save fails undoes nothing, and a changed list invalidates old moves
 ✔ B-roll move: deleting the shot invalidates its history instead of blocking older typing Undo
 ✔ B-roll move: an Over conflict invalidates Undo without overwriting the changed shot
+✔ B-roll move history: a shot changed while an Undo saves is left alone, and the Undos skip its stale moves
 ✔ B-roll move history: two fast Undos wait for the second save and restore both moves in keypress order
 ✔ B-roll move history: Undo restores the original paragraph's current words and Check flag
 ✔ B-roll move history: regenerated quotes between two moves keep the older inverse usable
@@ -354,7 +356,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 17 files, 483733 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 17 files, 483853 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -558,9 +560,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 558
+ℹ tests 560
 ℹ suites 0
-ℹ pass 558
+ℹ pass 560
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

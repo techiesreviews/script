@@ -867,8 +867,8 @@ function checkpointBrollMove(move) {
 }
 // Saving a moved shot takes a moment, so history takes turns: a move's save, and any Undo or Redo asked for while one
 // is under way, each wait for the one before and then meet the script and the list as that one left them. A save that
-// fails, or a new change, ages the history: steps still waiting were asked of a state that never came, so they stop
-// there and every word and position stays reachable.
+// fails, or a new change (the person's or the agent's), ages the history: steps still waiting were asked of a state
+// that never came, so they stop there and every word and position stays reachable.
 let historyTurn = Promise.resolve(), historyBusy = 0, historyAge = 0;
 function queueBrollHistory(run) {
   const turn = historyBusy++ ? historyTurn.then(run) : new Promise((resolve) => resolve(run()));
@@ -890,11 +890,13 @@ function historyStep(undoing) {
     state.lastStep = null;
     return s.brollMove[s.moveRedo ? "redo" : "undo"]().then((ok) => {
       if (ok) return;
-      historyAge++;
       const i = to.indexOf(back);
       if (i >= 0) to.splice(i, 1);
-      // Not saved: the step keeps its place and can be tried again. One that no longer fits the shot is dropped.
-      if (!staleMove(s)) from.splice(Math.min(at, from.length), 0, s);
+      // The shot was changed since, as its turn found out: skipped like any stale move, on to the step before it.
+      if (staleMove(s)) return step();
+      // Not saved: the step keeps its place and can be tried again.
+      historyAge++;
+      from.splice(Math.min(at, from.length), 0, s);
     });
   };
   if (historyBusy) return void queueBrollHistory(step);
