@@ -2569,10 +2569,16 @@ async function openHandle(handle) {
     for (const known of [state.handle, ...saving.queued()]) {
       if (known && known !== handle && (await sameFile(known, handle))) { handle = known; break; }
     }
-    // A script kept aside leaves the list first, so no answer lands in it while it opens; its file holds the agent's
-    // last change before it is compared.
+    // A script kept aside takes no answer while it opens (and a second open of it waits for the first); its file holds
+    // the agent's last change before it is compared.
     kept = await keptFor(handle);
-    if (kept) { handle = kept.handle; dropKept(handle); await kept.writes; }
+    if (kept?.opening) return await kept.opening.promise;
+    if (kept) {
+      handle = kept.handle;
+      let resolve;
+      kept.opening = { promise: new Promise((r) => { resolve = r; }), resolve: (v) => resolve(v) };
+      await kept.writes;
+    }
     const file = await handle.getFile();
     const text = await file.text();
     const browser = await isInBrowser(handle);
@@ -2580,11 +2586,13 @@ async function openHandle(handle) {
     // read from the file like any other, and its draft has the agent's change (TOOLS-358).
     const asIs = kept && (await sameWords(text, kept.savedText));
     const place = kept ? kept.place : await takePlace(handle);
+    if (kept) dropKept(handle);
     loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place });
     remember(handle, browser);
+    kept?.opening.resolve(true);
     return true;
   } catch {
-    if (kept && kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); } // still aside
+    if (kept?.opening) { kept.opening.resolve(false); delete kept.opening; } // still aside
     openProblem(handle.name);
     return false;
   }
@@ -2860,6 +2868,10 @@ async function recentScripts() {
   }
   return [...out, ...[...inside.values()].sort((a, b) => b.at - a.at)];
 }
+async function anySame(list, handle) {
+  for (const r of list) if (await sameFile(r.handle, handle)) return true;
+  return false;
+}
 async function without(list, handle) {
   const out = [];
   for (const r of list) if (!(await sameFile(r.handle, handle))) out.push(r);
@@ -2871,6 +2883,8 @@ function updateRecent(change) {
     const list = await change(await recentScripts());
     await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r)));
     lastHandle = list[0]?.handle ?? null;
+    // A kept file that fell off the list has no row to lead to it: it leaves memory, and its dot with it (TOOLS-358).
+    for (const k of asides.filter((x) => !x.browser && !x.opening)) if (!(await anySame(list, k.handle))) dropKept(k.handle);
   }).catch(() => {});
   return recentQueue;
 }
@@ -3670,7 +3684,7 @@ function handleCall(call, ws = agent.ws) {
       return brollApi.agentTool(tool, args, send, NO_SCRIPT);
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
-    const kept = tool === "answer_ask" && !state.asks.some((a) => a.id === args.askId) ? Aside.findAsk(asides, args.askId) : null;
+    const kept = tool === "answer_ask" && !state.asks.some((a) => a.id === args.askId) ? Aside.findAsk(asides.filter((x) => !x.opening), args.askId) : null;
     if (kept) return send(Aside.takesAnswer(kept.ask) ? answerKept(kept.aside, kept.ask, args) : { error: `This ask is in ${kept.aside.name}, which is not open now. Ask the person to open it, then answer it there.` });
     if (!state.doc) return send({ error: NO_SCRIPT });
     if (tool === "get_script") return send({ result: scriptInfo() });
