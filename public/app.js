@@ -118,11 +118,6 @@ const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 
 // Several scripts (TOOLS-358): scripts left while the agent works in them (aside.js), and where each script left was
 // scrolled and its caret ({ handle, place }). In this tab's memory only.
 const asides = [], places = [];
-// Drafts go by file name, and Save to video folder names every script script.md: name -> the file whose draft is stored
-// under it now. A script kept aside writes its draft only while no other file holds that name (the open script always
-// does); words of a left script that could not be written, while another file holds its name, wait here (heldWords).
-const draftOwners = new Map();
-const heldWords = []; // { handle, draft }
 let lastCaret = null; // the caret in the open script, kept while focus is in the menu
 let lookFor = null; // the agent's changes made while this script was aside, until they have been on screen
 let menuSlash = null; // a "/" command being typed when focus went to the file-name menu (commandNow)
@@ -2308,21 +2303,16 @@ function persistDraft() {
   const open = Changes.withContext(state.asks.filter((a) => isOpen(a) || Changes.isMarked(a)), state.doc).map(Doc.withoutPictures);
   const dirty = isDirty();
   const flags = brollFlags();
-  if (!dirty && !open.length && !flags) { saving.drafts.del(state.name); draftOwners.delete(state.name); return; }
+  if (!dirty && !open.length && !flags) { saving.drafts.del(state.name); return; }
   saving.drafts.set(state.name, { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
-  if (state.handle) draftOwners.set(state.name, state.handle); else draftOwners.delete(state.name); // whose draft it is
 }
 
 // `kept`: a script kept aside (TOOLS-358), opened again as it is in memory; `place`: where it was scrolled and its caret.
 // `draft`: this script's own draft, handed over (a script kept aside whose file changed), instead of the one by its name.
-// `foreign`: the draft stored under its name belongs to another file of that name (openOne looked).
-function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null, draft: given = null, foreign = false }) {
+function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null, draft: given = null }) {
   // Leaving a script: keep its place (and the script itself while its agent works in it), write what is still waiting
   // to its own file, and keep a draft as a safety net.
-  const left = state.doc ? state.handle : null;
   if (state.doc) { leaveScript(handle); persistDraft(); saving.flush(); }
-  // The script just left wrote its draft under this same name (another file called script.md): not this script's.
-  if (left && left !== handle && state.name === name && draftOwners.get(name) === left) foreign = true;
   // A new script left as it came is not kept: empty ones would pile up in the browser. It goes once this tab has let
   // go of its name (below), and only while no other tab has it open or has saved words into it.
   const unused = state.doc && state.inBrowser && state.blank && handle !== state.handle && Doc.serialize(state.doc) === state.blank && !state.asks.length
@@ -2351,12 +2341,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.pendingDraft = null;
   state.frontOpen = false;
   state.hint = null;
-  // The draft under this name is another file's (Save to video folder names every script script.md): this script never
-  // reads it. A script kept aside takes its draft back into memory; another closed file's draft is left, until this
-  // script writes its own (the open script holds its name).
-  const holder = foreign ? asides.find((s) => s.handle === draftOwners.get(name)) : null;
-  if (holder) { holder.draftHeld = true; saving.drafts.del(name); draftOwners.delete(name); }
-  const draft = given ?? (foreign ? null : saving.drafts.get(name));
+  const draft = given ?? saving.drafts.get(name);
   setBrollFlags(kept ? keptFlags(kept) : draft?.broll);
   hideBanner();
   if (kept) adoptKept(kept);
@@ -2372,7 +2357,6 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   editorJump();
   goToPlace(kept, place);
   renderKept();
-  releaseDrafts(); // the name just left may be free for a draft that waited
   loadBroll();
   together?.local();
   offerAsks(); // a waiting agent hears of asks left waiting in the script just left (or in this one)
@@ -2423,7 +2407,6 @@ function leaveScript(next) {
   if (kept) {
     kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check }));
     kept.brollFlags = brollFlags(); // its own "Check" flags: never read back from a draft another script may hold
-    draftOwners.set(kept.name, kept.handle); // the draft written as it is left (persistDraft) is its own
     asides.push(kept);
   }
   else places.push({ handle: state.handle, place });
@@ -2448,7 +2431,6 @@ function dropKept(handle) {
     const i = list.findIndex((x) => x.handle === handle);
     if (i >= 0) list.splice(i, 1);
   }
-  releaseDrafts(); // a draft it stored stays its own (draftOwners): it is still a file of that name
   renderKept();
 }
 // A script kept aside opens with its own asks and the agent's changes, marked as they landed.
@@ -2515,7 +2497,7 @@ function answerKept(s, ask, args) {
   saveKept(s);
   // Shots over a changed line get "Check", as when the person changes it (the B-roll part is here when it has shots).
   const flagged = r.landed && s.shots?.length && brollApi ? brollApi.touchKept(s.doc, s.shots) : [];
-  if (flagged.length) { s.flags = { ...s.flags, ...Object.fromEntries(flagged.map((id) => [id, true])) }; persistKept(s); }
+  if (flagged.length) s.flags = { ...s.flags, ...Object.fromEntries(flagged.map((id) => [id, true])) };
   renderKept();
   if (!r.ok) return { error: "The text this ask was about has changed, so the ask was cancelled." };
   if (Aside.status(s) === "done") {
@@ -2526,11 +2508,12 @@ function answerKept(s, ask, args) {
   if (checked.answer.kind === "links") return { result: Changes.answerResult("links", { linked: ask.answer.links.length, skipped: plan?.skipped || [] }) };
   return { result: Changes.answerResult(checked.answer.kind, { cuesDropped: r.cuesDropped }) };
 }
-// A script kept aside goes to its own file (auto-save rules, saving.saveLeft), one write after the other; its draft
-// keeps the asks and the agent's marked changes, so they come back after a reload too.
+// A script kept aside goes to its own file (auto-save rules, saving.saveLeft), one write after the other. It writes no
+// draft: drafts go by file name, and another script of that name (Save to video folder calls every one script.md) may
+// hold it. Words that could not be written stay in memory and come back as "Unsaved changes" when it opens (keptDraft).
+// Limit: after a reload its asks and marks are gone; its file still has the agent's change.
 function saveKept(s) {
   if (s.gone) return;
-  persistKept(s);
   s.writes = (s.writes || Promise.resolve())
     .then(() => {
       const text = Doc.serialize(s.doc);
@@ -2539,65 +2522,17 @@ function saveKept(s) {
     .then((w) => {
       // What the file holds now, also for a script taken off the list meanwhile (on.left no longer finds it there).
       if (w) Object.assign(s, { savedText: w.text, fileModified: w.modified });
-      if (!s.gone && (!state.doc || state.handle !== s.handle)) persistKept(s);
     })
     .catch(() => {});
 }
 // Its own B-roll "Check" flags: the ones it had when it was left, and the ones its answers gave.
 const keptFlags = (s) => (s.brollFlags || s.flags ? { ...s.brollFlags, ...s.flags } : null);
-function persistKept(s) {
-  // Another script holds the name now: the draft waits in memory (s.draftHeld) until the name is free. A draft already
-  // under the name that is not this script's (left there by another script of that name, open or not) is never taken.
-  const owner = draftOwners.get(s.name);
-  const taken = owner !== s.handle && saving.drafts.get(s.name) != null;
-  if ((state.doc && state.name === s.name) || (owner && owner !== s.handle) || taken) {
-    s.draftHeld = true;
-    if (s.removed && !s.gone) holdDraft(s.handle, keptDraft(s)); // taken off the list: it waits by its file
-    return;
-  }
-  s.draftHeld = false;
-  const draft = keptDraft(s);
-  if (draft) { saving.drafts.set(s.name, draft); draftOwners.set(s.name, s.handle); }
-  else { saving.drafts.del(s.name); draftOwners.delete(s.name); }
-}
-// A kept script's own draft: its words when the file does not hold them, its open asks and marked changes, its flags.
+// A kept script's own draft, handed over when it opens from its file after all: its words when the file does not hold them, its open asks and marked changes, its flags.
 function keptDraft(s) {
   const open = Changes.withContext(s.asks.filter((a) => isOpen(a) || Changes.isMarked(a)), s.doc).map(Doc.withoutPictures);
   const text = Doc.serialize(s.doc), dirty = text !== s.savedText;
   const broll = keptFlags(s);
   return dirty || open.length || broll ? { text: dirty ? text : null, at: Date.now(), asks: open, ...(broll ? { broll } : {}) } : null;
-}
-// A name came free (another script opened, or a kept one left memory): the drafts waiting for it are written.
-function releaseDrafts() {
-  for (const s of asides) if (s.draftHeld && !s.gone) persistKept(s);
-  for (const w of [...heldWords]) {
-    const name = w.handle.name;
-    if ((state.doc && state.name === name) || draftOwners.get(name) || saving.drafts.get(name) != null) continue;
-    saving.drafts.set(name, w.draft);
-    draftOwners.set(name, w.handle);
-    heldWords.splice(heldWords.indexOf(w), 1);
-  }
-}
-// A left script that could not be written keeps its draft under its name only while no other file holds that name;
-// else its words wait here, and come back as its "Unsaved changes" when it opens (saving's on.leftDraft).
-function leftDraft(handle, name, text) {
-  const owner = draftOwners.get(name);
-  if (!(state.doc && state.name === name && state.handle !== handle) && (!owner || owner === handle)) { draftOwners.set(name, handle); return true; }
-  holdDraft(handle, { text, at: Date.now(), asks: [] });
-  return false;
-}
-// A draft that waits for its name, by file, for scripts no longer kept aside: it comes back when the script opens.
-function holdDraft(handle, draft) {
-  for (let i = heldWords.length - 1; i >= 0; i--) if (heldWords[i].handle === handle) heldWords.splice(i, 1);
-  if (draft) heldWords.push({ handle, draft });
-}
-async function takeHeldWords(handle) {
-  for (const w of heldWords) {
-    if (!(await sameFile(w.handle, handle))) continue;
-    heldWords.splice(heldWords.indexOf(w), 1);
-    return w;
-  }
-  return null;
 }
 function showBanner(text, actions) {
   replaced = null;
@@ -2696,17 +2631,12 @@ async function openOne(handle, was) {
     // read from the file like any other, and its draft has the agent's change (TOOLS-358).
     const asIs = kept && (await sameWords(text, kept.savedText));
     const place = kept ? kept.place : await takePlace(handle);
-    // Whose draft is stored under its name: this file's (perhaps by another handle object for it), or another file's.
-    const owner = draftOwners.get(handle.name);
-    const ownerSame = !owner || owner === handle || (await sameFile(owner, handle));
-    const waiting = await takeHeldWords(handle);
     if (kept?.gone) throw new Error("deleted while it opened"); // the person deleted it meanwhile: it stays gone
     if (browser && deleting.some((d) => d.name === handle.name)) return false; // being deleted: it does not open
     if (kept) dropKept(handle);
     // From its file after all: its own words that could not be written come along as its draft ("Unsaved changes").
-    const own = kept && !asIs ? keptDraft(kept) : waiting ? waiting.draft : null;
-    if (owner && ownerSame) draftOwners.set(handle.name, handle); // the same file: known by this handle from now on
-    loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place, draft: own, foreign: !ownerSame });
+    const own = kept && !asIs ? keptDraft(kept) : null;
+    loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place, draft: own });
     remember(handle, browser);
     if (kept) { kept.opening.resolve(true); delete kept.opening; }
     return true;
@@ -2779,14 +2709,13 @@ const saving = createSaving({
       if ($("#banner").textContent.startsWith("The file changed")) hideBanner();
       await followTitle(handle);
     },
-    done(moved) { renderTop(); if (moved) { renderDerived(); releaseDrafts(); } persistDraft(); }, // a Save as may free a name
+    done(moved) { renderTop(); if (moved) renderDerived(); persistDraft(); },
     // A script left behind reached its file: a script kept aside (or opened again meanwhile) compares with these words.
     left({ handle, text, modified }) {
       const s = asides.find((x) => x.handle === handle);
       if (s) Object.assign(s, { savedText: text, fileModified: modified });
       else if (handle === state.handle) { Object.assign(state, { savedText: text, fileModified: modified }); renderSaveState(); }
     },
-    leftDraft: (handle, name, text) => leftDraft(handle, name, text),
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, words, browser = false }) {
       remember(handle, browser);
@@ -3016,7 +2945,6 @@ function updateRecent(change) {
       if (!(await anySame(old, k.handle)) || (await anySame(list, k.handle))) continue;
       k.removed = true;
       dropKept(k.handle);
-      if (k.draftHeld) holdDraft(k.handle, keptDraft(k)); // its draft waits by its file
     }
   }).catch(() => {});
   return recentQueue;
@@ -3083,8 +3011,6 @@ async function createBrowserScript(name, text) {
 async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   saving.drafts.move(from, to);
-  draftOwners.delete(from); // the old name is free; the new one is this script's (persistDraft records it)
-  draftOwners.delete(to);
   // The new name belongs to this script now: it takes this script's link, or none (never one left there before).
   await keyed(async () => {
     const stored = await idbGet(brollKey(from));
@@ -3132,7 +3058,6 @@ async function deleteBrowserScript(r) {
 }
 function dropKeys(name) {
   saving.drafts.del(name);
-  draftOwners.delete(name); // no draft under the name now
   delKept(name);
   setLinkKey(null, name);
 }
@@ -3229,7 +3154,7 @@ async function renderScriptList() {
       x.addEventListener("click", async () => {
         await forget(r.handle);
         const kept = await keptFor(r.handle); // no row leads to it any more: its dot goes too
-        if (kept) { kept.removed = true; dropKept(kept.handle); if (kept.draftHeld) holdDraft(kept.handle, keptDraft(kept)); }
+        if (kept) { kept.removed = true; dropKept(kept.handle); }
         renderScriptList();
       });
       li.append(x);

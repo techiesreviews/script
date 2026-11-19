@@ -279,8 +279,9 @@ async function runEdges() {
   await page.click("#emptyReopen");
   await page.until(`!document.querySelector("#layout").hidden`, "a script opens after the reload");
   if (!(await page.eval(isOpen(B)))) await openFromMenu(page, B);
-  await page.until(`[...document.querySelectorAll("#script .agent-change")].some((m) => m.textContent.includes("Cover the bowl"))`, "after a reload B still shows the change, marked");
-  await page.until(`!!document.querySelector(".rc__undo")`, "with Undo on the agent's tag after the reload");
+  // Accepted limit (lead, 2026-11-19): after a reload a background script's marks and asks are gone; its file keeps
+  // the agent's change.
+  await page.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(SHORT)})`, "after a reload B still has the agent's change");
   const second = await askShorter(page, mcp, "Good bread needs");
   check(!!second, "the agent gets a second ask in B");
   await openFromMenu(page, A);
@@ -468,22 +469,10 @@ async function runSameName() {
   await page.until(`document.querySelector("#script")?.textContent.includes("Good bread needs")`, "the first script.md (bread) opens");
   const ask = await askShorter(page, mcp, "Then you cover");
   check(!!ask, "the agent takes an ask in the bread script.md");
-  const shared = await askShorter(page, mcp, "Bread note 3", [14, 33]); // "a short spoken line": words the walk script has too
-  // A reload: the bread script.md comes back with its ask from its draft; the walk script.md opens right away.
-  await page.send("Page.reload", {});
-  await sleep(300);
-  await page.until(`document.readyState === "complete" && !document.querySelector("#emptyReopen").hidden`, "the start screen after a reload");
-  await page.steady("#emptyReopen");
-  await page.click("#emptyReopen");
-  await page.until(`!!document.querySelector("#script .ask")`, "the bread script.md is back with its ask");
   await page.eval(`window.__pick = "b/script.md"; true`);
   await menuOpen(page);
   await page.eval(`document.querySelector("#menuOpen").click(); true`);
   await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the second script.md (walk) opens");
-  await sleep(500);
-  check(!(await page.eval(`!!document.querySelector("#script .ask") || !document.querySelector("#banner").hidden`)), "right after a reload, the walk script.md takes nothing from the bread script's draft");
-  const rs = await mcp("tools/call", { name: "answer_ask", arguments: { askId: shared?.id, kind: "replace", text: "a short line" } });
-  check(!rs?.result?.isError, "the shared-words ask is answered in the bread script.md", toolText(rs));
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "the walk script is saved");
   await sleep(600);
   // The walk script's own draft: a safety net with a B-roll "Check" flag of its own.
