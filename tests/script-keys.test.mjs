@@ -73,10 +73,11 @@ test("script keys: moving to keys, the files on the list get ids and each name's
   assert.equal(handed.length, 2, "it runs once");
 });
 
-test("script keys: a file made by Save as has its key at once, kept for the next page", async () => {
+test("script keys: a file made by Save as has its key once it is kept, also for the next page", async () => {
   const { keys, store, handed } = setup();
   const h = file("c/script.md");
-  const k = keys.adopt(h);
+  const k = await keys.adopt(h);
+  assert.match(k, /^file:/);
   assert.equal(keys.keyOf(h, "script.md"), k);
   assert.equal(await keys.forFile(file("c/script.md")), k, "looked up again later: the same key");
   const next = setup({ store });
@@ -87,18 +88,36 @@ test("script keys: a file made by Save as has its key at once, kept for the next
 test("script keys: a file picked again for Save as gets the new key, never two", async () => {
   const { keys, store } = setup();
   await keys.forFile(file("c/script.md"));
-  const k = keys.adopt(file("c/script.md"));
+  const k = await keys.adopt(file("c/script.md"));
   await keys.forFile(file("z/z.md")); // runs after the adopt is kept
   assert.equal(store.get(IDS_KEY).filter((r) => r.handle.path === "c/script.md").length, 1);
   assert.equal(await setup({ store }).keys.forFile(file("c/script.md")), k);
 });
 
-test("script keys: where storage refuses, a file goes by its name and takes nothing", async () => {
+test("script keys: where storage refuses, a file goes by its name and takes nothing; Save as too", async () => {
   const { keys, handed } = setup({ refuse: true });
   const h = file("a/script.md");
   assert.equal(await keys.forFile(h), "script.md");
   assert.equal(keys.keyOf(h, "script.md"), "script.md");
+  const saved = file("c/script.md");
+  assert.equal(await keys.adopt(saved), "script.md", "a key that can't be kept is never used: the next page could not find it");
+  assert.equal(keys.keyOf(saved, "script.md"), "script.md");
   assert.deepEqual(handed, []);
+});
+
+test("script keys: moving to keys is tried again on the next page when a name's keys could not all be handed over", async () => {
+  const store = new Map();
+  let fail = true;
+  const list = [{ handle: file("a/script.md"), name: "script.md" }];
+  const keysA = createScriptKeys({ store: { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); } }, sameFile, lock: (fn) => fn(), newId: () => `m${++n}`, handOver: async () => { if (fail) throw new Error("full"); } });
+  await keysA.migrate(async () => list);
+  assert.equal(store.has(MIGRATED_KEY), false);
+  fail = false;
+  const handed = [];
+  const keysB = createScriptKeys({ store: { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); } }, sameFile, lock: (fn) => fn(), newId: () => `m${++n}`, handOver: async (name, keys) => { handed.push([name, keys]); } });
+  await keysB.migrate(async () => list);
+  assert.ok(store.has(MIGRATED_KEY));
+  assert.deepEqual(handed, [["script.md", [await keysB.forFile(file("a/script.md"))]]], "the same file, the same key");
 });
 
 test("script keys: a read that fails gives the name and writes nothing, so no other file loses its key; moving to keys waits for a good read", async () => {

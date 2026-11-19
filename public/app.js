@@ -3026,18 +3026,21 @@ async function handOver(name, keys, { moving = false } = {}) {
   if (name === SAMPLE.name) return;
   const plan = legacyPlan(keys, { browser: (await browserScripts()).some((b) => b.name === name), moving });
   if (!plan) return;
-  if (plan.draft) saving.drafts.move(name, plan.draft);
+  // Only empty places are filled (a try again after a full storage never writes over what a file has since), the list
+  // before its link, and the name lets go only once every copy is kept: a full storage must not lose or hide them.
+  let kept = !plan.draft || saving.drafts.get(plan.draft) != null || saving.drafts.move(name, plan.draft);
   await keyed(async () => {
-    const link = await idbGet(brollKey(name)), list = await readKept(name);
-    let copied = true;
+    const link = await idbRead(brollKey(name)), list = await readKept(name);
+    const put = (k, v) => idbPut(k, v).then(() => true, () => false);
     for (const k of plan.broll) {
-      if (link != null) await idbSet(brollKey(k), link);
-      if (list != null) copied = (await idbPut(listKey(k), list).then(() => true, () => false)) && copied;
+      if (list != null && (await idbRead(listKey(k))) == null && !(await put(listKey(k), list))) { kept = false; continue; }
+      if (link != null && (await idbRead(brollKey(k))) == null) kept = (await put(brollKey(k), link)) && kept;
     }
-    if (!plan.clear) return;
+    if (!plan.clear || !kept) return;
     if (link != null) await idbSet(brollKey(name), null);
-    if (list != null && copied) { await idbSet(listKey(name), null); store.del(listKey(name)); } // a full storage must not lose it
+    if (list != null) { await idbSet(listKey(name), null); store.del(listKey(name)); }
   });
+  if (!kept) throw new Error("Not every key could be handed over.");
 }
 // Once per browser profile, before any file opens: the files on the recent list take what was kept under their names.
 scriptKeys.migrate(async () => (await recentScripts()).filter((r) => !r.browser && r.handle).map((r) => ({ handle: r.handle, name: r.name })));

@@ -48,8 +48,9 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
     for (const r of list) if (await sameFile(r.handle, handle)) return r.id;
     return null;
   }
-  // The old keys that could not be handed over stay under the name; the file keeps its own key either way.
-  const hand = (name, keys, o) => Promise.resolve().then(() => handOver(name, keys, o)).catch(() => {});
+  // The old keys that could not be handed over stay under the name; the file keeps its own key either way. Gives
+  // whether it worked.
+  const hand = (name, keys, o) => Promise.resolve().then(() => handOver(name, keys, o)).then(() => true, () => false);
   // The key a script goes by now: a file looked up here has its own; any other script goes by its name.
   const keyOf = (handle, name) => (handle && known.get(handle)) || name;
 
@@ -75,21 +76,25 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
     })).catch(() => handle.name);
   }
 
-  // A file this script was just saved into (Save as): its key at once, kept for later. A file picked again keeps one
-  // entry, the new one: it holds this script now.
+  // A file this script was just saved into (Save as): a new key, used only once it is kept (a key the next page could
+  // not find would lose what goes under it); where storage refuses, the file goes by its name. A file picked again
+  // keeps one entry, the new one: it holds this script now.
   function adopt(handle) {
     const id = newId();
-    known.set(handle, fileKey(id));
-    ready = ready.then(() => lock(async () => {
+    const run = ready.then(() => lock(async () => {
       const rest = [];
       for (const r of await read()) if (!(await sameFile(r.handle, handle))) rest.push(r);
       await store.put(IDS_KEY, [{ handle, id }, ...rest].slice(0, IDS_MAX));
-    })).catch(() => {});
-    return fileKey(id);
+      known.set(handle, fileKey(id));
+      return fileKey(id);
+    })).catch(() => handle.name);
+    ready = run.then(() => {});
+    return run;
   }
 
   // Once per browser profile: the files on the recent list (`listFiles` → [{ handle, name }], newest first) get ids, and
-  // each name's keys from before go to its files. Opens wait for it.
+  // each name's keys from before go to its files. Opens wait for it. When a name's keys could not all be handed over
+  // (storage full), it is not marked done, and the next page tries again (handOver only fills empty places).
   function migrate(listFiles) {
     ready = ready.then(() => lock(async () => {
       if (await store.get(MIGRATED_KEY)) return;
@@ -101,8 +106,9 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
         if (!byName.get(f.name).includes(fileKey(id))) byName.get(f.name).push(fileKey(id));
       }
       await store.put(IDS_KEY, [...added, ...list].slice(0, IDS_MAX));
-      for (const [name, keys] of byName) await hand(name, keys, { moving: true });
-      await store.put(MIGRATED_KEY, Date.now());
+      let all = true;
+      for (const [name, keys] of byName) all = (await hand(name, keys, { moving: true })) && all;
+      if (all) await store.put(MIGRATED_KEY, Date.now());
     })).catch(() => {});
     return ready;
   }

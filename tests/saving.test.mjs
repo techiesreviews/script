@@ -732,6 +732,13 @@ test("saving: drafts are kept by script name, and move with a rename", () => {
   saving.drafts.del("b.md");
   assert.equal(store.size, 0);
 });
+test("saving: a draft that can't be written under its new key stays under the old one (second look on TOOLS-361)", () => {
+  const s = setup();
+  s.saving.drafts.set("script.md", { text: "unsaved", at: 5, asks: [] });
+  s.ports.drafts.set = () => false; // local storage is full
+  assert.equal(s.saving.drafts.move("script.md", "file:a"), false);
+  assert.deepEqual(s.store.get("draft:script.md"), { text: "unsaved", at: 5, asks: [] });
+});
 
 test("saving: a browser copy left behind is deleted by a later listing; two listings at once never delete a script that took the freed name", async () => {
   const store = new Map(), files = new Map([["stuck.md", "old copy"]]);
