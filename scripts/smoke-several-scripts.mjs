@@ -430,6 +430,16 @@ async function runFocus() {
   await page.until(`(${row(B)})?.querySelector(".scripts__ai")?.textContent === "AI done"`, "B's row says AI done");
   await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
   await page.until(isOpen(B), "the press that started before the change still opens B");
+  // The agent opens another script while the menu is open: the menu follows (review on PR #79).
+  await menuOpen(page);
+  const r3 = await mcp("tools/call", { name: "open_script", arguments: { name: A } });
+  check(!r3?.result?.isError, "the agent opens A while the menu is open", toolText(r3));
+  await page.until(isOpen(A), "A is open");
+  await sleep(400);
+  const marks = await page.eval(`({ a: !!(${row(A)})?.querySelector("[aria-current]"), b: !!(${row(B)})?.querySelector("[aria-current]") })`);
+  check(marks.a && !marks.b, "the menu marks A as the open script, not B", JSON.stringify(marks));
+  await page.eval(`(${row(B)}).querySelector(".scripts__open").click()`);
+  await page.until(isOpen(B), "a click on B's row opens B again");
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
