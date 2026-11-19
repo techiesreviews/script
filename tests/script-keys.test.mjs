@@ -1,0 +1,107 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+// TOOLS-361: what is kept beside a script (its safety-net draft, its B-roll link and list, its "Check" flags) goes by
+// the script's own key, not its file name. A file on the computer gets an id of its own, kept with its handle.
+const { createScriptKeys, legacyPlan, fileKey, IDS_KEY, MIGRATED_KEY } = await import("../public/script-keys.js");
+
+// Files stand in as objects with a path: two handle objects for one path are the same file (isSameEntry).
+const file = (path) => ({ name: path.split("/").pop(), path });
+const sameFile = async (a, b) => !!a && !!b && a.path === b.path;
+function setup({ store = new Map(), refuse = false } = {}) {
+  let n = 0, chain = Promise.resolve();
+  const handed = [];
+  const keys = createScriptKeys({
+    store: {
+      get: async (k) => (store.has(k) ? structuredClone(store.get(k)) : null),
+      put: async (k, v) => { if (refuse) throw new Error("storage off"); store.set(k, v); },
+    },
+    sameFile,
+    lock: (fn) => { const run = chain.then(fn); chain = run.catch(() => {}); return run; },
+    newId: () => `id${++n}`,
+    handOver: async (name, list) => { handed.push([name, list]); },
+  });
+  return { keys, store, handed };
+}
+
+test("script keys: a file gets a key of its own; the same file again gets it too; another file of that name gets another", async () => {
+  const { keys } = setup();
+  const a = await keys.forFile(file("a/script.md"));
+  const again = await keys.forFile(file("a/script.md")); // the switcher hands over a fresh handle for a known file
+  const b = await keys.forFile(file("b/script.md"));
+  assert.equal(a, fileKey("id1"));
+  assert.equal(again, a);
+  assert.notEqual(b, a);
+  assert.match(b, /^file:/);
+});
+
+test("script keys: keyOf gives a looked-up file's key; any other script (in the browser, without a file) goes by its name", async () => {
+  const { keys } = setup();
+  const h = file("a/script.md");
+  assert.equal(keys.keyOf(h, "script.md"), "script.md", "not looked up yet");
+  const k = await keys.forFile(h);
+  assert.equal(keys.keyOf(h, "script.md"), k);
+  assert.equal(keys.keyOf({ name: "my-video.md" }, "my-video.md"), "my-video.md");
+  assert.equal(keys.keyOf(null, "demo.md"), "demo.md");
+});
+
+test("script keys: the ids are kept, so the next page finds a file's key again", async () => {
+  const first = setup();
+  const k = await first.keys.forFile(file("a/script.md"));
+  const next = setup({ store: first.store });
+  assert.equal(await next.keys.forFile(file("a/script.md")), k);
+  assert.ok(Array.isArray(first.store.get(IDS_KEY)));
+});
+
+test("script keys: a file seen for the first time takes the keys kept under its name before (once); a known file takes none", async () => {
+  const { keys, handed } = setup();
+  const a = await keys.forFile(file("a/script.md"));
+  await keys.forFile(file("a/script.md"));
+  const b = await keys.forFile(file("b/script.md"));
+  assert.deepEqual(handed, [["script.md", [a]], ["script.md", [b]]]);
+});
+
+test("script keys: moving to keys, the files on the list get ids and each name's old keys go to its files, newest first, once", async () => {
+  const { keys, handed, store } = setup();
+  const list = [file("b/script.md"), file("x/other.md"), file("a/script.md")]; // newest first
+  await keys.migrate(async () => list.map((h) => ({ handle: h, name: h.name })));
+  const [b, x, a] = await Promise.all(list.map((h) => keys.forFile(file(h.path))));
+  assert.deepEqual(handed, [["script.md", [b, a]], ["other.md", [x]]]);
+  assert.ok(store.get(MIGRATED_KEY));
+  await keys.migrate(async () => list.map((h) => ({ handle: h, name: h.name })));
+  assert.equal(handed.length, 2, "it runs once");
+});
+
+test("script keys: a file made by Save as has its key at once, kept for the next page", async () => {
+  const { keys, store, handed } = setup();
+  const h = file("c/script.md");
+  const k = keys.adopt(h);
+  assert.equal(keys.keyOf(h, "script.md"), k);
+  assert.equal(await keys.forFile(file("c/script.md")), k, "looked up again later: the same key");
+  const next = setup({ store });
+  assert.equal(await next.keys.forFile(file("c/script.md")), k);
+  assert.deepEqual(handed, [], "a new file takes no old keys of its name");
+});
+
+test("script keys: a file picked again for Save as gets the new key, never two", async () => {
+  const { keys, store } = setup();
+  await keys.forFile(file("c/script.md"));
+  const k = keys.adopt(file("c/script.md"));
+  await keys.forFile(file("z/z.md")); // runs after the adopt is kept
+  assert.equal(store.get(IDS_KEY).filter((r) => r.handle.path === "c/script.md").length, 1);
+  assert.equal(await setup({ store }).keys.forFile(file("c/script.md")), k);
+});
+
+test("script keys: where storage refuses, a file goes by its name and takes nothing", async () => {
+  const { keys, handed } = setup({ refuse: true });
+  const h = file("a/script.md");
+  assert.equal(await keys.forFile(h), "script.md");
+  assert.equal(keys.keyOf(h, "script.md"), "script.md");
+  assert.deepEqual(handed, []);
+});
+
+test("script keys: the old keys of a name go to its files (the newest takes the draft) and the name lets go, unless a script in the browser has that name", () => {
+  assert.deepEqual(legacyPlan(["file:b", "file:a"], { browser: false }), { broll: ["file:b", "file:a"], draft: "file:b", clear: true });
+  assert.deepEqual(legacyPlan(["file:b"], { browser: true }), { broll: ["file:b"], draft: null, clear: false });
+  assert.equal(legacyPlan([], { browser: false }), null);
+});
