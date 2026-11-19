@@ -2397,7 +2397,8 @@ function leaveScript(next) {
     handle: state.handle, name: state.name, browser: state.inBrowser, doc: slash.open ? Doc.withoutCommand(state.doc, slash) : state.doc, asks: state.asks, undo: state.undo, redo: state.redo,
     savedText: state.savedText, fileModified: state.fileModified, place, unseen: lookFor ? [...lookFor] : [],
   });
-  if (kept) asides.push(kept);
+  // Its B-roll shots, as matched to its lines now: an answer there that changes a covered line gives its shot "Check".
+  if (kept) { kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check })); asides.push(kept); }
   else places.push({ handle: state.handle, place });
   if (places.length > RECENT_MAX) places.shift();
 }
@@ -2484,6 +2485,13 @@ function answerKept(s, ask, args) {
   } else if (!Changes.fits(s.doc, ask, checked.answer)) return { error: STAYS_IN_PARAGRAPH };
   const r = Aside.answer(s, ask, checked.answer, agentBy(), Date.now(), { undoLimit: UNDO_LIMIT });
   saveKept(s);
+  // Shots over a changed line get "Check", as when the person changes it (the B-roll part is loaded when it has shots).
+  if (r.landed && s.shots?.length) import("./broll.js").then((Broll) => {
+    const flagged = Broll.touchShots(s.doc, s.shots);
+    if (!flagged.length || s.gone) return;
+    s.flags = { ...s.flags, ...Object.fromEntries(flagged.map((id) => [id, true])) };
+    if (!state.doc || state.handle !== s.handle) persistKept(s);
+  }).catch(() => {});
   renderKept();
   if (!r.ok) return { error: "The text this ask was about has changed, so the ask was cancelled." };
   if (Aside.status(s) === "done") {
@@ -2514,8 +2522,9 @@ function saveKept(s) {
 function persistKept(s) {
   const open = Changes.withContext(s.asks.filter((a) => isOpen(a) || Changes.isMarked(a)), s.doc).map(Doc.withoutPictures);
   const old = saving.drafts.get(s.name), text = Doc.serialize(s.doc), dirty = text !== s.savedText;
-  if (!dirty && !open.length && !old?.broll) return void saving.drafts.del(s.name);
-  saving.drafts.set(s.name, { text: dirty ? text : null, at: Date.now(), asks: open, ...(old?.broll ? { broll: old.broll } : {}) });
+  const broll = old?.broll || s.flags ? { ...old?.broll, ...s.flags } : null;
+  if (!dirty && !open.length && !broll) return void saving.drafts.del(s.name);
+  saving.drafts.set(s.name, { text: dirty ? text : null, at: Date.now(), asks: open, ...(broll ? { broll } : {}) });
 }
 function showBanner(text, actions) {
   replaced = null;
@@ -2614,6 +2623,7 @@ async function openOne(handle, was) {
     const asIs = kept && (await sameWords(text, kept.savedText));
     const place = kept ? kept.place : await takePlace(handle);
     if (kept?.gone) throw new Error("deleted while it opened"); // the person deleted it meanwhile: it stays gone
+    if (browser && deleting.some((d) => d.name === handle.name)) return false; // being deleted: it does not open
     if (kept) dropKept(handle);
     loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place });
     remember(handle, browser);
@@ -2626,7 +2636,7 @@ async function openOne(handle, was) {
       // Still aside, unless the person deleted it or took it off the list meanwhile.
       if (!kept.gone && !kept.removed && kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); }
     }
-    if (kept?.gone) return false; // the person deleted it: nothing failed
+    if (kept?.gone || deleting.some((d) => d.name === handle.name)) return false; // the person deleted it: nothing failed
     openProblem(handle.name);
     return false;
   }

@@ -328,6 +328,17 @@ test("saving: idle() ends once every save asked for so far is written, the left 
   release();
   await p;
   assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed. Answered.\n");
+  // A saveLeft write that runs on its own (no save running) is waited for too.
+  const hold = s.files.hold("a.md");
+  const direct = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nAgain.\n", browser: false, savedText: "# A\n\nOne. Typed. Answered.\n" });
+  let quiet = false;
+  const q = s.saving.idle().then(() => { quiet = true; });
+  await settle();
+  assert.equal(quiet, false, "the direct write still runs");
+  hold();
+  await direct;
+  await q;
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nAgain.\n");
 });
 
 test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
