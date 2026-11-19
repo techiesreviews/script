@@ -3518,8 +3518,15 @@ function saveText() {
 // of saves, and out of the script when it is left through the menu, until the person is back in the text (TOOLS-358).
 function keepMenuSlash() { if (slash.open) menuSlash = { id: slash.id, start: slash.start, end: slash.end }; }
 $("#docSwitch").addEventListener("pointerdown", keepMenuSlash, { capture: true });
-$("#docSwitch").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") keepMenuSlash(); }, { capture: true });
-scriptEl.addEventListener("focusin", () => { menuSlash = null; });
+// Anywhere but the file-name menu (back in the text, or elsewhere): it is ordinary text again, and saves as usual. A
+// click on a row hides the menu before the script is left, so closing the menu alone does not end it.
+function endMenuSlash(e) {
+  if (!menuSlash || e.target?.closest?.("#docSwitch, #scriptMenu")) return;
+  menuSlash = null;
+  saving.schedule();
+}
+document.addEventListener("focusin", endMenuSlash);
+document.addEventListener("pointerdown", endMenuSlash, { capture: true });
 // The "/" command being typed now: the open parts menu's, or the one kept while the file-name menu has focus (still
 // there, as typed).
 function commandNow() {
