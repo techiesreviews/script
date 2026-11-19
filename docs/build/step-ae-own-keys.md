@@ -47,4 +47,32 @@ Lead (2026-11-19, Orbit TOOLS-361, follow-up to TOOLS-358): key the safety-net c
 - Validation gaps (gap): (R7-17) In `tests/saving.test.mjs`, make `keys.adopt` return a promise you resolve by hand. Start `saveAs()` on a browser script, call `open()` on another script, then resolve. Check two things: the script that is now open keeps its own name, key and draft; the Save as result is applied only to the script it was made for.
 - Validation gaps (gap): (R7-18) Either move `handOver` into `public/script-keys.js` with its storage passed in, or add a `SMOKE_ONLY=migratefull` part. Store `broll:script.md`, `brollList:script.md` and a draft under `script.md`, then make writes under the new file key fail once. Check: only empty places are filled; the list is written before the link; the name keeps its data when one copy fails; a stored `null` is skipped; the name's draft is deleted when the file already has its own; the move is not marked done after the throw.
 - Validation gaps (gap): (R7-19) In `scripts/smoke-several-scripts.mjs`, in `runMigrate` or a new `SMOKE_ONLY=migratebrowser` part, set this up before the reload: a browser `script.md` in the private `scripts` folder, listed in `recent` as `{ name: "script.md", browser: true }`, with its own draft and B-roll link; disk files `a/script.md` and `b/script.md` on the recent list; `broll:script.md` set. After the reload, check: both disk files show the list; neither disk file offers "Unsaved changes"; the browser `script.md` still offers its own draft and keeps its own link.
+- Validation gaps (gap): R9-27 still open: R7-16, R7-17 and R7-19 are still missing, and R7-18 is partly done (see R9-2).
+- Validation gaps (gap): R9-24 still open: R7-19 is still missing.
+- Validation gaps (gap): R9-23 still open: the read-failure path (`public/app.js:3037`, where `idbRead` rejects and the hand-over stops) is still not run by any test.
+- Validation gaps (gap): R9-22 still open: R7-17 is still missing.
+- Validation gaps (gap): R9-21 still open: R7-16 is still missing.
+- Validation gaps (gap): R9-20 still open: same missing test as R7-16.
+- Validation gaps (gap): R9-19 still open: same missing test as R7-17.
+- Validation gaps (gap): R9-18 still open: this item asked for the `broll:file:<id>` write to fail, so that the file gets its list but not its link. The new part fails the `brollList:file:` write instead. The link-fails case, the stored-`null` skip and "only empty places" are still unchecked.
+- Validation gaps (gap): R9-17 still open: the browser `script.md` setup is still not in `scripts/smoke-several-scripts.mjs`.
+- Validation gaps (gap): R9-16 still open: there is no `SMOKE_ONLY=migratebrowser` part yet.
+- Validation gaps (gap): R9-15 still open: `migratefull` reaches `handOver` with `moving: true`, but only for a name that no browser script has. The path where a browser script has the name (`plan.draft` null, `clear` false) is still never run in a browser.
+- Validation gaps (gap): R9-14 still open: same missing smoke item as R7-19.
+- Validation gaps (gap): R9-13 still open: same missing smoke item as R7-19.
+- Validation gaps (gap): R9-12 still open: two of the four paths are now covered. The full storage is covered by `migratefull`. Deleting the name's draft is covered too: the next page checks that `script-editor:draft:script.md` is null and that the file offers the words. Still untested: the skip of a stored `null`, and a read that fails stop…
+- Validation gaps (gap): R9-11 still open: same missing test as R7-17.
+- Validation gaps (gap): R9-10 still open: same missing test as R7-16.
+- Validation gaps (gap): R9-9 still open: there is still no Save as of a browser `script.md` into a disk `script.md` where `adopt` gives back the name.
+- Validation gaps (gap): R9-8 still open: there is still no test that resolves `keys.adopt` by hand after `open()` of another script.
+- Validation gaps (gap): R9-7 still open: `handOver` is still in `public/app.js`. The new smoke part runs its full-storage path, but not the "fill only empty places" or the stored-`null` checks (see R9-2).
+- Validation gaps (gap): R9-6 still open: there is still no browser `script.md` next to disk `a/script.md` and `b/script.md`.
+- Validation gaps (gap): R9-5 still open: three of the four tests (R7-16, R7-17, R7-19) are still missing. R7-18 is partly done (see R9-2).
+- Validation gaps (gap): R9-4 still open: R7-16 has not been added. `tests/saving.test.mjs` is unchanged.
+- Validation gaps (gap): R9-3 still open: R7-17 has not been added. `tests/saving.test.mjs` is unchanged.
+- Validation gaps (gap): R9-2 still open: this is R7-18, and it is now partly done. The new `SMOKE_ONLY=migratefull` part makes one list copy fail. It then checks that the name keeps its draft, list and link, that the move is not marked done, and that the next page hands everything over and the name lets go. Four checks are still missing: a…
+- Validation gaps (gap): R9-1 still open: R7-19 has not been added. The only new smoke part is `migratefull`, and `runMigrate` is unchanged.
+- Validation gaps (gap): R7-16, R7-17 and R7-19 are still missing, worded as in the open items above.
+- Validation gaps (gap): The rest of R7-18. Add a second pass to `runMigrateFull`, or a new `SMOKE_ONLY=migratefullkept` part. After `migrate` has given the file its id, store a value under `brollList:file:<id>`, a `null` under `broll:file:<id>` and a draft under `script-editor:draft:file:<id>`. Then clear `fileIdsSince` and reload. Check four things: The file's list is not written over. Its link stays removed (null). The name's draft is deleted, and the file's own draft is kept. When `FULL_ONCE` fails the `brollList:file:` write, `broll:file:<id>` is not written.
+- Validation gaps (gap): The read-failure path at `public/app.js:3037`. Use the same `FULL_ONCE` trick, but patch `IDBObjectStore.prototype.get` to fail once for `brollList:script.md`. Check that nothing is written under `file:<id>`, that the name keeps its draft, list and link, and that `fileIdsSince` stays unset.
 
