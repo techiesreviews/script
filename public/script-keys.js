@@ -2,8 +2,9 @@
 // kept in the browser, and with the draft its "Check" flags. Before, all of these went by file name, and Save to video
 // folder calls every script script.md, so two scripts could share them.
 // - A file on the computer gets an id of its own the first time it opens here, kept with its handle in IndexedDB
-//   (`fileIds`: [{ handle, id }], the file opened most recently first): its key is `file:<id>`. The same file opened again (the switcher hands
-//   over a fresh handle) is found by `isSameEntry` and keeps its key; another file of the same name gets another.
+//   (`fileIds`: [{ handle, id }], the file opened most recently first): its key is `file:<id>`. The same file opened
+//   again (the switcher hands over a fresh handle) is found by `isSameEntry` and keeps its key; another file of the
+//   same name gets another.
 // - A script in the browser goes by its name: names there are unique, and a rename moves its keys (app.js moveKeys).
 // - A script without a file (the demo, a file opened where files can't be saved) goes by its name, as before.
 // Keys kept by name before this change stay readable: the files on the recent list take them once (`migrate`), and a
