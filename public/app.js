@@ -3032,7 +3032,9 @@ async function handOver(name, keys, { moving = false } = {}) {
   // full storage must not lose or hide them. A file with a draft of its own keeps it; the name's goes.
   let kept = !plan.draft || saving.drafts.get(plan.draft) != null || saving.drafts.move(name, plan.draft);
   await keyed(async () => {
-    const link = await idbRead(brollKey(name)), list = await readKept(name);
+    // Read so that a failed read stops the hand-over (it is tried again), never taken for "no list".
+    const link = await idbRead(brollKey(name)), stored = await idbRead(listKey(name)), old = store.get(listKey(name));
+    const list = typeof stored === "string" ? stored : typeof old === "string" ? old : null;
     const put = (k, v) => idbPut(k, v).then(() => true, () => false);
     for (const k of plan.broll) {
       if (list != null && (await idbRead(listKey(k))) === undefined && !(await put(listKey(k), list))) { kept = false; continue; }

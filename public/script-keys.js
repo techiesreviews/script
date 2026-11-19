@@ -48,8 +48,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
     for (const r of list) if (await sameFile(r.handle, handle)) return r.id;
     return null;
   }
-  // The old keys that could not be handed over stay under the name; the file keeps its own key either way. Gives
-  // whether it worked.
+  // The old keys that could not be handed over stay under the name. Gives whether it worked.
   const hand = (name, keys, o) => Promise.resolve().then(() => handOver(name, keys, o)).then(() => true, () => false);
   // The key a script goes by now: a file looked up here has its own; any other script goes by its name.
   const keyOf = (handle, name) => (handle && known.get(handle)) || name;
@@ -65,7 +64,12 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
       if (!id) {
         id = newId();
         await store.put(IDS_KEY, [{ handle, id }, ...list].slice(0, IDS_MAX));
-        await hand(handle.name, [fileKey(id)]);
+        // Not everything under its name could be handed over (storage full): no id yet, so the next open tries again;
+        // until then it goes by its name, where its old keys still are.
+        if (!(await hand(handle.name, [fileKey(id)]))) {
+          await store.put(IDS_KEY, list);
+          return handle.name;
+        }
       } else if (list[0].id !== id) {
         // Opened again: to the front, so a full list lets go of the files not opened here for longest. Best effort: a
         // write that fails leaves it where it is, and it keeps its key.

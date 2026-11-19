@@ -151,6 +151,19 @@ test("script keys: a file found in the list keeps its key when moving it to the 
   assert.equal(await full.keys.forFile(file("a/script.md")), a);
 });
 
+test("script keys: a file seen later whose hand-over fails gets no id yet, so the next open tries again (second look round 2)", async () => {
+  const store = new Map();
+  let fail = true;
+  const handed = [];
+  const keys = () => createScriptKeys({ store: { get: async (k) => store.get(k), put: async (k, v) => { store.set(k, v); } }, sameFile, lock: (fn) => fn(), newId: () => `r${++n}`, handOver: async (name, list) => { if (fail) throw new Error("full"); handed.push([name, list]); } });
+  assert.equal(await keys().forFile(file("a/script.md")), "script.md", "this page it goes by its name");
+  assert.equal(store.get(IDS_KEY).length, 0, "no id kept");
+  fail = false;
+  const k = await keys().forFile(file("a/script.md"));
+  assert.match(k, /^file:/);
+  assert.deepEqual(handed, [["script.md", [k]]]);
+});
+
 test("script keys: the old keys of a name go to its files (the newest takes the draft) and the name lets go, unless a script in the browser has that name", () => {
   assert.deepEqual(legacyPlan(["file:b", "file:a"], { browser: false }), { broll: ["file:b", "file:a"], draft: "file:b", clear: true });
   assert.deepEqual(legacyPlan(["file:b"], { browser: true, moving: true }), { broll: ["file:b"], draft: null, clear: false });
