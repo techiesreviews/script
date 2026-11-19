@@ -112,6 +112,7 @@ test("script keys: moving to keys is tried again on the next page when a name's 
   const keysA = createScriptKeys({ store: { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); } }, sameFile, lock: (fn) => fn(), newId: () => `m${++n}`, handOver: async () => { if (fail) throw new Error("full"); } });
   await keysA.migrate(async () => list);
   assert.equal(store.has(MIGRATED_KEY), false);
+  assert.equal(await keysA.forFile(file("a/script.md")), "script.md", "no id kept for a name not handed over: it goes by its name, where its old draft still is");
   fail = false;
   const handed = [];
   const keysB = createScriptKeys({ store: { get: async (k) => store.get(k) ?? null, put: async (k, v) => { store.set(k, v); } }, sameFile, lock: (fn) => fn(), newId: () => `m${++n}`, handOver: async (name, keys) => { handed.push([name, keys]); } });
