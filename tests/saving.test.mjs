@@ -200,6 +200,26 @@ test("saving: a script the person left that cannot be written keeps its text as 
   assert.equal(s.script.saveError, "", "A's problem does not show on B");
 });
 
+test("saving: a left script's failed save asks on.leftDraft first; false keeps no draft under its name (second look on PR #79)", async () => {
+  const s = setup();
+  const asked = [];
+  s.ports.on.leftDraft = (handle, name, text) => { asked.push([handle.name, name, text]); return false; };
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. First.\n";
+  s.saving.save();
+  await settle();
+  s.ed.text = "# A\n\nOne. Lost?\n";
+  s.saving.save({ auto: true });
+  s.script.handle.fail = true; // the next write of a.md fails
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.store.set("draft:a.md", { text: "another a.md's words", at: 1, asks: [] }); // another script of that name
+  release();
+  await until(() => !s.script.saving);
+  assert.deepEqual(asked, [["a.md", "a.md", "# A\n\nOne. Lost?\n"]]);
+  assert.deepEqual(s.store.get("draft:a.md"), { text: "another a.md's words", at: 1, asks: [] });
+});
+
 // TOOLS-358: the agent's answer lands in a script the person left; it goes to that script's own file.
 test("saving: saveLeft writes a left script's new words to its own file with the auto-save rules, and says so", async () => {
   const s = setup();
