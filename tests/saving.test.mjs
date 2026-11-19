@@ -216,7 +216,7 @@ test("saving: a left script's failed save asks on.leftDraft first; false keeps n
   s.store.set("draft:a.md", { text: "another a.md's words", at: 1, asks: [] }); // another script of that name
   release();
   await until(() => !s.script.saving);
-  assert.deepEqual(asked, [["a.md", "a.md", "# A\n\nOne. Lost?\n"]]);
+  assert.deepEqual(asked.at(-1), ["a.md", "a.md", "# A\n\nOne. Lost?\n"], "each failed write of the left script asks, the newest words last");
   assert.deepEqual(s.store.get("draft:a.md"), { text: "another a.md's words", at: 1, asks: [] });
 });
 

@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 17 files, 478801 bytes; on first use: broll-app.js + broll.js, 149213 bytes
+ℹ startup: 17 files, 481527 bytes; on first use: broll-app.js + broll.js, 149213 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -337,7 +337,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 17 files, 478801 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 17 files, 481527 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -416,6 +416,7 @@
 ✔ saving: a click that waits for an auto-save of the same script runs after it, with its own flags
 ✔ saving: a save always goes to the script it was made for, also when another script opens while it runs
 ✔ saving: a script the person left that cannot be written keeps its text as a draft stamped by the clock
+✔ saving: a left script's failed save asks on.leftDraft first; false keeps no draft under its name (second look on PR #79)
 ✔ saving: saveLeft writes a left script's new words to its own file with the auto-save rules, and says so
 ✔ saving: saveLeft while a save runs waits its turn, after the older write of that file, and compares with what it left
 ✔ saving: saveLeft during a Save as or a save into the browser still reaches its own file (review round 1, P2)
@@ -540,9 +541,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 540
+ℹ tests 541
 ℹ suites 0
-ℹ pass 540
+ℹ pass 541
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
