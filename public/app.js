@@ -3096,8 +3096,8 @@ async function renderScriptList() {
       $("#scriptMenu").hidePopover();
       if (r.current || !r.handle) return;
       await permitted(r.handle, true);
-      if (state.doc && (await sameFile(r.handle, state.handle))) return; // the agent opened it meanwhile: not read again
-      await openHandle(r.handle);
+      if (state.doc && (await sameFile(r.handle, state.handle))) { if (menuSlash) menuSlash.switching = false; return; } // the agent opened it meanwhile: not read again
+      if (!(await openHandle(r.handle)) && menuSlash) menuSlash.switching = false; // nothing opened: back to the menu's rules
     });
     li.append(open);
     if (r.handle && r.browser && !r.current) {
@@ -3526,6 +3526,9 @@ function endMenuSlash(e) {
   // An answer landing puts the caret back in its line while the menu stays open: that is not the person coming back (they
   // come back by typing, a click, or closing the menu). Focus anywhere else ends it at once.
   if (e.type === "focusin" && scriptEl.contains(e.target) && $("#scriptMenu").matches(":popover-open")) return;
+  // While a switch from the menu is on its way, focus may move by itself (an answer landing in the script being left):
+  // only the person's own click or typing ends it then.
+  if (e.type === "focusin" && menuSlash.switching) return;
   menuSlash = null;
   saving.schedule();
 }
