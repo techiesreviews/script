@@ -3063,10 +3063,11 @@ async function createBrowserScript(name, text) {
   if (!keepAsked) { keepAsked = true; navigator.storage.persist?.().catch(() => {}); }
   return made;
 }
-// A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser (drafts and B-roll keys
-// go by name, as for files on disk). `clear`: the old name goes away (a rename, a move to a file), so its B-roll keys
-// are cleared; else a file on disk or the demo keeps its own. The new name's link and list are replaced: by the link
-// as stored when the move runs in the queue, or `link` when none is stored (the demo links its list by itself).
+// A script's key goes with its draft, its B-roll link and a B-roll list kept in the browser (TOOLS-361: a file's own
+// id, a browser script's name; a rename in the browser, a move to a file and Save as move them). `clear`: the old key
+// goes away (a rename, a move out of the browser), so its B-roll keys are cleared; else a file on disk or the demo keeps
+// its own. The new key's link and list are replaced: by the link as stored when the move runs in the queue, or `link`
+// when none is stored (the demo links its list by itself).
 async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   saving.drafts.move(from, to);
@@ -3110,8 +3111,8 @@ async function nameShared(name, handle) {
   for (const k of known) if (k.name === name && k.handle && !(await sameFile(k.handle, handle))) return true;
   return false;
 }
-// Its draft and B-roll keys go too: they are by name, as for every script (a file opened later under the same name
-// starts without them), unless another script of that name is known (nameShared).
+// Its draft and B-roll keys go too: a browser script's keys are by its name (a script opened later under the same name
+// starts without them), unless another script of that name is known (nameShared; when in doubt they stay).
 async function deleteBrowserScript(r) {
   // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
   deleting.push(r.handle); // it can't be opened while it goes

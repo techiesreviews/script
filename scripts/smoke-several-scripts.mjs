@@ -173,7 +173,8 @@ async function start(width, height, extra = "") {
 }
 // An ask ("Shorter") on the paragraph that starts with `words` in the open script, taken by the agent.
 // `part`: [from, to] of the paragraph's text to ask on (default all of it).
-async function askShorter(page, mcp, words, part = null) {
+// `take`: false leaves it waiting (the agent does not pick it up).
+async function askShorter(page, mcp, words, part = null, take = true) {
   const asksBefore = await page.eval(`document.querySelectorAll("#script .ask").length`);
   await page.eval(`getSelection().removeAllRanges(); document.activeElement?.blur(); true`);
   await page.until(`document.querySelector("#editBar").hidden`, "the edit bar from before has gone");
@@ -184,6 +185,7 @@ async function askShorter(page, mcp, words, part = null) {
   await sleep(80);
   await page.key("Enter", "Enter", 13, "\r");
   await page.until(`document.querySelectorAll("#script .ask").length > ${asksBefore}`, "the ask shows");
+  if (!take) return null;
   const asks = JSON.parse(toolText(await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 5 } })) || "{}").asks || [];
   return asks.find((a) => (part ? true : a.quote?.startsWith(words)));
 }
@@ -656,6 +658,114 @@ async function runDeleteKeptSameName() {
   await page.close();
 }
 
+/* ---------- TOOLS-361: each script's own key, not its file name ---------- */
+// The key a file on the "disk" goes by: its id in IndexedDB `fileIds`, found with isSameEntry.
+const keyOfDisk = (page, path) => page.eval(`(async () => { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle(dir)).getFileHandle(name); const list = await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const q = r.result.transaction("handles").objectStore("handles").get("fileIds"); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); }; r.onerror = () => res([]); }); for (const e of list) if (await e.handle.isSameEntry(h)) return "file:" + e.id; return null; })()`);
+const draftOf = (page, key) => page.eval(`localStorage.getItem(${JSON.stringify(`script-editor:draft:${key}`)})`);
+const shotLabels = (page) => page.eval(`[...document.querySelectorAll("#script .shot-frame__jump")].map((b) => b.getAttribute("aria-label"))`);
+const md = (s) => `# ${s.title}\n\n${s.lines.join("\n\n")}\n`;
+const listFor = (rows) => `# B-roll\n\n| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n${rows.map(([id, what, over]) => `| ${id} | ${what} | "${over}" | Photo |`).join("\n")}\n`;
+const BREAD_LIST = listFor([["B1", "Flour and a clock", BREAD.lines[0]], ["B2", "A bowl under a towel", "Then you cover…"]]);
+const PART = [LONG.indexOf("the bowl"), LONG.indexOf(", which")], OVERNIGHT = "the bowl and leave it overnight"; // B2's line keeps its first words
+const WALK_LIST = listFor([["B1", "Shoes by the door", WALK.lines.at(-1)]]);
+async function pickOpen(page, path, words) {
+  await page.eval(`window.__pick = ${JSON.stringify(path)}; true`);
+  if (await page.eval(`!document.querySelector("#layout").hidden`)) {
+    await menuOpen(page);
+    await page.eval(`document.querySelector("#menuOpen").click(); true`);
+  } else {
+    await page.steady("#emptyOpen");
+    await page.click("#emptyOpen");
+  }
+  await page.until(`document.querySelector("#script")?.textContent.includes(${JSON.stringify(words)})`, `${path} opens`);
+}
+// Two files called script.md: each keeps its own draft, B-roll list and "Check" flags, also for the agent's change
+// made while it was in the background and after a reload; what was kept under the name before opens in the first.
+async function runOwnKeys() {
+  console.log("--- two files called script.md keep their own drafts, B-roll and Check flags (1280 px)");
+  const { page, mcp } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  // Kept under the name before TOOLS-361: a B-roll list linked without a file and a draft with a "Check" flag.
+  await idbPut(page, "broll:script.md", { name: "bread-broll.md", text: BREAD_LIST });
+  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(JSON.stringify({ text: null, at: 1, asks: [], broll: { B1: true } }))}); true`);
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the bread script.md shows the B-roll list kept under its name");
+  check((await shotLabels(page)).some((l) => l.includes("B1: Flour and a clock · Check")), "old data still opens: the list and its Check flag", JSON.stringify(await shotLabels(page)));
+  const A = await keyOfDisk(page, "a/script.md");
+  check(/^file:/.test(A || ""), "the bread script.md has a key of its own", A);
+  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === null && (await idbGet(page, "broll:script.md")) === "null", "the name lets go of what it held");
+  // An ask over B2's line, answered while the walk script.md is open; another ask stays waiting.
+  const ask = await askShorter(page, mcp, "Then you cover", PART);
+  await askShorter(page, mcp, "Bread note 3", [14, 33], false);
+  check(!!ask, "the agent takes an ask in the bread script.md; another waits");
+  await pickOpen(page, "b/script.md", "What if the best part");
+  const B = await keyOfDisk(page, "b/script.md");
+  check(!!B && B !== A, "the walk script.md has another key", `${A} ${B}`);
+  await sleep(600);
+  check((await shotLabels(page)).length === 0 && (await page.eval(`!document.querySelector("#script .ask") && document.querySelector("#banner").hidden`)), "the walk script.md shows none of the bread script's list, asks or words");
+  await idbPut(page, `broll:${B}`, { name: "walk-broll.md", text: WALK_LIST }); // a list of its own, read when it opens next
+  const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: OVERNIGHT } });
+  check(!r?.result?.isError, "the answer lands in the bread script.md, in the background", toolText(r));
+  for (let i = 0; i < 100 && !(await readDisk(page, "a/script.md"))?.includes(OVERNIGHT); i++) await sleep(60);
+  check((await readDisk(page, "a/script.md"))?.includes(OVERNIGHT), "the bread file holds the change");
+  check(!(await readDisk(page, "b/script.md"))?.includes(OVERNIGHT), "the walk file does not");
+  await sleep(600);
+  const aDraft = await draftOf(page, A), bDraft = await draftOf(page, B);
+  check(!!aDraft && aDraft.includes(OVERNIGHT) && aDraft.includes('"B2":true') && aDraft.includes('"status":"waiting"'), "the background script keeps its own draft: the marked change, its open ask and the new Check flag", aDraft?.slice(0, 300));
+  check(!bDraft || (!bDraft.includes(OVERNIGHT) && !bDraft.includes("B2")), "the walk script.md's draft holds nothing of the bread script", bDraft?.slice(0, 300));
+  // A reload: the bread script.md is no longer in memory; its marks, asks and flags come back from its own draft.
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the start screen after the reload");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`!!document.querySelector("#script .agent-change")`, "after the reload, the agent's change is still marked");
+  check((await page.eval(`document.querySelector("#script .agent-change").textContent`)).includes("leave it overnight"), "the mark is on the agent's words");
+  await page.until(`!!document.querySelector("#script .ask")`, "the open ask is back");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the bread list shows");
+  const labels = await shotLabels(page);
+  check(labels.some((l) => l.includes("B1:") && l.includes("· Check")) && labels.some((l) => l.includes("B2:") && l.includes("· Check")), "both Check flags are back: the old one and the background answer's", JSON.stringify(labels));
+  await page.eval(`document.querySelector("#script .agent-change").scrollIntoView({ block: "center" }); true`);
+  await page.until(`!!document.querySelector(".rc__undo")`, "Undo on the agent's tag after the reload");
+  await page.shot("ownkeys-1-bread-after-reload");
+  await page.eval(`document.querySelector(".rc__undo").click(); true`);
+  await page.until(`document.querySelector("#script").textContent.includes("the bowl with a plate")`, "Undo after the reload puts the person's words back");
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 1`, "the walk script.md shows its own list");
+  const walk = await shotLabels(page);
+  check(walk.length === 1 && walk[0].includes("Shoes by the door") && !walk[0].includes("Check"), "the walk script.md: its own shot, no Check", JSON.stringify(walk));
+  check(await page.eval(`!document.querySelector("#script .agent-change") && !document.querySelector("#script .ask") && document.querySelector("#banner").hidden`), "the walk script.md: no marks, asks or Unsaved changes of the bread script");
+  await page.shot("ownkeys-2-walk-own-list");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The files on the recent list when this version first runs take what was kept under their name: each gets the B-roll
+// list, the newest the draft ("Unsaved changes"), and the name lets go.
+async function runMigrate() {
+  console.log("--- moving to keys: the files on the list take what their name held (1280 px)");
+  const { page } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  await sleep(50);
+  const unsaved = `${md(WALK).trimEnd()}\n\nWords typed before the update.\n`;
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = async (d) => (await disk.getDirectoryHandle(d)).getFileHandle("script.md"); const recent = [{ handle: await h("b"), name: "script.md", at: Date.now() }, { handle: await h("a"), name: "script.md", at: Date.now() - 1000 }]; await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put(recent, "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); s.put({ name: "shared-broll.md", text: ${JSON.stringify(listFor([["B1", "Flour and a clock", BREAD.lines[0]], ["B2", "Shoes by the door", WALK.lines.at(-1)]]))} }, "broll:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(unsaved)}, at: Date.now() + 5000, asks: [] })); return true; })()`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the start screen after the update");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the name's draft is handed to a file", 6000);
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`, "the newest script.md offers the words typed before the update");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 1`, "the newest script.md shows the list its name had");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 1`, "the older script.md shows the list its name had too");
+  check(await page.eval(`document.querySelector("#banner").hidden || !document.querySelector("#banner").textContent.startsWith("Unsaved changes")`), "the older script.md does not get the newest one's unsaved words");
+  check((await idbGet(page, "broll:script.md")) === "null", "the name lets go of the list link");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
 // Release review on PR #78 (P2): a script left while the Storyboard shows keeps its caret; it comes back in the Script view.
 async function runBoardCaret() {
   console.log("--- the caret of a script left from the Storyboard (1280 px)");
@@ -729,7 +839,8 @@ async function runOpenCancelled() {
   await fb.page.close();
 }
 
-// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel) runs one part.
+// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
+// ownkeys, migrate) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -744,6 +855,8 @@ try {
   if (!only || only === "deletekept") await runDeleteKeptSameName();
   if (!only || only === "boardcaret") await runBoardCaret();
   if (!only || only === "opencancel") await runOpenCancelled();
+  if (!only || only === "ownkeys") await runOwnKeys();
+  if (!only || only === "migrate") await runMigrate();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
