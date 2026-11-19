@@ -39,3 +39,17 @@ Checks still to add (test gaps the reviews named; the code paths are in place):
 - Browser: an answer over a line a B-roll shot covers gives that shot "Check", also after a reload.
 - Browser: storage off (IndexedDB refused): a kept file stays, takes its answer and shows its dot.
 - Unit: `on.left` hands the app the written words, for a kept script and for one opened again; two answers in a script taken off the list both reach its file without a false "changed on disk".
+- Validation gaps (gap): R4-14 still open: the tests for R3-1 to R3-6, R3-8 and R3-9 are still missing. They are the same cases as R4-2, R4-3 and R4-5 to R4-10.
+- Validation gaps (gap): R4-13 still open: nothing exercises the second `deleting` check in `openOne` for a script that was not kept. It is covered by the step doc's "kept or not" entry, but there is no test.
+- Validation gaps (gap): R4-12 still open: nothing tests that an answer in a kept script gives its shot "Check", and `touchKept` only appears in the API name list. The step doc lists it ("Browser: an answer over a line a B-roll shot covers …").
+- Validation gaps (gap): R4-10 still open: nothing checks that a kept script taken off the list keeps the saved words from its own write's result (public/app.js:2513).
+- Validation gaps (gap): R4-9 still open: there is still no smoke case showing that a half-typed "/" command stays out of a kept script (public/app.js:2397).
+- Validation gaps (gap): R4-8 still open: R1-5, R1-7 and R1-8 still have no tests. They are covered by R4-7, R4-6 and R4-5.
+- Validation gaps (gap): R4-7 still open: there is still no case for two opens at once through the open queue.
+- Validation gaps (gap): R4-6 still open: there is still no smoke case for the folded "Details" lines at the top, either with a change or with only a caret (public/app.js:2440–2441, 2453–2454).
+- Validation gaps (gap): R4-5 still open: there is still no saving test that checks `on.left` is called with the written words. It is listed as the "Unit: `on.left` …" entry.
+- Validation gaps (gap): R4-3 still open: nothing exercises the early return in `openOne` or either `deleting` refusal. The step doc lists them ("two opens … at once" and "an open refused while the script is being deleted, kept or not").
+- Validation gaps (gap): R4-2 still open: there is still no run with IndexedDB turned off. The step doc lists it ("Browser: storage off …"), but no smoke case exists.
+- Validation gaps (gap): R4-1 still open: no test file changed since 4a0cb63 except the API name list in tests/broll-app.test.mjs. None of R2-1, R2-2, R2-4, R2-10 or R2-11 has a test yet. The step doc now lists them as "Checks still to add".
+- Validation gaps (gap): Still open from earlier rounds: R4-1 to R4-3, R4-5 to R4-10 and R4-12 to R4-14, as listed above. The step doc's "Checks still to add" list now records each of them in plain words.
+- Validation gaps (gap): 40dcc01:public/broll-app.js:1574 — the new `touchKept` is only checked by name in the API list. Add a unit case to tests/broll-app.test.mjs: Call `createBroll` with the stand-in host. Call `touchKept(doc, shots)`, with one shot's `blockIds` and `sig` taken from the doc before a change, on a doc where that line has changed. Assert that it returns that shot's id and none for a shot over a line that did not change. The browser case in R4-12 still covers the whole path.
