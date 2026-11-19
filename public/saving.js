@@ -326,6 +326,10 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
       return null;
     });
   }
+  // No save runs: everything asked for so far has been written or kept as a draft (TOOLS-358: a delete waits for it).
+  let idleWaits = [];
+  const settleIdle = () => { const w = idleWaits; idleWaits = []; for (const done of w) done(); };
+  const idle = () => (script.saving ? new Promise((done) => idleWaits.push(done)) : Promise.resolve());
   // A left script's words reached its file: the app keeps what that file now holds (`left` is optional).
   const wroteLeft = (written) => { if (written) on.left?.(written); return written; };
 
@@ -387,7 +391,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   async function drain(moved) {
     for (;;) {
       const { left, current } = SaveQueue.splitQueue(queue, script.handle);
-      if (!left.length) { queue = SaveQueue.emptyQueue(); script.saving = false; finish(current, moved); return; }
+      if (!left.length) { queue = SaveQueue.emptyQueue(); script.saving = false; settleIdle(); finish(current, moved); return; }
       queue = { waiting: current, left: [] };
       for (const snap of left) {
         const written = wroteLeft(await writeLeft(snap));
@@ -473,6 +477,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     // behind (an agent's answer in a script kept aside, saveLeft) still go to their own files first.
     if (queue.left.length) { queue = { waiting: null, left: queue.left }; return drain(true); }
     script.saving = false;
+    settleIdle();
     queue = SaveQueue.emptyQueue();
     on.done(true);
     schedule();
@@ -496,6 +501,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     }
     if (queue.left.length) { queue = { waiting: null, left: queue.left }; return drain(true); } // as after Save as
     script.saving = false;
+    settleIdle();
     queue = SaveQueue.emptyQueue();
     on.done(true);
     schedule();
@@ -517,5 +523,5 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // The handles saves are waiting for: a file the switcher hands over again is the same file.
   const queued = () => [queue.waiting?.handle, ...queue.left.map((x) => x.handle)].filter(Boolean);
 
-  return { save, schedule, flush, stop, saveAs, saveMine, saveLeft, allow, open, queued, drafts };
+  return { save, schedule, flush, stop, saveAs, saveMine, saveLeft, idle, allow, open, queued, drafts };
 }

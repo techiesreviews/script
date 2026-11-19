@@ -76,7 +76,7 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
 
 test("saving: the interface is small, and app.js reaches saving only through it", () => {
   const { saving } = setup();
-  assert.deepEqual(Object.keys(saving).sort(), ["allow", "drafts", "flush", "open", "queued", "save", "saveAs", "saveLeft", "saveMine", "schedule", "stop"]);
+  assert.deepEqual(Object.keys(saving).sort(), ["allow", "drafts", "flush", "idle", "open", "queued", "save", "saveAs", "saveLeft", "saveMine", "schedule", "stop"]);
   assert.deepEqual(Object.keys(saving.drafts).sort(), ["del", "get", "move", "set"]);
   assert.equal(AUTOSAVE_MS, 1500);
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
@@ -309,6 +309,25 @@ test("saving: saveLeft says it is done only once its own words are written, also
   await p3;
   assert.equal(third?.text, "# A\n\nThree.\n", "the newer words' promise ends with their own write");
   assert.equal(s.files.disk.get("a.md").text, "# A\n\nThree.\n");
+});
+
+test("saving: idle() ends once every save asked for so far is written, the left ones too (second look on PR #76)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  await s.saving.idle(); // nothing runs: at once
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.flush();
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne. Typed. Answered.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  let done = false;
+  const p = s.saving.idle().then(() => { done = true; });
+  await settle();
+  assert.equal(done, false, "a save still runs");
+  release();
+  await p;
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed. Answered.\n");
 });
 
 test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
