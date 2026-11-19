@@ -857,6 +857,104 @@ async function runMovedCopy() {
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
 }
+// Fable's round (2026-11-19) on the second look's P0: every read in the hand-over fails loudly. While `flag` is set in
+// local storage, reading `key` there fails; __getItem still reads it for the check.
+const LOCAL_FAILS = (flag, key) => `(() => { const get = Storage.prototype.getItem; window.__getItem = (k) => get.call(localStorage, k); if (get.call(localStorage, ${JSON.stringify(flag)}) !== "1") return; Storage.prototype.getItem = function (k) { if (k === ${JSON.stringify(key)}) throw new DOMException("Local storage can't be read.", "SecurityError"); return get.call(this, k); }; })();`;
+const idbHas = (key) => `(async () => { const r = await new Promise((res) => { const o = indexedDB.open("script-editor", 1); o.onsuccess = () => { const q = o.result.transaction("handles").objectStore("handles").get(${JSON.stringify(key)}); q.onsuccess = () => res(q.result); }; }); return !!r; })()`;
+const UNSAVED = `${md(BREAD).trimEnd()}\n\nWords typed before the update.\n`;
+const offersUnsaved = `!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`;
+// One file script.md on the recent list, a draft kept under its name, no move done yet; `flags` are set for the next page.
+const seedOneWithDraft = (page, flags) => page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(UNSAVED)}, at: Date.now() + 60000, asks: [] })); for (const f of ${JSON.stringify(flags)}) localStorage.setItem(f, "1"); return true; })()`);
+async function nextPage(page, label) {
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, label);
+}
+// The P0: a draft that can't be read at the move is never taken for "no draft" (it was counted as handed over, and
+// deleted): the name keeps it, the move is not marked done, and the next page hands it to the file.
+async function runMigrateDraft() {
+  console.log("--- moving to keys when the name's draft can't be read (1280 px)");
+  const { page } = await connect(1280, 800, LOCAL_FAILS("smoke:draftFails", "script-editor:draft:script.md"));
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await seedOneWithDraft(page, ["smoke:draftFails"]);
+  await nextPage(page, "a page whose draft can't be read");
+  await sleep(1200);
+  check((await page.eval(`window.__getItem("script-editor:draft:script.md")`))?.includes("Words typed before the update"), "the name keeps its draft: a read that failed is never \"no draft\"");
+  check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  check((await keyOfDisk(page, "a/script.md")) === null, "the file has no id yet: it goes by its name, where its draft is");
+  await page.eval(`localStorage.removeItem("smoke:draftFails"); true`);
+  await nextPage(page, "the next page");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the next page hands the draft over", 6000);
+  await page.until(idbHas("fileIdsSince"), "and marks the move done", 6000);
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(offersUnsaved, "the file offers the words typed before the update");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The same for the names of the copies left behind (browserHas): a list that can't be read is never "no copy left
+// behind". Here a moved copy is still in the browser's folder; taken for a browser script, it would keep the name's
+// draft for good and the move would be marked done.
+async function runCopiesUnread() {
+  console.log("--- moving to keys when the list of copies left behind can't be read (1280 px)");
+  const { page } = await connect(1280, 800, HOLD_COPY + LOCAL_FAILS("smoke:copiesFail", "script-editor:movedCopies"));
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await page.eval(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts", { create: true }); const w = await (await d.getFileHandle("script.md", { create: true })).createWritable(); await w.write("# Moved\\n\\nA copy left behind.\\n"); await w.close(); localStorage.setItem("script-editor:movedCopies", JSON.stringify(["script.md"])); return true; })()`);
+  await seedOneWithDraft(page, ["smoke:holdCopy", "smoke:copiesFail"]);
+  await nextPage(page, "a page whose list of left copies can't be read");
+  await sleep(1200);
+  check((await page.eval(`window.__getItem("script-editor:draft:script.md")`))?.includes("Words typed before the update"), "the name keeps its draft");
+  check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  await page.eval(`localStorage.removeItem("smoke:copiesFail"); true`);
+  await nextPage(page, "the next page");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the next page hands the draft to the file", 6000);
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(offersUnsaved, "the file offers the words typed before the update");
+  await page.eval(`localStorage.removeItem("smoke:holdCopy"); true`);
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The P1: a key a tab remembers never goes stale. Save as onto a file that has a key keeps that key (it got a new
+// one, and a script of that file open or kept aside went on writing under the old one); a key that fell off the id
+// list is put back when the tab is looked at again, so the next page still finds what was written under it.
+const SAVE_PICK = `window.showSaveFilePicker = async () => { const [dir, name] = window.__savePick.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk", { create: true }); return (await disk.getDirectoryHandle(dir, { create: true })).getFileHandle(name, { create: true }); };`;
+const keysOfDisk = (page, path) => page.eval(`(async () => { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle(dir)).getFileHandle(name); const list = await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const q = r.result.transaction("handles").objectStore("handles").get("fileIds"); q.onsuccess = () => res(q.result || []); }; }); const out = []; for (const e of list) if (await e.handle.isSameEntry(h)) out.push("file:" + e.id); return out; })()`);
+async function runSameKey() {
+  console.log("--- one file, one key: Save as onto a file that has a key, and a key that fell off the list (1280 px)");
+  const { page } = await connect(1280, 800, SAVE_PICK);
+  await writeDisk(page, "b/script.md", md(WALK));
+  await pickOpen(page, "b/script.md", "What if the best part");
+  const B = await keyOfDisk(page, "b/script.md");
+  check(/^file:/.test(B || ""), "the file has a key of its own", B);
+  // A new script in the browser, then Export → Markdown file (.md) onto b/script.md, through the picker's own handle.
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuNew").click(); true`);
+  await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a new script");
+  await writeScript(page, { title: "Tea at four", lines: ["Boil the water first."] });
+  await page.eval(`window.__savePick = "b/script.md"; true`);
+  await page.click("#exportBtn");
+  await page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu");
+  await page.click(`[data-export="markdown"]`);
+  for (let i = 0; i < 100 && !(await readDisk(page, "b/script.md"))?.includes("Boil the water first"); i++) await sleep(60);
+  check((await readDisk(page, "b/script.md"))?.includes("Boil the water first"), "the picked file holds the script");
+  await page.until(isOpen("script.md"), "the script is the file now");
+  await sleep(400);
+  const after = await keysOfDisk(page, "b/script.md");
+  check(after.length === 1 && after[0] === B, "Save as onto a file that has a key keeps that key, one entry", `${B} ${JSON.stringify(after)}`);
+  // 200 other files push it off the list (here: its entry is taken out); the tab is looked at again.
+  await page.eval(`new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); t.objectStore("handles").put([], "fileIds"); t.oncomplete = () => res(true); }; })`);
+  check((await keysOfDisk(page, "b/script.md")).length === 0, "the key fell off the list");
+  await page.eval(`window.dispatchEvent(new Event("focus")); true`);
+  for (let i = 0; i < 60 && (await keysOfDisk(page, "b/script.md")).length === 0; i++) await sleep(60);
+  check(JSON.stringify(await keysOfDisk(page, "b/script.md")) === JSON.stringify([B]), "looked at again, the tab puts the key back", JSON.stringify(await keysOfDisk(page, "b/script.md")));
+  await nextPage(page, "the next page");
+  await pickOpen(page, "b/script.md", "Boil the water first");
+  check((await keyOfDisk(page, "b/script.md")) === B, "the next page finds the file under the same key");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
 // A browser script.md's own keys go by its name: a file script.md seen for the first time takes none of them, and once
 // the browser script is deleted (a file script.md on the list) they go, so the next new file script.md starts clean
 // (review round 1 on TOOLS-361).
@@ -994,7 +1092,8 @@ async function runOpenCancelled() {
 }
 
 // SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
-// ownkeys, migrate, deletefirst, reloadheld, migratefull, migratelist, movedcopy) runs one part.
+// ownkeys, migrate, deletefirst, reloadheld, migratefull, migratelist, movedcopy, migratedraft, copiesread, samekey)
+// runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -1016,6 +1115,9 @@ try {
   if (!only || only === "migratefull") await runMigrateFull();
   if (!only || only === "migratelist") await runMigrateList();
   if (!only || only === "movedcopy") await runMovedCopy();
+  if (!only || only === "migratedraft") await runMigrateDraft();
+  if (!only || only === "copiesread") await runCopiesUnread();
+  if (!only || only === "samekey") await runSameKey();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
