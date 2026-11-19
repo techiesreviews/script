@@ -537,6 +537,52 @@ test("hand-over: letting go never deletes a draft written under the name since i
   }
 });
 
+test("hand-over: undo takes back the draft copy of a try whose ids could not be kept: gone, or the file's older draft again", async () => {
+  const o = overSetup();
+  oldKeys(o);
+  (await o.handOver("script.md", ["file:a"])).undo();
+  assert.equal(o.local.has("draft:file:a"), false);
+  assert.equal(o.local.get("draft:script.md"), draftAt("Words typed before.", 5), "the name still has the original");
+  const older = overSetup();
+  oldKeys(older);
+  older.local.set("draft:file:a", draftAt("An older copy.", 2));
+  (await older.handOver("script.md", ["file:a"])).undo();
+  assert.equal(older.local.get("draft:file:a"), draftAt("An older copy.", 2));
+  const own = overSetup();
+  oldKeys(own);
+  own.local.set("draft:file:a", draftAt("The file's own, newer words.", 9));
+  (await own.handOver("script.md", ["file:a"])).undo();
+  assert.equal(own.local.get("draft:file:a"), draftAt("The file's own, newer words.", 9), "a draft the try did not write is left alone");
+});
+
+test("script keys: ids that can't be kept leave no draft copy behind under them, however often the open or the move is tried (review round 13)", async () => {
+  const o = overSetup(), store = new Map();
+  o.local.set("draft:script.md", draftAt("Words typed before.", 5));
+  const page = () => createScriptKeys({
+    store: { get: async (k) => store.get(k), put: async (k, v) => { if (k === IDS_KEY) throw new Error("storage off"); store.set(k, v); } },
+    sameFile, lock: (fn) => fn(), newId: () => `u${++n}`, handOver: o.handOver,
+  });
+  const keys = page();
+  assert.equal(await keys.forFile(file("a/script.md")), "script.md");
+  assert.equal(await keys.forFile(file("a/script.md")), "script.md");
+  assert.deepEqual([...o.local.keys()], ["draft:script.md"]);
+  await page().migrate(async () => onList);
+  assert.deepEqual([...o.local.keys()], ["draft:script.md"]);
+});
+
+test("script keys: a name the move could not hand over waits alone: a file of another name still gets its key on that page (review round 13)", async () => {
+  const store = new Map();
+  const { keys, steps } = orderSetup(store, { copy: "script.md" });
+  await keys.migrate(async () => onList);
+  assert.match(await keys.forFile(file("c/third.md")), /^file:/);
+  assert.deepEqual(steps.slice(-3), ["copy third.md", "ids", "let go third.md"]);
+  assert.equal(await keys.forFile(file("c/script.md")), "script.md", "a file of the waiting name takes nothing alone, also one not on the list");
+  assert.equal(await keys.forFile(file("a/script.md")), "script.md");
+  const stuck = orderSetup(new Map(), { letGo: "script.md" });
+  await stuck.keys.migrate(async () => onList);
+  assert.equal(await stuck.keys.forFile(file("c/script.md")), "script.md", "nor from a name that has not let go yet");
+});
+
 test("hand-over: a name a browser script has stays its own: at the move the files get a copy of its list and link only; later a file takes nothing", async () => {
   const o = overSetup({ browser: async () => true });
   oldKeys(o);

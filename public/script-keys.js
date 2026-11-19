@@ -39,7 +39,7 @@ export function legacyPlan(keys, { browser = false, moving = false } = {}) {
  * What was kept under a file name before TOOLS-361 goes to these files' keys (legacyPlan), in two steps, so that a
  * stop at any point loses nothing. handOver makes the copies and deletes nothing. It gives letGo(), which takes the
  * old keys away from the name and is called once the files' ids are kept (createScriptKeys does that), or null when
- * the name has nothing to let go.
+ * the name has nothing to let go. letGo.undo() takes the draft copy back, for a try whose ids could not be kept.
  * - idb: IndexedDB { read(key) → the value, undefined when nothing is stored (a link or list removed on purpose is a
  *   stored null); rejects when it can't read · put(key, value) → rejects when it can't write }
  * - local: local storage as it is stored { read(key) → a string, or null · write(key, string) · remove(key) }; each
@@ -82,13 +82,22 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
     if (!plan.clear) return null;
     // The name lets go: its draft first, then its list and link. A draft written under the name since the copy is
     // never deleted: letting go stops, and the next try hands those words over.
-    return async function letGo() {
+    const letGo = async () => {
       if (local.read(key.draft(name)) !== draft) throw new Error("The draft changed since it was copied.");
       if (draft != null) remove(key.draft(name));
       if (list != null && older != null) remove(key.list(name));
       if (list != null) await idb.put(key.list(name), null);
       if (link != null) await idb.put(key.link(name), null);
     };
+    // A try whose ids could not be kept takes its draft copy back (the name still has the original), so no copy piles
+    // up in local storage under keys nobody will look up. Copies in IndexedDB stay: where the ids can't be written
+    // there, they could not be either.
+    letGo.undo = () => {
+      if (!takes) return;
+      if (own == null) remove(key.draft(plan.draft));
+      else local.write(key.draft(plan.draft), own);
+    };
+    return letGo;
   };
 }
 
@@ -105,9 +114,14 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
 export function createScriptKeys({ store, sameFile, lock, newId, handOver, live = () => [] }) {
   const known = new WeakMap(); // handle -> key, as the stored list last gave it to this tab
   let ready = Promise.resolve();
-  // The move of the keys kept by name (migrate) was asked for and is not done on this page (it failed, or its list
-  // could not be read): a file without an id goes by its name meanwhile and takes nothing alone (SL-1, SL-3).
-  let pending = false;
+  // The move of the keys kept by name (migrate) was asked for and is not done on this page: a file without an id whose
+  // name waits goes by that name meanwhile and takes nothing alone (SL-1, SL-3). null: nothing waits. true: every name
+  // (the move has not run yet, or its list could not be read). A Set: the names it could not hand over or that have not
+  // let go; files of other names take their ids as usual, so one name that never works does not hold up the rest.
+  let pending = null;
+  const waits = (name) => pending === true || !!pending?.has(name);
+  // Tries whose ids could not be kept take their draft copies back. One that can't stays: nothing is lost.
+  const takeBack = (gos) => { for (const go of gos) try { go?.undo?.(); } catch { /* the copy stays */ } };
   const read = async () => {
     const list = await store.get(IDS_KEY);
     return Array.isArray(list) ? list.filter((r) => r?.handle && typeof r.id === "string") : [];
@@ -164,11 +178,11 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
       const list = await read();
       const id = await idFor(list, handle);
       if (id) return keepId(list, handle, id);
-      if (pending && (await store.get(MIGRATED_KEY))) pending = false; // another tab finished the move meanwhile
-      if (pending) return handle.name;
+      if (pending && (await store.get(MIGRATED_KEY))) pending = null; // another tab finished the move meanwhile
+      if (waits(handle.name)) return handle.name;
       const mine = newId();
       const letGo = await handOver(handle.name, [fileKey(mine)]);
-      const key = await keepId(list, handle, mine);
+      const key = await keepId(list, handle, mine).catch((e) => { takeBack([letGo]); throw e; });
       // What can't be taken away now stays under the name: the file has its copies, so nothing is lost.
       if (letGo) await letGo().catch(() => {});
       return key;
@@ -206,7 +220,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
   function migrate(listFiles) {
     pending = true; // until it is known to be done: a list that can't be read never counts as "no files" (SL-3)
     ready = ready.then(() => lock(async () => {
-      if (await store.get(MIGRATED_KEY)) return void (pending = false);
+      if (await store.get(MIGRATED_KEY)) return void (pending = null);
       const list = await read(), added = [], byName = new Map();
       for (const f of await listFiles()) {
         let id = await idIn([...added, ...list], f.handle);
@@ -217,16 +231,19 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
       // A name whose copies could not all be made keeps what it has, and its files get no id: they go by that name,
       // where their old keys still are, until the next page tries again with all of them (none takes them alone
       // meanwhile: `pending`, SL-1).
-      const failed = new Set(), letGo = [];
+      const failed = new Set(), letGo = new Map();
       for (const [name, keys] of byName) {
-        try { letGo.push(await handOver(name, keys, { moving: true })); } catch { failed.add(name); }
+        try { letGo.set(name, await handOver(name, keys, { moving: true })); } catch { failed.add(name); }
       }
       const mine = added.filter((r) => !failed.has(r.name)).map(({ handle, id }) => ({ handle, id }));
-      if (mine.length) await store.put(IDS_KEY, [...mine, ...list].slice(0, Math.max(IDS_MAX, mine.length)));
+      if (mine.length) {
+        await store.put(IDS_KEY, [...mine, ...list].slice(0, Math.max(IDS_MAX, mine.length))).catch((e) => { takeBack(letGo.values()); throw e; });
+      }
       // A name that can't let go keeps its old keys beside the copies: nothing is lost, and the next page finishes it.
-      let done = !failed.size;
-      for (const go of letGo) if (go) await go().catch(() => { done = false; });
-      if (done) { await store.put(MIGRATED_KEY, Date.now()); pending = false; }
+      for (const [name, go] of letGo) if (go) await go().catch(() => failed.add(name));
+      if (failed.size) return void (pending = failed);
+      await store.put(MIGRATED_KEY, Date.now());
+      pending = null;
     })).catch(() => {});
     return ready;
   }

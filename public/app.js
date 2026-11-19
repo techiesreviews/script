@@ -3043,7 +3043,7 @@ const overTo = createHandOver({
 });
 async function handOver(name, keys, o) {
   const letGo = await keyed(() => overTo(name, keys, o));
-  return letGo && (() => keyed(letGo));
+  return letGo && Object.assign(() => keyed(letGo), { undo: letGo.undo });
 }
 // Is there a script in the browser with this name? A folder that can't be read is an error (the hand-over stops and is
 // tried again), never "no". A copy left behind by a move to a file is not one, also while a tab still holds it (SL-2);
