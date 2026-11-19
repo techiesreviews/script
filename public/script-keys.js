@@ -31,8 +31,8 @@ export function legacyPlan(keys, { browser = false, moving = false } = {}) {
 
 /**
  * createScriptKeys({ store, sameFile, lock, newId, handOver })
- * - store: { get(key) → value or null, rejects when it can't read (never null for a failed read: the list would be
- *   written over), put(key, value) → rejects when storage refuses }
+ * - store: { get(key) → value, or undefined (or null) when nothing is stored; rejects when it can't read (never
+ *   "nothing" for a failed read: the list would be written over), put(key, value) → rejects when storage refuses }
  * - sameFile(a, b) → whether two handles are one file; lock(fn) → fn's result, alone among the tabs
  * - newId() → a new id; handOver(name, keys, { moving }?) — hands the keys kept under `name` to these files' keys
  *   (legacyPlan); `moving` for the one move of the files on the recent list
@@ -94,7 +94,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
 
   // Once per browser profile: the files on the recent list (`listFiles` → [{ handle, name }], newest first) get ids, and
   // each name's keys from before go to its files. Opens wait for it. When a name's keys could not all be handed over
-  // (storage full), it is not marked done, and the next page tries again (handOver only fills empty places).
+  // (storage full), it is not marked done, and the next page tries again (handOver only fills places never written).
   function migrate(listFiles) {
     ready = ready.then(() => lock(async () => {
       if (await store.get(MIGRATED_KEY)) return;
