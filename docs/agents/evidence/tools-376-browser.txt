@@ -170,3 +170,38 @@ RESULT: ok bg se01-chrome-target pid 1012365
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 RESULT: ok bg stop se01-chrome-target pgid 1012365
 RESULT: ok bg stop se01-local-target pgid 1012065
+
+Take-over fix round (SL-1 and SL-2), 2026-11-20:
+The first builder ran out of fix rounds with SL-1 (P1) and SL-2 (P2) open. Both came from one cause: history steps
+ran out of order with the state they were recorded against (stacks changed at once, shot writes ran later, each step
+compared quotes it had kept). Tracking where every generated quote came from, and re-ordering dependent steps after
+a failure, would have added more state to that. The design was simplified instead:
+- History takes turns. A move's save, and any Undo or Redo pressed while one is under way, each wait for the one
+  before and then meet the script and the list as that one left them. A script-words step with nothing saving still
+  happens at once, as before.
+- A step that cannot be done safely stops there. A save that fails, or a new change, drops the Undo and Redo presses
+  still waiting; the failed step keeps its place and can be tried again. No words are undone by mistake.
+- A step finds the shot by where it shows in the open script (the paragraphs it covers), not by comparing kept quotes;
+  only when it shows on no paragraph, or the list was changed outside the page, by where its saved quote matches.
+This removed the kept copy of the paragraphs, the expected-quote and same-place checks, and the cross-stack cancel.
+
+SL-1 (recorded rewrite between two moves): met. The unit regression moves A to B, records a full rewrite of B, moves
+B to C, then undoes and redoes each step with a wait. It failed first at 4fb1a7f ("the third Undo reaches the first
+paragraph"). The local browser check now does the same by real drag, typing and Ctrl+Z at 1440 and 390 px, light and
+dark; run against the files of 4fb1a7f it failed with "timed out: third Undo reaches the first paragraph".
+SL-2 (failed Undo save with an Undo waiting): met. The unit regression moves A to B to C, presses Undo twice while
+the first Undo's save is held, fails that save, then retries. It failed first at 4fb1a7f ("both moves keep their
+Undo, in their order": 1 step left instead of 2). Now nothing moves, both steps stay in order, the retry reaches B,
+the next Undo reaches A, and both Redos work.
+Also covered: typing while an Undo saves stops the Undo waiting behind it; an Undo pressed while a move's first save
+fails undoes nothing; a shot shown on no paragraph for a moment is found by its saved quote. The fixture now keeps
+Check flags across writes as the app does, so "the new drag clears Check" tests the real line (Opus nit, round 6).
+Local safety: throwaway scripts in fresh private browser contexts on 127.0.0.1 only; no live editor, no real script,
+no agent connection. The local server and Chrome were kit bg jobs and were stopped.
+RESULT: ok doctor 13/13 checks passed
+RESULT: fail unit 9/11 (1 files) (the two new regressions, before the fix)
+RESULT: ok unit 25/25 (3 files)
+RESULT: ok specs (558/558 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md' (no kit ux checks are scripted for this project)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: fail se01-browser timed out: third Undo reaches the first paragraph (the same check against the files of 4fb1a7f)

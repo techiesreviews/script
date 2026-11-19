@@ -116,19 +116,25 @@ try {
   await page.send("Input.insertText", { text: " UNDO-SENTINEL-A" });
   const typed = await page.eval(`window.__scriptEditor.markdown()`);
   assert.match(typed, /UNDO-SENTINEL-A/);
-  const positions = await page.eval(`(() => {
-    const shot = document.querySelector(".shot-frame__jump").getBoundingClientRect();
-    const para = [...document.querySelectorAll('#script .block[data-type="para"]')].find(e => e.textContent.includes("Second spoken")).getBoundingClientRect();
-    return { from: { x: shot.x + shot.width / 2, y: shot.y + shot.height / 2 }, to: { x: para.x + 100, y: para.y + para.height / 2 } };
-  })()`);
-  await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...positions.from, button: "left", buttons: 1, clickCount: 1 });
-  for (let i = 1; i <= 8; i++) {
-    const x = positions.from.x + (positions.to.x - positions.from.x) * i / 8;
-    const y = positions.from.y + (positions.to.y - positions.from.y) * i / 8;
-    await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 });
-    await sleep(30);
-  }
-  await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...positions.to, button: "left", buttons: 0, clickCount: 1 });
+  const dragTo = async (text) => {
+    const positions = await page.eval(`(() => {
+      const shot = document.querySelector(".shot-frame__jump").getBoundingClientRect();
+      const para = [...document.querySelectorAll('#script .block[data-type="para"]')].find(e => e.textContent.includes(${JSON.stringify(text)})).getBoundingClientRect();
+      return { from: { x: shot.x + shot.width / 2, y: shot.y + shot.height / 2 }, to: { x: para.x + 100, y: para.y + para.height / 2 } };
+    })()`);
+    await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...positions.from, button: "left", buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= 8; i++) {
+      const x = positions.from.x + (positions.to.x - positions.from.x) * i / 8;
+      const y = positions.from.y + (positions.to.y - positions.from.y) * i / 8;
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1 });
+      await sleep(30);
+    }
+    await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...positions.to, button: "left", buttons: 0, clickCount: 1 });
+  };
+  const history = async (redo) => { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: redo ? 10 : 2 }); };
+  const over = (value) => `window.__scriptEditor.broll()[0].over === ${JSON.stringify(value)}`;
+  const words = (value) => `window.__scriptEditor.markdown() === ${JSON.stringify(value)}`;
+  await dragTo("Second spoken");
   await page.until(`window.__scriptEditor.broll()[0].over !== ${JSON.stringify(original.over)}`, "shot moved");
   const moved = await page.eval(`window.__scriptEditor.broll()[0]`);
   console.log(`PROOF before Undo: over=${JSON.stringify(moved.over)}, typing preserved=${await page.eval(`window.__scriptEditor.markdown() === ${JSON.stringify(typed)}`)}`);
@@ -154,6 +160,38 @@ try {
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
   await page.until(`window.__scriptEditor.broll()[0].over === ${JSON.stringify(original.over)}`, "second Undo restores the shot");
   assert.equal(await page.eval(`window.__scriptEditor.markdown()`), typed);
+  // SL-1: a recorded rewrite of the middle paragraph between two moves. Each step is undone on its own, with a wait.
+  await dragTo("Second spoken");
+  await page.until(over(moved.over), "shot on the middle paragraph again");
+  await page.eval(`(() => {
+    const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find(e => e.textContent.includes("Second spoken"));
+    el.focus(); const range = document.createRange(); range.selectNodeContents(el);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  })()`);
+  await page.send("Input.insertText", { text: "Rewritten middle paragraph, every word new." });
+  const rewritten = await page.eval(`window.__scriptEditor.markdown()`);
+  assert.match(rewritten, /Rewritten middle paragraph/);
+  assert.doesNotMatch(rewritten, /Second spoken/);
+  await dragTo("Third spoken");
+  await page.until(`!(${over(moved.over)})`, "shot on the last paragraph");
+  const last = await page.eval(`window.__scriptEditor.broll()[0].over`);
+  await history(false);
+  await page.until(`!(${over(last)})`, "first Undo takes the shot back to the rewritten paragraph");
+  await sleep(350);
+  await history(false);
+  await page.until(words(typed), "second Undo takes the rewrite back");
+  await sleep(350);
+  await history(false);
+  await page.until(over(original.over), "third Undo reaches the first paragraph");
+  assert.equal(await page.eval(`window.__scriptEditor.markdown()`), typed);
+  await history(true);
+  await page.until(over(moved.over), "first Redo");
+  await history(true);
+  await page.until(words(rewritten), "second Redo");
+  await history(true);
+  await page.until(over(last), "third Redo");
+  for (const done of [`!(${over(last)})`, words(typed), over(original.over)]) { await history(false); await page.until(done, "back to the start for the reload"); }
+  console.log(`PROOF ${width}px ${mode}: a recorded rewrite between two moves undoes and redoes step by step`);
   // The browser-kept sidecar persists the undone position across a reload, without opening any existing script.
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "throwaway script saved");
   await page.send("Page.reload");
