@@ -90,4 +90,14 @@ ok after leaving for a third script, the draft by that name is still the walk sc
 ok Restore brings no words of the walk script
 ok the walk script.md gets none of the bread script's words
 ok no page error or CSP violation
+--- a background script.md taken off the list mid-save (1280 px)
+ok the agent takes an ask in the bread script.md
+ok the removed bread script's failed save writes none of its words under the shared name
+ok no page error or CSP violation
+--- deleting a browser script.md while a file script.md is open (1280 px)
+ok the open file script.md keeps its own draft
+ok no page error or CSP violation
+--- AI done, opened from the Storyboard (1280 px)
+ok the answer lands in B
+ok no page error or CSP violation
 RESULT: ok several-scripts
