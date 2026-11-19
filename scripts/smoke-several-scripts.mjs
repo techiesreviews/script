@@ -610,7 +610,73 @@ async function runBoard() {
   await page.close();
 }
 
-// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board) runs one part.
+// Release review on PR #78 (P0): deleting a browser script.md while another script.md is kept aside (a third script
+// open) never clears that name's data: its draft, its B-roll link and its saved B-roll list.
+const idbGet = (page, key) => page.eval(`new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onupgradeneeded = () => r.result.createObjectStore("handles"); r.onsuccess = () => { const q = r.result.transaction("handles").objectStore("handles").get(${JSON.stringify(key)}); q.onsuccess = () => res(JSON.stringify(q.result ?? null)); q.onerror = () => res("error"); }; r.onerror = () => res("error"); })`);
+const idbPut = (page, key, value) => page.eval(`new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onupgradeneeded = () => r.result.createObjectStore("handles"); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); t.objectStore("handles").put(${JSON.stringify(value)}, ${JSON.stringify(key)}); t.oncomplete = () => res(true); t.onerror = () => res(false); }; r.onerror = () => res(false); })`);
+async function runDeleteKeptSameName() {
+  console.log("--- deleting a browser script.md while a file script.md is kept aside (1280 px)");
+  const { page, mcp } = await connect(1280, 800);
+  await page.steady("#emptyNew");
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "a new script");
+  await page.send("Input.insertText", { text: "Script" });
+  await page.until(`document.querySelector("#fileName").textContent === "script.md"`, "the browser script is called script.md", 8000);
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "it is saved");
+  await writeDisk(page, "b/script.md", `# ${WALK.title}\n\n${WALK.lines.join("\n\n")}\n`);
+  await page.eval(`window.__pick = "b/script.md"; true`);
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuOpen").click(); true`);
+  await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the file script.md opens");
+  const ask = await askShorter(page, mcp, "Walk note 3");
+  check(!!ask, "the agent takes an ask in the file script.md");
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuNew").click(); true`); // a third script: the file script.md goes to the background
+  await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a third script opens");
+  await sleep(800);
+  // The name's data, as the file script.md would have it: a draft, a B-roll link and a saved B-roll list.
+  const draft = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } });
+  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(draft)}); localStorage.setItem("script-editor:brollList:script.md", ${JSON.stringify(JSON.stringify("kept list"))}); true`);
+  await idbPut(page, "broll:script.md", { name: "b-roll.md" });
+  await idbPut(page, "brollList:script.md", "the B-roll list");
+  await menuOpen(page);
+  const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
+  await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
+  await page.until(`!!(${del})?.querySelector(".scripts__delete")`, "Delete asks once more");
+  await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
+  await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
+  await sleep(800);
+  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === draft, "the kept file script.md keeps its draft");
+  check((await page.eval(`localStorage.getItem("script-editor:brollList:script.md")`)) === JSON.stringify("kept list"), "the kept file script.md keeps its saved B-roll list (local)");
+  check((await idbGet(page, "broll:script.md")) === JSON.stringify({ name: "b-roll.md" }), "the kept file script.md keeps its B-roll link", await idbGet(page, "broll:script.md"));
+  check((await idbGet(page, "brollList:script.md")) === JSON.stringify("the B-roll list"), "the kept file script.md keeps its saved B-roll list", await idbGet(page, "brollList:script.md"));
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// Release review on PR #78 (P2): a script left while the Storyboard shows keeps its caret; it comes back in the Script view.
+async function runBoardCaret() {
+  console.log("--- the caret of a script left from the Storyboard (1280 px)");
+  const { page, A, B } = await start(1280, 800);
+  await openFromMenu(page, A);
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Walk note 6")); el.scrollIntoView({ block: "center" }); el.focus(); getSelection().collapse(el.firstChild, 12); })()`);
+  await sleep(200);
+  await page.click(`#viewSwitch [data-view="board"]`);
+  await page.until(`document.querySelector("#layout").dataset.view === "board"`, "the Storyboard shows");
+  await openFromMenu(page, B); // A is left while the Storyboard shows
+  await openFromMenu(page, A);
+  await page.click(`#viewSwitch [data-view="script"]`);
+  await page.until(`document.querySelector("#layout").dataset.view === ""`, "the Script view shows");
+  await sleep(300);
+  const at = await page.eval(`(() => { const s = getSelection(), el = document.activeElement; return { line: el?.textContent?.slice(0, 11), at: s.rangeCount ? s.getRangeAt(0).startOffset : -1 }; })()`);
+  check(at.line === "Walk note 6" && at.at === 12, "A's caret comes back where it was", JSON.stringify(at));
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -622,6 +688,8 @@ try {
   if (!only || only === "removed") await runRemovedMidSave();
   if (!only || only === "deletesame") await runDeleteSameName();
   if (!only || only === "board") await runBoard();
+  if (!only || only === "deletekept") await runDeleteKeptSameName();
+  if (!only || only === "boardcaret") await runBoardCaret();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
