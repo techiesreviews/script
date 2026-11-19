@@ -324,11 +324,14 @@ async function runSlash(width, height) {
   await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note 2")); el.focus(); })()`); // back in the text
   await page.until(fileHas(B, " /hoo"), "back in the text, the typed words save as usual", 6000);
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "and the not-saved dot goes", 6000);
-  // Switching through the menu while a command is typed.
-  const before = await page.eval(lineText("Bread note 4"));
+  // Switching through the menu while a command is typed; meanwhile the agent shortens the words before it.
+  const ask2 = await askShorter(page, mcp, "Bread note 4");
   await typeCommand(page, "Bread note 4", " /on");
   await page.click("#docSwitch"); // a real click: focus goes to the menu (its search box on a desktop, the button on a phone)
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open") && document.querySelector("#scriptList .scripts__open[aria-current]")`, "the script menu");
+  const r2 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask2?.id, kind: "replace", text: "Bread note four." } });
+  check(!r2?.result?.isError, "an answer lands before the command while the menu is open", toolText(r2));
+  const before = "Bread note four.";
   await sleep(2000); // longer than the auto-save pause
   check(await fileLacks(page, B, " /on"), "with the file-name menu open, /on is not saved into B's file");
   await page.eval(`(${row(A)}).querySelector(".scripts__open").click()`);
