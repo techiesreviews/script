@@ -2602,11 +2602,12 @@ function discardDraft() {
   offerAsks();
 }
 
+// Gives "input" when the file field took over (no file picker here): it answers later, with a change or a cancel.
 async function openFile() {
-  if (!canPick) return $("#fileInput").click();
+  if (!canPick) { $("#fileInput").click(); return "input"; }
   let handle;
   try { [handle] = await window.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); }
-  catch (e) { if (e?.name !== "AbortError") $("#fileInput").click(); return; }
+  catch (e) { if (e?.name !== "AbortError") { $("#fileInput").click(); return "input"; } return; }
   // Ask for write access while the person's pick still counts as a click, so auto-save can write.
   // If the browser refuses to ask now, "Allow saving to …" shows at the first save.
   permitted(handle, true);
@@ -3219,9 +3220,12 @@ $("#menuOpen").addEventListener("click", async () => {
   if (menuSlash) menuSlash.switching = true;
   $("#scriptMenu").hidePopover();
   const was = state.handle;
-  await openFile();
+  const how = await openFile();
+  if (!menuSlash) return;
+  // The file field (no file picker here) answers later: the switch is still on its way until it is cancelled.
+  if (how === "input") return void $("#fileInput").addEventListener("cancel", () => { if (menuSlash) menuSlash.switching = false; }, { once: true });
   // Nothing opened (the picker was cancelled, or the file could not be read): no switch is on its way any more.
-  if (menuSlash && state.handle === was) menuSlash.switching = false;
+  if (state.handle === was) menuSlash.switching = false;
 });
 $("#menuNew").addEventListener("click", () => { if (menuSlash) menuSlash.switching = true; $("#scriptMenu").hidePopover(); newScript(); });
 (async () => {
