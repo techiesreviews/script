@@ -1,6 +1,6 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
 import * as Doc from "./doc.js";
-import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted, sameWords } from "./saving.js";
+import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted, sameWords, draftKey, LEFT_COPIES_KEY } from "./saving.js";
 import * as Changes from "./changes.js";
 import * as Links from "./links.js";
 import * as Cues from "./cues.js";
@@ -10,7 +10,7 @@ import { TOKEN_MAX_AGE_MS as AGENT_MAX_AGE, NO_ASKS } from "./agent-link.js";
 import { listState, settleFolder, folderNote } from "./folder-note.js";
 import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
 import * as Aside from "./aside.js";
-import { createScriptKeys, legacyPlan } from "./script-keys.js";
+import { createScriptKeys, createHandOver } from "./script-keys.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -79,6 +79,13 @@ const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(LS + k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(LS + k, JSON.stringify(v)); return true; } catch { return false; } },
   del(k) { try { localStorage.removeItem(LS + k); } catch { /* storage off */ } },
+};
+// Local storage as it is stored, with its errors kept: for the hand-over of old keys (script-keys.js), where a read
+// that fails must never be taken for "nothing stored".
+const localRaw = {
+  read: (k) => localStorage.getItem(LS + k),
+  write: (k, v) => localStorage.setItem(LS + k, v),
+  remove: (k) => localStorage.removeItem(LS + k),
 };
 const me = (() => {
   let p = store.get("me");
@@ -3018,41 +3025,33 @@ const scriptKeys = createScriptKeys({
   lock: (fn) => fileIdLocks.request("script-editor:file-ids", fn),
   newId: () => Doc.newId(12),
   handOver,
+  // The scripts this tab has in use: their keys stay on the list while it writes under them.
+  live: () => [state.handle, ...asides.map((s) => s.handle)],
 });
 const scriptKey = () => scriptKeys.keyOf(state.handle, state.name);
-// What was kept under a file name before TOOLS-361 goes to the files of that name (legacyPlan): each gets a copy of
-// the B-roll link and list, the newest the draft, and the name lets go of them, unless a script in the browser has that
-// name (then they are its own; only the files on the list at the move get a copy). The demo keeps its own.
-async function handOver(name, keys, { moving = false } = {}) {
-  if (name === SAMPLE.name) return;
-  const plan = legacyPlan(keys, { browser: await browserHas(name), moving });
-  if (!plan) return;
-  // Only places never written are filled (a try again after a full storage never writes over what a file has since,
-  // also a link removed on purpose), the list before its link, the draft last (a hand-over that stops before it leaves
-  // the draft under the name, where the next try finds it), and the name lets go only once every copy is kept: a full
-  // storage must not lose or hide them. A file with a draft of its own keeps it; the name's goes.
-  let kept = true;
-  await keyed(async () => {
-    // Read so that a failed read stops the hand-over (it is tried again), never taken for "no list".
-    const link = await idbRead(brollKey(name)), stored = await idbRead(listKey(name)), old = store.get(listKey(name));
-    const list = typeof stored === "string" ? stored : typeof old === "string" ? old : null;
-    const put = (k, v) => idbPut(k, v).then(() => true, () => false);
-    for (const k of plan.broll) {
-      if (list != null && (await idbRead(listKey(k))) === undefined && !(await put(listKey(k), list))) { kept = false; continue; }
-      if (link != null && (await idbRead(brollKey(k))) === undefined) kept = (await put(brollKey(k), link)) && kept;
-    }
-    if (kept && plan.draft) kept = saving.drafts.get(plan.draft) != null || saving.drafts.move(name, plan.draft);
-    if (!plan.clear || !kept) return;
-    saving.drafts.del(name);
-    if (link != null) await idbSet(brollKey(name), null);
-    if (list != null) { await idbSet(listKey(name), null); store.del(listKey(name)); }
-  });
-  if (!kept) throw new Error("Not every key could be handed over.");
+// What was kept under a file name before TOOLS-361 goes to the files of that name (script-keys.js createHandOver):
+// each gets a copy of the B-roll link and list, the newest the draft, and the name lets go of them, unless a script in
+// the browser has that name (then they are its own; only the files on the list at the move get a copy). The demo
+// keeps its own. Every read fails loudly, the copies come first, and the name lets go (the step it gives back) only
+// once the files' ids are kept. Both steps run in the B-roll keys' queue.
+const overTo = createHandOver({
+  idb: { read: idbRead, put: idbPut },
+  local: localRaw,
+  key: { draft: draftKey, link: (k) => brollKey(k), list: (k) => listKey(k) },
+  browserHas,
+  keeps: (name) => name === SAMPLE.name,
+});
+async function handOver(name, keys, o) {
+  const letGo = await keyed(() => overTo(name, keys, o));
+  return letGo && (() => keyed(letGo));
 }
 // Is there a script in the browser with this name? A folder that can't be read is an error (the hand-over stops and is
-// tried again), never "no". A copy left behind by a move to a file is not one, also while a tab still holds it (SL-2).
+// tried again), never "no". A copy left behind by a move to a file is not one, also while a tab still holds it (SL-2);
+// the names of those copies are read loudly too: a list that can't be read is an error, never "no copy left behind".
 async function browserHas(name) {
-  if (!browserSaving || copies.names().includes(name)) return false;
+  if (!browserSaving) return false;
+  const left = JSON.parse(localRaw.read(LEFT_COPIES_KEY) ?? "[]");
+  if (Array.isArray(left) && left.includes(name)) return false;
   try { await (await scriptsDir()).getFileHandle(name); return true; } catch (e) { if (e?.name === "NotFoundError" || e?.name === "TypeError") return false; throw e; }
 }
 // The files on the computer on the recent list, for the move: a list that can't be read is an error, never "no files"
@@ -3331,6 +3330,10 @@ addEventListener("beforeunload", (e) => {
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { persistDraft(); saving.flush(); } });
 addEventListener("pagehide", () => { persistDraft(); saving.flush(); });
+// A tab looked at again: the keys of the scripts it has in use go back on the id list if other tabs pushed them off
+// meanwhile (TOOLS-361: the list holds 200), so a reload still finds what it wrote under them.
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") scriptKeys.keep(); });
+addEventListener("focus", () => scriptKeys.keep());
 
 /* ---------- Icons in the static markup ---------- */
 $$("[data-icon]").forEach((el) => {

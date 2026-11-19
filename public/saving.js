@@ -83,8 +83,9 @@ export function tabLocks() {
 // - one per script name for writing, held alone by each save, from its look at the file to the end of its write: two
 //   tabs' saves into one script run one after the other, so the second sees the first's words before it writes. A new
 //   script (`create`) and a script taking another name (`rename`) write under that name's lock too.
+export const LEFT_COPIES_KEY = "movedCopies"; // where the names of the copies left behind are kept (app.js browserHas reads it too)
 export function createLeftCopies({ store, dir, locks = tabLocks(), write = writeHandle }) {
-  const KEY = "movedCopies", PRINTS = "movedCopyPrints"; // the names, and each copy's fingerprint as the tab that moved it knew it
+  const KEY = LEFT_COPIES_KEY, PRINTS = "movedCopyPrints"; // the names, and each copy's fingerprint as the tab that moved it knew it
   const names = () => { const v = store.get(KEY); return Array.isArray(v) ? v : []; };
   const prints = () => { const v = store.get(PRINTS); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; };
   const free = (gone) => {
@@ -262,6 +263,7 @@ export function createLeftCopies({ store, dir, locks = tabLocks(), write = write
  *   this tab last wrote or read it; left({ handle, text, modified }) — a script the person left was written (optional) }
  */
 const BY_NAME = { of: (handle, name) => name, adopt: (handle) => handle.name };
+export const draftKey = (key) => `draft:${key}`; // where a script's draft is kept, by the script's own key
 export function createSaving({ script, editor, files, browser, drafts: store, keys = BY_NAME, clock, on }) {
   let queue = SaveQueue.emptyQueue();
   let timer = 0;
@@ -277,7 +279,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
   // The key a waiting request's draft goes by: its file's own (a file's id; a script in the browser by its name now);
   // the script's name for a request without a file.
   const keyOf = (req) => keys.of(req.handle, req.handle?.name ?? req.name);
-  const key = (name) => `draft:${name}`;
+  const key = draftKey;
   const drafts = {
     get: (name) => store.get(key(name)),
     set: (name, draft) => store.set(key(name), draft),
@@ -470,6 +472,9 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
           const from = keys.of(script.handle, script.name);
           if (to !== from) {
             drafts.del(from);
+            // A file picked again keeps its key (TOOLS-361): the draft kept for what it held before goes, so none of
+            // that script's asks or words come back. Its own key only, never a name another script may go by.
+            if (to !== handle.name) drafts.del(to);
             on.renamed(from, to, { clear: !!was });
           }
           script.name = handle.name;
@@ -478,7 +483,9 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
           on.placed(handle, was ? { was, words } : { was });
         } else {
           // Another script opened while it was written: the file holds this text and is listed; the script open now
-          // keeps its own file, name, draft and B-roll keys, and the browser copy stays.
+          // keeps its own file, name, draft and B-roll keys, and the browser copy stays. The draft kept for what the
+          // picked file held before goes, unless that file is the script open now.
+          if (to !== handle.name && to !== keys.of(script.handle, script.name)) drafts.del(to);
           on.placed(handle, {});
         }
       } else {
