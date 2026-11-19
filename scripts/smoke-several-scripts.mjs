@@ -440,10 +440,11 @@ async function runFocus() {
 // gives each script its own words.
 const writeDisk = (page, path, text) => page.eval(`(async () => { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk", { create: true }); const w = await (await (await disk.getDirectoryHandle(dir, { create: true })).getFileHandle(name, { create: true })).createWritable(); await w.write(${JSON.stringify(text)}); await w.close(); return true; })()`);
 const readDisk = (page, path) => page.eval(`(async () => { try { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); return await (await (await (await disk.getDirectoryHandle(dir)).getFileHandle(name)).getFile()).text(); } catch { return null; } })()`);
-const otherRow = (name) => `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === ${JSON.stringify(name)} && !li.querySelector("[aria-current]"))`;
-async function openOther(page, name) {
+// The nth row (from the top, most recent first) with this name that is not the open script.
+const otherRow = (name, nth = 0) => `[...document.querySelectorAll("#scriptList .scripts__row")].filter((li) => li.querySelector(".scripts__name")?.textContent === ${JSON.stringify(name)} && !li.querySelector("[aria-current]"))[${nth}]`;
+async function openOther(page, name, nth = 0) {
   await menuOpen(page);
-  await page.eval(`(${otherRow(name)}).querySelector(".scripts__open").click()`);
+  await page.eval(`(${otherRow(name, nth)}).querySelector(".scripts__open").click()`);
 }
 async function runSameName() {
   console.log("--- two scripts called script.md (1280 px)");
@@ -474,7 +475,16 @@ async function runSameName() {
   check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === own, "the open walk script.md keeps its own draft and Check flags", await page.eval(`localStorage.getItem("script-editor:draft:script.md")`));
   check(!(await readDisk(page, "a/script.md"))?.includes(SHORT), "the bread file changed elsewhere is not written over");
   await page.until(`!document.querySelector("#aiDot").hidden`, "the dot for the bread script.md");
-  await openOther(page, "script.md");
+  // Leaving the walk script.md with words just typed, for a third script: the draft by that name stays the walk's.
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Walk note 3")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: " Walk extra." });
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuNew").click(); true`);
+  await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a third script opens");
+  await sleep(1000);
+  const walkDraft = await page.eval(`localStorage.getItem("script-editor:draft:script.md")`);
+  check(!!walkDraft && walkDraft.includes("Walk extra.") && !walkDraft.includes("Cover the bowl") && !walkDraft.includes("Good bread"), "after leaving for a third script, the draft by that name is still the walk script's own", walkDraft);
+  await openOther(page, "script.md", 1); // the bread script.md (the walk one is the most recent)
   await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes from")`, "the bread script.md offers its own words as Unsaved changes");
   await page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent === "Restore").click(); true`);
   await page.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(SHORT)})`, "Restore brings the agent's words into the bread script.md");
