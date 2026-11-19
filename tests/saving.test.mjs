@@ -223,6 +223,34 @@ test("saving: Save as to another file of the same name gives it this script's ke
   assert.equal(s.store.has("draft:file:a"), false);
   assert.equal(s.files.disk.get("c/script.md").text, "# A\n\nOne.\n");
 });
+test("saving: Save as onto a file that has its key already keeps that key; the draft kept for what the file held before goes", async () => {
+  const { s, A, open } = keyedSetup();
+  s.ports.keys.adopt = () => "file:b"; // the same file, the same key, whatever the handle (script-keys.js adopt)
+  s.saving = createSaving(s.ports);
+  open(A, "# A\n\nOne.\n");
+  s.store.set("draft:file:b", { text: "# B\n\nOld words.\n", at: 1, asks: [{ id: "old" }] });
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "b/script.md" }); // the picker's own handle for b
+  await s.saving.saveAs();
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), [["renamed", "file:a", "file:b", { clear: false }]]);
+  assert.equal(s.store.has("draft:file:b"), false, "no asks or words of the script the file held before come back");
+  assert.equal(s.files.disk.get("b/script.md").text, "# A\n\nOne.\n");
+  // Another script opened while the file was written: the file's old draft goes all the same; the open script's stays.
+  const t = keyedSetup();
+  t.s.ports.keys.adopt = () => "file:b";
+  t.s.saving = createSaving(t.s.ports);
+  t.open(t.A, "# A\n\nOne.\n");
+  t.s.store.set("draft:file:b", { text: null, at: 1, asks: [{ id: "old" }] });
+  t.s.store.set("draft:file:a", { text: null, at: 1, asks: [{ id: "mine" }] });
+  const release = t.s.files.hold("b/script.md");
+  t.s.files.port.pickSave = async () => ({ name: "script.md", path: "b/script.md" });
+  const run = t.s.saving.saveAs();
+  await settle();
+  t.open(t.A, "# A\n\nOne.\n"); // opened again meanwhile
+  release();
+  await run;
+  assert.equal(t.s.store.has("draft:file:b"), false);
+  assert.deepEqual(t.s.store.get("draft:file:a"), { text: null, at: 1, asks: [{ id: "mine" }] });
+});
 test("saving: a left script's failed saves keep its draft under its own key, running or queued; another file of that name keeps its own", async () => {
   const { s, A, B, open } = keyedSetup();
   open(A, "# A\n\nOne.\n");
