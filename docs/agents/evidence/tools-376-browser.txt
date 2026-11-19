@@ -39,3 +39,37 @@ RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 RESULT: ok specs (545/545 tests passed)
 RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Review round 1 follow-up:
+R1-1: resolved. Two actual moveShot regression tests failed first (a deleted shot and an independently changed Over
+both incorrectly stayed valid). A move is now invalid when its shot disappears or its expected Over conflicts.
+The history drops that stale step; transient write failures remain retryable.
+R1-3: resolved. tests/broll-move.test.mjs proves deletion invalidates the real move; the history regression proves
+invalid moves are skipped and the next Undo still reaches older typing.
+R1-4: resolved for the guard and Check flag behavior. tests/broll-move.test.mjs runs the real moveShot function,
+its captured before/after Over, inverse, expected-Over guard, and Check flags against a queued sidecar. It does
+not add a production API merely to invoke a private helper in the stage fixture.
+R1-5: resolved. The initial-save cancellation regression now starts Undo first and checks the pending inverse is removed.
+Declined: R1-2 (P3) — the reviewer classifies this as a rare race requiring rapid Undo then Redo plus a failed
+sidecar write. The ordinary pending-save and failed-write retry paths pass. Serializing all history navigation
+would expand this single bug fix. A conflict now invalidates that move rather than trapping future text Undo;
+the moved position may still lack a usable inverse after that combination. This limitation remains for the lead.
+Optional documentation and source-marker nits were fixed.
+RESULT: ok bg stop se01-chrome pgid 2257933
+RESULT: ok bg stop se01-local pgid 2257871
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T224918Z
+RESULT: fail unit 0/2 (1 files) log .scratch/unit/20261119T225002-2414854.log
+
+Post-review validation:
+RESULT: ok unit 14/14 (3 files) log .scratch/unit/20261119T225040-2449009.log
+RESULT: ok specs (547/547 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-final pid 2461521
+RESULT: ok bg se01-chrome-final pid 2462169
+RESULT: fail se01-browser timed out: throwaway shot reopened
+The last phone/dark reload check timed out at the old 8-second deadline, after the other three cases passed.
+No drag or Undo assertion failed. Added failure diagnostics and increased the condition deadline to 15 seconds;
+the rerun passed all four cases without another application change. The timeout's cause is not established.
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-final pgid 2462169
+RESULT: ok bg stop se01-local-final pgid 2461521
