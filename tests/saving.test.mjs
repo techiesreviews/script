@@ -235,6 +235,41 @@ test("saving: saveLeft while a save runs waits its turn, after the older write o
   assert.deepEqual(s.events.filter((e) => e[0] === "left").map((e) => e[2]), ["# A\n\nOne. Typed.\n", "# A\n\nOne. Typed. Answered.\n"], "the app hears each write of the left file");
 });
 
+test("saving: saveLeft during a Save as or a save into the browser still reaches its own file (review round 1, P2)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.open(null, "# Demo\n\nWords.\n"); // the demo: no file yet
+  s.ports.files.pickSave = async () => ({ name: "picked.md" });
+  const release = s.files.hold("picked.md");
+  const saved = s.saving.saveAs();
+  await until(() => s.script.saving);
+  let written = null;
+  const p = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, answered.\n", browser: false, savedText: "# A\n\nOne.\n" }).then((w) => { written = w; });
+  release();
+  await saved;
+  await p;
+  assert.equal(written?.text, "# A\n\nOne, answered.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne, answered.\n");
+  assert.equal(s.files.disk.get("picked.md").text, "# Demo\n\nWords.\n");
+  assert.equal(s.script.saving, false);
+  // The same while the demo goes into the browser (Ctrl+S where no file can be picked).
+  const t = setup();
+  const B = t.script.handle;
+  t.open(null, "# Demo\n\nMore.\n");
+  let made;
+  const gate = new Promise((r) => { made = r; });
+  const create = t.ports.browser.create;
+  t.ports.browser.create = async (name, text) => { await gate; return create(name, text); };
+  const inBrowser = t.saving.save();
+  await until(() => t.script.saving);
+  const q = t.saving.saveLeft({ handle: B, name: "a.md", text: "# A\n\nTwo, answered.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  made();
+  await inBrowser;
+  assert.equal((await q)?.text, "# A\n\nTwo, answered.\n");
+  assert.equal(t.files.disk.get("a.md").text, "# A\n\nTwo, answered.\n");
+  assert.equal(t.script.saving, false);
+});
+
 test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
   const s = setup();
   const A = s.script.handle;

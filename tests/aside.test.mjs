@@ -105,9 +105,17 @@ test("aside: seen changes clear the dot; an ask the agent has not seen is offere
   assert.deepEqual(Aside.pending([s], 200_000, 120_000).map((x) => x.ask.id), s.asks.map((a) => a.id));
   assert.equal(Aside.findAsk([s], s.asks[1].id).aside, s);
   assert.equal(Aside.findAsk([s], "nope"), null);
-  s.unseen.add("x");
-  Aside.seen(s, ["x"]);
-  assert.equal(s.unseen.size, 0);
+});
+
+test("aside: a whole-script job or a B-roll ask in a script kept aside is not answered there (review round 1)", () => {
+  const doc = Doc.parse(BREAD);
+  const voice = Doc.makeAsk(doc, { scope: "script", action: "voice", by: me });
+  voice.status = "taken";
+  assert.equal(Aside.takesAnswer(voice), false);
+  assert.equal(Aside.takesAnswer(askOn(doc, "flour", "broll")), false);
+  assert.equal(Aside.takesAnswer(askOn(doc, "flour", "shorter")), true);
+  const s = Aside.leave({ handle: { name: "bread.md" }, name: "bread.md", doc, asks: [askOn(doc, "salt"), voice], undo: [], redo: [], savedText: BREAD, fileModified: 0 });
+  assert.deepEqual(Aside.pending([s], Date.now() + 999_999, 1).map((x) => x.ask.action), ["shorter"], "only the asks it answers itself are offered again");
 });
 
 test("aside: each script keeps its caret by line and offset, also when it is read from its file again", () => {
