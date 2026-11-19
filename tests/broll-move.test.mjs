@@ -45,6 +45,11 @@ function movement() {
   return { broll, get text() { return text; }, get writes() { return writes; }, get move() { return move; },
     state, paras, undo: () => context.undo(), redo: () => context.redo(),
     type: (text) => { context.checkpoint("type", paras[2].id); Doc.setContent(state.doc, paras[2].id, Doc.contentOf(Doc.blockById(state.doc, paras[2].id)) + text); },
+    insertPara: () => {
+      context.checkpoint("insert");
+      const block = Doc.parse("Temporary inserted paragraph.\n").blocks.find((b) => b.type === "para");
+      state.doc.blocks.push(block); paras.push({ id: block.id }); return paras.length - 1;
+    },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
     moveShot: (index = 1) => context.moveShot("B1", Broll.wholeParas(state.doc, [paras[index].id])),
     replace: (mutate) => { text = mutate(text); adopt(); },
@@ -133,4 +138,31 @@ test("B-roll move history: Undo preserves an original hand-written quote that st
   await m.moveShot();
   m.undo(); await settle();
   assert.equal(Broll.parseBroll(m.text).shots[0].over, original);
+});
+
+
+test("B-roll move history: text Undo during held move Undo preserves both inverses and all Redos", async () => {
+  const m = movement();
+  const target = m.insertPara();
+  await m.moveShot(target); await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  m.undo(); m.undo();
+  release(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  assert.doesNotMatch(Doc.serialize(m.state.doc), /Temporary inserted/);
+  m.redo(); m.redo(); m.redo(); await settle();
+  assert.match(Doc.serialize(m.state.doc), /Temporary inserted/);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
+});
+
+test("B-roll move history: dragging during a held Undo returns to the restored origin", async () => {
+  const m = movement();
+  await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  const next = m.moveShot(2);
+  release(); await next; await settle();
+  m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
 });
