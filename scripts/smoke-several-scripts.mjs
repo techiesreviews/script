@@ -743,6 +743,43 @@ async function runOwnKeys() {
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
 }
+// A browser script.md's own keys go by its name: a file script.md seen for the first time takes none of them, and once
+// the browser script is deleted (a file script.md on the list) they go, so the next new file script.md starts clean
+// (review round 1 on TOOLS-361).
+async function runDeleteThenNew() {
+  console.log("--- a browser script.md's keys stay its own, and go with it (1280 px)");
+  const { page } = await connect(1280, 800);
+  await page.steady("#emptyNew");
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "a new script");
+  await page.send("Input.insertText", { text: "Script" });
+  await page.until(`document.querySelector("#fileName").textContent === "script.md"`, "the browser script is called script.md", 8000);
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "it is saved");
+  // The browser script's own B-roll list and an unsaved draft, under its name.
+  await idbPut(page, "broll:script.md", { name: "browser-broll.md", text: WALK_LIST });
+  await page.eval(`localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: "# Script\\n\\nBrowser words.\\n", at: Date.now() + 60000, asks: [] })); true`);
+  await writeDisk(page, "b/script.md", md(WALK));
+  await writeDisk(page, "c/script.md", md(WALK));
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await sleep(800);
+  check((await shotLabels(page)).length === 0 && (await page.eval(`document.querySelector("#banner").hidden`)), "a file script.md seen for the first time takes none of the browser script's list or words", JSON.stringify(await shotLabels(page)));
+  check((await idbGet(page, "broll:script.md")) !== "null", "the browser script keeps its list");
+  await menuOpen(page);
+  const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
+  await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
+  await page.until(`!!(${del})?.querySelector(".scripts__delete")`, "Delete asks once more");
+  await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
+  await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
+  await sleep(500);
+  check((await idbGet(page, "broll:script.md")) === "null" && (await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === null, "its keys go with it, though a file script.md is on the list");
+  await page.key("Escape", "Escape", 27);
+  await pickOpen(page, "c/script.md", "What if the best part");
+  await sleep(800);
+  check((await shotLabels(page)).length === 0 && (await page.eval(`document.querySelector("#banner").hidden`)), "the next new file script.md starts clean: no list, no Unsaved changes", JSON.stringify(await shotLabels(page)));
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
 // The files on the recent list when this version first runs take what was kept under their name: each gets the B-roll
 // list, the newest the draft ("Unsaved changes"), and the name lets go.
 async function runMigrate() {
@@ -843,7 +880,7 @@ async function runOpenCancelled() {
 }
 
 // SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
-// ownkeys, migrate) runs one part.
+// ownkeys, migrate, deletefirst) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -860,6 +897,7 @@ try {
   if (!only || only === "opencancel") await runOpenCancelled();
   if (!only || only === "ownkeys") await runOwnKeys();
   if (!only || only === "migrate") await runMigrate();
+  if (!only || only === "deletefirst") await runDeleteThenNew();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }

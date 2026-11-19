@@ -16,22 +16,25 @@ export const IDS_MAX = 200;
 export const fileKey = (id) => `file:${id}`;
 
 /**
- * legacyPlan(keys, { browser }) → what the keys kept under one name before TOOLS-361 become, or null for no files.
+ * legacyPlan(keys, { browser, moving }) → what the keys kept under one name before TOOLS-361 become, or null.
  * `keys`: the keys of the files of that name, newest first; `browser`: a script in the browser has that name (it keeps
- * them). Every file gets a copy of the B-roll link and list it showed before; the newest takes the draft (drafts were
- * written on leaving a script, so the last one left wrote it); then the name lets go of them, so a file opened later
- * under that name starts without them.
+ * them); `moving`: the one move of the files on the recent list. Every file gets a copy of the B-roll link and list it
+ * showed before; the newest takes the draft (drafts were written on leaving a script, so the last one left wrote it);
+ * then the name lets go of them, so a file opened later under that name starts without them. After the move, keys
+ * under a browser script's name are that script's own: a file seen for the first time takes none of them.
  */
-export function legacyPlan(keys, { browser = false } = {}) {
-  if (!keys.length) return null;
+export function legacyPlan(keys, { browser = false, moving = false } = {}) {
+  if (!keys.length || (browser && !moving)) return null;
   return { broll: [...keys], draft: browser ? null : keys[0], clear: !browser };
 }
 
 /**
  * createScriptKeys({ store, sameFile, lock, newId, handOver })
- * - store: { get(key) → value or null, put(key, value) → rejects when storage refuses }
+ * - store: { get(key) → value or null, rejects when it can't read (never null for a failed read: the list would be
+ *   written over), put(key, value) → rejects when storage refuses }
  * - sameFile(a, b) → whether two handles are one file; lock(fn) → fn's result, alone among the tabs
- * - newId() → a new id; handOver(name, keys) — hands the keys kept under `name` to these files' keys (legacyPlan)
+ * - newId() → a new id; handOver(name, keys, { moving }?) — hands the keys kept under `name` to these files' keys
+ *   (legacyPlan); `moving` for the one move of the files on the recent list
  */
 export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
   const known = new WeakMap(); // handle -> key, for the handles this tab looked up or made
@@ -45,7 +48,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
     return null;
   }
   // The old keys that could not be handed over stay under the name; the file keeps its own key either way.
-  const hand = (name, keys) => Promise.resolve().then(() => handOver(name, keys)).catch(() => {});
+  const hand = (name, keys, o) => Promise.resolve().then(() => handOver(name, keys, o)).catch(() => {});
   // The key a script goes by now: a file looked up here has its own; any other script goes by its name.
   const keyOf = (handle, name) => (handle && known.get(handle)) || name;
 
@@ -61,6 +64,9 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
         id = newId();
         await store.put(IDS_KEY, [{ handle, id }, ...list].slice(0, IDS_MAX));
         await hand(handle.name, [fileKey(id)]);
+      } else if (list[0].id !== id) {
+        // Opened again: to the front, so a full list lets go of the files not opened here for longest.
+        await store.put(IDS_KEY, [...list.filter((r) => r.id === id), ...list.filter((r) => r.id !== id)]);
       }
       known.set(handle, fileKey(id));
       return fileKey(id);
@@ -93,7 +99,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
         if (!byName.get(f.name).includes(fileKey(id))) byName.get(f.name).push(fileKey(id));
       }
       await store.put(IDS_KEY, [...added, ...list].slice(0, IDS_MAX));
-      for (const [name, keys] of byName) await hand(name, keys);
+      for (const [name, keys] of byName) await hand(name, keys, { moving: true });
       await store.put(MIGRATED_KEY, Date.now());
     })).catch(() => {});
     return ready;

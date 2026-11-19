@@ -2255,6 +2255,11 @@ async function idbGet(k) {
     return await new Promise((res) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); });
   } catch { return null; }
 }
+// Like idbGet, but a failed read is an error, never "nothing stored" (the files' ids must not be written over, TOOLS-361).
+async function idbRead(k) {
+  const db = await idb();
+  return new Promise((res, rej) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => rej(q.error || new Error("IndexedDB read failed")); });
+}
 // Like idbSet, but a failed write is an error (a B-roll list kept in the browser must not vanish silently).
 async function idbPut(k, v) {
   const db = await idb();
@@ -3005,21 +3010,21 @@ async function isInBrowser(handle) {
 // Each script's own key for its draft, its B-roll link and list, and its "Check" flags (TOOLS-361, script-keys.js): a
 // file on the computer has an id of its own, kept with its handle; a script in the browser or without a file goes by
 // its name.
+const fileIdLocks = navigator.locks ?? tabLocks();
 const scriptKeys = createScriptKeys({
-  store: { get: idbGet, put: idbPut },
+  store: { get: idbRead, put: idbPut },
   sameFile,
-  lock: (fn) => (navigator.locks ?? fileIdLocks).request("script-editor:file-ids", fn),
+  lock: (fn) => fileIdLocks.request("script-editor:file-ids", fn),
   newId: () => Doc.newId(12),
   handOver,
 });
-const fileIdLocks = tabLocks();
 const scriptKey = () => scriptKeys.keyOf(state.handle, state.name);
 // What was kept under a file name before TOOLS-361 goes to the files of that name (legacyPlan): each gets a copy of
 // the B-roll link and list, the newest the draft, and the name lets go of them, unless a script in the browser has that
-// name. The demo keeps its own.
-async function handOver(name, keys) {
+// name (then they are its own; only the files on the list at the move get a copy). The demo keeps its own.
+async function handOver(name, keys, { moving = false } = {}) {
   if (name === SAMPLE.name) return;
-  const plan = legacyPlan(keys, { browser: (await browserScripts()).some((b) => b.name === name) });
+  const plan = legacyPlan(keys, { browser: (await browserScripts()).some((b) => b.name === name), moving });
   if (!plan) return;
   if (plan.draft) saving.drafts.move(name, plan.draft);
   await keyed(async () => {
@@ -3038,7 +3043,8 @@ async function handOver(name, keys) {
 scriptKeys.migrate(async () => (await recentScripts()).filter((r) => !r.browser && r.handle).map((r) => ({ handle: r.handle, name: r.name })));
 // Names a new or renamed script may not take: recent files, scripts in the browser (also a copy left behind that is not
 // deleted yet), kept drafts, names with a B-roll link or list kept (a file taken off the list keeps them) and the open
-// script (all by name, in any capitals; drafts and B-roll keys go by name). `own`: the script being named.
+// script (all by name, in any capitals: a browser script's drafts and B-roll keys go by its name). `own`: the script
+// being named.
 async function nameTaken(own = "") {
   const names = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
   for (const n of copies.names()) names.add(n.toLowerCase());
@@ -3098,16 +3104,17 @@ async function followTitle(handle) {
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
-// Is another script known under this name (not the file `handle`): the open one, one kept aside, one whose place is
-// kept, or one on the list? A script open without a file, or one that can't be compared, counts too (keep the data).
+// Is another script known that goes by this name (not the file `handle`): the open one, one kept aside, one whose place
+// is kept, or a browser script on the list? A script open without a file counts too (keep the data). Files on the
+// computer have keys of their own (TOOLS-361) and count only where they still go by their name (storage refused).
 async function nameShared(name, handle) {
   if (state.doc && state.name === name && !state.handle) return true;
   const known = [
     ...(state.doc ? [{ name: state.name, handle: state.handle }] : []),
     ...asides.map((s) => ({ name: s.name, handle: s.handle })),
     ...places.map((p) => ({ name: p.handle?.name, handle: p.handle })),
-    ...(await recentScripts()).map((x) => ({ name: x.name, handle: x.handle })),
-  ];
+    ...(await recentScripts()).filter((x) => x.browser).map((x) => ({ name: x.name, handle: x.handle })),
+  ].filter((k) => scriptKeys.keyOf(k.handle, k.name) === name);
   for (const k of known) if (k.name === name && k.handle && !(await sameFile(k.handle, handle))) return true;
   return false;
 }
@@ -3124,8 +3131,8 @@ async function deleteBrowserScript(r) {
     await saving.idle();
     await forget(r.handle);
     try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-    // Keys go by name (Save to video folder calls every one script.md): they go only when no other script of that name
-    // is known, open, kept aside or on the list. When in doubt, they stay.
+    // A browser script's keys go by its name: they go only when no other script that goes by that name is known, open,
+    // kept aside or on the list (files on the computer have their own, TOOLS-361). When in doubt, they stay.
     if (!(await nameShared(r.name, r.handle))) dropKeys(r.name);
   } finally {
     deleting.splice(deleting.indexOf(r.handle), 1);
