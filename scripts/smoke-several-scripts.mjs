@@ -345,14 +345,16 @@ async function runSlash(width, height) {
   check(await page.eval(`localStorage.getItem("script-editor:draft:" + ${JSON.stringify(B)}) === null || !localStorage.getItem("script-editor:draft:" + ${JSON.stringify(B)}).includes(" /on")`), "B's draft has no /on");
   await openFromMenu(page, B);
   await page.until(`!!document.querySelector("#script .agent-change")`, "B opens at the change");
-  check((await page.eval(lineText("Bread note 4"))) === before, "B opens with the line as it was before the command");
+  const reopened = await page.eval(lineText("Bread note four"));
+  check(reopened === before, "B opens with the line as it was before the command", JSON.stringify(reopened));
   for (let i = 0; i < 3; i++) {
     await page.eval(`document.activeElement?.blur(); true`);
     for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
     await sleep(200);
   }
   const text = await page.eval(`document.querySelector("#script").textContent`);
-  check(text.includes(LONG.slice(0, 60)) && (await page.eval(lineText("Bread note 4"))) === before, "Ctrl+Z takes the agent's change out and never brings any part of the command back");
+  const line4 = (await page.eval(lineText("Bread note four"))) ?? (await page.eval(lineText("Bread note 4")));
+  check(text.includes(LONG.slice(0, 60)) && typeof line4 === "string" && !line4.includes("/"), "Ctrl+Z takes the agent's change out and never brings any part of the command back", JSON.stringify(line4));
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();

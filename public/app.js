@@ -3516,24 +3516,34 @@ function saveText() {
 }
 // Focus going to the file-name menu closes the parts menu, but the "/" command typed there is still one: it stays out
 // of saves, and out of the script when it is left through the menu, until the person is back in the text (TOOLS-358).
-function keepMenuSlash() { if (slash.open) menuSlash = { id: slash.id, start: slash.start, end: slash.end }; }
+function keepMenuSlash() { if (slash.open) menuSlash = { id: slash.id, start: slash.start, end: slash.end, word: Doc.contentOf(byId(slash.id)).slice(slash.start, slash.end) }; }
 $("#docSwitch").addEventListener("pointerdown", keepMenuSlash, { capture: true });
 // Anywhere but the file-name menu (back in the text, or elsewhere): it is ordinary text again, and saves as usual. A
 // click on a row hides the menu before the script is left, so closing the menu alone does not end it.
 function endMenuSlash(e) {
   if (!menuSlash || e.target?.closest?.("#docSwitch, #scriptMenu")) return;
+  // An answer landing puts the caret back in its line while the menu stays open: that is not the person coming back.
+  if (e.type === "focusin" && $("#scriptMenu").matches(":popover-open")) return;
   menuSlash = null;
   saving.schedule();
 }
 document.addEventListener("focusin", endMenuSlash);
 document.addEventListener("pointerdown", endMenuSlash, { capture: true });
-// The "/" command being typed now: the open parts menu's, or the one kept while the file-name menu has focus (still
-// there, as typed).
+// The "/" command being typed now: the open parts menu's, or the one kept while the file-name menu has focus, found
+// again as typed nearest its place (an agent's answer may have moved it meanwhile).
 function commandNow() {
   if (slash.open) return slash;
   const b = menuSlash && state.doc && byId(menuSlash.id);
-  const c = b && Doc.slashCommand(Doc.contentOf(b), menuSlash.end);
-  return c && c.start === menuSlash.start && c.end === menuSlash.end ? menuSlash : null;
+  if (!b) return null;
+  const content = Doc.contentOf(b), { word } = menuSlash;
+  let best = null;
+  for (let at = content.indexOf(word); at >= 0; at = content.indexOf(word, at + 1)) {
+    const c = Doc.slashCommand(content, at + word.length);
+    if (c && c.start === at && c.end === at + word.length && (!best || Math.abs(at - menuSlash.start) < Math.abs(best - menuSlash.start))) best = at;
+  }
+  if (best === null) return null;
+  Object.assign(menuSlash, { start: best, end: best + word.length });
+  return menuSlash;
 }
 scriptEl.addEventListener("input", (e) => { if (!e.isComposing) updateSlash(true); });
 scriptEl.addEventListener("compositionend", () => updateSlash(true));
