@@ -268,3 +268,40 @@ test("B-roll move history: typing while an Undo finds its move stale is not undo
   assert.equal(m.state.undo.length, 2, "both typing steps keep their Undo, and the stale move is gone");
   assert.equal(m.text, edited);
 });
+
+test("B-roll move history: a drag waiting behind an Undo's save lands on its paragraph's current words", async () => {
+  const m = movement();
+  const saved = () => Broll.matchOver(Broll.spokenBlocks(m.state.doc), Broll.parseBroll(m.text).shots[0].over);
+  await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  const next = m.moveShot(2);
+  m.rewrite(2, "Rewritten last paragraph while the drag waits.");
+  release(); await next; await settle();
+  assert.deepEqual(saved(), [m.paras[2].id], "the saved quote matches the paragraph the shot was dropped on");
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+  assert.match(Doc.serialize(m.state.doc), /Rewritten last paragraph/);
+  m.undo(); await settle();
+  m.undo(); await settle();
+  assert.doesNotMatch(Doc.serialize(m.state.doc), /Rewritten last paragraph/);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the drag's Undo returns to where the Undo before it left the shot");
+  m.redo(); await settle();
+  m.redo(); await settle();
+  assert.deepEqual(saved(), [m.paras[2].id]);
+  assert.match(Doc.serialize(m.state.doc), /Rewritten last paragraph/);
+});
+
+test("B-roll move history: a drag whose paragraph is gone when its turn comes never happened", async () => {
+  const m = movement();
+  const first = Broll.parseBroll(m.text).shots[0].over;
+  const target = m.insertPara();
+  await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  const next = m.moveShot(target);
+  m.state.doc.blocks.splice(m.state.doc.blocks.findIndex((b) => b.id === m.paras[target].id), 1);
+  release(); await next; await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the shot stays where the Undo left it");
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, first);
+  assert.equal(m.state.undo.length, 1, "only the paragraph's own step is left: the drag left none");
+});
