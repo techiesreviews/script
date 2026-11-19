@@ -3028,9 +3028,10 @@ async function handOver(name, keys, { moving = false } = {}) {
   const plan = legacyPlan(keys, { browser: (await browserScripts()).some((b) => b.name === name), moving });
   if (!plan) return;
   // Only places never written are filled (a try again after a full storage never writes over what a file has since,
-  // also a link removed on purpose), the list before its link, and the name lets go only once every copy is kept: a
-  // full storage must not lose or hide them. A file with a draft of its own keeps it; the name's goes.
-  let kept = !plan.draft || saving.drafts.get(plan.draft) != null || saving.drafts.move(name, plan.draft);
+  // also a link removed on purpose), the list before its link, the draft last (a hand-over that stops before it leaves
+  // the draft under the name, where the next try finds it), and the name lets go only once every copy is kept: a full
+  // storage must not lose or hide them. A file with a draft of its own keeps it; the name's goes.
+  let kept = true;
   await keyed(async () => {
     // Read so that a failed read stops the hand-over (it is tried again), never taken for "no list".
     const link = await idbRead(brollKey(name)), stored = await idbRead(listKey(name)), old = store.get(listKey(name));
@@ -3040,6 +3041,7 @@ async function handOver(name, keys, { moving = false } = {}) {
       if (list != null && (await idbRead(listKey(k))) === undefined && !(await put(listKey(k), list))) { kept = false; continue; }
       if (link != null && (await idbRead(brollKey(k))) === undefined) kept = (await put(brollKey(k), link)) && kept;
     }
+    if (kept && plan.draft) kept = saving.drafts.get(plan.draft) != null || saving.drafts.move(name, plan.draft);
     if (!plan.clear || !kept) return;
     saving.drafts.del(name);
     if (link != null) await idbSet(brollKey(name), null);
