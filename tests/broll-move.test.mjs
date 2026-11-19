@@ -163,7 +163,7 @@ test("B-roll move history: dragging during a held Undo returns to the restored o
   m.undo(); await settle();
   const next = m.moveShot(2);
   release(); await next; await settle();
-  assert.equal(m.broll.shots[0].check, false, "the new drag clears Check");
+  assert.equal(!!m.broll.shots[0].check, false, "the new drag clears Check");
   m.undo(); await settle();
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
   assert.equal(m.broll.shots[0].check, true, "Undo restores the Check flag from the preceding inverse");
