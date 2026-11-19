@@ -7,8 +7,10 @@
 import * as Doc from "./doc.js";
 import * as Changes from "./changes.js";
 
-// The agent works on a selection ask with text: B-roll asks, and whole-script jobs, stay with the open script.
-export const isWorking = (a) => !!a && a.scope === "selection" && a.action !== "broll" && (a.status === "waiting" || a.status === "taken");
+/** Asks a script kept aside answers itself: on selected words, not B-roll. A whole-script job waits for its script. */
+export const takesAnswer = (a) => !!a && a.scope === "selection" && a.action !== "broll";
+// The agent works on such an ask (it is waiting or taken).
+export const isWorking = (a) => takesAnswer(a) && (a.status === "waiting" || a.status === "taken");
 const isBrollAnswer = (a) => a.status === "answered" && a.answer?.kind === "broll";
 
 /** The script being left, kept aside while its agent works in it or it holds a change the person has not seen
@@ -21,9 +23,6 @@ export function leave({ handle, name, browser = false, doc, asks, undo, redo, sa
 
 /** "working" while the agent works on an ask there, then "done" until its change has been seen, else "". */
 export const status = (s) => (s.asks.some(isWorking) ? "working" : s.unseen.size ? "done" : "");
-
-/** Asks a script kept aside answers itself: on selected words, not B-roll. A whole-script job waits for its script. */
-export const takesAnswer = (a) => !!a && a.scope === "selection" && a.action !== "broll";
 
 export function findAsk(asides, id) {
   for (const aside of asides) {
