@@ -111,7 +111,7 @@ test("createBroll: app.js hands the module exactly what it takes, and the stand-
 const API = ["adoptRoom", "agentTool", "answerBroll", "canAdd", "cardOpen", "cleanSketches", "close", "closeCard", "dropGone",
   "endDrag", "escape", "exports", "flags", "folder", "link", "load", "openCard", "pictureBytes", "pictureHead", "positionCard",
   "refreshSuggestions", "rematch", "render", "renderMarks", "renderView", "requestPlan", "requestSketches", "roomShare",
-  "setFlags", "shots", "sketch", "status", "touched"];
+  "setFlags", "shots", "sketch", "status", "touchKept", "touched"];
 
 test("createBroll: one small interface, and a fresh part holds no list", async () => {
   const { SEAM, createBroll } = await import("../public/broll-app.js");
