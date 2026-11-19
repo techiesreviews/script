@@ -257,7 +257,8 @@ export function createLeftCopies({ store, dir, locks = tabLocks(), write = write
  * - clock: { now(), later(fn, ms) → id, cancel(id) }
  * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }),
  *   placed(handle, { was, words, browser }) — was: the browser copy the script moved out of, words: that copy as
- *   this tab last wrote or read it; left({ handle, text, modified }) — a script the person left was written (optional) }
+ *   this tab last wrote or read it; left({ handle, text, modified }) — a script the person left was written (optional);
+ *   leftDraft(handle, name, text) — a left script could not be written: false when the app keeps the words (optional) }
  */
 export function createSaving({ script, editor, files, browser, drafts: store, clock, on }) {
   let queue = SaveQueue.emptyQueue();
@@ -304,6 +305,12 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     const draft = drafts.get(name);
     drafts.set(name, { text, at: clock.now(), asks: draft?.asks ?? [], ...(draft?.broll ? { broll: draft.broll } : {}) });
   }
+  // The same for a script the person left, unless the app keeps these words itself because another script of that name
+  // holds the draft (`leftDraft` gives false; TOOLS-358).
+  function keepLeftDraft(handle, name, text) {
+    if (on.leftDraft?.(handle, name, text) === false) return;
+    keepDraft(name, text);
+  }
   // The changed-on-disk check: the file holds other words than this tab last wrote into it or read from it
   // (`savedText`). Gives { at: the file's time, to show }, else null. The file's time decides nothing.
   async function diskConflict(handle, req) {
@@ -323,7 +330,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         }
       } catch { /* kept as a draft below */ }
       // `noDraft`: the caller keeps these words itself (a script kept aside: another script may hold its name).
-      if (!snap.noDraft) keepDraft(nameOf(snap), snap.text);
+      if (!snap.noDraft) keepLeftDraft(snap.handle, nameOf(snap), snap.text);
       return null;
     });
   }
@@ -387,7 +394,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         if (handle === script.handle) script.saveError = e?.message || "Could not save.";
       }
     });
-    if (!written && handle !== script.handle) keepDraft(handle.name, text);
+    if (!written && handle !== script.handle) keepLeftDraft(handle, handle.name, text);
     if (written && handle !== script.handle) wroteLeft(written);
     queue = SaveQueue.settleQueue(queue, written);
     return drain(false);
