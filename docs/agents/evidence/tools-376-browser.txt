@@ -1,0 +1,41 @@
+TOOLS-376 / sweep SE-01: undo after moving B-roll preserves script typing.
+
+Scope: only SE-01. No prototype required for this bug fix. The lead chose the scope while Lex was unavailable.
+Only a local static copy and fresh private browser contexts with throwaway scripts were used. No live editor,
+existing script, agent connection, board, release, preview deployment or production deployment was used.
+
+Proof lines (also required in the PR):
+Reproduce SE-01: met — before any fix, kit go se01-red ran scripts/smoke-broll-undo.mjs against http://127.0.0.1:8916 and Chrome CDP 9416. Before Undo: Over="Second spoken paragraph.", typing preserved=true. After Undo: Over still="Second spoken paragraph.", sentinel preserved=false. AssertionError: Undo after moving B-roll preserves unrelated typing.
+Tests first: met — committed browser regression 286be29 before application edits; kit unit tests/broll-history.test.mjs then failed 0/4 before the history seam existed (committed fe3dfae).
+Undo preserves typing: met — the same local browser regression now restores Over="First spoken paragraph." and sentinel preserved=true. It types through browser input, adds a shot through Add B-roll, drags with pointer input, focuses the shot and presses Ctrl+Z.
+Redo and chronological history: met — browser check repeats Ctrl+Shift+Z, types LATER-TYPING, undoes that typing first, then undoes the shot move; UNDO-SENTINEL-A survives. Reload and Reopen of that run's throwaway script retain the original shot position and exact script words.
+Desktop and phone: met — all four cases passed at 1440 and 390 CSS pixels, light and dark. No browser errors. Screenshots inspected under .scratch/se01-shots/ (private throwaway text only).
+Pending and failed saves: met — tests/broll-history.test.mjs controls a pending Undo write, typing while it waits, an Undo write failure and retry, initial-save cancellation, and an invalidated list. It runs the application's actual history functions.
+Smallest scope: met — only move history and its lazy-module seam change; no controls, layout, or other sweep findings change. A move only writes that shot's Over cell through the existing list queue. Its inverse checks the list token and expected Over before writing, so another list or a changed shot is not overwritten.
+Live scripts protected: met — the browser runner refuses non-loopback URLs and creates/disposes a private context per case. Local Chrome and static server were stopped after checks. No live script was opened, changed or synced.
+Open PR only: pending — run kit review, its GPT second look and kit pr --no-merge; never merge, release or deploy.
+
+Assumptions and limits:
+- Existing shared-room text Undo remains owned by the collaborative editor. This change uses the single-person history, like other local checkpoints; it does not redesign shared-room undo ordering.
+- scripts/agents/worktree.sh is absent. The requested command exited 127. Used the identical shared Agent Kit worktree.sh with ASE_OWNER=gpt-fix-script-editor and the prescribed branch/base instead. No edits in the shared checkout.
+- docs/agents/runner.md is absent; kitchen-extras.md explicitly documents that this project has no runner guide.
+- kit ux was attempted after updating docs/features.md. It fails because docs/agents/features.md is absent, despite the project's featureList setting. No UX verdict claimed. The project's extras confirm that no kit UX checks are scripted. Real local browser checks provide behavior evidence.
+- The first expanded browser runner failed after its first passing case because it closed its CDP connection inside the case loop. Fixed the harness lifetime; all four cases then passed, twice.
+
+Commands and RESULT lines observed through implementation:
+Requested worktree command: scripts/agents/worktree.sh: No such file or directory (exit 127).
+Root doctor: RESULT: fail doctor 1 failed: place
+Rulebook: RESULT: ok rulebook shared and docs/agents/kitchen-extras.md
+Worktree doctor: RESULT: ok doctor 13/13 checks passed
+RESULT: ok bg se01-local pid 2257871
+RESULT: ok bg se01-chrome pid 2257933
+RESULT: fail go se01-red exit 1 without a RESULT line; see .scratch/kit-jobs/se01-red/log
+RESULT: fail unit 0/4 (1 files) log .scratch/unit/20261119T224317-2273139.log
+RESULT: ok unit 12/12 (2 files) log .scratch/unit/20261119T224402-2276606.log
+RESULT: ok se01-browser undo restores shot and preserves typing
+RESULT: ok unit 12/12 (2 files) log .scratch/unit/20261119T224439-2281527.log
+RESULT: fail go se01-browser-all exit 1 without a RESULT line; see .scratch/kit-jobs/se01-browser-all/log
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok specs (545/545 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
