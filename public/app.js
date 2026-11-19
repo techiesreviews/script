@@ -2485,13 +2485,9 @@ function answerKept(s, ask, args) {
   } else if (!Changes.fits(s.doc, ask, checked.answer)) return { error: STAYS_IN_PARAGRAPH };
   const r = Aside.answer(s, ask, checked.answer, agentBy(), Date.now(), { undoLimit: UNDO_LIMIT });
   saveKept(s);
-  // Shots over a changed line get "Check", as when the person changes it (the B-roll part is loaded when it has shots).
-  if (r.landed && s.shots?.length) import("./broll.js").then((Broll) => {
-    const flagged = Broll.touchShots(s.doc, s.shots);
-    if (!flagged.length || s.gone) return;
-    s.flags = { ...s.flags, ...Object.fromEntries(flagged.map((id) => [id, true])) };
-    if (!state.doc || state.handle !== s.handle) persistKept(s);
-  }).catch(() => {});
+  // Shots over a changed line get "Check", as when the person changes it (the B-roll part is here when it has shots).
+  const flagged = r.landed && s.shots?.length && brollApi ? brollApi.touchKept(s.doc, s.shots) : [];
+  if (flagged.length) { s.flags = { ...s.flags, ...Object.fromEntries(flagged.map((id) => [id, true])) }; persistKept(s); }
   renderKept();
   if (!r.ok) return { error: "The text this ask was about has changed, so the ask was cancelled." };
   if (Aside.status(s) === "done") {
@@ -3191,7 +3187,7 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // when a script has a linked list or B-roll asks, when the Storyboard opens, or when the agent sends B-roll; opening a
 // script without any of that downloads none of it. Until it is here, the app answers for it below: no list.
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
-const BROLL_SEAM = 1;
+const BROLL_SEAM = 2;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
 // is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
