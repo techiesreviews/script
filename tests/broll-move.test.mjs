@@ -105,3 +105,15 @@ test("B-roll move history: Undo restores the original paragraph's current words 
   m.redo(); await settle();
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
 });
+
+test("B-roll move history: regenerated quotes between two moves keep the older inverse usable", async () => {
+  const m = movement();
+  await m.moveShot(1);
+  Doc.setContent(m.state.doc, m.paras[1].id, "Rewritten middle paragraph while the shot covers it.");
+  await m.moveShot(2);
+  m.undo(); m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  assert.match(Doc.serialize(m.state.doc), /Rewritten middle paragraph/);
+  m.redo(); m.redo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+});
