@@ -8,7 +8,7 @@ import { startPress, HOLD_MS } from "./press.js";
 
 // Bump with any change to the host createBroll takes or the interface it returns: app.js checks it, so a tab opened
 // before a release that loads this file after it never mixes the two.
-export const SEAM = 1;
+export const SEAM = 2;
 
 /**
  * createBroll(host) → the B-roll part, frozen. `host` is what it may use of the app (app.js brollHost): its state,
@@ -1570,6 +1570,8 @@ export function createBroll(host) {
     refreshSuggestions,
     dropGone: () => { if (broll.status === "ok" || broll.status === "none") dropGoneSuggestions(); },
     cleanSketches: (ask) => Broll.cleanSketches(ask),
+    // A script kept aside (TOOLS-358): its shots over lines the agent's answer changed get "Check"; gives their ids.
+    touchKept: (doc, shots) => Broll.touchShots(doc, shots),
     cardOpen: () => !shotCard.hidden,
     openCard: openShotCard,
     positionCard: positionShotCard,

@@ -600,6 +600,19 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .scripts__tag { flex: none; padding: 0.05rem 0.4rem; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 0.7rem; font-weight: 600; }
 .scripts__delete { flex: none; margin-inline-end: 0.15rem; padding: 0.3rem 0.6rem; border: 0; border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font-size: 0.8rem; font-weight: 600; cursor: pointer; }
 .scripts__empty { padding: 0.4rem 0.5rem; color: var(--muted); font-size: 0.85rem; }
+/* Several scripts (TOOLS-358, prototype approved by Lex 2026-11-19): the agent at work in another script. The orange
+   dot is bigger than the 7 px "not saved yet" dot and sits higher, at the file name's corner, so the two are not mixed
+   up; no number in it. The menu row says it in words: a small spinner and "AI working", then "AI done" and the dot. */
+.ai-dot { display: inline-block; flex: none; inline-size: 0.62rem; block-size: 0.62rem; border-radius: 50%; background: var(--accent); }
+.doc__title .ai-dot { margin-inline-start: 0.05rem; translate: 0 -0.38rem; box-shadow: 0 0 0 2px var(--bg); }
+.scripts__end { display: contents; } /* a row's end, drawn again on its own when the agent's state changes */
+.scripts__ai { flex: none; color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+.scripts__row[data-unseen] .scripts__ai { color: var(--text); font-weight: 600; }
+.scripts__spin { flex: none; inline-size: 0.8rem; block-size: 0.8rem; border: 2px solid var(--line-strong); border-block-start-color: var(--accent); border-radius: 50%; }
+@media (prefers-reduced-motion: no-preference) {
+  .scripts__spin { animation: edit-bar-spin 0.8s linear infinite; }
+  .doc__title .ai-dot { animation: pop-in 320ms var(--ease-out); }
+}
 @media (hover: hover) and (pointer: fine) {
   .scripts__open:hover { background: var(--hover); }
   .scripts__remove { opacity: 0; }

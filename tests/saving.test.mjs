@@ -60,6 +60,7 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
       done: (moved) => events.push(["done", !!moved]),
       renamed: (from, to, o) => events.push(["renamed", from, to, o]),
       placed: (h, o) => events.push(["placed", h.name, o]),
+      left: (w) => events.push(["left", w.handle.name, w.text]),
     },
   };
   const saving = createSaving(ports);
@@ -75,7 +76,7 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
 
 test("saving: the interface is small, and app.js reaches saving only through it", () => {
   const { saving } = setup();
-  assert.deepEqual(Object.keys(saving).sort(), ["allow", "drafts", "flush", "open", "queued", "save", "saveAs", "saveMine", "schedule", "stop"]);
+  assert.deepEqual(Object.keys(saving).sort(), ["allow", "drafts", "flush", "idle", "open", "queued", "save", "saveAs", "saveLeft", "saveMine", "schedule", "stop"]);
   assert.deepEqual(Object.keys(saving.drafts).sort(), ["del", "get", "move", "set"]);
   assert.equal(AUTOSAVE_MS, 1500);
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
@@ -197,6 +198,210 @@ test("saving: a script the person left that cannot be written keeps its text as 
   await until(() => !s.script.saving);
   assert.deepEqual(s.store.get("draft:a.md"), { text: "# A\n\nOne. Lost?\n", at: 77_000, asks: [{ id: "k" }], broll: { s1: true } });
   assert.equal(s.script.saveError, "", "A's problem does not show on B");
+});
+
+test("saving: a left script the app keeps aside (on.keepsWords) never falls back to a draft by name, running or queued (review on PR #79)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.ports.on.keepsWords = (handle) => handle === A;
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. First.\n";
+  s.saving.save(); // runs and waits
+  await settle();
+  s.ed.text = "# A\n\nOne. Second.\n";
+  s.saving.flush(); // leaving A: waits behind the running save
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.store.set("draft:a.md", { text: "another a.md's words", at: 1, asks: [] }); // another script called a.md
+  A.fail = true; // both writes of A fail
+  release();
+  await until(() => !s.script.saving);
+  assert.deepEqual(s.store.get("draft:a.md"), { text: "another a.md's words", at: 1, asks: [] });
+});
+
+// TOOLS-358: the agent's answer lands in a script the person left; it goes to that script's own file.
+test("saving: saveLeft writes a left script's new words to its own file with the auto-save rules, and says so", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  const written = await s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  assert.equal(written.text, "# A\n\nOne, shorter.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne, shorter.\n");
+  assert.ok(A.asked.every((ask) => ask === false), "no permission prompt");
+  assert.deepEqual(s.events.filter((e) => e[0] === "left"), [["left", "a.md", "# A\n\nOne, shorter.\n"]]);
+  assert.equal(s.script.handle.name, "b.md", "the open script's record is not touched");
+  assert.equal(s.script.savedText, "# B\n");
+});
+
+test("saving: saveLeft while a save runs waits its turn, after the older write of that file, and compares with what it left", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.flush(); // leaving A with words not saved yet, as loadText does: the write starts and waits
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  let written = null;
+  const p = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne. Typed. Answered.\n", browser: false, savedText: "# A\n\nOne.\n" }).then((w) => { written = w; });
+  await settle();
+  assert.equal(written, null, "it waits for the running save");
+  release();
+  await p;
+  assert.equal(written.text, "# A\n\nOne. Typed. Answered.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed. Answered.\n");
+  assert.equal(s.store.has("draft:a.md"), false, "no false changed-on-disk draft");
+  assert.deepEqual(s.events.filter((e) => e[0] === "left").map((e) => e[2]), ["# A\n\nOne. Typed.\n", "# A\n\nOne. Typed. Answered.\n"], "the app hears each write of the left file");
+});
+
+test("saving: saveLeft during a Save as or a save into the browser still reaches its own file (review round 1, P2)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.open(null, "# Demo\n\nWords.\n"); // the demo: no file yet
+  s.ports.files.pickSave = async () => ({ name: "picked.md" });
+  const release = s.files.hold("picked.md");
+  const saved = s.saving.saveAs();
+  await until(() => s.script.saving);
+  let written = null;
+  const p = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, answered.\n", browser: false, savedText: "# A\n\nOne.\n" }).then((w) => { written = w; });
+  release();
+  await saved;
+  await p;
+  assert.equal(written?.text, "# A\n\nOne, answered.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne, answered.\n");
+  assert.equal(s.files.disk.get("picked.md").text, "# Demo\n\nWords.\n");
+  assert.equal(s.script.saving, false);
+  // The same while the demo goes into the browser (Ctrl+S where no file can be picked).
+  const t = setup();
+  const B = t.script.handle;
+  t.open(null, "# Demo\n\nMore.\n");
+  let made;
+  const gate = new Promise((r) => { made = r; });
+  const create = t.ports.browser.create;
+  t.ports.browser.create = async (name, text) => { await gate; return create(name, text); };
+  const inBrowser = t.saving.save();
+  await until(() => t.script.saving);
+  const q = t.saving.saveLeft({ handle: B, name: "a.md", text: "# A\n\nTwo, answered.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  made();
+  await inBrowser;
+  assert.equal((await q)?.text, "# A\n\nTwo, answered.\n");
+  assert.equal(t.files.disk.get("a.md").text, "# A\n\nTwo, answered.\n");
+  assert.equal(t.script.saving, false);
+});
+
+test("saving: a script left while its auto-save runs, then answered by the agent, ends with the answer in its file (second look, P1)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.save({ auto: true }); // A's auto-save runs and waits
+  await settle();
+  s.ed.text = "# A\n\nOne. Typed more.\n";
+  s.saving.flush(); // leaving A: its newer words wait for the running save
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  const p = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne. Typed more. Answered.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  release();
+  const written = await p;
+  await until(() => !s.script.saving);
+  assert.equal(written?.text, "# A\n\nOne. Typed more. Answered.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed more. Answered.\n");
+});
+
+test("saving: saveLeft says it is done only once its own words are written, also when an older write of that file is on its way (second look, P1)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.save({ auto: true }); // A's own save runs and waits
+  await settle();
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  const p2 = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nTwo.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  release();
+  const release2 = s.files.hold("a.md"); // the queued write of "Two." waits too
+  await until(() => s.files.log.some(([n, t]) => n === "a.md" && t === "# A\n\nTwo.\n"));
+  let third = null;
+  const p3 = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nThree.\n", browser: false, savedText: "# A\n\nOne.\n" }).then((w) => { third = w; });
+  release2();
+  assert.equal((await p2)?.text, "# A\n\nTwo.\n");
+  await p3;
+  assert.equal(third?.text, "# A\n\nThree.\n", "the newer words' promise ends with their own write");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nThree.\n");
+});
+
+test("saving: idle() ends once every save asked for so far is written, the left ones too (second look on PR #76)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  await s.saving.idle(); // nothing runs: at once
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.flush();
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne. Typed. Answered.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  let done = false;
+  const p = s.saving.idle().then(() => { done = true; });
+  await settle();
+  assert.equal(done, false, "a save still runs");
+  release();
+  await p;
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed. Answered.\n");
+  // A saveLeft write that runs on its own (no save running) is waited for too.
+  const hold = s.files.hold("a.md");
+  const direct = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nAgain.\n", browser: false, savedText: "# A\n\nOne. Typed. Answered.\n" });
+  let quiet = false;
+  const q = s.saving.idle().then(() => { quiet = true; });
+  await settle();
+  assert.equal(quiet, false, "the direct write still runs");
+  hold();
+  await direct;
+  await q;
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nAgain.\n");
+});
+
+test("saving: idle() waits through a save that was waiting behind the running one (second look on 1068e69)", async () => {
+  const s = setup();
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nFirst.\n";
+  s.saving.save(); // runs and waits
+  await settle();
+  s.ed.text = "# A\n\nSecond.\n";
+  s.saving.save(); // waits behind it
+  let quiet = false;
+  const p = s.saving.idle().then(() => { quiet = true; });
+  const release2 = (release(), s.files.hold("a.md"));
+  await until(() => s.files.log.some(([n, t]) => n === "a.md" && t === "# A\n\nSecond.\n"));
+  assert.equal(quiet, false, "the second save still runs");
+  release2();
+  await p;
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nSecond.\n");
+});
+
+test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.files.outside("a.md", "# A\n\nChanged elsewhere.\n");
+  s.time.t = 88_000;
+  const written = await s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  assert.equal(written, null);
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nChanged elsewhere.\n");
+  assert.equal(s.store.get("draft:a.md").text, "# A\n\nOne, shorter.\n");
+  assert.equal(s.store.get("draft:a.md").at, 88_000);
+});
+
+test("saving: saveLeft with noDraft keeps no draft under the name when the file can't be written (release review on PR #78)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.store.set("draft:a.md", { text: null, at: 1, asks: [], broll: { B9: true } }); // another a.md's own draft
+  s.files.outside("a.md", "# A\n\nChanged elsewhere.\n");
+  const written = await s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n", noDraft: true });
+  assert.equal(written, null);
+  assert.deepEqual(s.store.get("draft:a.md"), { text: null, at: 1, asks: [], broll: { B9: true } });
 });
 
 test("saving: a file changed on disk is not written over; Save mine writes this version", async () => {

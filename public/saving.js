@@ -30,7 +30,7 @@ export async function fingerprint(text) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text));
   return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-const sameWords = async (a, b) => a === b || (await fingerprint(a)) === (await fingerprint(b));
+export const sameWords = async (a, b) => a === b || (await fingerprint(a)) === (await fingerprint(b));
 // Write access: a click may show the browser's prompt (`ask`); without it only access given before counts.
 export async function permitted(handle, ask, mode = "readwrite") {
   const o = { mode };
@@ -257,7 +257,8 @@ export function createLeftCopies({ store, dir, locks = tabLocks(), write = write
  * - clock: { now(), later(fn, ms) → id, cancel(id) }
  * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }),
  *   placed(handle, { was, words, browser }) — was: the browser copy the script moved out of, words: that copy as
- *   this tab last wrote or read it }
+ *   this tab last wrote or read it; left({ handle, text, modified }) — a script the person left was written (optional);
+ *   keepsWords(handle) — true while the app keeps that left script's words itself: no draft by name (optional) }
  */
 export function createSaving({ script, editor, files, browser, drafts: store, clock, on }) {
   let queue = SaveQueue.emptyQueue();
@@ -304,6 +305,11 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     const draft = drafts.get(name);
     drafts.set(name, { text, at: clock.now(), asks: draft?.asks ?? [], ...(draft?.broll ? { broll: draft.broll } : {}) });
   }
+  // The same for a script the person left, unless the app keeps its words itself (a script kept aside, TOOLS-358:
+  // another script of that name may hold the draft).
+  function keepLeftDraft(handle, name, text) {
+    if (!on.keepsWords?.(handle)) keepDraft(name, text);
+  }
   // The changed-on-disk check: the file holds other words than this tab last wrote into it or read from it
   // (`savedText`). Gives { at: the file's time, to show }, else null. The file's time decides nothing.
   async function diskConflict(handle, req) {
@@ -322,10 +328,22 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
           }
         }
       } catch { /* kept as a draft below */ }
-      keepDraft(nameOf(snap), snap.text);
+      // `noDraft`: the caller keeps these words itself (a script kept aside: another script may hold its name).
+      if (!snap.noDraft) keepLeftDraft(snap.handle, nameOf(snap), snap.text);
       return null;
     });
   }
+  // No save runs: everything asked for so far has been written or kept as a draft (TOOLS-358: a delete waits for it).
+  let idleWaits = [], directLeft = 0; // directLeft: saveLeft writes running outside the queue
+  const settleIdle = () => {
+    if (script.saving || directLeft) return;
+    const w = idleWaits;
+    idleWaits = [];
+    for (const done of w) done();
+  };
+  const idle = () => (script.saving || directLeft ? new Promise((done) => idleWaits.push(done)) : Promise.resolve());
+  // A left script's words reached its file: the app keeps what that file now holds (`left` is optional).
+  const wroteLeft = (written) => { if (written) on.left?.(written); return written; };
 
   async function save({ force = false, auto = false } = {}) {
     if (!editor.ready()) return;
@@ -375,7 +393,8 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         if (handle === script.handle) script.saveError = e?.message || "Could not save.";
       }
     });
-    if (!written && handle !== script.handle) keepDraft(handle.name, text);
+    if (!written && handle !== script.handle) keepLeftDraft(handle, handle.name, text);
+    if (written && handle !== script.handle) wroteLeft(written);
     queue = SaveQueue.settleQueue(queue, written);
     return drain(false);
   }
@@ -384,10 +403,25 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   async function drain(moved) {
     for (;;) {
       const { left, current } = SaveQueue.splitQueue(queue, script.handle);
-      if (!left.length) { queue = SaveQueue.emptyQueue(); script.saving = false; finish(current, moved); return; }
+      if (!left.length) { queue = SaveQueue.emptyQueue(); script.saving = false; finish(current, moved); settleIdle(); return; } // after a waiting save starts
       queue = { waiting: current, left: [] };
-      for (const snap of left) queue = SaveQueue.settleQueue(queue, await writeLeft(snap));
+      for (const snap of left) {
+        const written = wroteLeft(await writeLeft(snap));
+        queue = SaveQueue.settleQueue(queue, written);
+        for (const done of snap.waits || []) done(written); // only the saveLeft calls whose words this was
+      }
     }
+  }
+  // A script the person left changed while it waited (their agent's answer landed in it, TOOLS-358): its words go to
+  // its own file with the auto-save rules. While a save runs, they wait in the queue like any script left behind, after
+  // an older write of the same file, and are compared with what that write left. Gives { handle, text, modified }, or
+  // null when the words were kept as a draft instead. `script` is never touched.
+  function saveLeft(snap) {
+    if (!script.saving) {
+      directLeft++;
+      return writeLeft(snap).then(wroteLeft).finally(() => { directLeft--; settleIdle(); });
+    }
+    return new Promise((done) => { queue = SaveQueue.queueLeft(queue, { ...snap, force: false, auto: true, waits: [done] }); });
   }
   function finish(current, moved) {
     script.autoSaving = false;
@@ -454,8 +488,11 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     // With another script open now, the saves made meanwhile run as after any save: scripts left go to their own
     // files (or drafts), then the open script's own request with its own flags (a click may still show the prompt).
     if (mine !== opened) return drain(true);
+    // Requests made during a save-as belonged to the old place; the new file is now current. Words for scripts left
+    // behind (an agent's answer in a script kept aside, saveLeft) still go to their own files first.
+    if (queue.left.length) { queue = { waiting: null, left: queue.left }; return drain(true); }
     script.saving = false;
-    // Requests made during a save-as belonged to the old place; the new file is now current.
+    settleIdle();
     queue = SaveQueue.emptyQueue();
     on.done(true);
     schedule();
@@ -477,7 +514,9 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     } catch (e) {
       if (editor.doc() === doc) script.saveError = e?.message || "Could not save.";
     }
+    if (queue.left.length) { queue = { waiting: null, left: queue.left }; return drain(true); } // as after Save as
     script.saving = false;
+    settleIdle();
     queue = SaveQueue.emptyQueue();
     on.done(true);
     schedule();
@@ -499,5 +538,5 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // The handles saves are waiting for: a file the switcher hands over again is the same file.
   const queued = () => [queue.waiting?.handle, ...queue.left.map((x) => x.handle)].filter(Boolean);
 
-  return { save, schedule, flush, stop, saveAs, saveMine, allow, open, queued, drafts };
+  return { save, schedule, flush, stop, saveAs, saveMine, saveLeft, idle, allow, open, queued, drafts };
 }

@@ -1,6 +1,6 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
 import * as Doc from "./doc.js";
-import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted } from "./saving.js";
+import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted, sameWords } from "./saving.js";
 import * as Changes from "./changes.js";
 import * as Links from "./links.js";
 import * as Cues from "./cues.js";
@@ -9,6 +9,7 @@ import { agentBrand } from "./agent-brand.js";
 import { TOKEN_MAX_AGE_MS as AGENT_MAX_AGE, NO_ASKS } from "./agent-link.js";
 import { listState, settleFolder, folderNote } from "./folder-note.js";
 import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
+import * as Aside from "./aside.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -114,6 +115,15 @@ let together = null;
 const roomLink = parseLink(location.hash);
 // Script or Storyboard (the switch in the top bar), remembered; where the script was scrolled.
 const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 0 };
+// Several scripts (TOOLS-358): scripts left while the agent works in them (aside.js), and where each script left was
+// scrolled and its caret ({ handle, place }). In this tab's memory only.
+const asides = [], places = [];
+// The files whose words the app keeps itself since they were kept aside: their saves never fall back to a draft by name,
+// also a save still on its way after the script left memory (taken off the list). Until the script opens again.
+const keptWords = new WeakSet();
+let lastCaret = null; // the caret in the open script, kept while focus is in the menu
+let lookFor = null; // the agent's changes made while this script was aside, until they have been on screen
+let menuSlash = null; // a "/" command being typed when focus went to the file-name menu (commandNow)
 
 /* ---------- Small helpers ---------- */
 const scriptEl = $("#script");
@@ -2300,9 +2310,18 @@ function persistDraft() {
   saving.drafts.set(state.name, { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
 }
 
-function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false }) {
-  // Leaving a script: write what is still waiting to its own file, and keep a draft as a safety net.
-  if (state.doc) { persistDraft(); saving.flush(); }
+// `kept`: a script kept aside (TOOLS-358), opened again as it is in memory; `place`: where it was scrolled and its caret.
+// `draft`: this script's own draft, handed over (a script kept aside whose file changed), instead of the one by its name.
+function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null, draft: given = null }) {
+  // Leaving a script: keep its place (and the script itself while its agent works in it), write what is still waiting
+  // to its own file, and keep a draft as a safety net.
+  if (state.doc) {
+    // A script kept aside keeps its words in memory and leaves no draft under its name, also no older one: another
+    // script of that name (Save to video folder calls every one script.md) may open next and would read it.
+    if (leaveScript(handle)) { clearTimeout(draftTimer); saving.drafts.del(state.name); }
+    else persistDraft();
+    saving.flush();
+  }
   // A new script left as it came is not kept: empty ones would pile up in the browser. It goes once this tab has let
   // go of its name (below), and only while no other tab has it open or has saved words into it.
   const unused = state.doc && state.inBrowser && state.blank && handle !== state.handle && Doc.serialize(state.doc) === state.blank && !state.asks.length
@@ -2313,24 +2332,30 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   hideBar();
   closeCard();
   closeBroll();
-  state.doc = Doc.parse(text);
-  saving.open({ handle, name, browser, savedText: fresh ? Doc.serialize(state.doc) : text, modified, fresh });
+  state.doc = kept ? kept.doc : Doc.parse(text);
+  saving.open({ handle, name, browser, savedText: kept ? kept.savedText : fresh ? Doc.serialize(state.doc) : text, modified, fresh });
   const freed = holdOpen();
+  if (handle) keptWords.delete(handle); // open again: its own draft is its safety net again
   if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle); dropKeys(unused.name); } }).catch(() => {});
-  state.undo = [];
-  state.redo = [];
+  state.undo = kept ? kept.undo : [];
+  state.redo = kept ? kept.redo : [];
   state.lastStep = null;
+  state.preCaret = null;
   state.asks = [];
+  lastCaret = null;
+  lookFor = null;
+  menuSlash = null;
   changeBase = null;
   passedHere.clear();
   seenMarks.clear();
   state.pendingDraft = null;
   state.frontOpen = false;
   state.hint = null;
-  const draft = saving.drafts.get(name);
-  setBrollFlags(draft?.broll);
+  const draft = given ?? saving.drafts.get(name);
+  setBrollFlags(kept ? keptFlags(kept) : draft?.broll);
   hideBanner();
-  if (draft?.text != null && draft.text !== text && (draft.at || 0) > modified) {
+  if (kept) adoptKept(kept);
+  else if (draft?.text != null && draft.text !== text && (draft.at || 0) > modified) {
     state.pendingDraft = draft;
     showBanner(`Unsaved changes from ${clock(draft.at)}`, [["Restore", restoreDraft], ["Discard", discardDraft]]);
   } else {
@@ -2340,9 +2365,11 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   renderAll();
   renderDerived();
   editorJump();
-  scrollTo({ top: 0 });
+  goToPlace(kept, place);
+  renderKept();
   loadBroll();
   together?.local();
+  offerAsks(); // a waiting agent hears of asks left waiting in the script just left (or in this one)
 }
 function adoptAsks(asks) {
   if (!Array.isArray(asks)) return;
@@ -2370,6 +2397,161 @@ function adoptAsks(asks) {
   for (const a of state.asks) if (a.scope === "script") settleVoice(a);
   Changes.endExpired(state.asks, Date.now()); // a mark whose 60 minutes are over comes back without its tint (step M)
   markBase();
+}
+/* ---------- Several scripts: the agent works in scripts the person left (TOOLS-358, Lex 2026-11-19) ---------- */
+// Leaving a script: where it was scrolled and its caret are kept; while its agent still works on an ask there (or it
+// holds a change not seen yet) the script itself is kept aside, so the answer lands in it while another one is open.
+function leaveScript(next) {
+  if (state.guest || !state.handle || next === state.handle) return;
+  const place = { y: ui.view === "script" ? scrollY : ui.scriptY, caret: Aside.caretPlace(state.doc, lastCaret) }; // the caret, whatever the view
+  dropKept(state.handle);
+  const cmd = commandNow(); // also one kept while the file-name menu has focus
+  const kept = state.pendingDraft || state.conflict ? null : Aside.leave({
+    // A "/" command being typed is not part of the script (saveText leaves it out too); asks find their words again.
+    // Its undo steps may hold parts of it, so they stay behind, as when any script is left.
+    handle: state.handle, name: state.name, browser: state.inBrowser, doc: cmd ? Doc.withoutCommand(state.doc, cmd) : state.doc, asks: state.asks,
+    undo: cmd ? [] : state.undo, redo: cmd ? [] : state.redo,
+    savedText: state.savedText, fileModified: state.fileModified, place, unseen: lookFor ? [...lookFor] : [],
+  });
+  // Its B-roll shots, as matched to its lines now: an answer there that changes a covered line gives its shot "Check".
+  if (kept) {
+    kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check }));
+    kept.brollFlags = brollFlags(); // its own "Check" flags: never read back from a draft another script may hold
+    keptWords.add(kept.handle);
+    asides.push(kept);
+  }
+  else places.push({ handle: state.handle, place });
+  if (places.length > RECENT_MAX) places.shift();
+  return kept;
+}
+async function keptFor(handle) {
+  for (const s of asides) if (await sameFile(s.handle, handle)) return s;
+  return null;
+}
+// The place kept for this file (the switcher hands over a fresh handle for a known file): taken out of the list.
+async function takePlace(handle) {
+  for (const p of places) {
+    if (!(await sameFile(p.handle, handle))) continue;
+    places.splice(places.indexOf(p), 1);
+    return p.place;
+  }
+  return null;
+}
+// Opening a script again takes it out of the scripts kept aside (and its place out of the list).
+function dropKept(handle) {
+  for (const list of [asides, places]) {
+    const i = list.findIndex((x) => x.handle === handle);
+    if (i >= 0) list.splice(i, 1);
+  }
+  renderKept();
+}
+// A script kept aside opens with its own asks and the agent's changes, marked as they landed.
+function adoptKept(kept) {
+  state.asks = kept.asks;
+  for (const id of kept.unseen) arrived.set(id, Date.now()); // they show a little stronger as they come into view
+  reanchorAll();
+  for (const a of state.asks) if (a.scope === "script") settleVoice(a);
+  Changes.endExpired(state.asks, Date.now());
+  markBase();
+}
+// Back in a script: at the agent's change it has not seen yet (lightly marked, with Undo on its tag), else where the
+// person left it, with its caret.
+function goToPlace(kept, place) {
+  const first = kept && Aside.firstUnseen(kept);
+  const el = first && scriptEl.querySelector(`[data-ask="${CSS.escape(first)}"]`);
+  if (el && ui.view !== "script") setView("script"); // from the Storyboard: the change shows in the Script view
+  const fold = el?.closest("details"); // a change in the folded lines at the top opens them, as the caret does
+  if (fold && !fold.open && ui.view === "script") { fold.open = true; state.frontOpen = true; }
+  if (el && ui.view === "script") {
+    lookFor = new Set(kept.unseen);
+    const top = $(".top").getBoundingClientRect().bottom;
+    scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + scrollY - top - (innerHeight - top) * 0.3) });
+    checkLookFor();
+    return;
+  }
+  if (kept?.unseen.size) lookFor = new Set(kept.unseen);
+  if (!place) return void scrollTo({ top: 0 });
+  if (ui.view !== "script") {
+    // The Storyboard shows: the place and the caret wait for the Script view (setView puts the caret back).
+    ui.scriptY = place.y; ui.scriptTop = undefined;
+    lastCaret = Aside.caretAt(state.doc, place.caret);
+    ui.caret = lastCaret;
+    return;
+  }
+  const c = Aside.caretAt(state.doc, place.caret), b = c && blockNode(c.id);
+  const folded = b?.closest("details"); // a caret in the folded lines at the top opens them, as placeCaret does
+  if (folded && !folded.open) { folded.open = true; state.frontOpen = true; }
+  if (b) { b.focus({ preventScroll: true }); setCaretAt(b, c.offset); lastCaret = c; }
+  scrollTo({ top: place.y });
+}
+// The agent's changes from while the script was aside are seen once they have been on screen, below the top bar.
+function checkLookFor() {
+  if (!lookFor?.size) return;
+  const top = $(".top").getBoundingClientRect().bottom;
+  for (const id of [...lookFor]) {
+    const el = scriptEl.querySelector(`[data-ask="${CSS.escape(id)}"]`);
+    const r = el?.getBoundingClientRect();
+    if (!el || (r.bottom > top && r.top < innerHeight)) lookFor.delete(id);
+  }
+}
+addEventListener("scroll", checkLookFor, { passive: true });
+document.addEventListener("selectionchange", () => { const c = getCaret(); if (c) lastCaret = c; });
+// The orange dot on the file name while the agent is done in another script and the person has not looked yet; the
+// menu's rows say it in words. Never for the open script.
+function renderKept() {
+  const done = asides.filter((s) => Aside.status(s) === "done");
+  $("#aiDot").hidden = !done.length || state.guest;
+  if ($("#scriptMenu").matches(":popover-open")) refreshRows();
+}
+// The agent's answer to an ask in a script kept aside: it lands there as in the open script, and goes to its file.
+function answerKept(s, ask, args) {
+  const checked = Doc.checkAnswer(ask, args, s.doc);
+  if (checked.error) return { error: checked.error };
+  let plan = null;
+  if (checked.answer.kind === "links") {
+    plan = Changes.planFor(s.doc, ask, checked.answer, { asks: s.asks });
+    if (plan && !plan.segments.length) return { error: Changes.noLinksError(plan.skipped) };
+  } else if (!Changes.fits(s.doc, ask, checked.answer)) return { error: STAYS_IN_PARAGRAPH };
+  const r = Aside.answer(s, ask, checked.answer, agentBy(), Date.now(), { undoLimit: UNDO_LIMIT });
+  saveKept(s);
+  // Shots over a changed line get "Check", as when the person changes it (the B-roll part is here when it has shots).
+  const flagged = r.landed && s.shots?.length && brollApi ? brollApi.touchKept(s.doc, s.shots) : [];
+  if (flagged.length) s.flags = { ...s.flags, ...Object.fromEntries(flagged.map((id) => [id, true])) };
+  renderKept();
+  if (!r.ok) return { error: "The text this ask was about has changed, so the ask was cancelled." };
+  if (Aside.status(s) === "done") {
+    const live = $("#asideLive"), say = `${agentBy().name} is done in ${s.name}.`;
+    live.textContent = ""; // the same words again are read again
+    setTimeout(() => { live.textContent = say; }, 100);
+  }
+  if (checked.answer.kind === "links") return { result: Changes.answerResult("links", { linked: ask.answer.links.length, skipped: plan?.skipped || [] }) };
+  return { result: Changes.answerResult(checked.answer.kind, { cuesDropped: r.cuesDropped }) };
+}
+// A script kept aside goes to its own file (auto-save rules, saving.saveLeft), one write after the other. It writes no
+// draft: drafts go by file name, and another script of that name (Save to video folder calls every one script.md) may
+// hold it. Words that could not be written stay in memory and come back as "Unsaved changes" when it opens (keptDraft).
+// Limit: after a reload its asks and marks are gone; its file still has the agent's change.
+function saveKept(s) {
+  if (s.gone) return;
+  s.writes = (s.writes || Promise.resolve())
+    .then(() => {
+      const text = Doc.serialize(s.doc);
+      return s.gone || text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText, noDraft: true });
+    })
+    .then((w) => {
+      // What the file holds now, also for a script taken off the list meanwhile (on.left no longer finds it there).
+      if (w) Object.assign(s, { savedText: w.text, fileModified: w.modified });
+    })
+    .catch(() => {});
+}
+// Its own B-roll "Check" flags: the ones it had when it was left, and the ones its answers gave.
+const keptFlags = (s) => (s.brollFlags || s.flags ? { ...s.brollFlags, ...s.flags } : null);
+// A kept script's own draft, handed over when it opens from its file after all: its words when the file does not hold them, its open asks and marked changes, its flags.
+function keptDraft(s) {
+  const open = Changes.withContext(s.asks.filter((a) => isOpen(a) || Changes.isMarked(a)), s.doc).map(Doc.withoutPictures);
+  const text = Doc.serialize(s.doc), dirty = text !== s.savedText;
+  const broll = keptFlags(s);
+  return dirty || open.length || broll ? { text: dirty ? text : null, at: Date.now(), asks: open, ...(broll ? { broll } : {}) } : null;
 }
 function showBanner(text, actions) {
   replaced = null;
@@ -2420,29 +2602,72 @@ function discardDraft() {
   offerAsks();
 }
 
+// Gives "input" when the file field took over (no file picker here): it answers later, with a change or a cancel.
 async function openFile() {
-  if (!canPick) return $("#fileInput").click();
+  if (!canPick) { $("#fileInput").click(); return "input"; }
   let handle;
   try { [handle] = await window.showOpenFilePicker({ types: FILE_TYPES, multiple: false }); }
-  catch (e) { if (e?.name !== "AbortError") $("#fileInput").click(); return; }
+  catch (e) { if (e?.name !== "AbortError") { $("#fileInput").click(); return "input"; } return; }
   // Ask for write access while the person's pick still counts as a click, so auto-save can write.
   // If the browser refuses to ask now, "Allow saving to …" shows at the first save.
   permitted(handle, true);
   await openHandle(handle);
 }
-async function openHandle(handle) {
+// Opens run one after the other (TOOLS-358): a script kept aside, opened from its menu row while the agent's
+// open_script opens it too, opens once, from memory; a script being deleted does not open.
+let openQueue = Promise.resolve();
+const deleting = [];
+function openHandle(handle) {
+  const was = state.handle;
+  const run = openQueue.then(() => openOne(handle, was));
+  openQueue = run.catch(() => {});
+  return run;
+}
+async function openOne(handle, was) {
+  let kept = null;
   try {
     // The switcher hands over a fresh handle object for a known file; reuse the one the save queue holds.
     for (const known of [state.handle, ...saving.queued()]) {
       if (known && known !== handle && (await sameFile(known, handle))) { handle = known; break; }
     }
+    // An open that ran first opened this file meanwhile: it is not read again (a reload of the open script still is).
+    if (state.doc && handle === state.handle && was !== state.handle) return true;
+    for (const d of deleting) if (await sameFile(d, handle)) return false;
+    // A script kept aside takes no answer while it opens (and a second open of it waits for the first); its file holds
+    // the agent's last change before it is compared.
+    kept = await keptFor(handle);
+    if (kept?.opening) return await kept.opening.promise;
+    if (kept) {
+      handle = kept.handle;
+      let resolve;
+      kept.opening = { promise: new Promise((r) => { resolve = r; }), resolve: (v) => resolve(v) };
+      await kept.writes;
+      await saving.idle(); // the save made when it was left too: its own write is never taken for someone else's
+    }
     const file = await handle.getFile();
     const text = await file.text();
     const browser = await isInBrowser(handle);
-    loadText(text, { name: handle.name, handle, modified: file.lastModified, browser });
+    // It opens as it is in memory, unless its file holds other words now (another tab or program wrote it): then it is
+    // read from the file like any other, and its draft has the agent's change (TOOLS-358).
+    const asIs = kept && (await sameWords(text, kept.savedText));
+    const place = kept ? kept.place : await takePlace(handle);
+    if (kept?.gone) throw new Error("deleted while it opened"); // the person deleted it meanwhile: it stays gone
+    if (browser && deleting.some((d) => d.name === handle.name)) return false; // being deleted: it does not open
+    if (kept) dropKept(handle);
+    // From its file after all: its own words that could not be written come along as its draft ("Unsaved changes").
+    const own = kept && !asIs ? keptDraft(kept) : null;
+    loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place, draft: own });
     remember(handle, browser);
+    if (kept) { kept.opening.resolve(true); delete kept.opening; }
     return true;
   } catch {
+    if (kept?.opening) {
+      kept.opening.resolve(false);
+      delete kept.opening;
+      // Still aside, unless the person deleted it or took it off the list meanwhile.
+      if (!kept.gone && !kept.removed && kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); }
+    }
+    if (kept?.gone || deleting.some((d) => d.name === handle.name)) return false; // the person deleted it: nothing failed
     openProblem(handle.name);
     return false;
   }
@@ -2484,7 +2709,7 @@ $("#fileInput").addEventListener("change", async (e) => {
 // fields of `state`; what the person sees follows through `on`.
 const saving = createSaving({
   script: state,
-  editor: { ready: () => !!state.doc && !state.guest, doc: () => state.doc, text: () => saveText(), dirty: () => isDirty(), paused: () => slash.open },
+  editor: { ready: () => !!state.doc && !state.guest, doc: () => state.doc, text: () => saveText(), dirty: () => isDirty(), paused: () => !!commandNow() },
   files: {
     write: (handle, text) => writeHandle(handle, text),
     file: (handle) => handle.getFile(),
@@ -2505,6 +2730,14 @@ const saving = createSaving({
       await followTitle(handle);
     },
     done(moved) { renderTop(); if (moved) renderDerived(); persistDraft(); },
+    // A script left behind reached its file: a script kept aside (or opened again meanwhile) compares with these words.
+    left({ handle, text, modified }) {
+      const s = asides.find((x) => x.handle === handle);
+      if (s) Object.assign(s, { savedText: text, fileModified: modified });
+      else if (handle === state.handle) { Object.assign(state, { savedText: text, fileModified: modified }); renderSaveState(); }
+    },
+    // A script kept aside keeps its words in memory: its failed saves leave no draft under its name.
+    keepsWords: (handle) => keptWords.has(handle),
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, words, browser = false }) {
       remember(handle, browser);
@@ -2712,6 +2945,10 @@ async function recentScripts() {
   }
   return [...out, ...[...inside.values()].sort((a, b) => b.at - a.at)];
 }
+async function anySame(list, handle) {
+  for (const r of list) if (await sameFile(r.handle, handle)) return true;
+  return false;
+}
 async function without(list, handle) {
   const out = [];
   for (const r of list) if (!(await sameFile(r.handle, handle))) out.push(r);
@@ -2720,9 +2957,17 @@ async function without(list, handle) {
 let recentQueue = Promise.resolve();
 function updateRecent(change) {
   recentQueue = recentQueue.then(async () => {
-    const list = await change(await recentScripts());
+    const old = await recentScripts();
+    const list = await change(old);
     await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r)));
     lastHandle = list[0]?.handle ?? null;
+    // A kept file that fell off the list just now has no row to lead to it: it leaves memory, and its dot with it
+    // (TOOLS-358). One that was never on a list read here (storage off) stays.
+    for (const k of asides.filter((x) => !x.browser && !x.opening)) {
+      if (!(await anySame(old, k.handle)) || (await anySame(list, k.handle))) continue;
+      k.removed = true;
+      dropKept(k.handle);
+    }
   }).catch(() => {});
   return recentQueue;
 }
@@ -2815,12 +3060,38 @@ async function followTitle(handle) {
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
+// Is another script known under this name (not the file `handle`): the open one, one kept aside, one whose place is
+// kept, or one on the list? A script open without a file, or one that can't be compared, counts too (keep the data).
+async function nameShared(name, handle) {
+  if (state.doc && state.name === name && !state.handle) return true;
+  const known = [
+    ...(state.doc ? [{ name: state.name, handle: state.handle }] : []),
+    ...asides.map((s) => ({ name: s.name, handle: s.handle })),
+    ...places.map((p) => ({ name: p.handle?.name, handle: p.handle })),
+    ...(await recentScripts()).map((x) => ({ name: x.name, handle: x.handle })),
+  ];
+  for (const k of known) if (k.name === name && k.handle && !(await sameFile(k.handle, handle))) return true;
+  return false;
+}
 // Its draft and B-roll keys go too: they are by name, as for every script (a file opened later under the same name
-// starts without them).
+// starts without them), unless another script of that name is known (nameShared).
 async function deleteBrowserScript(r) {
-  await forget(r.handle);
-  try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-  dropKeys(r.name);
+  // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
+  deleting.push(r.handle); // it can't be opened while it goes
+  try {
+    const kept = await keptFor(r.handle);
+    if (kept) { kept.gone = true; dropKept(kept.handle); await kept.writes; }
+    // A save of it still on its way (the one made when it was left, or one waiting behind another) ends first, so it
+    // can't bring a draft back under its name after the delete.
+    await saving.idle();
+    await forget(r.handle);
+    try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
+    // Keys go by name (Save to video folder calls every one script.md): they go only when no other script of that name
+    // is known, open, kept aside or on the list. When in doubt, they stay.
+    if (!(await nameShared(r.name, r.handle))) dropKeys(r.name);
+  } finally {
+    deleting.splice(deleting.indexOf(r.handle), 1);
+  }
 }
 function dropKeys(name) {
   saving.drafts.del(name);
@@ -2828,15 +3099,48 @@ function dropKeys(name) {
   setLinkKey(null, name);
 }
 
-let listToken = 0;
+// The end of a row: for a script kept aside (TOOLS-358) a spinner and "AI working", then "AI done" and the orange dot
+// until its change is seen; else when it was last opened.
+function rowEnd(li, r) {
+  const end = h("span", "scripts__end");
+  li.toggleAttribute("data-unseen", r.ai === "done");
+  if (r.ai) {
+    const note = h("span", "scripts__ai");
+    note.textContent = r.ai === "working" ? "AI working" : "AI done";
+    if (r.ai === "working") end.append(h("span", "scripts__spin", { "aria-hidden": "true" }), note);
+    else end.append(note, h("span", "ai-dot", { "aria-hidden": "true" }));
+  } else if (r.at && !r.current) {
+    const when = h("span", "scripts__when");
+    when.textContent = clock(r.at);
+    end.append(when);
+  }
+  return end;
+}
+const rowData = new WeakMap(); // each drawn row's script
+// While the menu is open, an answer changes only the rows whose state changed, in place: keyboard focus on a row, and a
+// mouse press that has started on it, stay put (release review on PR #78).
+async function refreshRows() {
+  if (state.handle !== listFor) return renderScriptList(); // another script is open now (the agent opened it): drawn again
+  for (const li of $$("#scriptList .scripts__row")) {
+    const r = rowData.get(li);
+    if (!r || r.current || !r.handle) continue;
+    const kept = await keptFor(r.handle), ai = kept ? Aside.status(kept) : "";
+    if (ai === r.ai || !li.isConnected) continue;
+    r.ai = ai;
+    li.querySelector(".scripts__end")?.replaceWith(rowEnd(li, r));
+  }
+}
+let listToken = 0, listFor = null; // listFor: the open script the rows were drawn for
 async function renderScriptList() {
   const token = ++listToken;
+  listFor = state.handle;
   const rows = [];
   let currentListed = false;
   for (const r of await recentScripts()) {
     const current = !!state.doc && (await sameFile(r.handle, state.handle));
     currentListed ||= current;
-    rows.push({ ...r, current });
+    const kept = current ? null : await keptFor(r.handle);
+    rows.push({ ...r, current, ai: kept ? Aside.status(kept) : "" });
   }
   // The open script is always in the list, also the sample or a new script without a file.
   if (state.doc && !currentListed) rows.unshift({ handle: null, name: state.name, at: 0, current: true });
@@ -2857,17 +3161,16 @@ async function renderScriptList() {
       tag.textContent = "Browser";
       open.append(tag);
     }
-    if (r.at && !r.current) {
-      const when = h("span", "scripts__when");
-      when.textContent = clock(r.at);
-      open.append(when);
-    }
+    open.append(rowEnd(li, r));
+    rowData.set(li, r);
     if (r.current) open.insertAdjacentHTML("beforeend", icon("check"));
     open.addEventListener("click", async () => {
+      if (menuSlash && !r.current && r.handle) menuSlash.switching = true; // the "/" command stays out of the script left
       $("#scriptMenu").hidePopover();
       if (r.current || !r.handle) return;
       await permitted(r.handle, true);
-      await openHandle(r.handle);
+      if (state.doc && (await sameFile(r.handle, state.handle))) { if (menuSlash) menuSlash.switching = false; return; } // the agent opened it meanwhile: not read again
+      if (!(await openHandle(r.handle)) && menuSlash) menuSlash.switching = false; // nothing opened: back to the menu's rules
     });
     li.append(open);
     if (r.handle && r.browser && !r.current) {
@@ -2885,7 +3188,12 @@ async function renderScriptList() {
     } else if (r.handle && !r.browser) {
       const x = h("button", "icon-btn scripts__remove", { type: "button", "aria-label": `Remove ${r.name} from the list` });
       x.innerHTML = icon("x");
-      x.addEventListener("click", async () => { await forget(r.handle); renderScriptList(); });
+      x.addEventListener("click", async () => {
+        await forget(r.handle);
+        const kept = await keptFor(r.handle); // no row leads to it any more: its dot goes too
+        if (kept) { kept.removed = true; dropKept(kept.handle); }
+        renderScriptList();
+      });
       li.append(x);
     }
     ul.append(li);
@@ -2908,8 +3216,18 @@ $("#scriptSearch").addEventListener("keydown", (e) => {
   e.preventDefault();
   $("#scriptList .scripts__open")?.click();
 });
-$("#menuOpen").addEventListener("click", () => { $("#scriptMenu").hidePopover(); openFile(); });
-$("#menuNew").addEventListener("click", () => { $("#scriptMenu").hidePopover(); newScript(); });
+$("#menuOpen").addEventListener("click", async () => {
+  if (menuSlash) menuSlash.switching = true;
+  $("#scriptMenu").hidePopover();
+  const was = state.handle;
+  const how = await openFile();
+  if (!menuSlash) return;
+  // The file field (no file picker here) answers later: the switch is still on its way until it is cancelled.
+  if (how === "input") return void $("#fileInput").addEventListener("cancel", () => { if (menuSlash) menuSlash.switching = false; }, { once: true });
+  // Nothing opened (the picker was cancelled, or the file could not be read): no switch is on its way any more.
+  if (state.handle === was) menuSlash.switching = false;
+});
+$("#menuNew").addEventListener("click", () => { if (menuSlash) menuSlash.switching = true; $("#scriptMenu").hidePopover(); newScript(); });
 (async () => {
   if (!(canPick || browserSaving) || roomLink) return;
   lastHandle = (await recentScripts())[0]?.handle ?? null;
@@ -2959,7 +3277,7 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // when a script has a linked list or B-roll asks, when the Storyboard opens, or when the agent sends B-roll; opening a
 // script without any of that downloads none of it. Until it is here, the app answers for it below: no list.
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
-const BROLL_SEAM = 1;
+const BROLL_SEAM = 2;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
 // is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
@@ -3130,6 +3448,10 @@ function setView(v) {
   editorJump();
   // The Keep all row may have come or gone while away (step Q): the text comes back where it was all the same.
   scrollTo({ top: board || !ui.scriptY ? 0 : Math.max(0, ui.scriptY + sheetTop() - (ui.scriptTop ?? sheetTop())) });
+  // A script opened while the Storyboard showed: its caret comes back in the Script view (TOOLS-358).
+  const c = !board && ui.caret, b = c && byId(c.id) && blockNode(c.id);
+  ui.caret = null;
+  if (b && !b.closest("details:not([open])")) { const y = scrollY; b.focus({ preventScroll: true }); setCaretAt(b, c.offset); scrollTo({ top: y }); }
 }
 function renderView() {
   const board = ui.view === "board" && !!state.doc;
@@ -3277,12 +3599,58 @@ function slashHeld() {
 }
 // What a save writes: the script without an open "/" command.
 function saveText() {
-  return Doc.serialize(slash.open && state.doc ? Doc.withoutCommand(state.doc, slash) : state.doc);
+  const cmd = commandNow();
+  return Doc.serialize(cmd && state.doc ? Doc.withoutCommand(state.doc, cmd) : state.doc);
+}
+// Focus going to the file-name menu closes the parts menu, but the "/" command typed there is still one: it stays out
+// of saves, and out of the script when it is left through the menu, until the person is back in the text (TOOLS-358).
+function keepMenuSlash() { if (slash.open) menuSlash = { id: slash.id, start: slash.start, end: slash.end, word: Doc.contentOf(byId(slash.id)).slice(slash.start, slash.end) }; }
+$("#docSwitch").addEventListener("pointerdown", keepMenuSlash, { capture: true });
+// Anywhere but the file-name menu (back in the text, or elsewhere): it is ordinary text again, and saves as usual. A
+// click on a row hides the menu before the script is left, so closing the menu alone does not end it.
+function endMenuSlash(e) {
+  if (!menuSlash || e.target?.closest?.("#docSwitch, #scriptMenu")) return;
+  // An answer landing puts the caret back in its line while the menu stays open: that is not the person coming back (they
+  // come back by typing, a click, or closing the menu). Focus anywhere else ends it at once.
+  if (e.type === "focusin" && scriptEl.contains(e.target) && $("#scriptMenu").matches(":popover-open")) return;
+  // While a switch from the menu is on its way, focus may move by itself (an answer landing in the script being left):
+  // only the person's own click or typing ends it then.
+  if (e.type === "focusin" && menuSlash.switching) return;
+  menuSlash = null;
+  saving.schedule();
+}
+document.addEventListener("focusin", endMenuSlash);
+document.addEventListener("pointerdown", endMenuSlash, { capture: true });
+// Typing again, or the menu closing with focus left outside it (Escape after an answer put the caret back in the text,
+// or Tab out of it), ends it too. A row click is a switch on its way (`switching`), so it keeps it.
+scriptEl.addEventListener("input", () => { if (menuSlash) { menuSlash = null; saving.schedule(); } });
+$("#scriptMenu").addEventListener("toggle", (e) => {
+  if (e.newState !== "closed" || !menuSlash) return;
+  setTimeout(() => { if (menuSlash && !menuSlash.switching && !document.activeElement?.closest?.("#docSwitch, #scriptMenu")) { menuSlash = null; saving.schedule(); } });
+});
+// The "/" command being typed now: the open parts menu's, or the one kept while the file-name menu has focus, found
+// again as typed nearest its place (an agent's answer may have moved it meanwhile).
+function commandNow() {
+  if (slash.open) return slash;
+  const b = menuSlash && state.doc && byId(menuSlash.id);
+  if (!b) return null;
+  const content = Doc.contentOf(b), { word } = menuSlash;
+  let best = null;
+  for (let at = content.indexOf(word); at >= 0; at = content.indexOf(word, at + 1)) {
+    const c = Doc.slashCommand(content, at + word.length);
+    if (c && c.start === at && c.end === at + word.length && (best === null || Math.abs(at - menuSlash.start) < Math.abs(best - menuSlash.start))) best = at;
+  }
+  if (best === null) return null;
+  Object.assign(menuSlash, { start: best, end: best + word.length });
+  return menuSlash;
 }
 scriptEl.addEventListener("input", (e) => { if (!e.isComposing) updateSlash(true); });
 scriptEl.addEventListener("compositionend", () => updateSlash(true));
 document.addEventListener("selectionchange", () => { if (slash.open) updateSlash(false); });
-scriptEl.addEventListener("focusout", (e) => { if (slash.open && !slashMenu.contains(e.relatedTarget)) closeSlash(); });
+scriptEl.addEventListener("focusout", (e) => {
+  if (slash.open && e.relatedTarget?.closest?.("#docSwitch, #scriptMenu")) keepMenuSlash();
+  if (slash.open && !slashMenu.contains(e.relatedTarget)) closeSlash();
+});
 addEventListener("scroll", positionSlash, { passive: true });
 addEventListener("resize", positionSlash);
 // The keys go to the menu first while it is open.
@@ -3434,7 +3802,13 @@ function takeUnseen() {
     if (a.status === "waiting") takeAsk(a.id, agentBy());
     else a.takenAt = new Date().toISOString();
   }
-  return list.map(askForAgent);
+  // Asks in scripts kept aside (TOOLS-358) carry their script's file name: the answer lands there, not in the open one.
+  const aside = Aside.pending(asides, now, RETAKE_AFTER_MS);
+  for (const { ask } of aside) {
+    if (ask.status === "waiting") { ask.status = "taken"; ask.takenBy = agentBy(); }
+    ask.takenAt = new Date().toISOString();
+  }
+  return [...list.map(askForAgent), ...aside.map(({ aside: s, ask }) => ({ ...askForAgent(ask), fileName: s.name }))];
 }
 function voiceGuide() { return store.get("voiceGuide"); }
 const askForAgent = (a) => Doc.askForAgent(a, {
@@ -3501,6 +3875,9 @@ function handleCall(call, ws = agent.ws) {
       return brollApi.agentTool(tool, args, send, NO_SCRIPT);
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
+    const kept = tool === "answer_ask" && !state.asks.some((a) => a.id === args.askId) ? Aside.findAsk(asides, args.askId) : null;
+    if (kept?.aside.opening) return send({ error: `${kept.aside.name} is opening now. Answer this ask again in a moment; once it is open, list_asks shows it.` });
+    if (kept) return send(Aside.takesAnswer(kept.ask) ? answerKept(kept.aside, kept.ask, args) : { error: `This ask is in ${kept.aside.name}, which is not open now. Ask the person to open it, then answer it there.` });
     if (!state.doc) return send({ error: NO_SCRIPT });
     if (tool === "get_script") return send({ result: scriptInfo() });
     if (tool === "set_script") {
@@ -3595,6 +3972,8 @@ async function openScript(args, by) {
   if (!r) return { error: `No recent script is called ${name}. list_scripts gives their names.` };
   if (state.doc && (await sameFile(r.handle, state.handle))) return { result: `${r.name} is already open.` };
   if (await permitted(r.handle, false)) {
+    // The person may have opened it meanwhile (a script kept aside, from its menu row): it is not read again.
+    if (state.doc && (await sameFile(r.handle, state.handle))) return { result: `${r.name} is already open.` };
     if (await openHandle(r.handle)) return { result: `Opened ${r.name}. get_script reads it.` };
     return { error: `The editor couldn't open ${r.name}: it may have been moved or deleted.` };
   }
@@ -3621,6 +4000,8 @@ async function openScript(args, by) {
     const ok = allowed() && (await permitted(r.handle, true));
     if (choice !== "open") return;
     if (!(ok && allowed())) return notNow();
+    if (state.doc && (await sameFile(r.handle, state.handle))) return notNow(); // opened meanwhile: not read again
+    if (choice !== "open") return; // again: a Not now may have come during that await
     choice = "done";
     // The line, and with it the wait for the agent, stays until the file is open (or why it isn't shows).
     openHandle(r.handle);

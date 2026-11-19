@@ -9,9 +9,12 @@
 
 export const emptyQueue = () => ({ waiting: null, left: [] });
 
-// Within one file the strongest request wins: a forced or clicked save never shrinks into an auto-save.
+// Within one file the strongest request wins: a forced or clicked save never shrinks into an auto-save. Those waiting
+// to hear the result (`waits`, saving.saveLeft) all hear it from the merged, newest words.
 function merge(older, newer) {
-  return { ...newer, force: older.force || newer.force, auto: older.auto && newer.auto };
+  const out = { ...newer, force: older.force || newer.force, auto: older.auto && newer.auto };
+  if (older.waits || newer.waits) out.waits = [...(older.waits || []), ...(newer.waits || [])];
+  return out;
 }
 
 function keepSnapshot(left, snap, same) {
@@ -26,6 +29,14 @@ export function queueSave(queue, request, same = Object.is) {
   if (waiting && same(waiting.handle, request.handle)) return { ...queue, waiting: merge(waiting, request) };
   // Another script: the old request becomes a snapshot for its own file, and a fresh record starts.
   return { waiting: { ...request }, left: waiting ? keepSnapshot(queue.left, waiting, same) : queue.left };
+}
+
+/** A snapshot of a script the person left, to write after the running save (newer words win within one file: a
+ *  request of the same file still waiting from when it was left is older, so it goes in first). */
+export function queueLeft(queue, snap, same = Object.is) {
+  const { waiting, left } = queue;
+  if (waiting && same(waiting.handle, snap.handle)) return { waiting: null, left: keepSnapshot(keepSnapshot(left, waiting, same), snap, same) };
+  return { ...queue, left: keepSnapshot(left, snap, same) };
 }
 
 /** A write finished: later requests for that file compare against what was just written, not the older state. */
