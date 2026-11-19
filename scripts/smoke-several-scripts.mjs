@@ -768,15 +768,17 @@ async function runReloadHeld() {
   await page.close();
 }
 // Moving to keys with a full storage (second look round 2 on TOOLS-361): one B-roll list copy fails, so the name keeps
-// its list, link and draft and the move is not marked done; the next page tries again and the file gets them all.
+// its list, link and draft and the move is not marked done; a file opened on that page takes nothing alone (SL-1); the
+// next page tries again and both files get them.
 const FULL_ONCE = `(() => { if (localStorage.getItem("smoke:fullOnce") !== "1") return; const put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function (v, k) { if (typeof k === "string" && k.startsWith("brollList:file:") && localStorage.getItem("smoke:fullOnce") === "1") { localStorage.removeItem("smoke:fullOnce"); throw new DOMException("The storage is full.", "QuotaExceededError"); } return put.call(this, v, k); }; })();`;
 async function runMigrateFull() {
   console.log("--- moving to keys with a full storage, then again (1280 px)");
   const { page } = await connect(1280, 800, FULL_ONCE);
   await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md({ ...BREAD, title: "Bread in folder b" })); // two files of that name (SL-1)
   await sleep(50);
   const unsaved = `${md(BREAD).trimEnd()}\n\nWords typed before the update.\n`;
-  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(unsaved)}, at: Date.now() + 60000, asks: [] })); localStorage.setItem("smoke:fullOnce", "1"); return true; })()`);
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"), hb = await (await disk.getDirectoryHandle("b")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: hb, name: "script.md", at: Date.now() }, { handle: h, name: "script.md", at: Date.now() - 1000 }], "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(unsaved)}, at: Date.now() + 60000, asks: [] })); localStorage.setItem("smoke:fullOnce", "1"); return true; })()`);
   await page.send("Page.reload", {});
   await sleep(300);
   await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen") && localStorage.getItem("smoke:fullOnce") === null`, "the update meets a full storage once");
@@ -784,14 +786,73 @@ async function runMigrateFull() {
   check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`))?.includes("Words typed before the update"), "the name keeps its draft");
   check((await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST) && (await idbGet(page, "broll:script.md")) !== "null", "the name keeps its list and link");
   check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  // The same page, storage working again: the older file opens by its name and takes nothing alone (SL-1).
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the older file shows the list its name has");
+  await sleep(500);
+  check((await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST) && (await idbGet(page, "broll:script.md")) !== "null", "opening one file on the same page takes nothing alone: the name keeps its list and link");
   await page.send("Page.reload", {});
   await sleep(300);
   await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the next page");
   await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the next page hands the draft over", 6000);
+  // Opened last, the a file is the newest on the list now: it takes the draft; b gets the list too.
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`, "the file opened last offers the words typed before the update");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the file opened last shows the list");
+  await pickOpen(page, "b/script.md", "Bread in folder b");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the other file shows the list too");
+  check(await page.eval(`document.querySelector("#banner").hidden || !document.querySelector("#banner").textContent.startsWith("Unsaved changes")`), "the other file does not get the unsaved words");
+  check((await idbGet(page, "broll:script.md")) === "null" && (await idbGet(page, "brollList:script.md")) === "null", "the name lets go once everything is kept");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// Seeds two files called script.md on the recent list, a list and link kept under the name, and no move done yet.
+const seedTwoOnList = (page) => page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = async (d) => (await disk.getDirectoryHandle(d)).getFileHandle("script.md"); const recent = [{ handle: await h("b"), name: "script.md", at: Date.now() }, { handle: await h("a"), name: "script.md", at: Date.now() - 1000 }]; await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put(recent, "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); return true; })()`);
+// SL-3 (lead's fix round): while smoke:recentFails is set, every read of the recent list fails.
+const RECENT_FAILS = `(() => { if (localStorage.getItem("smoke:recentFails") !== "1") return; const get = IDBObjectStore.prototype.get; IDBObjectStore.prototype.get = function (k) { if (k === "recent") throw new DOMException("The recent list can't be read.", "UnknownError"); return get.call(this, k); }; })();`;
+async function runMigrateList() {
+  console.log("--- moving to keys when the recent list can't be read (1280 px)");
+  const { page } = await connect(1280, 800, RECENT_FAILS);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md({ ...BREAD, title: "Bread in folder b" }));
+  await seedTwoOnList(page);
+  await page.eval(`localStorage.setItem("smoke:recentFails", "1"); true`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "a page whose recent list can't be read");
+  await sleep(1200);
+  check((await idbGet(page, "fileIdsSince")) === "null", "a recent list that can't be read never marks the move done");
+  check((await idbGet(page, "broll:script.md")) !== "null" && (await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST), "the name keeps its list and link");
+  await page.eval(`localStorage.removeItem("smoke:recentFails"); true`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the next page");
+  await page.until(`(async () => { const r = await new Promise((res) => { const o = indexedDB.open("script-editor", 1); o.onsuccess = () => { const q = o.result.transaction("handles").objectStore("handles").get("fileIdsSince"); q.onsuccess = () => res(q.result); }; }); return !!r; })()`, "the next page marks the move done", 6000);
+  await pickOpen(page, "b/script.md", "Bread in folder b");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the newest file shows the list");
+  await pickOpen(page, "a/script.md", "Bread at home");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the older file shows the list too");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// SL-2 (lead's fix round): a browser copy already moved to a file, still held open by a tab, is not a script in the
+// browser: the move gives the name's draft to the file on the list.
+const HOLD_COPY = `(() => { if (localStorage.getItem("smoke:holdCopy") === "1") navigator.locks.request("script-editor:script:script.md", { mode: "shared" }, () => new Promise(() => {})); })();`;
+async function runMovedCopy() {
+  console.log("--- a moved browser copy held by a tab does not keep the name's draft (1280 px)");
+  const { page } = await connect(1280, 800, HOLD_COPY);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await page.eval(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts", { create: true }); const w = await (await d.getFileHandle("script.md", { create: true })).createWritable(); await w.write("# Moved\\n\\nA copy left behind.\\n"); await w.close(); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:movedCopies", JSON.stringify(["script.md"])); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(`${md(BREAD).trimEnd()}\n\nWords typed before the update.\n`)}, at: Date.now() + 60000, asks: [] })); localStorage.setItem("smoke:holdCopy", "1"); return true; })()`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the page, the moved copy held");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the name's draft is handed to the file", 6000);
+  check((await page.eval(`localStorage.getItem("script-editor:movedCopies")`))?.includes("script.md"), "the copy is still a moved copy (held by a tab)");
   await pickOpen(page, "a/script.md", "Good bread needs");
   await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`, "the file offers the words typed before the update");
-  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the file shows the list");
-  check((await idbGet(page, "broll:script.md")) === "null" && (await idbGet(page, "brollList:script.md")) === "null", "the name lets go once everything is kept");
+  await page.eval(`localStorage.removeItem("smoke:holdCopy"); true`);
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
@@ -933,7 +994,7 @@ async function runOpenCancelled() {
 }
 
 // SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
-// ownkeys, migrate, deletefirst, reloadheld, migratefull) runs one part.
+// ownkeys, migrate, deletefirst, reloadheld, migratefull, migratelist, movedcopy) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -953,6 +1014,8 @@ try {
   if (!only || only === "deletefirst") await runDeleteThenNew();
   if (!only || only === "reloadheld") await runReloadHeld();
   if (!only || only === "migratefull") await runMigrateFull();
+  if (!only || only === "migratelist") await runMigrateList();
+  if (!only || only === "movedcopy") await runMovedCopy();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }

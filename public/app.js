@@ -3050,13 +3050,20 @@ async function handOver(name, keys, { moving = false } = {}) {
   if (!kept) throw new Error("Not every key could be handed over.");
 }
 // Is there a script in the browser with this name? A folder that can't be read is an error (the hand-over stops and is
-// tried again), never "no".
+// tried again), never "no". A copy left behind by a move to a file is not one, also while a tab still holds it (SL-2).
 async function browserHas(name) {
-  if (!browserSaving) return false;
+  if (!browserSaving || copies.names().includes(name)) return false;
   try { await (await scriptsDir()).getFileHandle(name); return true; } catch (e) { if (e?.name === "NotFoundError" || e?.name === "TypeError") return false; throw e; }
 }
+// The files on the computer on the recent list, for the move: a list that can't be read is an error, never "no files"
+// (SL-3: the move then stays pending and is tried again on the next page).
+async function recentInventory() {
+  const stored = await idbRead("recent");
+  const list = Array.isArray(stored) ? stored : await idbRead("last").then((last) => (last?.name ? [{ handle: last, name: last.name }] : []));
+  return list.filter((r) => !r?.browser && r?.handle?.name).map((r) => ({ handle: r.handle, name: r.name }));
+}
 // Once per browser profile, before any file opens: the files on the recent list take what was kept under their names.
-scriptKeys.migrate(async () => (await recentScripts()).filter((r) => !r.browser && r.handle).map((r) => ({ handle: r.handle, name: r.name })));
+scriptKeys.migrate(recentInventory);
 // Names a new or renamed script may not take: recent files, scripts in the browser (also a copy left behind that is not
 // deleted yet), kept drafts, names with a B-roll link or list kept (a file taken off the list keeps them) and the open
 // script (all by name, in any capitals: a browser script's drafts and B-roll keys go by its name). `own`: the script
