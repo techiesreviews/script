@@ -886,28 +886,36 @@ export function createBroll(host) {
   async function moveShot(id, sel) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
-    const over = Broll.moveOver(state.doc, covered(s), sel);
+    const origin = covered(s), destination = sel.map((part) => part.id);
+    const over = Broll.moveOver(state.doc, origin, sel);
     if (!over) return; // onto the lines it covers already
     const token = broll.token;
-    let before, invalid = false;
+    let expected = over, invalid = false;
     const checked = !!s.check;
     const write = changeList((md) => {
-      before = Broll.parseBroll(md).shots.find((shot) => shot.id === id)?.over;
-      if (before == null) throw new Error("The shot changed.");
+      if (!Broll.parseBroll(md).shots.some((shot) => shot.id === id)) throw new Error("The shot changed.");
       return Broll.updateShot(md, id, { over });
     });
     const restoreMove = async (redo) => {
       try {
         await write;
         if (token !== broll.token) return false;
+        let restored;
         await changeList((md) => {
           const shot = Broll.parseBroll(md).shots.find((shot) => shot.id === id);
-          if (shot?.over !== (redo ? before : over)) {
-            invalid = true; // A changed or deleted shot cannot be restored by retrying this history step.
+          const ids = redo ? destination : origin, from = redo ? origin : destination;
+          const spoken = Broll.spokenBlocks(state.doc);
+          // An adjacent history step may have refreshed this same position's quote after typing.
+          const samePlace = shot && Broll.matchOver(spoken, shot.over).join() === from.join();
+          if ((!samePlace && shot?.over !== expected) || !ids.length || ids.some((id) => !spoken.some((b) => b.id === id))) {
+            invalid = true; // This step's position no longer matches, so retrying cannot succeed.
             throw new Error("The shot changed.");
           }
-          return Broll.updateShot(md, id, { over: redo ? over : before });
+          // Quotes in the sidecar can predate typing. Restore the same paragraphs using their current words.
+          restored = Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+          return Broll.updateShot(md, id, { over: restored });
         });
+        expected = restored;
         if (token !== broll.token) return false;
         const shot = shotById(id);
         if (shot) { shot.check = redo ? false : checked; syncFlags(); renderBroll(); }

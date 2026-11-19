@@ -73,3 +73,33 @@ the rerun passed all four cases without another application change. The timeout'
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 RESULT: ok bg stop se01-chrome-final pgid 2462169
 RESULT: ok bg stop se01-local-final pgid 2461521
+
+GPT second-look follow-up:
+The first GPT second look found two P1 issues: fast Undo across moves could overtake the second move's pending
+initial save, and an original quote could predate edits to its paragraph. Both were reproduced before fixing:
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T225417Z
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T225726Z
+RESULT: fail unit 2/4 (1 files) log .scratch/unit/20261119T225857-2662254.log
+Two-move Undo ordering: met — the combined real history/move test holds the second save, presses Undo twice,
+then releases the save. Before the fix the shot stayed on paragraph 2; now it returns to paragraph 1 and both
+moves can be redone. Move history writes are queued in keypress order, including their initial-save waits.
+Edited original paragraph: met — the combined test completely rewrites the original paragraph before moving.
+Before the fix Undo left the shot unmatched. Now Undo generates the saved Over from the same paragraph ids'
+current words, preserves those words and restores Check; Redo moves it again.
+Refreshed quotes across moves: met — an additional test rewrites the middle paragraph between moves and then
+undoes both. It failed after the two individual fixes because one step refreshed the quote expected by the
+older step. The guard now accepts an equivalent current paragraph match and still rejects a different Over.
+RESULT: ok unit 16/16 (3 files) log .scratch/unit/20261119T230010-2666518.log
+RESULT: ok bg list
+RESULT: ok specs (549/549 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-check pid 76723
+RESULT: ok bg se01-chrome-check pid 80038
+RESULT: fail unit 4/5 (1 files) log .scratch/unit/20261119T230358-88457.log
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok unit 17/17 (3 files) log .scratch/unit/20261119T230431-114567.log
+RESULT: ok specs (550/550 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-check pgid 80038
+RESULT: ok bg stop se01-local-check pgid 76723
