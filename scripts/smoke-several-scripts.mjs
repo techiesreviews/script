@@ -43,6 +43,14 @@ const STUBS = `(() => {
   addEventListener("error", (e) => window.__errors.push(String(e.message)));
   addEventListener("unhandledrejection", (e) => window.__errors.push(String(e.reason?.message || e.reason)));
   document.addEventListener("securitypolicyviolation", (e) => window.__errors.push("CSP " + e.violatedDirective + " " + (e.blockedURI || "inline")));
+  // Files on the computer stand in as folders of a "disk" folder in the private file system: __pick is "folder/name".
+  window.__pick = null;
+  window.showOpenFilePicker = async () => {
+    if (!window.__pick) throw new DOMException("", "AbortError");
+    const [dir, name] = window.__pick.split("/");
+    const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk", { create: true });
+    return [await (await disk.getDirectoryHandle(dir, { create: true })).getFileHandle(name, { create: true })];
+  };
 })();`;
 
 async function openTab(width, height) {
@@ -132,8 +140,8 @@ const readScript = (page, name) => page.eval(`(async () => { try { const d = awa
 // Where the person is in the open script: the window's scroll, the focused line and the caret offset in it.
 const where = (page) => page.eval(`(() => { const s = getSelection(), el = document.activeElement; const r = s.rangeCount ? s.getRangeAt(0) : null; return { y: Math.round(scrollY), focus: el?.dataset?.id ? el.textContent.slice(0, 40) : el?.id || el?.tagName, at: r ? r.startOffset : -1, text: document.querySelector("#script").textContent }; })()`);
 
-// A fresh profile with the agent connected and two made-up scripts saved in the browser; B is open.
-async function start(width, height) {
+// A fresh profile with the agent connected.
+async function connect(width, height) {
   const page = await openTab(width, height);
   const minted = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
   const mcp = agentFor(minted.token);
@@ -145,6 +153,11 @@ async function start(width, height) {
   await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyNew")`, "the start screen after the token");
   await mcp("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "claude-code", version: "1.0" } });
   await page.until(`document.querySelector("#agentBtn").dataset.state === "on"`, "the agent is connected");
+  return { page, mcp };
+}
+// ...and two made-up scripts saved in the browser; B is open.
+async function start(width, height) {
+  const { page, mcp } = await connect(width, height);
 
   // Two made-up scripts, both saved in the browser.
   await page.steady("#emptyNew");
@@ -395,6 +408,88 @@ async function runSlash(width, height) {
   await page.close();
 }
 
+// The menu is open when an answer lands (release review on PR #78): the row changes in place, so keyboard focus on it
+// stays, and a mouse press that has started on it still opens the script.
+async function runFocus() {
+  console.log("--- the menu open while an answer lands (1280 px)");
+  const { page, mcp, A, B } = await start(1280, 800);
+  const first = await askShorter(page, mcp, "Then you cover");
+  const second = await askShorter(page, mcp, "Bread note 3");
+  await openFromMenu(page, A);
+  await menuOpen(page);
+  await page.eval(`(() => { const b = (${row(B)}).querySelector(".scripts__open"); b.focus(); window.__row = b; })()`);
+  const r1 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: first?.id, kind: "replace", text: SHORT } });
+  check(!r1?.result?.isError, "the first answer lands in B", toolText(r1));
+  await page.until(fileHas(B, SHORT), "B's file holds the first change");
+  await sleep(300);
+  check(await page.eval(`document.activeElement === window.__row && window.__row.isConnected`), "keyboard focus stays on B's row while it changes");
+  const at = await page.eval(`(() => { const r = (${row(B)}).querySelector(".scripts__open").getBoundingClientRect(); return { x: r.left + 30, y: r.top + r.height / 2 }; })()`);
+  await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
+  const r2 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: second?.id, kind: "replace", text: "Bread note three." } });
+  check(!r2?.result?.isError, "the second answer lands in B during the press", toolText(r2));
+  await page.until(`(${row(B)})?.querySelector(".scripts__ai")?.textContent === "AI done"`, "B's row says AI done");
+  await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
+  await page.until(isOpen(B), "the press that started before the change still opens B");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// Two different scripts called script.md, as Save to video folder names them (release review on PR #78): an answer
+// landing in the closed one never touches the open one's draft (its safety net and its Check flags), and Restore
+// gives each script its own words.
+const writeDisk = (page, path, text) => page.eval(`(async () => { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk", { create: true }); const w = await (await (await disk.getDirectoryHandle(dir, { create: true })).getFileHandle(name, { create: true })).createWritable(); await w.write(${JSON.stringify(text)}); await w.close(); return true; })()`);
+const readDisk = (page, path) => page.eval(`(async () => { try { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); return await (await (await (await disk.getDirectoryHandle(dir)).getFileHandle(name)).getFile()).text(); } catch { return null; } })()`);
+const otherRow = (name) => `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === ${JSON.stringify(name)} && !li.querySelector("[aria-current]"))`;
+async function openOther(page, name) {
+  await menuOpen(page);
+  await page.eval(`(${otherRow(name)}).querySelector(".scripts__open").click()`);
+}
+async function runSameName() {
+  console.log("--- two scripts called script.md (1280 px)");
+  const { page, mcp } = await connect(1280, 800);
+  const md = (s) => `# ${s.title}\n\n${s.lines.join("\n\n")}\n`;
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  await page.eval(`window.__pick = "a/script.md"; true`);
+  await page.steady("#emptyOpen");
+  await page.click("#emptyOpen");
+  await page.until(`document.querySelector("#script")?.textContent.includes("Good bread needs")`, "the first script.md (bread) opens");
+  const ask = await askShorter(page, mcp, "Then you cover");
+  check(!!ask, "the agent takes an ask in the bread script.md");
+  await page.eval(`window.__pick = "b/script.md"; true`);
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuOpen").click(); true`);
+  await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the second script.md (walk) opens");
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "the walk script is saved");
+  await sleep(600);
+  // The walk script's own draft: a safety net with a B-roll "Check" flag of its own.
+  const own = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } });
+  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(own)}); true`);
+  // Another program changes the bread file, so the answer can't be written there and must wait somewhere.
+  await writeDisk(page, "a/script.md", "# Bread at home\n\nSomeone else wrote this.\n");
+  const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: SHORT } });
+  check(!r?.result?.isError, "the answer lands in the closed bread script.md", toolText(r));
+  await sleep(1000);
+  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === own, "the open walk script.md keeps its own draft and Check flags", await page.eval(`localStorage.getItem("script-editor:draft:script.md")`));
+  check(!(await readDisk(page, "a/script.md"))?.includes(SHORT), "the bread file changed elsewhere is not written over");
+  await page.until(`!document.querySelector("#aiDot").hidden`, "the dot for the bread script.md");
+  await openOther(page, "script.md");
+  await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes from")`, "the bread script.md offers its own words as Unsaved changes");
+  await page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent === "Restore").click(); true`);
+  await page.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(SHORT)})`, "Restore brings the agent's words into the bread script.md");
+  check(!(await page.eval(`document.querySelector("#script").textContent`)).includes("What if the best part"), "Restore brings no words of the walk script");
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "the bread script.md is saved", 8000);
+  await openOther(page, "script.md");
+  await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the walk script.md opens again");
+  await sleep(500);
+  const banner = await page.eval(`document.querySelector("#banner").hidden ? "" : document.querySelector("#banner").textContent`);
+  check(!banner.startsWith("Unsaved changes") && !(await page.eval(`document.querySelector("#script").textContent`)).includes("Cover the bowl"), "the walk script.md gets none of the bread script's words", banner);
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
 // SMOKE_ONLY=slash (or desktop, phone, edges) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
@@ -402,6 +497,8 @@ try {
   if (!only || only === "phone") await run({ width: 390, height: 844, label: "phone", undoBy: "key" });
   if (!only || only === "edges") await runEdges();
   if (!only || only === "slash") { await runSlash(1280, 800); await runSlash(390, 844); }
+  if (!only || only === "focus") await runFocus();
+  if (!only || only === "samename") await runSameName();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
