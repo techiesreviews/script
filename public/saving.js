@@ -327,9 +327,14 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     });
   }
   // No save runs: everything asked for so far has been written or kept as a draft (TOOLS-358: a delete waits for it).
-  let idleWaits = [];
-  const settleIdle = () => { const w = idleWaits; idleWaits = []; for (const done of w) done(); };
-  const idle = () => (script.saving ? new Promise((done) => idleWaits.push(done)) : Promise.resolve());
+  let idleWaits = [], directLeft = 0; // directLeft: saveLeft writes running outside the queue
+  const settleIdle = () => {
+    if (script.saving || directLeft) return;
+    const w = idleWaits;
+    idleWaits = [];
+    for (const done of w) done();
+  };
+  const idle = () => (script.saving || directLeft ? new Promise((done) => idleWaits.push(done)) : Promise.resolve());
   // A left script's words reached its file: the app keeps what that file now holds (`left` is optional).
   const wroteLeft = (written) => { if (written) on.left?.(written); return written; };
 
@@ -405,7 +410,10 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // an older write of the same file, and are compared with what that write left. Gives { handle, text, modified }, or
   // null when the words were kept as a draft instead. `script` is never touched.
   function saveLeft(snap) {
-    if (!script.saving) return writeLeft(snap).then(wroteLeft);
+    if (!script.saving) {
+      directLeft++;
+      return writeLeft(snap).then(wroteLeft).finally(() => { directLeft--; settleIdle(); });
+    }
     return new Promise((done) => { queue = SaveQueue.queueLeft(queue, { ...snap, force: false, auto: true, waits: [done] }); });
   }
   function finish(current, moved) {
