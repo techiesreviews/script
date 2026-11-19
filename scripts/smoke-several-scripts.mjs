@@ -469,10 +469,18 @@ async function runSameName() {
   await page.until(`document.querySelector("#script")?.textContent.includes("Good bread needs")`, "the first script.md (bread) opens");
   const ask = await askShorter(page, mcp, "Then you cover");
   check(!!ask, "the agent takes an ask in the bread script.md");
+  const shared = await askShorter(page, mcp, "Bread note 3", [14, 33]); // "a short spoken line": words the walk script has too
   await page.eval(`window.__pick = "b/script.md"; true`);
   await menuOpen(page);
   await page.eval(`document.querySelector("#menuOpen").click(); true`);
   await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the second script.md (walk) opens");
+  // The bread script went to the background: it leaves no copy under the shared name, so the walk script reads none.
+  await sleep(500);
+  const leftCopy = await page.eval(`localStorage.getItem("script-editor:draft:script.md")`);
+  check(!leftCopy || (!leftCopy.includes("Then you cover") && !leftCopy.includes("Good bread")), "the bread script.md leaves no copy under the shared name as it goes to the background", leftCopy);
+  check(!(await page.eval(`!!document.querySelector("#script .ask") || !document.querySelector("#banner").hidden`)), "the walk script.md takes none of the bread script's asks or words");
+  const rs = await mcp("tools/call", { name: "answer_ask", arguments: { askId: shared?.id, kind: "replace", text: "a short line" } });
+  check(!rs?.result?.isError, "the shared-words ask is answered in the bread script.md, in the background", toolText(rs));
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "the walk script is saved");
   await sleep(600);
   // The walk script's own draft: a safety net with a B-roll "Check" flag of its own.
