@@ -193,6 +193,16 @@ test("script keys (SL-1): after a failed move, a file opened on the same page ta
   assert.equal(next.handed[0][1].length, 2, "the retry hands the name to both files");
 });
 
+test("script keys: a page whose move failed takes up ids again once another tab has finished the move (review on the fix round)", async () => {
+  const store = new Map(), fail = { hand: true };
+  const first = pendingSetup(store, fail);
+  await first.migrated;
+  fail.hand = false; // storage is back
+  const other = pendingSetup(store); // another tab finishes the move
+  await other.migrated;
+  assert.match(await first.keys.forFile(file("c/script.md")), /^file:/);
+});
+
 test("script keys (SL-3): a recent list that can't be read never marks the move done, and no file takes the name's keys alone meanwhile", async () => {
   const store = new Map();
   const first = pendingSetup(store, { list: true });

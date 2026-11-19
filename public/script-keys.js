@@ -74,6 +74,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
       if (known.has(handle)) return known.get(handle);
       const list = await read();
       let id = await idIn(list, handle);
+      if (!id && pending && (await store.get(MIGRATED_KEY))) pending = false; // another tab finished the move meanwhile
       if (!id && pending) return handle.name;
       if (!id) {
         id = newId();
