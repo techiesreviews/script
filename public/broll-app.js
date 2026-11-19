@@ -8,7 +8,7 @@ import { startPress, HOLD_MS } from "./press.js";
 
 // Bump with any change to the host createBroll takes or the interface it returns: app.js checks it, so a tab opened
 // before a release that loads this file after it never mixes the two.
-export const SEAM = 3;
+export const SEAM = 4;
 
 /**
  * createBroll(host) → the B-roll part, frozen. `host` is what it may use of the app (app.js brollHost): its state,
@@ -19,7 +19,7 @@ export function createBroll(host) {
     state, ui, scriptEl, $, $$, h, icon, esc, me, reduced, FILE_TYPES, SAMPLE, SAMPLE_BROLL, canPick, agent,
     isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
     emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
-    refreshBar, brollChanged, checkpointBrollMove, schedulePersist, hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
+    refreshBar, brollChanged, checkpointBrollMove, queueBrollHistory, schedulePersist, hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
     getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle,
   } = host;
   // The list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
@@ -886,18 +886,27 @@ export function createBroll(host) {
   async function moveShot(id, sel) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
-    const origin = covered(s), destination = sel.map((part) => part.id);
+    let origin = covered(s);
+    const destination = sel.map((part) => part.id);
     const over = Broll.moveOver(state.doc, origin, sel);
     if (!over) return; // onto the lines it covers already
     const token = broll.token;
     let before, expected = over, invalid = false;
-    const checked = !!s.check;
-    const write = changeList((md) => {
-      before = Broll.parseBroll(md).shots.find((shot) => shot.id === id)?.over;
-      if (before == null) throw new Error("The shot changed.");
-      return Broll.updateShot(md, id, { over });
+    let checked = !!s.check;
+    const write = queueBrollHistory(() => {
+      if (token !== broll.token) throw new Error("The B-roll list changed.");
+      return changeList((md) => {
+        before = Broll.parseBroll(md).shots.find((shot) => shot.id === id)?.over;
+        if (before == null) throw new Error("The shot changed.");
+        // A pending Undo may have restored another origin since this drag began.
+        if (before !== s.over) {
+          origin = Broll.matchOver(Broll.spokenBlocks(state.doc), before);
+          checked = !!shotById(id)?.check;
+        }
+        return Broll.updateShot(md, id, { over });
+      });
     });
-    const restoreMove = async (redo) => {
+    const restoreMove = async (redo, paragraphs = state.doc) => {
       try {
         await write;
         if (token !== broll.token) return false;
@@ -905,7 +914,9 @@ export function createBroll(host) {
         await changeList((md) => {
           const shot = Broll.parseBroll(md).shots.find((shot) => shot.id === id);
           const ids = redo ? destination : origin, from = redo ? origin : destination;
-          const spoken = Broll.spokenBlocks(state.doc);
+          // Prefer current words. A later text Undo may already have removed this intermediate position.
+          const doc = [...ids, ...from].every((pid) => byId(pid)) ? state.doc : paragraphs;
+          const spoken = Broll.spokenBlocks(doc);
           // An adjacent history step may have refreshed this same position's quote after typing.
           const samePlace = shot && Broll.matchOver(spoken, shot.over).join() === from.join();
           if ((!samePlace && shot?.over !== expected) || !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid))) {
@@ -914,7 +925,7 @@ export function createBroll(host) {
           }
           // Keep the exact quote while it matches; stale quotes follow the same paragraphs' current words.
           const quote = redo ? over : before;
-          restored = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+          restored = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(doc, Broll.wholeParas(doc, ids));
           return Broll.updateShot(md, id, { over: restored });
         });
         expected = restored;
@@ -931,7 +942,7 @@ export function createBroll(host) {
       }
     };
     // Register before the queued write finishes, so an immediate Undo waits for this move instead of undoing typing.
-    const cancel = checkpointBrollMove({ valid: () => !invalid && token === broll.token && !!shotById(id), undo: () => restoreMove(false), redo: () => restoreMove(true) });
+    const cancel = checkpointBrollMove({ valid: () => !invalid && token === broll.token && !!shotById(id), undo: (doc) => restoreMove(false, doc), redo: (doc) => restoreMove(true, doc) });
     try { await write; }
     catch (err) {
       cancel();

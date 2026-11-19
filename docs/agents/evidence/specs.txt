@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 17 files, 482852 bytes; on first use: broll-app.js + broll.js, 151602 bytes
+ℹ startup: 17 files, 483062 bytes; on first use: broll-app.js + broll.js, 152223 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -51,6 +51,8 @@
 ✔ B-roll move history: Undo restores the original paragraph's current words and Check flag
 ✔ B-roll move history: regenerated quotes between two moves keep the older inverse usable
 ✔ B-roll move history: Undo preserves an original hand-written quote that still matches
+✔ B-roll move history: text Undo during held move Undo preserves both inverses and all Redos
+✔ B-roll move history: dragging during a held Undo returns to the restored origin
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
@@ -347,7 +349,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 17 files, 482852 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 17 files, 483062 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -551,9 +553,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 551
+ℹ tests 553
 ℹ suites 0
-ℹ pass 551
+ℹ pass 553
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
