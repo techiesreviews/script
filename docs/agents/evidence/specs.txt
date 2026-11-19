@@ -45,9 +45,11 @@
 ✔ B-roll move: an Undo waiting for its save cannot restore old script words over new typing
 ✔ B-roll move: a failed Undo keeps the step available and preserves script history
 ✔ B-roll move: typing while a move's Undo saves stops the Undo waiting behind it
+✔ B-roll move: opening another script while a move's Undo saves stops the Undo waiting behind it
 ✔ B-roll move: an Undo pressed while the move's first save fails undoes nothing, and a changed list invalidates old moves
 ✔ B-roll move: deleting the shot invalidates its history instead of blocking older typing Undo
 ✔ B-roll move: an Over conflict invalidates Undo without overwriting the changed shot
+✔ B-roll move history: a shot changed while an Undo saves is left alone, and the Undos skip its stale moves
 ✔ B-roll move history: two fast Undos wait for the second save and restore both moves in keypress order
 ✔ B-roll move history: Undo restores the original paragraph's current words and Check flag
 ✔ B-roll move history: regenerated quotes between two moves keep the older inverse usable

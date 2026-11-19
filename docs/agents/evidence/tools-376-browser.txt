@@ -205,3 +205,15 @@ RESULT: ok specs (558/558 tests passed)
 RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md' (no kit ux checks are scripted for this project)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 RESULT: fail se01-browser timed out: third Undo reaches the first paragraph (the same check against the files of 4fb1a7f)
+
+After the Opus review of the take-over (no defects; one carried P3 and two test gaps):
+Carried P3 (an Undo that meets a changed shot used up the keypress with nothing shown): fixed. A move found stale in
+its turn is now skipped like a move already known to be stale, and the same Undo goes on to the step before it. A
+failed save still stops there and keeps the step. The Over-conflict regression now expects the same Undo to reach the
+older typing.
+Test gaps: closed. One regression opens another script while a move's Undo saves (without the guard it failed:
+the waiting Undo put the old script's words into the open one); one changes the shot while an Undo saves with a
+second Undo waiting (the shot is left alone, both stale moves are skipped, the typing is undone once).
+RESULT: ok unit 27/27 (3 files)
+RESULT: ok specs (560/560 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
