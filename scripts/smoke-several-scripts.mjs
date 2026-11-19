@@ -303,37 +303,53 @@ async function runEdges() {
 
 // A "/" command being typed when the person switches through the file-name menu (lead, 2026-11-19, TOOLS-358): it
 // never reaches the script's file, not when it is left and not when the agent's answer lands, and Ctrl+Z can't bring
-// it back.
-async function runSlash() {
-  console.log("--- a half-typed / command when switching (1280 px)");
-  const { page, mcp, A, B } = await start(1280, 800);
+// it back. Back in the text without switching, it is ordinary text again and saves as usual.
+const lineText = (start) => `[...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith(${JSON.stringify(start)}))?.textContent ?? null`;
+async function typeCommand(page, line, command) {
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith(${JSON.stringify(line)})); el.scrollIntoView({ block: "center" }); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  for (const ch of command) { await page.send("Input.insertText", { text: ch }); await sleep(40); }
+  await page.until(`!document.querySelector("#slashMenu").hidden`, `the parts menu opens on ${command.trim()}`);
+}
+const fileLacks = async (page, name, words) => { const t = await readScript(page, name); return typeof t === "string" && !t.includes(words); };
+async function runSlash(width, height) {
+  console.log(`--- a half-typed / command when switching (${width} px)`);
+  const { page, mcp, A, B } = await start(width, height);
   const ask = await askShorter(page, mcp, "Then you cover");
-  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note 2")); el.scrollIntoView({ block: "center" }); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
-  for (const ch of " /on") { await page.send("Input.insertText", { text: ch }); await sleep(40); }
-  await page.until(`!document.querySelector("#slashMenu").hidden`, "the parts menu opens on /on");
-  await page.click("#docSwitch"); // a real click: focus goes to the menu
+  // Back in the text without switching: the command is ordinary text again, and it saves.
+  await typeCommand(page, "Bread note 2", " /hoo");
+  await page.click("#docSwitch");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await page.key("Escape", "Escape", 27);
+  await page.until(`!document.querySelector("#scriptMenu").matches(":popover-open")`, "the menu closes");
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note 2")); el.focus(); })()`); // back in the text
+  await page.until(fileHas(B, " /hoo"), "back in the text, the typed words save as usual", 6000);
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "and the not-saved dot goes", 6000);
+  // Switching through the menu while a command is typed.
+  const before = await page.eval(lineText("Bread note 4"));
+  await typeCommand(page, "Bread note 4", " /on");
+  await page.click("#docSwitch"); // a real click: focus goes to the menu (its search box on a desktop, the button on a phone)
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open") && document.querySelector("#scriptList .scripts__open[aria-current]")`, "the script menu");
   await sleep(2000); // longer than the auto-save pause
-  check(!(await readScript(page, B))?.includes(" /on"), "with the file-name menu open, /on is not saved into B's file");
+  check(await fileLacks(page, B, " /on"), "with the file-name menu open, /on is not saved into B's file");
   await page.eval(`(${row(A)}).querySelector(".scripts__open").click()`);
   await page.until(isOpen(A), "A opens");
   await sleep(500);
-  check(!(await readScript(page, B))?.includes(" /on"), "leaving B through the menu does not save /on into B's file");
+  check(await fileLacks(page, B, " /on"), "leaving B through the menu does not save /on into B's file");
   const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: SHORT } });
   check(!r?.result?.isError, "the answer lands in B", toolText(r));
   await page.until(fileHas(B, SHORT), "B's file holds the change");
-  check(!(await readScript(page, B))?.includes(" /on"), "the agent's answer does not bring /on into B's file");
+  check(await fileLacks(page, B, " /on"), "the agent's answer does not bring /on into B's file");
   check(await page.eval(`localStorage.getItem("script-editor:draft:" + ${JSON.stringify(B)}) === null || !localStorage.getItem("script-editor:draft:" + ${JSON.stringify(B)}).includes(" /on")`), "B's draft has no /on");
   await openFromMenu(page, B);
   await page.until(`!!document.querySelector("#script .agent-change")`, "B opens at the change");
-  check(!(await page.eval(`document.querySelector("#script").textContent`)).includes(" /on"), "B opens without /on");
+  check((await page.eval(lineText("Bread note 4"))) === before, "B opens with the line as it was before the command");
   for (let i = 0; i < 3; i++) {
     await page.eval(`document.activeElement?.blur(); true`);
     for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
     await sleep(200);
   }
   const text = await page.eval(`document.querySelector("#script").textContent`);
-  check(text.includes(LONG.slice(0, 60)) && !text.includes(" /on"), "Ctrl+Z takes the agent's change out and never brings /on back");
+  check(text.includes(LONG.slice(0, 60)) && (await page.eval(lineText("Bread note 4"))) === before, "Ctrl+Z takes the agent's change out and never brings any part of the command back");
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
@@ -345,7 +361,7 @@ try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
   if (!only || only === "phone") await run({ width: 390, height: 844, label: "phone", undoBy: "key" });
   if (!only || only === "edges") await runEdges();
-  if (!only || only === "slash") await runSlash();
+  if (!only || only === "slash") { await runSlash(1280, 800); await runSlash(390, 844); }
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
