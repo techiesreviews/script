@@ -18,6 +18,8 @@ Lex (2026-11-19, Orbit TOOLS-358, prototype TOOLS-356 approved in its final stat
 
 - **Opens one at a time** (second look on f7f7ce9, P1): every open waits for the one before it. An open that finds its file opened meanwhile by the one before reads nothing again (so the agent's change keeps its undo step), and a script being deleted does not open; the delete waits for every save of it with `saving.idle()` (new). A kept file drops from memory only when it falls off a list that was really read (with storage off, nothing is dropped), and a script deleted while it opens shows no "Couldn't open". Every open checks once more, right before it shows the script, that the file is not being deleted (a script that was not kept too); `idle()` also waits for a `saveLeft` write running outside the queue; and an answer that changes a line a B-roll shot covers gives that shot "Check", as the person's own edit does, through the B-roll part (`touchKept`, seam 2; second look on 437c1d2 and the review on 4a0cb63). Opening a kept script also waits for the save made when it was left; `idle()` waits through a save that was waiting behind the running one; a script left while a "/" command is typed is kept without its undo steps, which may hold parts of the command (as when any script is left; second look on 1068e69).
 
+- **A \"/\" command when switching through the menu** (lead, 2026-11-19, after the second look on fa89526, P2): focus going to the file-name menu closes the parts menu, but the command typed there is remembered (`commandNow`) while the file-name menu has focus: saves leave it out and auto-save waits, and a script left through the menu leaves it behind, in its file, its kept copy and its undo steps. Back in the text, it is ordinary text again. Browser check: `SMOKE_ONLY=slash node scripts/smoke-several-scripts.mjs …` (failed on b54e2ee: \" /on\" reached the file).
+
 ## Checks
 
 - `tests/aside.test.mjs`: keeping a script aside, landing a replace (marked, one undo step, the open script untouched), other asks and marks following, a gone quote cancelled, a note, the asks offered to the agent, the caret by line and offset, and the dot's size and place.
@@ -35,7 +37,6 @@ Checks still to add (test gaps the reviews named; the code paths are in place):
 - Browser: two opens of one kept script at once (its menu row and the agent's `open_script`): it opens once, from memory, and Ctrl+Z still takes the agent's change out.
 - Browser: an open refused while the script is being deleted, kept or not; no "Couldn't open" shows.
 - Browser: a change, and a caret, in the folded lines at the top: the fold opens and the place is on screen.
-- Browser: a half-typed "/" command when a script is left stays out of its file and its undo steps.
 - Browser: an answer over a line a B-roll shot covers gives that shot "Check", also after a reload.
 - Browser: storage off (IndexedDB refused): a kept file stays, takes its answer and shows its dot.
 - Unit: `on.left` hands the app the written words, for a kept script and for one opened again; two answers in a script taken off the list both reach its file without a false "changed on disk".
