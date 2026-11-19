@@ -339,6 +339,14 @@ async function runSlash(width, height) {
   await page.send("Input.insertText", { text: "x" });
   await page.until(fileHas(B, " /silx"), "after Escape and typing on, the words save as usual", 6000);
 
+  // Focus going to another button while the menu stays open (Tab): it is ordinary text again and saves.
+  await typeCommand(page, "Bread note 7", " /div");
+  await page.click("#docSwitch");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  await page.eval(`document.querySelector("#exportBtn").focus(); true`);
+  await page.until(fileHas(B, " /div"), "focus on another button: the words save as usual", 6000);
+  await page.key("Escape", "Escape", 27);
+
   // Switching through the menu while a command is typed; meanwhile the agent shortens the words before it.
   const ask2 = await askShorter(page, mcp, "Bread note 4");
   await typeCommand(page, "Bread note 4", " /on");
