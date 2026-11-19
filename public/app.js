@@ -3523,8 +3523,9 @@ $("#docSwitch").addEventListener("pointerdown", keepMenuSlash, { capture: true }
 // click on a row hides the menu before the script is left, so closing the menu alone does not end it.
 function endMenuSlash(e) {
   if (!menuSlash || e.target?.closest?.("#docSwitch, #scriptMenu")) return;
-  // An answer landing puts the caret back in its line while the menu stays open: that is not the person coming back.
-  if (e.type === "focusin" && $("#scriptMenu").matches(":popover-open")) return;
+  // An answer landing puts the caret back in its line while the menu stays open: that is not the person coming back (they
+  // come back by typing, a click, or closing the menu). Focus anywhere else ends it at once.
+  if (e.type === "focusin" && scriptEl.contains(e.target) && $("#scriptMenu").matches(":popover-open")) return;
   menuSlash = null;
   saving.schedule();
 }
