@@ -17,7 +17,7 @@ export function createBroll(host) {
     state, ui, scriptEl, $, $$, h, icon, esc, me, reduced, FILE_TYPES, SAMPLE, SAMPLE_BROLL, canPick, agent,
     isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
     emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
-    refreshBar, brollChanged, schedulePersist, hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
+    refreshBar, brollChanged, checkpointBrollMove, schedulePersist, hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
     getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle, scriptKey,
   } = host;
   // The list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
@@ -886,8 +886,39 @@ export function createBroll(host) {
     const over = Broll.moveOver(state.doc, covered(s), sel);
     if (!over) return; // onto the lines it covers already
     const token = broll.token;
-    try { await changeList((md) => Broll.updateShot(md, id, { over })); }
+    let before;
+    const checked = !!s.check;
+    const write = changeList((md) => {
+      before = Broll.parseBroll(md).shots.find((shot) => shot.id === id)?.over;
+      if (before == null) throw new Error("The shot changed.");
+      return Broll.updateShot(md, id, { over });
+    });
+    const restoreMove = async (redo) => {
+      try {
+        await write;
+        if (token !== broll.token) return false;
+        await changeList((md) => {
+          const shot = Broll.parseBroll(md).shots.find((shot) => shot.id === id);
+          if (shot?.over !== (redo ? before : over)) throw new Error("The shot changed.");
+          return Broll.updateShot(md, id, { over: redo ? over : before });
+        });
+        if (token !== broll.token) return false;
+        const shot = shotById(id);
+        if (shot) { shot.check = redo ? false : checked; syncFlags(); renderBroll(); }
+        return true;
+      } catch (err) {
+        if (token === broll.token && shotById(id)) {
+          openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
+          failShotCard(err);
+        }
+        return false;
+      }
+    };
+    // Register before the queued write finishes, so an immediate Undo waits for this move instead of undoing typing.
+    const cancel = checkpointBrollMove({ valid: () => token === broll.token, undo: () => restoreMove(false), redo: () => restoreMove(true) });
+    try { await write; }
     catch (err) {
+      cancel();
       // "Not saved" in the card, where its other changes show it; the shot stays where it was.
       if (token !== broll.token || !shotById(id)) return;
       openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });

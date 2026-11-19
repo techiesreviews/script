@@ -3,6 +3,7 @@
 // then run: node scripts/smoke-broll-undo.mjs http://127.0.0.1:<port> <Chrome debugging port>.
 // Each run has a private browser context, disposed afterwards. It never connects an agent or opens existing scripts.
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
 import { setMaxListeners } from "node:events";
 const BASE = process.argv[2];
 const PORT = process.argv[3];
@@ -11,7 +12,6 @@ assert.ok(PORT, "Supply the local Chrome debugging port");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const check = (ok, label) => assert.ok(ok, label);
 const COLLECT = `window.__csp = []; document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective));`;
-const BROLL_FILES = /\/broll(?:-app)?\.js/;
 const version = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
 const cdp = new WebSocket(version.webSocketDebuggerUrl);
 setMaxListeners(64, cdp); // one listener per page this check opens
@@ -32,7 +32,7 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
   cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
 });
 
-async function openPage(width, height, { failBroll = false, holdBroll = false } = {}) {
+async function openPage(width, height) {
   const { browserContextId } = await send("Target.createBrowserContext");
   const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
@@ -52,30 +52,20 @@ async function openPage(width, height, { failBroll = false, holdBroll = false } 
         await sleep(60);
       }
     },
-    // `late`: ms between finding the spot and pressing it, as a slow machine or a busy page would take.
-    async click(selector, { late = 0 } = {}) {
+    async click(selector) {
       const box = await page.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: "nearest" }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
       if (!box) throw new Error(`nothing to press: ${selector}`);
-      if (late) await sleep(late);
       for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
     },
     async key(key, code, keyCode, text) {
       for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: keyCode, ...(type === "keyDown" && text ? { text } : {}) });
     },
-    // Every B-roll file the page asked for, with the answer's status.
-    broll: [],
-    asked: [],
-    held: [],
-    release: () => Promise.all(page.held.splice(0).map((requestId) => page.send("Fetch.continueRequest", { requestId }))),
     close: () => send("Target.disposeBrowserContext", { browserContextId }),
   };
   await page.send("Page.enable");
   await page.send("Runtime.enable");
   await page.send("Log.enable");
   await page.send("Network.enable");
-  // The B-roll module's request refused, as a network blip or a server that can't send it would.
-  // Or held until the check lets it go (page.release()).
-  if (failBroll || holdBroll) await page.send("Fetch.enable", { patterns: [{ urlPattern: "*broll-app.js*" }] });
   await page.send("Page.addScriptToEvaluateOnNewDocument", { source: COLLECT });
   page.log = [];
   cdp.addEventListener("message", (e) => {
@@ -84,18 +74,16 @@ async function openPage(width, height, { failBroll = false, holdBroll = false } 
     if (m.method === "Log.entryAdded" && /Content Security Policy|Refused to/i.test(m.params.entry.text)) page.log.push(m.params.entry.text);
     if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") page.log.push(m.params.args.map((a) => a.value ?? a.description ?? "").join(" "));
     if (m.method === "Runtime.exceptionThrown") page.log.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);
-    if (m.method === "Network.responseReceived" && BROLL_FILES.test(m.params.response.url)) page.broll.push({ url: new URL(m.params.response.url).pathname, status: m.params.response.status });
-    if (m.method === "Network.requestWillBeSent" && BROLL_FILES.test(m.params.request.url)) page.asked.push(new URL(m.params.request.url).pathname);
-    if (m.method === "Page.javascriptDialogOpening") page.send("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
-    if (m.method === "Fetch.requestPaused" && holdBroll) page.held.push(m.params.requestId);
-    else if (m.method === "Fetch.requestPaused") page.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "Failed" }).catch(() => {});
   });
   await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 500 });
   return page;
 }
 
-const page = await openPage(1440, 1000);
 try {
+for (const width of [1440, 390]) for (const mode of ["light", "dark"]) {
+const page = await openPage(width, 1000);
+try {
+  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: mode }] });
   await page.send("Page.navigate", { url: BASE });
   await page.until(`!!window.__scriptEditor`, "editor loaded");
   await page.click("#emptyNew");
@@ -151,8 +139,41 @@ try {
   console.log(`PROOF after Undo: over=${JSON.stringify(after.over)}, sentinel preserved=${after.markdown.includes("UNDO-SENTINEL-A")}`);
   assert.equal(after.markdown, typed, "Undo after moving B-roll preserves unrelated typing");
   assert.equal(after.over, original.over, "Undo restores the shot's original paragraph");
-  console.log("RESULT: ok se01-browser undo restores shot and preserves typing");
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 10 });
+  await page.until(`window.__scriptEditor.broll()[0].over === ${JSON.stringify(moved.over)}`, "Redo moves the shot again");
+  assert.equal(await page.eval(`window.__scriptEditor.markdown()`), typed, "Redo preserves script words");
+  await page.eval(`(() => {
+    const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find(e => e.textContent.includes("Third spoken"));
+    el.focus(); const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  })()`);
+  await page.send("Input.insertText", { text: " LATER-TYPING" });
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
+  assert.equal(await page.eval(`window.__scriptEditor.markdown()`), typed, "later typing undoes before the shot move");
+  assert.equal(await page.eval(`window.__scriptEditor.broll()[0].over`), moved.over);
+  for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
+  await page.until(`window.__scriptEditor.broll()[0].over === ${JSON.stringify(original.over)}`, "second Undo restores the shot");
+  assert.equal(await page.eval(`window.__scriptEditor.markdown()`), typed);
+  // The browser-kept sidecar persists the undone position across a reload, without opening any existing script.
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "throwaway script saved");
+  await page.send("Page.reload");
+  await page.until(`!!window.__scriptEditor && !document.querySelector("#emptyReopen").hidden`, "throwaway script ready to reopen");
+  await page.click("#emptyReopen");
+  await page.until(`window.__scriptEditor.broll()?.length === 1`, "throwaway shot reopened");
+  assert.equal(await page.eval(`window.__scriptEditor.broll()[0].over`), original.over);
+  assert.equal(await page.eval(`window.__scriptEditor.markdown()`), typed);
+  assert.deepEqual(await page.eval(`window.__csp`), []);
+  assert.deepEqual(page.log, [], "no browser errors");
+  await mkdir(".scratch/se01-shots", { recursive: true });
+  const screenshot = await page.send("Page.captureScreenshot", { format: "png" });
+  await writeFile(`.scratch/se01-shots/${width}-${mode}.png`, Buffer.from(screenshot.data, "base64"));
+  console.log(`PROOF ${width}px ${mode}: drag, Undo, Redo, later typing, and reload preserve shot position and script words`);
 } finally {
   await page.close();
-  cdp.close();
 }
+}
+console.log("RESULT: ok se01-browser 4/4 desktop/phone light/dark cases");
+} catch (error) {
+  console.log(`RESULT: fail se01-browser ${error.message.split("\n")[0]}`);
+  throw error;
+} finally { cdp.close(); }

@@ -857,7 +857,38 @@ function checkpoint(kind, id, before = null) {
   state.redo = [];
   state.lastStep = { kind, id, at: now };
 }
+// A move shares the script's chronological history, but never carries a copy of its words.
+function checkpointBrollMove(move) {
+  if (together?.active) return () => {};
+  const history = { ...move, cancelled: false, stacks: new Set([state.undo]) };
+  state.undo.push({ brollMove: history, moveRedo: false });
+  if (state.undo.length > UNDO_LIMIT) state.undo.shift();
+  state.redo = [];
+  state.lastStep = null;
+  // A move whose initial save failed never happened. Remove even an inverse already waiting for that save.
+  return () => {
+    history.cancelled = true;
+    for (const stack of history.stacks) {
+      for (let i = stack.length - 1; i >= 0; i--) if (stack[i].brollMove === history) stack.splice(i, 1);
+    }
+  };
+}
+const staleMove = (snap) => snap.brollMove && (snap.brollMove.cancelled || !snap.brollMove.valid());
 function restore(snap, from, to) {
+  if (snap.brollMove) {
+    const move = snap.brollMove, at = from.length;
+    const back = { brollMove: move, moveRedo: !snap.moveRedo };
+    move.stacks.add(to);
+    to.push(back); // Redo is available immediately; later typing can invalidate it while the list saves.
+    state.lastStep = null;
+    move[snap.moveRedo ? "redo" : "undo"]().then((ok) => {
+      const i = to.indexOf(back);
+      if (ok || i < 0) return;
+      to.splice(i, 1);
+      if (!staleMove(snap)) from.splice(Math.min(at, from.length), 0, snap);
+    });
+    return;
+  }
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
   const { back, closed } = Changes.landStep(state.asks, snap.land);
   to.push({ doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
@@ -877,12 +908,14 @@ function restore(snap, from, to) {
 }
 function undo() {
   if (together?.active) { hideBar(); return void together.undo(); }
-  const s = state.undo.pop();
+  let s = state.undo.pop();
+  while (s && staleMove(s)) s = state.undo.pop();
   if (s) restore(s, state.undo, state.redo);
 }
 function redo() {
   if (together?.active) return;
-  const s = state.redo.pop();
+  let s = state.redo.pop();
+  while (s && staleMove(s)) s = state.redo.pop();
   if (s) restore(s, state.redo, state.undo);
 }
 
@@ -3404,7 +3437,7 @@ const brollHost = () => ({
   state, ui, scriptEl, $, $$, h, icon, esc, me, reduced, FILE_TYPES, SAMPLE, SAMPLE_BROLL, canPick, agent,
   isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
   emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
-  refreshBar, brollChanged, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
+  refreshBar, brollChanged, checkpointBrollMove, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
   hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
   getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle, scriptKey,
 });

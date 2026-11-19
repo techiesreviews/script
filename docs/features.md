@@ -32,6 +32,8 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 
 ## B-roll
 
+- Moving a shot is one Ctrl/Cmd+Z step: Undo returns it to its previous paragraphs and keeps unrelated script typing. Redo moves it again; typing after a move undoes first (TOOLS-376, SE-01).
+
 - Asked in its own chat, the agent can suggest B-roll, each new shot with its sketch, and sketch shots in the list; they show with Keep and Undo like answers to asks (step I).
 - A sketch can also be a picture the agent made and uploaded (`upload_image`); it is kept in the B-roll list file as a Markdown image (step K).
 - A picture for a shot in the list goes in at once with Undo, and a used picture frees its place among the 24 that may wait (step K2).
