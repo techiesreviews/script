@@ -103,3 +103,25 @@ RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 RESULT: ok bg stop se01-chrome-check pgid 80038
 RESULT: ok bg stop se01-local-check pgid 76723
+
+Final exact-quote follow-up:
+The next Opus review confirmed the queued history fix resolves the earlier rare reversal race. It found a P2:
+regenerating a whole-paragraph quote on every Undo unnecessarily changed a still-valid hand-written Over.
+Exact original Over: met — a new test gave the shot the hand-written quote "spoken paragraph.". Before the fix,
+Undo returned "First spoken paragraph.". The fix captures the original Over inside the initial queued write,
+keeps it byte-for-byte when it still matches the original paragraphs, and regenerates it only when stale.
+History-level conflict: met — the existing Over-conflict test now calls actual history Undo, checks both stacks,
+and proves the next Undo reaches older script typing. Its first run had a fixture bug (passing a spoken-block
+summary to Doc.contentOf); that fixture was corrected without another application change.
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T230756Z
+RESULT: fail unit 5/6 (1 files) log .scratch/unit/20261119T230828-291221.log
+RESULT: fail unit 17/18 (3 files) log .scratch/unit/20261119T230906-334934.log
+RESULT: fail specs (fixture error, 550/551 passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-last pid 362218
+RESULT: ok bg se01-chrome-last pid 363541
+RESULT: ok unit 18/18 (3 files) log .scratch/unit/20261119T230938-374805.log
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok specs (551/551 tests passed)
+RESULT: ok bg stop se01-chrome-last pgid 363541
+RESULT: ok bg stop se01-local-last pgid 362218

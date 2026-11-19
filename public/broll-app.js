@@ -887,10 +887,11 @@ export function createBroll(host) {
     const over = Broll.moveOver(state.doc, origin, sel);
     if (!over) return; // onto the lines it covers already
     const token = broll.token;
-    let expected = over, invalid = false;
+    let before, expected = over, invalid = false;
     const checked = !!s.check;
     const write = changeList((md) => {
-      if (!Broll.parseBroll(md).shots.some((shot) => shot.id === id)) throw new Error("The shot changed.");
+      before = Broll.parseBroll(md).shots.find((shot) => shot.id === id)?.over;
+      if (before == null) throw new Error("The shot changed.");
       return Broll.updateShot(md, id, { over });
     });
     const restoreMove = async (redo) => {
@@ -904,12 +905,13 @@ export function createBroll(host) {
           const spoken = Broll.spokenBlocks(state.doc);
           // An adjacent history step may have refreshed this same position's quote after typing.
           const samePlace = shot && Broll.matchOver(spoken, shot.over).join() === from.join();
-          if ((!samePlace && shot?.over !== expected) || !ids.length || ids.some((id) => !spoken.some((b) => b.id === id))) {
+          if ((!samePlace && shot?.over !== expected) || !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid))) {
             invalid = true; // This step's position no longer matches, so retrying cannot succeed.
             throw new Error("The shot changed.");
           }
-          // Quotes in the sidecar can predate typing. Restore the same paragraphs using their current words.
-          restored = Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+          // Keep the exact quote while it matches; stale quotes follow the same paragraphs' current words.
+          const quote = redo ? over : before;
+          restored = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
           return Broll.updateShot(md, id, { over: restored });
         });
         expected = restored;

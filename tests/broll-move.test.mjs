@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import * as Doc from "../public/doc.js";
 import * as Broll from "../public/broll.js";
+import * as Changes from "../public/changes.js";
 
 // Exercise moveShot itself, including its inverse and expected-Over guard, with a queued in-memory sidecar.
 // The browser smoke covers the pointer handlers and real browser storage without exposing another public API.
@@ -21,7 +22,7 @@ function movement() {
   let move, queue = Promise.resolve(), writes = 0, hold = null;
   const shotById = (id) => broll.shots.find((shot) => shot.id === id);
   const context = { state, broll, Doc, Broll, shotById, covered: (shot) => shot.blockIds,
-    Date, UNDO_LIMIT: 300, TYPING_GROUP_MS: 1000, together: null,
+    Changes, Date, UNDO_LIMIT: 300, TYPING_GROUP_MS: 1000, together: null,
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
     followAnchors() {}, reanchorAll() {}, renderAll() {}, hideBar() {}, changed() {}, emit() {},
     changeList: (mutate) => {
@@ -43,6 +44,7 @@ function movement() {
   context.checkpointBrollMove = (entry) => { move = entry; return checkpoint(entry); };
   return { broll, get text() { return text; }, get writes() { return writes; }, get move() { return move; },
     state, paras, undo: () => context.undo(), redo: () => context.redo(),
+    type: (text) => { context.checkpoint("type", paras[2].id); Doc.setContent(state.doc, paras[2].id, Doc.contentOf(Doc.blockById(state.doc, paras[2].id)) + text); },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
     moveShot: (index = 1) => context.moveShot("B1", Broll.wholeParas(state.doc, [paras[index].id])),
     replace: (mutate) => { text = mutate(text); adopt(); },
@@ -63,6 +65,7 @@ test("B-roll move: deleting the shot invalidates its history instead of blocking
 test("B-roll move: an Over conflict invalidates Undo without overwriting the changed shot", async () => {
   const m = movement();
   const before = Broll.parseBroll(m.text).shots[0].over;
+  m.type(" UNDO-SENTINEL");
   await m.moveShot();
   assert.equal(await m.move.undo(), true);
   assert.equal(Broll.parseBroll(m.text).shots[0].over, before);
@@ -71,10 +74,14 @@ test("B-roll move: an Over conflict invalidates Undo without overwriting the cha
   assert.equal(m.broll.shots[0].check, false, "Redo clears Check");
   m.replace((text) => Broll.updateShot(text, "B1", { over: '"Independent position"' }));
   const edited = m.text, writes = m.writes;
-  assert.equal(await m.move.undo(), false);
+  m.undo(); await settle();
+  assert.equal(m.state.undo.length, 1, "a step invalidated during its inverse is dropped");
+  assert.equal(m.state.redo.length, 0);
   assert.equal(m.text, edited, "the Over conflict does not overwrite the independent edit");
   assert.equal(m.writes, writes);
   assert.equal(m.move.valid(), false, "a permanent Over conflict must not trap every later Undo");
+  m.undo(); await settle();
+  assert.doesNotMatch(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "older typing Undo remains reachable");
 });
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
