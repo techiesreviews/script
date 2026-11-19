@@ -519,7 +519,98 @@ async function runSameName() {
   await page.close();
 }
 
-// SMOKE_ONLY=slash (or desktop, phone, edges) runs one part.
+// A background script taken off the list while its save is still on its way (release review on PR #78): when that
+// save fails, its words never land under the shared name, in the other script.md's draft.
+async function runRemovedMidSave() {
+  console.log("--- a background script.md taken off the list mid-save (1280 px)");
+  const { page, mcp } = await connect(1280, 800);
+  const md = (s) => `# ${s.title}\n\n${s.lines.join("\n\n")}\n`;
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  await page.eval(`window.__pick = "a/script.md"; true`);
+  await page.steady("#emptyOpen");
+  await page.click("#emptyOpen");
+  await page.until(`document.querySelector("#script")?.textContent.includes("Good bread needs")`, "the bread script.md opens");
+  const ask = await askShorter(page, mcp, "Then you cover");
+  check(!!ask, "the agent takes an ask in the bread script.md");
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note 2")); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  await page.send("Input.insertText", { text: " Fresh words." }); // not saved yet: the save made as it is left will carry them
+  // The next write of a script.md waits, then fails: the bread save made as it goes to the background.
+  await page.eval(`(() => { window.__gate = new Promise((r) => { window.__release = r; }); window.__holdNext = true; const create = FileSystemFileHandle.prototype.createWritable; FileSystemFileHandle.prototype.createWritable = async function (...a) { if (window.__holdNext && this.name === "script.md") { window.__holdNext = false; window.__held = true; await window.__gate; throw new DOMException("The file could not be written.", "NotAllowedError"); } return create.apply(this, a); }; })()`);
+  await page.eval(`window.__pick = "b/script.md"; true`);
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuOpen").click(); true`);
+  await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the walk script.md opens");
+  await page.until(`window.__held === true`, "the bread save is on its way");
+  // Every write under the shared name from now on is recorded.
+  await page.eval(`(() => { window.__writes = []; const set = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (k === "script-editor:draft:script.md") window.__writes.push(String(v)); return set.call(this, k, v); }; })()`);
+  await menuOpen(page);
+  await page.eval(`(${otherRow("script.md")}).querySelector(".scripts__remove").click(); true`);
+  await sleep(300);
+  await page.eval(`window.__release(); true`);
+  await sleep(1200);
+  const writes = await page.eval(`window.__writes`);
+  check(!writes.some((v) => v.includes("Fresh words") || v.includes("Good bread")), "the removed bread script's failed save writes none of its words under the shared name", writes.join(" | ").slice(0, 300));
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// Found in the sweep before the release (lead, 2026-11-19): deleting a browser script.md while a file on the computer
+// called script.md is open never removes that open script's draft (keys go by name).
+async function runDeleteSameName() {
+  console.log("--- deleting a browser script.md while a file script.md is open (1280 px)");
+  const { page } = await connect(1280, 800);
+  await page.steady("#emptyNew");
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "a new script");
+  await page.send("Input.insertText", { text: "Script" });
+  await page.until(`document.querySelector("#fileName").textContent === "script.md"`, "the browser script is called script.md", 8000);
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "it is saved");
+  await writeDisk(page, "b/script.md", `# ${WALK.title}\n\n${WALK.lines.join("\n\n")}\n`);
+  await page.eval(`window.__pick = "b/script.md"; true`);
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuOpen").click(); true`);
+  await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the file script.md opens");
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "it is saved");
+  await sleep(600);
+  const own = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } }); // the open file's own draft
+  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(own)}); true`);
+  await menuOpen(page);
+  const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
+  await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
+  await page.until(`!!(${del})?.querySelector(".scripts__delete")`, "Delete asks once more");
+  await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
+  await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
+  await sleep(500);
+  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === own, "the open file script.md keeps its own draft", await page.eval(`localStorage.getItem("script-editor:draft:script.md")`));
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// Opening an "AI done" script from its menu row while the Storyboard is shown (release review on PR #78): it switches
+// to the Script view and opens at the change.
+async function runBoard() {
+  console.log("--- AI done, opened from the Storyboard (1280 px)");
+  const { page, mcp, A, B } = await start(1280, 800);
+  const ask = await askShorter(page, mcp, "Then you cover");
+  await page.eval(`window.scrollTo(0, 0); true`);
+  await openFromMenu(page, A);
+  const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: SHORT } });
+  check(!r?.result?.isError, "the answer lands in B", toolText(r));
+  await page.until(`!document.querySelector("#aiDot").hidden`, "the dot for B");
+  await page.click(`#viewSwitch [data-view="board"]`);
+  await page.until(`document.querySelector("#layout").dataset.view === "board"`, "the Storyboard shows");
+  await openFromMenu(page, B);
+  await page.until(`document.querySelector("#layout").dataset.view === ""`, "opening B from its row shows the Script view", 4000);
+  await page.until(`(() => { const m = document.querySelector("#script .agent-change"); if (!m) return false; const r = m.getBoundingClientRect(), top = document.querySelector(".top").getBoundingClientRect().bottom; return r.top >= top && r.bottom <= innerHeight; })()`, "B opens at the change, on screen", 4000);
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -528,6 +619,9 @@ try {
   if (!only || only === "slash") { await runSlash(1280, 800); await runSlash(390, 844); }
   if (!only || only === "focus") await runFocus();
   if (!only || only === "samename") await runSameName();
+  if (!only || only === "removed") await runRemovedMidSave();
+  if (!only || only === "deletesame") await runDeleteSameName();
+  if (!only || only === "board") await runBoard();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
