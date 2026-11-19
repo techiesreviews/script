@@ -60,6 +60,7 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
       done: (moved) => events.push(["done", !!moved]),
       renamed: (from, to, o) => events.push(["renamed", from, to, o]),
       placed: (h, o) => events.push(["placed", h.name, o]),
+      left: (w) => events.push(["left", w.handle.name, w.text]),
     },
   };
   const saving = createSaving(ports);
@@ -75,7 +76,7 @@ function setup({ text = "# A\n\nOne.\n", handle = { name: "a.md" } } = {}) {
 
 test("saving: the interface is small, and app.js reaches saving only through it", () => {
   const { saving } = setup();
-  assert.deepEqual(Object.keys(saving).sort(), ["allow", "drafts", "flush", "open", "queued", "save", "saveAs", "saveMine", "schedule", "stop"]);
+  assert.deepEqual(Object.keys(saving).sort(), ["allow", "drafts", "flush", "open", "queued", "save", "saveAs", "saveLeft", "saveMine", "schedule", "stop"]);
   assert.deepEqual(Object.keys(saving.drafts).sort(), ["del", "get", "move", "set"]);
   assert.equal(AUTOSAVE_MS, 1500);
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
@@ -197,6 +198,55 @@ test("saving: a script the person left that cannot be written keeps its text as 
   await until(() => !s.script.saving);
   assert.deepEqual(s.store.get("draft:a.md"), { text: "# A\n\nOne. Lost?\n", at: 77_000, asks: [{ id: "k" }], broll: { s1: true } });
   assert.equal(s.script.saveError, "", "A's problem does not show on B");
+});
+
+// TOOLS-358: the agent's answer lands in a script the person left; it goes to that script's own file.
+test("saving: saveLeft writes a left script's new words to its own file with the auto-save rules, and says so", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  const written = await s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  assert.equal(written.text, "# A\n\nOne, shorter.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne, shorter.\n");
+  assert.ok(A.asked.every((ask) => ask === false), "no permission prompt");
+  assert.deepEqual(s.events.filter((e) => e[0] === "left"), [["left", "a.md", "# A\n\nOne, shorter.\n"]]);
+  assert.equal(s.script.handle.name, "b.md", "the open script's record is not touched");
+  assert.equal(s.script.savedText, "# B\n");
+});
+
+test("saving: saveLeft while a save runs waits its turn, after the older write of that file, and compares with what it left", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.flush(); // leaving A with words not saved yet, as loadText does: the write starts and waits
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  let written = null;
+  const p = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne. Typed. Answered.\n", browser: false, savedText: "# A\n\nOne.\n" }).then((w) => { written = w; });
+  await settle();
+  assert.equal(written, null, "it waits for the running save");
+  release();
+  await p;
+  assert.equal(written.text, "# A\n\nOne. Typed. Answered.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed. Answered.\n");
+  assert.equal(s.store.get("draft:a.md"), null, "no false changed-on-disk draft");
+  assert.deepEqual(s.events.filter((e) => e[0] === "left").map((e) => e[2]), ["# A\n\nOne. Typed.\n", "# A\n\nOne. Typed. Answered.\n"], "the app hears each write of the left file");
+});
+
+test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  s.files.outside("a.md", "# A\n\nChanged elsewhere.\n");
+  s.time.t = 88_000;
+  const written = await s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  assert.equal(written, null);
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nChanged elsewhere.\n");
+  assert.equal(s.store.get("draft:a.md").text, "# A\n\nOne, shorter.\n");
+  assert.equal(s.store.get("draft:a.md").at, 88_000);
 });
 
 test("saving: a file changed on disk is not written over; Save mine writes this version", async () => {
