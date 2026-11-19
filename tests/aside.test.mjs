@@ -131,7 +131,7 @@ test("aside: the done dot is bigger than the not-saved dot and sits at the file 
   assert.match(css, /\.ai-dot \{[^}]*inline-size: 0\.62rem;[^}]*background: var\(--accent\)/);
   assert.match(css, /\.doc__title \.ai-dot \{[^}]*translate: 0 -0\.38rem;/);
   assert.match(css, /\.save-state\[data-state="dirty"\] \{ inline-size: 7px;/);
-  assert.match(html, /<span class="doc__title"><span class="doc__name" id="fileName"><\/span><span data-icon="chevron"><\/span><span class="ai-dot" id="aiDot" hidden><\/span><\/span>/);
+  assert.match(html, /<span class="doc__title"><span class="doc__name" id="fileName"><\/span><span data-icon="chevron"><\/span><span class="ai-dot" id="aiDot" role="img" aria-label="AI done in another script" hidden><\/span><\/span>/);
   assert.match(app, /"AI working"/);
   assert.match(app, /"AI done"/);
   assert.match(css, /prefers-reduced-motion: no-preference\) \{[^}]*\.scripts__spin \{ animation/);

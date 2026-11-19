@@ -1,0 +1,243 @@
+#!/usr/bin/env node
+// Browser check for TOOLS-358 (several scripts): while the person writes one script, their agent answers an ask in
+// another. Real typing and clicks over CDP, at 1280 px and at 390 px (a phone), with the agent played over /mcp.
+// The scripts are made up and live in the browser's private file system of a fresh profile.
+// Start the Worker with its assets first (`npx --yes wrangler@4 dev --port <port>`) and a headless Chrome, then:
+//   node scripts/smoke-several-scripts.mjs <base URL> <Chrome debugging port> [screenshot folder]
+// Its traffic goes to the base URL and the debugging port only.
+import { mkdirSync, writeFileSync } from "node:fs";
+
+const BASE = (process.argv[2] || "http://127.0.0.1:8787").replace(/\/$/, "");
+const PORT = process.argv[3] || "9222";
+const SHOTS = process.argv[4] || "";
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let failures = 0;
+const check = (ok, label, extra = "") => {
+  console.log(`${ok ? "ok" : "FAIL"} ${label}${extra !== "" && !ok ? ` (${extra})` : ""}`);
+  if (!ok) failures++;
+};
+
+const version = await (await fetch(`http://127.0.0.1:${PORT}/json/version`)).json();
+const cdp = new WebSocket(version.webSocketDebuggerUrl);
+await new Promise((resolve, reject) => { cdp.addEventListener("open", resolve); cdp.addEventListener("error", reject); });
+let nextId = 0;
+const waiting = new Map();
+cdp.addEventListener("message", (e) => {
+  const m = JSON.parse(e.data);
+  if (m.method === "Page.javascriptDialogOpening" && m.sessionId) send("Page.handleJavaScriptDialog", { accept: true }, m.sessionId).catch(() => {});
+  if (!m.id || !waiting.has(m.id)) return;
+  const { resolve, reject } = waiting.get(m.id);
+  waiting.delete(m.id);
+  if (m.error) reject(new Error(JSON.stringify(m.error))); else resolve(m.result);
+});
+const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+  const id = ++nextId;
+  const timer = setTimeout(() => { waiting.delete(id); reject(new Error(`Chrome didn't answer ${method}`)); }, 20000);
+  waiting.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
+  cdp.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
+});
+
+const STUBS = `(() => {
+  window.__errors = [];
+  addEventListener("error", (e) => window.__errors.push(String(e.message)));
+  addEventListener("unhandledrejection", (e) => window.__errors.push(String(e.reason?.message || e.reason)));
+  document.addEventListener("securitypolicyviolation", (e) => window.__errors.push("CSP " + e.violatedDirective + " " + (e.blockedURI || "inline")));
+})();`;
+
+async function openTab(width, height) {
+  const { browserContextId } = await send("Target.createBrowserContext");
+  const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
+  const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
+  const page = {
+    close: () => send("Target.disposeBrowserContext", { browserContextId }),
+    send: (method, params) => send(method, params, sessionId),
+    async eval(expression) {
+      const r = await page.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+      return r.result.value;
+    },
+    async until(expression, label, ms = 8000) {
+      const end = Date.now() + ms;
+      for (;;) {
+        try { if (await page.eval(expression)) return true; } catch { /* the page is navigating */ }
+        if (Date.now() > end) { check(false, `timed out: ${label}`); return false; }
+        await sleep(60);
+      }
+    },
+    async click(selector) {
+      const box = await page.eval(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      if (!box) throw new Error(`nothing to press: ${selector}`);
+      for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
+    },
+    steady: (selector) => page.until(`new Promise((done) => { const at = () => JSON.stringify(document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect() ?? null), was = at(); setTimeout(() => done(was !== "null" && at() === was), 250); })`, `${selector} in place`),
+    async key(key, code, vk, text) { for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, ...(text && type === "keyDown" ? { text } : {}) }); },
+    async shot(name) {
+      if (!SHOTS) return;
+      const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(`${SHOTS}/${name}.png`, Buffer.from(data, "base64"));
+    },
+    errors: () => page.eval(`window.__errors`),
+  };
+  await page.send("Page.enable");
+  await page.send("Runtime.enable");
+  await page.send("Page.addScriptToEvaluateOnNewDocument", { source: STUBS });
+  await page.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 500 });
+  return page;
+}
+
+/* ---------- The agent, over /mcp ---------- */
+let rpcId = 0;
+function agentFor(token) {
+  return async (method, params) => {
+    const res = await fetch(`${BASE}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: "2.0", method, ...(params ? { params } : {}), id: ++rpcId }) });
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  };
+}
+const toolText = (r) => r?.result?.content?.[0]?.text ?? "";
+
+/* ---------- Made-up scripts ---------- */
+const filler = (topic, n) => Array.from({ length: n }, (_, i) => `${topic} note ${i + 1}: a short spoken line that only fills the page so it can scroll.`);
+const WALK = { title: "A walk before breakfast", lines: ["What if the best part of your day is over before breakfast?", ...filler("Walk", 14), "Put your shoes by the door the night before. That's the whole trick."] };
+const LONG = "Then you cover the bowl with a plate or a clean towel and you simply leave it alone on the kitchen counter for the whole night, which is really all there is to it.";
+const SHORT = "Cover the bowl and leave it on the counter overnight. That's all.";
+const BREAD = { title: "Bread at home", lines: ["Good bread needs four things: flour, water, salt and time.", ...filler("Bread", 8), LONG, ...filler("Oven", 6)] };
+const nameOf = (s) => `${s.title.toLowerCase().replace(/\s+/g, "-")}.md`;
+
+const isOpen = (name) => `document.querySelector("#fileName")?.textContent === ${JSON.stringify(name)} && !document.querySelector("#layout").hidden`;
+// Types a made-up script into a new one: the title, then each line as its own paragraph.
+async function writeScript(page, s) {
+  await page.send("Input.insertText", { text: s.title });
+  for (const line of s.lines) {
+    await page.key("Enter", "Enter", 13);
+    await page.send("Input.insertText", { text: line });
+  }
+  await page.until(isOpen(nameOf(s)), `${nameOf(s)} is named after its title`, 8000);
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, `${nameOf(s)} is saved`, 8000);
+}
+async function menuOpen(page) {
+  await page.click("#docSwitch");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open") && document.querySelector("#scriptList .scripts__open[aria-current]")`, "the script menu with its rows");
+  await sleep(150);
+}
+const row = (name) => `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === ${JSON.stringify(name)})`;
+const rowState = (name) => `(() => { const li = ${row(name)}; if (!li) return null; return { spin: !!li.querySelector(".scripts__spin"), note: li.querySelector(".scripts__ai")?.textContent || "", dot: !!li.querySelector(".ai-dot"), current: !!li.querySelector("[aria-current]"), unseen: li.hasAttribute("data-unseen") }; })()`;
+async function openFromMenu(page, name) {
+  await menuOpen(page);
+  await page.eval(`(${row(name)}).querySelector(".scripts__open").click()`);
+  await page.until(isOpen(name), `${name} opens from the menu`);
+}
+const readScript = (page, name) => page.eval(`(async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); return await (await (await d.getFileHandle(${JSON.stringify(name)})).getFile()).text(); } catch { return null; } })()`);
+// Where the person is in the open script: the window's scroll, the focused line and the caret offset in it.
+const where = (page) => page.eval(`(() => { const s = getSelection(), el = document.activeElement; const r = s.rangeCount ? s.getRangeAt(0) : null; return { y: Math.round(scrollY), focus: el?.dataset?.id ? el.textContent.slice(0, 40) : el?.id || el?.tagName, at: r ? r.startOffset : -1, text: document.querySelector("#script").textContent }; })()`);
+
+async function run({ width, height, label }) {
+  console.log(`--- ${label} (${width} px)`);
+  const page = await openTab(width, height);
+  const minted = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
+  const mcp = agentFor(minted.token);
+  await page.send("Page.navigate", { url: `${BASE}/` });
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyNew")`, "the start screen");
+  await page.eval(`localStorage.setItem("script-editor:agent", ${JSON.stringify(JSON.stringify({ token: minted.token, createdAt: Date.now() }))}); true`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyNew")`, "the start screen after the token");
+  await mcp("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "claude-code", version: "1.0" } });
+  await page.until(`document.querySelector("#agentBtn").dataset.state === "on"`, "the agent is connected");
+
+  // Two made-up scripts, both saved in the browser.
+  await page.steady("#emptyNew");
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "a new script");
+  await writeScript(page, WALK);
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuNew").click(); true`);
+  await page.until(`document.querySelector("#fileName").textContent !== ${JSON.stringify(nameOf(WALK))}`, "a second new script");
+  await writeScript(page, BREAD);
+  const A = nameOf(WALK), B = nameOf(BREAD);
+
+  // In B: an ask on the long sentence ("Shorter").
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes(${JSON.stringify(LONG.slice(0, 30))})); el.scrollIntoView({ block: "center" }); const t = el.firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, t.data.length); getSelection().removeAllRanges(); getSelection().addRange(r); })()`);
+  await page.until(`!document.querySelector("#editBar").hidden`, "the edit bar shows on the selection");
+  await page.click("#askInput");
+  await page.send("Input.insertText", { text: "Shorter" });
+  await sleep(80);
+  await page.key("Enter", "Enter", 13, "\r");
+  await page.until(`!!document.querySelector("#script .ask")`, "the ask shows in B");
+  const asks = JSON.parse(toolText(await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 5 } })) || "{}").asks || [];
+  const ask = asks.find((a) => a.quote?.startsWith("Then you cover"));
+  check(!!ask, "the agent gets B's ask", JSON.stringify(asks));
+
+  // Back to A, the agent still at work in B: B's menu row shows a spinner and "AI working".
+  await openFromMenu(page, A);
+  await menuOpen(page);
+  const working = await page.eval(rowState(B));
+  check(working?.spin && working.note === "AI working" && !working.dot, "B's row: spinner and \"AI working\", no dot", JSON.stringify(working));
+  const openRow = await page.eval(rowState(A));
+  check(openRow?.current && !openRow.note && !openRow.dot, "the open script's row: no note, no dot", JSON.stringify(openRow));
+  await page.shot(`${label}-1-menu-ai-working`);
+  await page.key("Escape", "Escape", 27);
+  await page.until(`!document.querySelector("#scriptMenu").matches(":popover-open")`, "the menu closes");
+  check(await page.eval(`document.querySelector("#aiDot").hidden`), "no dot on the file name while the AI works");
+
+  // Typing in A: scroll a little, put the caret in a line, type.
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Walk note 6")); el.scrollIntoView({ block: "center" }); el.focus(); const t = el.firstChild; getSelection().collapse(t, 12); })()`);
+  await page.send("Input.insertText", { text: "really " });
+  await sleep(200);
+  const before = await where(page);
+
+  // The agent answers B while the person is in A: nothing moves in A.
+  const answered = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: SHORT } });
+  check(!answered?.result?.isError && /lightly marked|in the text/i.test(toolText(answered)), "answer_ask in B is accepted while A is open", toolText(answered));
+  await page.until(`!document.querySelector("#aiDot").hidden`, "the orange dot shows on the file name");
+  await sleep(300);
+  const after = await where(page);
+  check(after.y === before.y && after.focus === before.focus && after.at === before.at && after.text === before.text, "nothing moved in A: same scroll, caret and text", `${JSON.stringify({ ...before, text: before.text.length })} vs ${JSON.stringify({ ...after, text: after.text.length })}`);
+  await page.send("Input.insertText", { text: "very " });
+  check((await page.eval(`document.activeElement.textContent`)).includes("really very "), "the person keeps typing in A");
+  await page.until(`(async () => ((await (async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); return await (await (await d.getFileHandle(${JSON.stringify(B)})).getFile()).text(); } catch { return ""; } })()) || "").includes(${JSON.stringify(SHORT)}))()`, "B's file holds the agent's change");
+  const bFile = await readScript(page, B);
+  check(bFile?.includes(SHORT) && !bFile.includes(LONG), "B's file has the change, not the old sentence");
+  check(!(await readScript(page, A))?.includes(SHORT), "A's file never gets B's change");
+  const dot = await page.eval(`(() => { const d = document.querySelector("#aiDot").getBoundingClientRect(), n = document.querySelector("#fileName").getBoundingClientRect(), s = getComputedStyle(document.querySelector("#aiDot")); return { w: Math.round(d.width), above: d.top < n.top + n.height / 2 - 2, colour: s.backgroundColor }; })()`);
+  check(dot.w >= 9 && dot.above, "the file name's dot is bigger than the 7 px not-saved dot and sits higher, at the corner", JSON.stringify(dot));
+  await page.shot(`${label}-2-dot-on-file-name`);
+  await menuOpen(page);
+  const done = await page.eval(rowState(B));
+  check(done?.note === "AI done" && done.dot && !done.spin && done.unseen, "B's row: \"AI done\" and the orange dot, no number", JSON.stringify(done));
+  check(!(await page.eval(rowState(A)))?.dot, "the open script never gets a dot");
+  await page.shot(`${label}-3-menu-ai-done`);
+
+  // A click opens B at the change, lightly marked, with Undo on the agent's tag; the dot goes.
+  await page.eval(`(${row(B)}).querySelector(".scripts__open").click()`);
+  await page.until(isOpen(B), "B opens");
+  await page.until(`!!document.querySelector("#script .agent-change")`, "the change is lightly marked");
+  const view = await page.eval(`(() => { const m = document.querySelector("#script .agent-change").getBoundingClientRect(), top = document.querySelector(".top").getBoundingClientRect().bottom; return { inView: m.top >= top && m.bottom <= innerHeight, text: document.querySelector("#script .agent-change").textContent }; })()`);
+  check(view.inView && view.text.includes("Cover the bowl"), "B opens at the change, on screen", JSON.stringify(view));
+  await page.until(`!!document.querySelector(".rc__undo")`, "Undo on the agent's tag");
+  check(await page.eval(`document.querySelector("#aiDot").hidden`), "the dot goes once the change is seen");
+  await page.shot(`${label}-4-at-the-change`);
+  await page.eval(`document.querySelector(".rc__undo").click(); true`);
+  await page.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(LONG.slice(0, 60))})`, "Undo puts the old sentence back");
+  check(!(await page.eval(`document.querySelector("#script").textContent`)).includes("Cover the bowl and leave"), "the agent's words are gone after Undo");
+
+  // Back to A: where it was left, caret and all.
+  await openFromMenu(page, A);
+  await sleep(200);
+  const back = await where(page);
+  check(Math.abs(back.y - after.y) <= 2 && back.focus.startsWith("Walk note 6:really very ") && back.at === after.at + 5, "A comes back at its scroll place with its caret", `${JSON.stringify({ y: after.y, focus: after.focus, at: after.at })} vs ${JSON.stringify({ y: back.y, focus: back.focus, at: back.at })}`);
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+try {
+  await run({ width: 1280, height: 800, label: "desktop" });
+  await run({ width: 390, height: 844, label: "phone" });
+} catch (e) {
+  check(false, "the check ran to the end", e.stack || e.message);
+}
+cdp.close();
+console.log(failures ? `RESULT: fail several-scripts ${failures} failed` : "RESULT: ok several-scripts");
+process.exit(failures ? 1 : 0);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { emptyQueue, queueSave, settleQueue, splitQueue } from "../public/save-queue.js";
+import { emptyQueue, queueSave, queueLeft, settleQueue, splitQueue } from "../public/save-queue.js";
 
 const A = { name: "a.md" }, B = { name: "b.md" };
 const req = (handle, text, flags = {}) => ({ handle, name: handle?.name ?? "untitled.md", text, savedText: "saved", force: false, auto: true, ...flags });
@@ -71,4 +71,12 @@ test("save queue: the finished write's words feed the snapshot's changed-on-disk
 test("save queue: a request carries no file time; whether a file changed is decided by its words (saving.js)", () => {
   const src = readFileSync(new URL("../public/save-queue.js", import.meta.url), "utf8");
   assert.doesNotMatch(src, /fileModified|lastModified|changedOnDisk/);
+});
+
+test("queueLeft: a left script's snapshot waits for the running save; newer words win within one file", () => {
+  let q = queueSave(emptyQueue(), req(B, "B"));
+  q = queueLeft(q, req(A, "A1"));
+  q = queueLeft(q, req(A, "A2"));
+  assert.equal(q.waiting.handle, B, "the open script's own request stays");
+  assert.deepEqual(q.left.map((s) => [s.handle.name, s.text]), [["a.md", "A2"]]);
 });
