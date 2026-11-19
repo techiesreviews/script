@@ -253,3 +253,18 @@ test("B-roll move history: a shot shown on no paragraph for a moment is still fo
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
   assert.equal(m.state.redo.length, 1);
 });
+
+test("B-roll move history: typing while an Undo finds its move stale is not undone by that Undo", async () => {
+  const m = movement();
+  m.type(" OLD");
+  await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  m.replace((text) => Broll.updateShot(text, "B1", { over: '"Independent position"' }));
+  const edited = m.text;
+  m.type(" NEW");
+  release(); await settle();
+  assert.match(Doc.serialize(m.state.doc), / OLD NEW/, "the skipped move's Undo takes neither the new typing nor the older typing");
+  assert.equal(m.state.undo.length, 2, "both typing steps keep their Undo, and the stale move is gone");
+  assert.equal(m.text, edited);
+});

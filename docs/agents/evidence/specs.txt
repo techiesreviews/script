@@ -60,6 +60,7 @@
 ✔ B-roll move history: a recorded rewrite between two moves undoes and redoes step by step
 ✔ B-roll move history: a failed Undo save stops the Undo waiting behind it, and both positions stay reachable
 ✔ B-roll move history: a shot shown on no paragraph for a moment is still found by its saved quote
+✔ B-roll move history: typing while an Undo finds its move stale is not undone by that Undo
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
@@ -560,9 +561,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 560
+ℹ tests 561
 ℹ suites 0
-ℹ pass 560
+ℹ pass 561
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

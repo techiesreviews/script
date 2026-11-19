@@ -217,3 +217,5 @@ second Undo waiting (the shot is left alone, both stale moves are skipped, the t
 RESULT: ok unit 27/27 (3 files)
 RESULT: ok specs (560/560 tests passed)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+Test gap from the second Opus round (typing while an Undo finds its move stale): closed; without the age check it failed.
+RESULT: ok specs (561/561 tests passed)
