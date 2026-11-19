@@ -2393,7 +2393,8 @@ function leaveScript(next) {
   const place = { y: ui.view === "script" ? scrollY : ui.scriptY, caret: ui.view === "script" ? Aside.caretPlace(state.doc, lastCaret) : null };
   dropKept(state.handle);
   const kept = state.pendingDraft || state.conflict ? null : Aside.leave({
-    handle: state.handle, name: state.name, browser: state.inBrowser, doc: state.doc, asks: state.asks, undo: state.undo, redo: state.redo,
+    // A "/" command being typed is not part of the script (saveText leaves it out too); asks find their words again.
+    handle: state.handle, name: state.name, browser: state.inBrowser, doc: slash.open ? Doc.withoutCommand(state.doc, slash) : state.doc, asks: state.asks, undo: state.undo, redo: state.redo,
     savedText: state.savedText, fileModified: state.fileModified, place, unseen: lookFor ? [...lookFor] : [],
   });
   if (kept) asides.push(kept);
@@ -2485,7 +2486,11 @@ function answerKept(s, ask, args) {
   saveKept(s);
   renderKept();
   if (!r.ok) return { error: "The text this ask was about has changed, so the ask was cancelled." };
-  if (Aside.status(s) === "done") $("#asideLive").textContent = `${agentBy().name} is done in ${s.name}.`;
+  if (Aside.status(s) === "done") {
+    const live = $("#asideLive"), say = `${agentBy().name} is done in ${s.name}.`;
+    live.textContent = ""; // the same words again are read again
+    setTimeout(() => { live.textContent = say; }, 100);
+  }
   if (checked.answer.kind === "links") return { result: Changes.answerResult("links", { linked: ask.answer.links.length, skipped: plan?.skipped || [] }) };
   return { result: Changes.answerResult(checked.answer.kind, { cuesDropped: r.cuesDropped }) };
 }
@@ -2499,7 +2504,11 @@ function saveKept(s) {
       const text = Doc.serialize(s.doc);
       return s.gone || text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText });
     })
-    .then(() => { if (!s.gone && (!state.doc || state.handle !== s.handle)) persistKept(s); })
+    .then((w) => {
+      // What the file holds now, also for a script taken off the list meanwhile (on.left no longer finds it there).
+      if (w) Object.assign(s, { savedText: w.text, fileModified: w.modified });
+      if (!s.gone && (!state.doc || state.handle !== s.handle)) persistKept(s);
+    })
     .catch(() => {});
 }
 function persistKept(s) {
@@ -2994,6 +3003,9 @@ async function deleteBrowserScript(r) {
   // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
   const kept = await keptFor(r.handle);
   if (kept) { kept.gone = true; dropKept(kept.handle); await kept.writes; }
+  // A save of it still on its way (the one made when it was left, or one waiting behind another) ends first, so it
+  // can't bring a draft back under its name after the delete.
+  while (state.saving) await new Promise((done) => setTimeout(done, 50));
   await forget(r.handle);
   try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
   dropKeys(r.name);
