@@ -1,0 +1,21 @@
+# Step AE: each script's own key, not its file name
+
+Lead (2026-11-19, Orbit TOOLS-361, follow-up to TOOLS-358): key the safety-net copies, the B-roll links and lists and the "Check" flags by each script's own identity instead of its file name, with old name-keyed data still readable. Then background scripts may keep copies again, so marks and asks survive a reload. Behind the scenes: no prototype; nothing new to see.
+
+## What it does
+
+- **A key per script** (`public/script-keys.js`, new, no DOM). A file on the computer gets an id of its own the first time it opens here, kept with its handle in IndexedDB (`fileIds`: `[{ handle, id }]`, newest first, at most 200); its key is `file:<id>`. The same file opened again (the switcher hands over a fresh handle) is found with `isSameEntry` and keeps its key; another file of the same name gets another. A script in the browser goes by its name (names there are unique, and a rename moves its keys, as before); a script without a file (the demo, a file opened where files can't be saved) goes by its name too. Ids are given under a Web Lock (`script-editor:file-ids`), so two tabs never give one file two ids. Where storage refuses, a file goes by its name, as before.
+- **What goes by the key** (`app.js`): the draft (`script-editor:draft:<key>`, with its open asks, marked changes and `broll` "Check" flags), the B-roll link (`broll:<key>`) and a B-roll list kept in the browser (`brollList:<key>`). `saving.js` takes `keys: { of(handle, name), adopt(handle) }`: a left script's failed save keeps its draft under its own key, and Save as gives the new file its own key (`adopt`), also when it has the same name in another folder, and moves the script's keys there.
+- **Background scripts keep their draft again** (`persistKept`): a script kept aside writes its draft under its own key as it leaves, before and after each write of an answer. After a reload, opening it brings back the agent's marked change with Undo on the agent's tag, its open asks and its "Check" flags; words that could not be written come back as "Unsaved changes". The dot itself does not come back (the scripts kept aside live in the tab's memory). `keptWords`, `on.keepsWords` and `noDraft` (TOOLS-358's choice B) are removed.
+- **Old data stays readable.** Once per browser profile, before any file opens (`migrate`), the files on the recent list get ids and take what was kept under their name (`legacyPlan`): each gets a copy of the B-roll link and list, the newest of that name takes the draft, and the name lets go of them. A file seen for the first time later takes what is still under its name. A name that a script in the browser has stays with that script (the files get a copy of its B-roll link and list only); the demo keeps its own.
+- The B-roll part's seam is 3 (`scriptKey` is new in its host).
+
+## Checks
+
+- `tests/script-keys.test.mjs`: one key per file, the same key for the same file through another handle and on the next page, another key for another file of that name, Save as (`adopt`) and a file picked again, the move of old keys once (files on the list, newest first) and for a file seen later, storage refusing.
+- `tests/saving.test.mjs`: a left script's failed saves (running or queued, and `saveLeft` meeting a file changed elsewhere) keep the draft under the file's own key while another script.md keeps its own; Save as to a same-named file in another folder moves the keys.
+- `scripts/smoke-several-scripts.mjs`, `SMOKE_ONLY=ownkeys`: two files called script.md; the B-roll list and a "Check" flag kept under the name open in the first; the agent's answer lands in the bread script.md in the background; its own draft has the marked change, a waiting ask and a new "Check" flag; after a reload it opens with the mark, the ask, both flags and Undo on the agent's tag (Undo works); the walk script.md shows only its own list and nothing of the bread one. `SMOKE_ONLY=migrate`: two script.md files on the recent list before the update: both show the list the name had, only the newest offers the old unsaved words. Both failed on 557541f (the code before this step). The same-name checks (`samename`, `deletesame`, `deletekept`) now read each file's own key.
+
+## Done
+
+- Feature list: `docs/features.md`, "Several scripts" (the reload limit is gone).

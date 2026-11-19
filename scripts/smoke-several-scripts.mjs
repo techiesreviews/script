@@ -486,15 +486,16 @@ async function runSameName() {
   check(!rs?.result?.isError, "the shared-words ask is answered in the bread script.md, in the background", toolText(rs));
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "the walk script is saved");
   await sleep(600);
-  // The walk script's own draft: a safety net with a B-roll "Check" flag of its own.
+  // The walk script's own draft (under its own key, TOOLS-361): a safety net with a B-roll "Check" flag of its own.
+  const W = await keyOfDisk(page, "b/script.md");
   const own = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } });
-  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(own)}); true`);
+  await page.eval(`localStorage.setItem(${JSON.stringify(`script-editor:draft:${W}`)}, ${JSON.stringify(own)}); true`);
   // Another program changes the bread file, so the answer can't be written there and must wait somewhere.
   await writeDisk(page, "a/script.md", "# Bread at home\n\nSomeone else wrote this.\n");
   const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: SHORT } });
   check(!r?.result?.isError, "the answer lands in the closed bread script.md", toolText(r));
   await sleep(1000);
-  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === own, "the open walk script.md keeps its own draft and Check flags", await page.eval(`localStorage.getItem("script-editor:draft:script.md")`));
+  check((await draftOf(page, W)) === own, "the open walk script.md keeps its own draft and Check flags", await draftOf(page, W));
   check(!(await readDisk(page, "a/script.md"))?.includes(SHORT), "the bread file changed elsewhere is not written over");
   await page.until(`!document.querySelector("#aiDot").hidden`, "the dot for the bread script.md");
   // Leaving the walk script.md with words just typed, for a third script: the draft by that name stays the walk's.
@@ -504,8 +505,8 @@ async function runSameName() {
   await page.eval(`document.querySelector("#menuNew").click(); true`);
   await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a third script opens");
   await sleep(1000);
-  const walkDraft = await page.eval(`localStorage.getItem("script-editor:draft:script.md")`);
-  check(!!walkDraft && walkDraft.includes("Walk extra.") && !walkDraft.includes("Cover the bowl") && !walkDraft.includes("Good bread"), "after leaving for a third script, the draft by that name is still the walk script's own", walkDraft);
+  const walkDraft = await draftOf(page, W);
+  check(!!walkDraft && walkDraft.includes("Walk extra.") && !walkDraft.includes("Cover the bowl") && !walkDraft.includes("Good bread"), "after leaving for a third script, the walk script's own draft is still its own", walkDraft);
   await openOther(page, "script.md", 1); // the bread script.md (the walk one is the most recent)
   await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes from")`, "the bread script.md offers its own words as Unsaved changes");
   await page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent === "Restore").click(); true`);
@@ -577,8 +578,9 @@ async function runDeleteSameName() {
   await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the file script.md opens");
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "it is saved");
   await sleep(600);
+  const F = await keyOfDisk(page, "b/script.md");
   const own = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } }); // the open file's own draft
-  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(own)}); true`);
+  await page.eval(`localStorage.setItem(${JSON.stringify(`script-editor:draft:${F}`)}, ${JSON.stringify(own)}); true`);
   await menuOpen(page);
   const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
   await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
@@ -586,7 +588,7 @@ async function runDeleteSameName() {
   await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
   await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
   await sleep(500);
-  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === own, "the open file script.md keeps its own draft", await page.eval(`localStorage.getItem("script-editor:draft:script.md")`));
+  check((await draftOf(page, F)) === own, "the open file script.md keeps its own draft", await draftOf(page, F));
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
@@ -637,11 +639,12 @@ async function runDeleteKeptSameName() {
   await page.eval(`document.querySelector("#menuNew").click(); true`); // a third script: the file script.md goes to the background
   await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a third script opens");
   await sleep(800);
-  // The name's data, as the file script.md would have it: a draft, a B-roll link and a saved B-roll list.
+  // The file script.md's own data (under its own key, TOOLS-361): a draft, a B-roll link and a saved B-roll list.
+  const F = await keyOfDisk(page, "b/script.md");
   const draft = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } });
-  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(draft)}); localStorage.setItem("script-editor:brollList:script.md", ${JSON.stringify(JSON.stringify("kept list"))}); true`);
-  await idbPut(page, "broll:script.md", { name: "b-roll.md" });
-  await idbPut(page, "brollList:script.md", "the B-roll list");
+  await page.eval(`localStorage.setItem(${JSON.stringify(`script-editor:draft:${F}`)}, ${JSON.stringify(draft)}); localStorage.setItem(${JSON.stringify(`script-editor:brollList:${F}`)}, ${JSON.stringify(JSON.stringify("kept list"))}); true`);
+  await idbPut(page, `broll:${F}`, { name: "b-roll.md" });
+  await idbPut(page, `brollList:${F}`, "the B-roll list");
   await menuOpen(page);
   const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
   await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
@@ -649,10 +652,10 @@ async function runDeleteKeptSameName() {
   await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
   await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
   await sleep(800);
-  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === draft, "the kept file script.md keeps its draft");
-  check((await page.eval(`localStorage.getItem("script-editor:brollList:script.md")`)) === JSON.stringify("kept list"), "the kept file script.md keeps its saved B-roll list (local)");
-  check((await idbGet(page, "broll:script.md")) === JSON.stringify({ name: "b-roll.md" }), "the kept file script.md keeps its B-roll link", await idbGet(page, "broll:script.md"));
-  check((await idbGet(page, "brollList:script.md")) === JSON.stringify("the B-roll list"), "the kept file script.md keeps its saved B-roll list", await idbGet(page, "brollList:script.md"));
+  check((await draftOf(page, F)) === draft, "the kept file script.md keeps its draft");
+  check((await page.eval(`localStorage.getItem(${JSON.stringify(`script-editor:brollList:${F}`)})`)) === JSON.stringify("kept list"), "the kept file script.md keeps its saved B-roll list (local)");
+  check((await idbGet(page, `broll:${F}`)) === JSON.stringify({ name: "b-roll.md" }), "the kept file script.md keeps its B-roll link", await idbGet(page, `broll:${F}`));
+  check((await idbGet(page, `brollList:${F}`)) === JSON.stringify("the B-roll list"), "the kept file script.md keeps its saved B-roll list", await idbGet(page, `brollList:${F}`));
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();

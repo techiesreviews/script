@@ -1,0 +1,140 @@
+# Step AE browser check (TOOLS-361): node scripts/smoke-several-scripts.mjs against wrangler dev, headless Chrome 158, 2026-11-19, on 0167d62 plus the docs and test edits in this commit. Also passed on this head: scripts/smoke-saving.mjs (102 ok), smoke-broll-lazy.mjs (91 ok), smoke-keep-all.mjs (933 ok), smoke-video-folder.mjs (93 ok), smoke-csp.mjs (51 ok), smoke-rare-parts.mjs (122 ok). SMOKE_ONLY=ownkeys and SMOKE_ONLY=migrate failed on 557541f (6 and 3 failures).
+--- desktop (1280 px)
+ok the agent gets B's ask (the open script's: no file name with it)
+ok B's row: spinner and "AI working", no dot
+ok the open script's row: no note, no dot
+ok no dot on the file name while the AI works
+ok answer_ask in B is accepted while A is open
+ok nothing moved in A: same scroll, caret and text
+ok the person keeps typing in A
+ok B's file has the change, not the old sentence
+ok A's file never gets B's change
+ok the file name's dot is bigger than the 7 px not-saved dot and sits higher, at the corner
+ok B's row: "AI done" and the orange dot, no number
+ok the open script never gets a dot
+ok B opens at the change, on screen
+ok the dot goes once the change is seen
+ok the agent's words are gone after Undo on the agent's tag
+ok A comes back at its scroll place with its caret
+ok no page error or CSP violation
+--- phone (390 px)
+ok the agent gets B's ask (the open script's: no file name with it)
+ok B's row: spinner and "AI working", no dot
+ok the open script's row: no note, no dot
+ok no dot on the file name while the AI works
+ok answer_ask in B is accepted while A is open
+ok nothing moved in A: same scroll, caret and text
+ok the person keeps typing in A
+ok B's file has the change, not the old sentence
+ok A's file never gets B's change
+ok the file name's dot is bigger than the 7 px not-saved dot and sits higher, at the corner
+ok B's row: "AI done" and the orange dot, no number
+ok the open script never gets a dot
+ok B opens at the change, on screen
+ok the dot goes once the change is seen
+ok the agent's words are gone after Ctrl+Z (one step)
+ok A comes back at its scroll place with its caret
+ok no page error or CSP violation
+--- reload and a file changed elsewhere (1280 px)
+ok the answer lands in B
+ok the agent gets a second ask in B
+ok the second answer is taken while B's file was changed elsewhere
+ok B's file changed elsewhere is not written over
+ok B shows what its file holds now
+ok a third answer lands in B
+ok the dot goes with the deleted script
+ok no draft comes back under the deleted script's name
+ok the deleted script's file is gone
+ok the agent gets no ask of the deleted script
+ok no page error or CSP violation
+--- a half-typed / command when switching (1280 px)
+ok an answer lands while the menu is open
+ok an answer lands before the command while the menu is open
+ok with the file-name menu open, /on is not saved into B's file
+ok an answer lands in B while A is still opening
+ok leaving B through the menu does not save /on into B's file
+ok the answer lands in B
+ok the agent's answer does not bring /on into B's file
+ok B's draft has no /on
+ok B opens with the line as it was before the command
+ok Ctrl+Z takes the agent's change out and never brings any part of the command back
+ok no page error or CSP violation
+--- a half-typed / command when switching (390 px)
+ok an answer lands while the menu is open
+ok an answer lands before the command while the menu is open
+ok with the file-name menu open, /on is not saved into B's file
+ok an answer lands in B while A is still opening
+ok leaving B through the menu does not save /on into B's file
+ok the answer lands in B
+ok the agent's answer does not bring /on into B's file
+ok B's draft has no /on
+ok B opens with the line as it was before the command
+ok Ctrl+Z takes the agent's change out and never brings any part of the command back
+ok no page error or CSP violation
+--- the menu open while an answer lands (1280 px)
+ok the first answer lands in B
+ok keyboard focus stays on B's row while it changes
+ok the second answer lands in B during the press
+ok the agent opens A while the menu is open
+ok the menu marks A as the open script, not B
+ok no page error or CSP violation
+--- two scripts called script.md (1280 px)
+ok the agent takes an ask in the bread script.md
+ok the bread script.md leaves no copy under the shared name as it goes to the background
+ok the walk script.md takes none of the bread script's asks or words
+ok the shared-words ask is answered in the bread script.md, in the background
+ok the answer lands in the closed bread script.md
+ok the open walk script.md keeps its own draft and Check flags
+ok the bread file changed elsewhere is not written over
+ok after leaving for a third script, the walk script's own draft is still its own
+ok Restore brings no words of the walk script
+ok the walk script.md gets none of the bread script's words
+ok no page error or CSP violation
+--- a background script.md taken off the list mid-save (1280 px)
+ok the agent takes an ask in the bread script.md
+ok the removed bread script's failed save writes none of its words under the shared name
+ok no page error or CSP violation
+--- deleting a browser script.md while a file script.md is open (1280 px)
+ok the open file script.md keeps its own draft
+ok no page error or CSP violation
+--- AI done, opened from the Storyboard (1280 px)
+ok the answer lands in B
+ok no page error or CSP violation
+--- deleting a browser script.md while a file script.md is kept aside (1280 px)
+ok the agent takes an ask in the file script.md
+ok the kept file script.md keeps its draft
+ok the kept file script.md keeps its saved B-roll list (local)
+ok the kept file script.md keeps its B-roll link
+ok the kept file script.md keeps its saved B-roll list
+ok no page error or CSP violation
+--- the caret of a script left from the Storyboard (1280 px)
+ok A's caret comes back where it was
+ok no page error or CSP violation
+--- a / command, then Open a script… cancelled (1280 px)
+ok B is still open
+ok no page error or CSP violation
+--- the same where the browser has no file picker (1280 px)
+ok with no file picker, picking a file still leaves the / command out of B
+ok no page error or CSP violation (no file picker)
+--- two files called script.md keep their own drafts, B-roll and Check flags (1280 px)
+ok old data still opens: the list and its Check flag
+ok the bread script.md has a key of its own
+ok the name lets go of what it held
+ok the agent takes an ask in the bread script.md; another waits
+ok the walk script.md has another key
+ok the walk script.md shows none of the bread script's list, asks or words
+ok the answer lands in the bread script.md, in the background
+ok the bread file holds the change
+ok the walk file does not
+ok the background script keeps its own draft: the marked change, its open ask and the new Check flag
+ok the walk script.md's draft holds nothing of the bread script
+ok the mark is on the agent's words
+ok both Check flags are back: the old one and the background answer's
+ok the walk script.md: its own shot, no Check
+ok the walk script.md: no marks, asks or Unsaved changes of the bread script
+ok no page error or CSP violation
+--- moving to keys: the files on the list take what their name held (1280 px)
+ok the older script.md does not get the newest one's unsaved words
+ok the name lets go of the list link
+ok no page error or CSP violation
+RESULT: ok several-scripts
