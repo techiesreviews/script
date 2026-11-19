@@ -322,7 +322,8 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
           }
         }
       } catch { /* kept as a draft below */ }
-      keepDraft(nameOf(snap), snap.text);
+      // `noDraft`: the caller keeps these words itself (a script kept aside: another script may hold its name).
+      if (!snap.noDraft) keepDraft(nameOf(snap), snap.text);
       return null;
     });
   }
