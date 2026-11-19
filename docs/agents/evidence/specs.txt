@@ -47,6 +47,9 @@
 ✔ B-roll move: a failed initial save removes its step, and a changed list invalidates old moves
 ✔ B-roll move: deleting the shot invalidates its history instead of blocking older typing Undo
 ✔ B-roll move: an Over conflict invalidates Undo without overwriting the changed shot
+✔ B-roll move history: two fast Undos wait for the second save and restore both moves in keypress order
+✔ B-roll move history: Undo restores the original paragraph's current words and Check flag
+✔ B-roll move history: regenerated quotes between two moves keep the older inverse usable
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
