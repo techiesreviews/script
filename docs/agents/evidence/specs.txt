@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 18 files, 494631 bytes; on first use: broll-app.js + broll.js, 149226 bytes
+ℹ startup: 18 files, 502496 bytes; on first use: broll-app.js + broll.js, 149226 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -337,7 +337,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 18 files, 494631 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 18 files, 502496 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -417,6 +417,7 @@
 ✔ saving: a save always goes to the script it was made for, also when another script opens while it runs
 ✔ saving: a script the person left that cannot be written keeps its text as a draft stamped by the clock
 ✔ saving: Save as to another file of the same name gives it this script's keys under its own key; the old key's draft goes
+✔ saving: Save as onto a file that has its key already keeps that key; the draft kept for what the file held before goes
 ✔ saving: a left script's failed saves keep its draft under its own key, running or queued; another file of that name keeps its own
 ✔ saving: saveLeft that meets a file changed elsewhere keeps the words in the draft under that file's own key
 ✔ saving: saveLeft writes a left script's new words to its own file with the auto-save rules, and says so
@@ -472,8 +473,13 @@
 ✔ script keys: a file seen for the first time takes the keys kept under its name before (once); a known file takes none
 ✔ script keys: moving to keys, the files on the list get ids and each name's old keys go to its files, newest first, once
 ✔ script keys: a file made by Save as has its key once it is kept, also for the next page
-✔ script keys: a file picked again for Save as gets the new key, never two
-✔ script keys: where storage refuses, a file goes by its name and takes nothing; Save as too
+✔ script keys (P1): Save as onto a file that has a key keeps that key: the same file, the same key, whatever the handle
+✔ script keys (P1): a key this tab remembers that fell off the list is put back when its script opens again
+✔ script keys (P1): the scripts a tab has in use keep their keys on the list while it opens other files, and when it is looked at again
+✔ script keys: a file that got a new id from another tab after it fell off goes by the listed id at its next open: one key for every tab
+✔ script keys: a file this tab knows keeps its key while the list can't be read or written
+✔ script keys: where storage refuses, a file goes by its name and its name lets go of nothing; Save as too
+✔ script keys (P1): Save as onto a file kept aside whose key fell off the list still keeps that key, never a second one
 ✔ script keys: moving to keys is tried again on the next page when a name's keys could not all be handed over
 ✔ script keys: a read that fails gives the name and writes nothing, so no other file loses its key; moving to keys waits for a good read
 ✔ script keys: a file opened again moves to the front, so a full list lets go of the files not opened for longest
@@ -484,6 +490,21 @@
 ✔ script keys (SL-3): a recent list that can't be read never marks the move done, and no file takes the name's keys alone meanwhile
 ✔ script keys (SL-4): reopening the same handle object moves it to the front too, so a full list keeps it
 ✔ script keys: the old keys of a name go to its files (the newest takes the draft) and the name lets go, unless a script in the browser has that name
+✔ script keys: a file seen for the first time: the copies first, then its id is kept, and only then the name lets go
+✔ script keys: an id that can't be kept after the copies: the name lets go of nothing, and the file goes by its name
+✔ script keys: a name that can't let go leaves the file its key: the id is kept and its copies are there
+✔ script keys: the move makes every copy first, then keeps the ids, then the names let go, then it is marked done
+✔ script keys: a name whose copies fail at the move keeps everything and its files get no id; the other names go on; not marked done
+✔ script keys: ids that can't be kept at the move: no name lets go, and it is not marked done
+✔ script keys: a name that can't let go at the move: not marked done, its files keep their ids, and the next page finishes it
+✔ hand-over (P0): a draft that can't be read stops it: never taken for "no draft", nothing is written and nothing is deleted
+✔ hand-over: any other read that fails stops it the same way: the name's link or list, a file's own place, the browser folder
+✔ hand-over: the copies come first and delete nothing; the name lets go only when asked, and then of everything
+✔ hand-over: only places never written are filled, a link removed on purpose stays removed, and the list is kept before its link
+✔ hand-over: of two drafts the one written later stays under the file's key: its own, or the name's
+✔ hand-over: letting go never deletes a draft written under the name since it was copied, nor says done when a removal did not take
+✔ hand-over: a name a browser script has stays its own: at the move the files get a copy of its list and link only; later a file takes nothing
+✔ hand-over: a list still in local storage from before is handed over and goes with the name; one that can't be read stops it; the demo keeps its own
 ✔ site: pages may be indexed, with a description and the canonical address
 ✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
 ✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
@@ -561,9 +582,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 561
+ℹ tests 582
 ℹ suites 0
-ℹ pass 561
+ℹ pass 582
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
