@@ -231,7 +231,7 @@ test("saving: saveLeft while a save runs waits its turn, after the older write o
   await p;
   assert.equal(written.text, "# A\n\nOne. Typed. Answered.\n");
   assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed. Answered.\n");
-  assert.equal(s.store.get("draft:a.md"), null, "no false changed-on-disk draft");
+  assert.equal(s.store.has("draft:a.md"), false, "no false changed-on-disk draft");
   assert.deepEqual(s.events.filter((e) => e[0] === "left").map((e) => e[2]), ["# A\n\nOne. Typed.\n", "# A\n\nOne. Typed. Answered.\n"], "the app hears each write of the left file");
 });
 
