@@ -3215,7 +3215,14 @@ $("#scriptSearch").addEventListener("keydown", (e) => {
   e.preventDefault();
   $("#scriptList .scripts__open")?.click();
 });
-$("#menuOpen").addEventListener("click", () => { if (menuSlash) menuSlash.switching = true; $("#scriptMenu").hidePopover(); openFile(); });
+$("#menuOpen").addEventListener("click", async () => {
+  if (menuSlash) menuSlash.switching = true;
+  $("#scriptMenu").hidePopover();
+  const was = state.handle;
+  await openFile();
+  // Nothing opened (the picker was cancelled, or the file could not be read): no switch is on its way any more.
+  if (menuSlash && state.handle === was) menuSlash.switching = false;
+});
 $("#menuNew").addEventListener("click", () => { if (menuSlash) menuSlash.switching = true; $("#scriptMenu").hidePopover(); newScript(); });
 (async () => {
   if (!(canPick || browserSaving) || roomLink) return;
