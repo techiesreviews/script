@@ -2488,6 +2488,7 @@ function answerKept(s, ask, args) {
 // A script kept aside goes to its own file (auto-save rules, saving.saveLeft), one write after the other; its draft
 // keeps the asks and the agent's marked changes, so they come back after a reload too.
 function saveKept(s) {
+  if (s.gone) return;
   persistKept(s);
   s.writes = (s.writes || Promise.resolve())
     .then(() => {
@@ -2595,7 +2596,8 @@ async function openHandle(handle) {
     if (kept?.opening) {
       kept.opening.resolve(false);
       delete kept.opening;
-      if (kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); } // still aside
+      // Still aside, unless the person deleted it or took it off the list meanwhile.
+      if (!kept.gone && !kept.removed && kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); }
     }
     openProblem(handle.name);
     return false;
@@ -3043,6 +3045,7 @@ async function renderScriptList() {
       $("#scriptMenu").hidePopover();
       if (r.current || !r.handle) return;
       await permitted(r.handle, true);
+      if (state.doc && (await sameFile(r.handle, state.handle))) return; // the agent opened it meanwhile: not read again
       await openHandle(r.handle);
     });
     li.append(open);
@@ -3064,7 +3067,7 @@ async function renderScriptList() {
       x.addEventListener("click", async () => {
         await forget(r.handle);
         const kept = await keptFor(r.handle); // no row leads to it any more: its dot goes too
-        if (kept) dropKept(kept.handle);
+        if (kept) { kept.removed = true; dropKept(kept.handle); }
         renderScriptList();
       });
       li.append(x);
@@ -3689,7 +3692,7 @@ function handleCall(call, ws = agent.ws) {
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
     const kept = tool === "answer_ask" && !state.asks.some((a) => a.id === args.askId) ? Aside.findAsk(asides, args.askId) : null;
-    if (kept?.aside.opening) return send({ error: `${kept.aside.name} is opening now. Answer this ask again in a moment; list_asks shows it.` });
+    if (kept?.aside.opening) return send({ error: `${kept.aside.name} is opening now. Answer this ask again in a moment; once it is open, list_asks shows it.` });
     if (kept) return send(Aside.takesAnswer(kept.ask) ? answerKept(kept.aside, kept.ask, args) : { error: `This ask is in ${kept.aside.name}, which is not open now. Ask the person to open it, then answer it there.` });
     if (!state.doc) return send({ error: NO_SCRIPT });
     if (tool === "get_script") return send({ result: scriptInfo() });
@@ -3814,7 +3817,7 @@ async function openScript(args, by) {
     if (choice !== "open") return;
     if (!(ok && allowed())) return notNow();
     if (state.doc && (await sameFile(r.handle, state.handle))) return notNow(); // opened meanwhile: not read again
-    if (choice !== "open") return;
+    if (choice !== "open") return; // again: a Not now may have come during that await
     choice = "done";
     // The line, and with it the wait for the agent, stays until the file is open (or why it isn't shows).
     openHandle(r.handle);
