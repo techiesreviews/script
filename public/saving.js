@@ -473,8 +473,10 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     // With another script open now, the saves made meanwhile run as after any save: scripts left go to their own
     // files (or drafts), then the open script's own request with its own flags (a click may still show the prompt).
     if (mine !== opened) return drain(true);
+    // Requests made during a save-as belonged to the old place; the new file is now current. Words for scripts left
+    // behind (an agent's answer in a script kept aside, saveLeft) still go to their own files first.
+    if (queue.left.length) { queue = { waiting: null, left: queue.left }; return drain(true); }
     script.saving = false;
-    // Requests made during a save-as belonged to the old place; the new file is now current.
     queue = SaveQueue.emptyQueue();
     on.done(true);
     schedule();
@@ -496,6 +498,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     } catch (e) {
       if (editor.doc() === doc) script.saveError = e?.message || "Could not save.";
     }
+    if (queue.left.length) { queue = { waiting: null, left: queue.left }; return drain(true); } // as after Save as
     script.saving = false;
     queue = SaveQueue.emptyQueue();
     on.done(true);

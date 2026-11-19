@@ -22,6 +22,9 @@ export function leave({ handle, name, browser = false, doc, asks, undo, redo, sa
 /** "working" while the agent works on an ask there, then "done" until its change has been seen, else "". */
 export const status = (s) => (s.asks.some(isWorking) ? "working" : s.unseen.size ? "done" : "");
 
+/** Asks a script kept aside answers itself: on selected words, not B-roll. A whole-script job waits for its script. */
+export const takesAnswer = (a) => !!a && a.scope === "selection" && a.action !== "broll";
+
 export function findAsk(asides, id) {
   for (const aside of asides) {
     const ask = aside.asks.find((a) => a.id === id);
@@ -41,9 +44,6 @@ export function pending(asides, now, retakeMs) {
   }
   return out;
 }
-
-/** The person has seen these changes: their dot goes. */
-export function seen(s, ids) { for (const id of ids) s.unseen.delete(id); }
 
 /** The unseen change nearest the top of the script: where it opens from the menu. */
 export function firstUnseen(s) {

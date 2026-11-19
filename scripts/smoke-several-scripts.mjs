@@ -132,8 +132,8 @@ const readScript = (page, name) => page.eval(`(async () => { try { const d = awa
 // Where the person is in the open script: the window's scroll, the focused line and the caret offset in it.
 const where = (page) => page.eval(`(() => { const s = getSelection(), el = document.activeElement; const r = s.rangeCount ? s.getRangeAt(0) : null; return { y: Math.round(scrollY), focus: el?.dataset?.id ? el.textContent.slice(0, 40) : el?.id || el?.tagName, at: r ? r.startOffset : -1, text: document.querySelector("#script").textContent }; })()`);
 
-async function run({ width, height, label }) {
-  console.log(`--- ${label} (${width} px)`);
+// A fresh profile with the agent connected and two made-up scripts saved in the browser; B is open.
+async function start(width, height) {
   const page = await openTab(width, height);
   const minted = await (await fetch(`${BASE}/api/agent-token`, { method: "POST" })).json();
   const mcp = agentFor(minted.token);
@@ -155,19 +155,29 @@ async function run({ width, height, label }) {
   await page.eval(`document.querySelector("#menuNew").click(); true`);
   await page.until(`document.querySelector("#fileName").textContent !== ${JSON.stringify(nameOf(WALK))}`, "a second new script");
   await writeScript(page, BREAD);
-  const A = nameOf(WALK), B = nameOf(BREAD);
-
-  // In B: an ask on the long sentence ("Shorter").
-  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.includes(${JSON.stringify(LONG.slice(0, 30))})); el.scrollIntoView({ block: "center" }); const t = el.firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, t.data.length); getSelection().removeAllRanges(); getSelection().addRange(r); })()`);
+  return { page, mcp, A: nameOf(WALK), B: nameOf(BREAD) };
+}
+// An ask ("Shorter") on the paragraph that starts with `words` in the open script, taken by the agent.
+async function askShorter(page, mcp, words) {
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith(${JSON.stringify(words)})); el.scrollIntoView({ block: "center" }); const t = el.firstChild; const r = document.createRange(); r.setStart(t, 0); r.setEnd(t, t.data.length); getSelection().removeAllRanges(); getSelection().addRange(r); })()`);
   await page.until(`!document.querySelector("#editBar").hidden`, "the edit bar shows on the selection");
   await page.click("#askInput");
   await page.send("Input.insertText", { text: "Shorter" });
   await sleep(80);
   await page.key("Enter", "Enter", 13, "\r");
-  await page.until(`!!document.querySelector("#script .ask")`, "the ask shows in B");
+  await page.until(`!!document.querySelector("#script .ask")`, "the ask shows");
   const asks = JSON.parse(toolText(await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 5 } })) || "{}").asks || [];
-  const ask = asks.find((a) => a.quote?.startsWith("Then you cover"));
-  check(!!ask, "the agent gets B's ask", JSON.stringify(asks));
+  return asks.find((a) => a.quote?.startsWith(words));
+}
+const fileHas = (name, words) => `(async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); return (await (await (await d.getFileHandle(${JSON.stringify(name)})).getFile()).text()).includes(${JSON.stringify(words)}); } catch { return false; } })()`;
+
+async function run({ width, height, label, undoBy }) {
+  console.log(`--- ${label} (${width} px)`);
+  const { page, mcp, A, B } = await start(width, height);
+
+  // In B: an ask on the long sentence ("Shorter").
+  const ask = await askShorter(page, mcp, "Then you cover");
+  check(!!ask && ask.fileName === undefined, "the agent gets B's ask (the open script's: no file name with it)", JSON.stringify(ask));
 
   // Back to A, the agent still at work in B: B's menu row shows a spinner and "AI working".
   await openFromMenu(page, A);
@@ -196,7 +206,7 @@ async function run({ width, height, label }) {
   check(after.y === before.y && after.focus === before.focus && after.at === before.at && after.text === before.text, "nothing moved in A: same scroll, caret and text", `${JSON.stringify({ ...before, text: before.text.length })} vs ${JSON.stringify({ ...after, text: after.text.length })}`);
   await page.send("Input.insertText", { text: "very " });
   check((await page.eval(`document.activeElement.textContent`)).includes("really very "), "the person keeps typing in A");
-  await page.until(`(async () => ((await (async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); return await (await (await d.getFileHandle(${JSON.stringify(B)})).getFile()).text(); } catch { return ""; } })()) || "").includes(${JSON.stringify(SHORT)}))()`, "B's file holds the agent's change");
+  await page.until(fileHas(B, SHORT), "B's file holds the agent's change");
   const bFile = await readScript(page, B);
   check(bFile?.includes(SHORT) && !bFile.includes(LONG), "B's file has the change, not the old sentence");
   check(!(await readScript(page, A))?.includes(SHORT), "A's file never gets B's change");
@@ -218,9 +228,12 @@ async function run({ width, height, label }) {
   await page.until(`!!document.querySelector(".rc__undo")`, "Undo on the agent's tag");
   check(await page.eval(`document.querySelector("#aiDot").hidden`), "the dot goes once the change is seen");
   await page.shot(`${label}-4-at-the-change`);
-  await page.eval(`document.querySelector(".rc__undo").click(); true`);
+  if (undoBy === "key") {
+    await page.eval(`document.activeElement?.blur(); true`);
+    for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
+  } else await page.eval(`document.querySelector(".rc__undo").click(); true`);
   await page.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(LONG.slice(0, 60))})`, "Undo puts the old sentence back");
-  check(!(await page.eval(`document.querySelector("#script").textContent`)).includes("Cover the bowl and leave"), "the agent's words are gone after Undo");
+  check(!(await page.eval(`document.querySelector("#script").textContent`)).includes("Cover the bowl and leave") && !(await page.eval(`!!document.querySelector("#script .agent-change")`)), `the agent's words are gone after ${undoBy === "key" ? "Ctrl+Z (one step)" : "Undo on the agent's tag"}`);
 
   // Back to A: where it was left, caret and all.
   await openFromMenu(page, A);
@@ -232,9 +245,48 @@ async function run({ width, height, label }) {
   await page.close();
 }
 
+// After a reload the change is still in the file and marked; a file another program changed meanwhile opens from the
+// file, with the agent's words as "Unsaved changes".
+async function runEdges() {
+  console.log("--- reload and a file changed elsewhere (1280 px)");
+  const { page, mcp, A, B } = await start(1280, 800);
+  const first = await askShorter(page, mcp, "Then you cover");
+  await openFromMenu(page, A);
+  const r1 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: first?.id, kind: "replace", text: SHORT } });
+  check(!r1?.result?.isError, "the answer lands in B", toolText(r1));
+  await page.until(fileHas(B, SHORT), "B's file holds the change");
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !document.querySelector("#emptyReopen").hidden`, "the start screen after a reload");
+  await page.steady("#emptyReopen");
+  await page.click("#emptyReopen");
+  await page.until(`!document.querySelector("#layout").hidden`, "a script opens after the reload");
+  if (!(await page.eval(isOpen(B)))) await openFromMenu(page, B);
+  await page.until(`[...document.querySelectorAll("#script .agent-change")].some((m) => m.textContent.includes("Cover the bowl"))`, "after a reload B still shows the change, marked");
+  await page.until(`!!document.querySelector(".rc__undo")`, "with Undo on the agent's tag after the reload");
+  const second = await askShorter(page, mcp, "Good bread needs");
+  check(!!second, "the agent gets a second ask in B");
+  await openFromMenu(page, A);
+  // Another program writes B's file before the answer comes: the answer is never written over it.
+  await page.eval(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts"); const w = await (await d.getFileHandle(${JSON.stringify(B)})).createWritable(); await w.write(${JSON.stringify("# Bread at home\n\nSomeone else wrote this.\n")}); await w.close(); return true; })()`);
+  const r2 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: second?.id, kind: "replace", text: "Bread needs four things." } });
+  check(!r2?.result?.isError, "the second answer is taken while B's file was changed elsewhere", toolText(r2));
+  await sleep(500);
+  check(!(await page.eval(fileHas(B, "Bread needs four things."))), "B's file changed elsewhere is not written over");
+  await openFromMenu(page, B);
+  await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes from")`, "B opens from its file, the agent's words as Unsaved changes");
+  check((await page.eval(`document.querySelector("#script").textContent`)).includes("Someone else wrote this."), "B shows what its file holds now");
+  await page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent === "Restore").click(); true`);
+  await page.until(`document.querySelector("#script").textContent.includes("Bread needs four things.")`, "Restore brings the agent's words back");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
 try {
-  await run({ width: 1280, height: 800, label: "desktop" });
-  await run({ width: 390, height: 844, label: "phone" });
+  await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
+  await run({ width: 390, height: 844, label: "phone", undoBy: "key" });
+  await runEdges();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }

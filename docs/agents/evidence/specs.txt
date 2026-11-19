@@ -7,6 +7,7 @@
 ✔ aside: other open asks and earlier marks in the same paragraph follow the change
 ✔ aside: an ask whose text is gone is cancelled, and a note waits beside its text
 ✔ aside: seen changes clear the dot; an ask the agent has not seen is offered, a taken one again after two minutes
+✔ aside: a whole-script job or a B-roll ask in a script kept aside is not answered there (review round 1)
 ✔ aside: each script keeps its caret by line and offset, also when it is read from its file again
 ✔ aside: the done dot is bigger than the not-saved dot and sits at the file name's corner; the menu row says it in words
 ✔ bold words are read from the start, with no switch
@@ -32,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 17 files, 464883 bytes; on first use: broll-app.js + broll.js, 149034 bytes
+ℹ startup: 17 files, 465960 bytes; on first use: broll-app.js + broll.js, 149034 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -336,7 +337,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 17 files, 464883 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 17 files, 465960 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -416,6 +417,7 @@
 ✔ saving: a script the person left that cannot be written keeps its text as a draft stamped by the clock
 ✔ saving: saveLeft writes a left script's new words to its own file with the auto-save rules, and says so
 ✔ saving: saveLeft while a save runs waits its turn, after the older write of that file, and compares with what it left
+✔ saving: saveLeft during a Save as or a save into the browser still reaches its own file (review round 1, P2)
 ✔ saving: saveLeft never writes over a file changed on disk: its words wait as a draft
 ✔ saving: a file changed on disk is not written over; Save mine writes this version
 ✔ saving: without write access auto-save asks for Allow saving; a click shows the reason; allow() saves
@@ -532,9 +534,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 532
+ℹ tests 534
 ℹ suites 0
-ℹ pass 532
+ℹ pass 534
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

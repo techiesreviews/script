@@ -2492,9 +2492,9 @@ function saveKept(s) {
   s.writes = (s.writes || Promise.resolve())
     .then(() => {
       const text = Doc.serialize(s.doc);
-      return text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText });
+      return s.gone || text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText });
     })
-    .then(() => { if (!state.doc || state.handle !== s.handle) persistKept(s); })
+    .then(() => { if (!s.gone && (!state.doc || state.handle !== s.handle)) persistKept(s); })
     .catch(() => {});
 }
 function persistKept(s) {
@@ -2563,25 +2563,28 @@ async function openFile() {
   await openHandle(handle);
 }
 async function openHandle(handle) {
+  let kept = null;
   try {
     // The switcher hands over a fresh handle object for a known file; reuse the one the save queue holds.
     for (const known of [state.handle, ...saving.queued()]) {
       if (known && known !== handle && (await sameFile(known, handle))) { handle = known; break; }
     }
-    const kept = await keptFor(handle);
-    if (kept) { handle = kept.handle; await kept.writes; } // its file holds the agent's change before it is compared
+    // A script kept aside leaves the list first, so no answer lands in it while it opens; its file holds the agent's
+    // last change before it is compared.
+    kept = await keptFor(handle);
+    if (kept) { handle = kept.handle; dropKept(handle); await kept.writes; }
     const file = await handle.getFile();
     const text = await file.text();
     const browser = await isInBrowser(handle);
-    // A script kept aside opens as it is in memory, unless its file holds other words now (another tab or program
-    // wrote it): then it is read from the file like any other, and its draft has the agent's change (TOOLS-358).
+    // It opens as it is in memory, unless its file holds other words now (another tab or program wrote it): then it is
+    // read from the file like any other, and its draft has the agent's change (TOOLS-358).
     const asIs = kept && (await sameWords(text, kept.savedText));
-    dropKept(handle);
     const place = kept ? kept.place : await takePlace(handle);
     loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place });
     remember(handle, browser);
     return true;
   } catch {
+    if (kept && kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); } // still aside
     openProblem(handle.name);
     return false;
   }
@@ -2963,8 +2966,9 @@ async function followTitle(handle) {
 // Its draft and B-roll keys go too: they are by name, as for every script (a file opened later under the same name
 // starts without them).
 async function deleteBrowserScript(r) {
+  // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
   const kept = await keptFor(r.handle);
-  if (kept) dropKept(kept.handle); // an answer for it has nowhere to go now
+  if (kept) { kept.gone = true; dropKept(kept.handle); await kept.writes; }
   await forget(r.handle);
   try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
   dropKeys(r.name);
@@ -3039,7 +3043,12 @@ async function renderScriptList() {
     } else if (r.handle && !r.browser) {
       const x = h("button", "icon-btn scripts__remove", { type: "button", "aria-label": `Remove ${r.name} from the list` });
       x.innerHTML = icon("x");
-      x.addEventListener("click", async () => { await forget(r.handle); renderScriptList(); });
+      x.addEventListener("click", async () => {
+        await forget(r.handle);
+        const kept = await keptFor(r.handle); // no row leads to it any more: its dot goes too
+        if (kept) dropKept(kept.handle);
+        renderScriptList();
+      });
       li.append(x);
     }
     ul.append(li);
@@ -3662,7 +3671,7 @@ function handleCall(call, ws = agent.ws) {
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
     const kept = tool === "answer_ask" && !state.asks.some((a) => a.id === args.askId) ? Aside.findAsk(asides, args.askId) : null;
-    if (kept) return send(answerKept(kept.aside, kept.ask, args));
+    if (kept) return send(Aside.takesAnswer(kept.ask) ? answerKept(kept.aside, kept.ask, args) : { error: `This ask is in ${kept.aside.name}, which is not open now. Ask the person to open it, then answer it there.` });
     if (!state.doc) return send({ error: NO_SCRIPT });
     if (tool === "get_script") return send({ result: scriptInfo() });
     if (tool === "set_script") {
