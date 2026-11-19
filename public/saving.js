@@ -263,7 +263,6 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   let queue = SaveQueue.emptyQueue();
   let timer = 0;
   let opened = 0; // counts open(): a Save as that lands after another script opened must leave that script alone
-  const leftWaits = new Map(); // handle -> the saveLeft calls whose snapshot waits in the queue for a running save
 
   // A save into a script in the browser runs with its name held from its first step to the end of its write, alone
   // among the saves into that script in every tab: the cleanup of a left-behind browser copy never deletes one that
@@ -393,9 +392,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
       for (const snap of left) {
         const written = wroteLeft(await writeLeft(snap));
         queue = SaveQueue.settleQueue(queue, written);
-        const waits = leftWaits.get(snap.handle);
-        leftWaits.delete(snap.handle);
-        for (const done of waits || []) done(written);
+        for (const done of snap.waits || []) done(written); // only the saveLeft calls whose words this was
       }
     }
   }
@@ -405,8 +402,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // null when the words were kept as a draft instead. `script` is never touched.
   function saveLeft(snap) {
     if (!script.saving) return writeLeft(snap).then(wroteLeft);
-    queue = SaveQueue.queueLeft(queue, { ...snap, force: false, auto: true });
-    return new Promise((done) => leftWaits.set(snap.handle, [...(leftWaits.get(snap.handle) || []), done]));
+    return new Promise((done) => { queue = SaveQueue.queueLeft(queue, { ...snap, force: false, auto: true, waits: [done] }); });
   }
   function finish(current, moved) {
     script.autoSaving = false;
