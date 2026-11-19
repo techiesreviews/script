@@ -873,6 +873,7 @@ function checkpointBrollMove(move) {
     }
   };
 }
+let brollHistoryWrites = Promise.resolve();
 const staleMove = (snap) => snap.brollMove && (snap.brollMove.cancelled || !snap.brollMove.valid());
 function restore(snap, from, to) {
   if (snap.brollMove) {
@@ -881,7 +882,8 @@ function restore(snap, from, to) {
     move.stacks.add(to);
     to.push(back); // Redo is available immediately; later typing can invalidate it while the list saves.
     state.lastStep = null;
-    move[snap.moveRedo ? "redo" : "undo"]().then((ok) => {
+    // Include the initial-save wait in this queue: two moves must undo in keypress order.
+    brollHistoryWrites = brollHistoryWrites.then(() => move[snap.moveRedo ? "redo" : "undo"]()).then((ok) => {
       const i = to.indexOf(back);
       if (ok || i < 0) return;
       to.splice(i, 1);
