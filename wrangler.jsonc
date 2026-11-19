@@ -6,6 +6,8 @@
   "compatibility_date": "2026-09-15",
   "workers_dev": true,
   "preview_urls": false,
+  // Workers Logs are off: they add cost (Lex, 2026-11-19).
+  "observability": { "enabled": false },
   // Lex approved script.techies.tools on 2026-10-28. The workers.dev address keeps working too.
   "routes": [{ "pattern": "script.techies.tools", "custom_domain": true }],
   "assets": {

@@ -1,0 +1,39 @@
+# TOOLS-358 live check, 2026-11-19: node scripts/smoke-several-scripts.mjs https://script.techies.tools (headless Chrome 158, fresh profile, made-up scripts). Worker version e391b01b-1433-4968-8241-7174132214e6, main bdf751a.
+--- desktop (1280 px)
+ok the agent gets B's ask (the open script's: no file name with it)
+ok B's row: spinner and "AI working", no dot
+ok the open script's row: no note, no dot
+ok no dot on the file name while the AI works
+ok answer_ask in B is accepted while A is open
+ok nothing moved in A: same scroll, caret and text
+ok the person keeps typing in A
+ok B's file has the change, not the old sentence
+ok A's file never gets B's change
+ok the file name's dot is bigger than the 7 px not-saved dot and sits higher, at the corner
+ok B's row: "AI done" and the orange dot, no number
+ok the open script never gets a dot
+ok B opens at the change, on screen
+ok the dot goes once the change is seen
+ok the agent's words are gone after Undo on the agent's tag
+ok A comes back at its scroll place with its caret
+ok no page error or CSP violation
+RESULT: ok several-scripts
+--- phone (390 px)
+ok the agent gets B's ask (the open script's: no file name with it)
+ok B's row: spinner and "AI working", no dot
+ok the open script's row: no note, no dot
+ok no dot on the file name while the AI works
+ok answer_ask in B is accepted while A is open
+ok nothing moved in A: same scroll, caret and text
+ok the person keeps typing in A
+ok B's file has the change, not the old sentence
+ok A's file never gets B's change
+ok the file name's dot is bigger than the 7 px not-saved dot and sits higher, at the corner
+ok B's row: "AI done" and the orange dot, no number
+ok the open script never gets a dot
+ok B opens at the change, on screen
+ok the dot goes once the change is seen
+ok the agent's words are gone after Ctrl+Z (one step)
+ok A comes back at its scroll place with its caret
+ok no page error or CSP violation
+RESULT: ok several-scripts
