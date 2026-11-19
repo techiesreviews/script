@@ -88,13 +88,29 @@ test("B-roll move: an Over conflict invalidates Undo without overwriting the cha
   m.replace((text) => Broll.updateShot(text, "B1", { over: '"Independent position"' }));
   const edited = m.text, writes = m.writes;
   m.undo(); await settle();
-  assert.equal(m.state.undo.length, 1, "a step invalidated during its inverse is dropped");
-  assert.equal(m.state.redo.length, 0);
   assert.equal(m.text, edited, "the Over conflict does not overwrite the independent edit");
   assert.equal(m.writes, writes);
   assert.equal(m.move.valid(), false, "a permanent Over conflict must not trap every later Undo");
+  assert.doesNotMatch(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the same Undo skips the stale move and reaches the older typing");
+  assert.equal(m.state.undo.length, 0);
+  assert.equal(m.state.redo.length, 1, "only the typing can be redone");
+});
+
+test("B-roll move history: a shot changed while an Undo saves is left alone, and the Undos skip its stale moves", async () => {
+  const m = movement();
+  m.type(" UNDO-SENTINEL");
+  await m.moveShot(1); await m.moveShot(2);
+  const release = m.holdNextWrite();
   m.undo(); await settle();
-  assert.doesNotMatch(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "older typing Undo remains reachable");
+  m.replace((text) => Broll.updateShot(text, "B1", { over: '"Independent position"' }));
+  const edited = m.text, writes = m.writes;
+  m.undo();
+  release(); await settle();
+  assert.equal(m.text, edited, "the changed shot is left alone");
+  assert.equal(m.writes, writes);
+  assert.doesNotMatch(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the first Undo skips both stale moves and reaches the typing");
+  assert.equal(m.state.undo.length, 0);
+  assert.equal(m.state.redo.length, 1, "the waiting Undo found nothing left, and only the typing can be redone");
 });
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
