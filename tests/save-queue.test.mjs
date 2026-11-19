@@ -80,3 +80,12 @@ test("queueLeft: a left script's snapshot waits for the running save; newer word
   assert.equal(q.waiting.handle, B, "the open script's own request stays");
   assert.deepEqual(q.left.map((s) => [s.handle.name, s.text]), [["a.md", "A2"]]);
 });
+
+test("queueLeft: a script left while its own save waits keeps the newest words (second look, P1)", () => {
+  // A's request waits (A was left during a save); then the agent's answer for A comes, newer.
+  let q = queueSave(emptyQueue(), req(A, "A1"));
+  q = queueLeft(q, req(A, "A2"));
+  const { left, current } = splitQueue(q, B);
+  assert.equal(current, null);
+  assert.deepEqual(left.map((s) => [s.handle.name, s.text]), [["a.md", "A2"]]);
+});

@@ -28,9 +28,12 @@ export function queueSave(queue, request, same = Object.is) {
   return { waiting: { ...request }, left: waiting ? keepSnapshot(queue.left, waiting, same) : queue.left };
 }
 
-/** A snapshot of a script the person left, to write after the running save (newer words win within one file). */
+/** A snapshot of a script the person left, to write after the running save (newer words win within one file: a
+ *  request of the same file still waiting from when it was left is older, so it goes in first). */
 export function queueLeft(queue, snap, same = Object.is) {
-  return { ...queue, left: keepSnapshot(queue.left, snap, same) };
+  const { waiting, left } = queue;
+  if (waiting && same(waiting.handle, snap.handle)) return { waiting: null, left: keepSnapshot(keepSnapshot(left, waiting, same), snap, same) };
+  return { ...queue, left: keepSnapshot(left, snap, same) };
 }
 
 /** A write finished: later requests for that file compare against what was just written, not the older state. */
