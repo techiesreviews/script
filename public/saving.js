@@ -255,7 +255,7 @@ export function createLeftCopies({ store, dir, locks = tabLocks(), write = write
  * - browser: { name(from, doc) → a free name from the title, create(name, text) → { handle, modified } }
  * - drafts: local storage { get(key), set(key, value), del(key) }
  * - keys: { of(handle, name) → the key a script's draft goes by (a file's own id, else its name), adopt(handle) → the
- *   key of a file just saved into (Save as) } (TOOLS-361; optional: without it drafts go by name)
+ *   key of a file just saved into (Save as; may be a promise) } (TOOLS-361; optional: without it drafts go by name)
  * - clock: { now(), later(fn, ms) → id, cancel(id) }
  * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }),
  *   placed(handle, { was, words, browser }) — was: the browser copy the script moved out of, words: that copy as
@@ -282,9 +282,13 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
     get: (name) => store.get(key(name)),
     set: (name, draft) => store.set(key(name), draft),
     del: (name) => store.del(key(name)),
+    // Gives false when the draft could not be written under `to` (storage full): then it stays under `from`.
     move(from, to) {
       const draft = store.get(key(from));
-      if (draft != null) { store.set(key(to), draft); store.del(key(from)); }
+      if (draft == null) return true;
+      if (store.set(key(to), draft) === false) return false;
+      store.del(key(from));
+      return true;
     },
   };
 
@@ -456,13 +460,14 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
         script.saving = true;
         on.status();
         const modified = await files.write(handle, text);
+        const to = await keys.adopt(handle); // the file's own key, once it is kept (TOOLS-361)
         if (mine === opened) {
           const words = script.savedText; // the browser copy as this tab last wrote or read it
           script.fileModified = modified;
-          // The file's own key (TOOLS-361: also for a file of the same name in another folder) takes this script's
-          // B-roll link and list, or none. A script leaving the browser frees its name there, so its old keys are
-          // cleared; a file on disk or the demo keeps its own.
-          const from = keys.of(script.handle, script.name), to = keys.adopt(handle);
+          // The file's own key (also for a file of the same name in another folder) takes this script's B-roll link
+          // and list, or none. A script leaving the browser frees its name there, so its old keys are cleared; a file
+          // on disk or the demo keeps its own.
+          const from = keys.of(script.handle, script.name);
           if (to !== from) {
             drafts.del(from);
             on.renamed(from, to, { clear: !!was });
