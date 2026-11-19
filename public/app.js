@@ -120,6 +120,7 @@ const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 
 const asides = [], places = [];
 let lastCaret = null; // the caret in the open script, kept while focus is in the menu
 let lookFor = null; // the agent's changes made while this script was aside, until they have been on screen
+let menuSlash = null; // a "/" command being typed when focus went to the file-name menu (commandNow)
 
 /* ---------- Small helpers ---------- */
 const scriptEl = $("#script");
@@ -2332,6 +2333,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.asks = [];
   lastCaret = null;
   lookFor = null;
+  menuSlash = null;
   changeBase = null;
   passedHere.clear();
   seenMarks.clear();
@@ -2392,11 +2394,12 @@ function leaveScript(next) {
   if (state.guest || !state.handle || next === state.handle) return;
   const place = { y: ui.view === "script" ? scrollY : ui.scriptY, caret: ui.view === "script" ? Aside.caretPlace(state.doc, lastCaret) : null };
   dropKept(state.handle);
+  const cmd = commandNow(); // also one kept while the file-name menu has focus
   const kept = state.pendingDraft || state.conflict ? null : Aside.leave({
     // A "/" command being typed is not part of the script (saveText leaves it out too); asks find their words again.
     // Its undo steps may hold parts of it, so they stay behind, as when any script is left.
-    handle: state.handle, name: state.name, browser: state.inBrowser, doc: slash.open ? Doc.withoutCommand(state.doc, slash) : state.doc, asks: state.asks,
-    undo: slash.open ? [] : state.undo, redo: slash.open ? [] : state.redo,
+    handle: state.handle, name: state.name, browser: state.inBrowser, doc: cmd ? Doc.withoutCommand(state.doc, cmd) : state.doc, asks: state.asks,
+    undo: cmd ? [] : state.undo, redo: cmd ? [] : state.redo,
     savedText: state.savedText, fileModified: state.fileModified, place, unseen: lookFor ? [...lookFor] : [],
   });
   // Its B-roll shots, as matched to its lines now: an answer there that changes a covered line gives its shot "Check".
@@ -2677,7 +2680,7 @@ $("#fileInput").addEventListener("change", async (e) => {
 // fields of `state`; what the person sees follows through `on`.
 const saving = createSaving({
   script: state,
-  editor: { ready: () => !!state.doc && !state.guest, doc: () => state.doc, text: () => saveText(), dirty: () => isDirty(), paused: () => slash.open },
+  editor: { ready: () => !!state.doc && !state.guest, doc: () => state.doc, text: () => saveText(), dirty: () => isDirty(), paused: () => !!commandNow() },
   files: {
     write: (handle, text) => writeHandle(handle, text),
     file: (handle) => handle.getFile(),
@@ -3508,12 +3511,30 @@ function slashHeld() {
 }
 // What a save writes: the script without an open "/" command.
 function saveText() {
-  return Doc.serialize(slash.open && state.doc ? Doc.withoutCommand(state.doc, slash) : state.doc);
+  const cmd = commandNow();
+  return Doc.serialize(cmd && state.doc ? Doc.withoutCommand(state.doc, cmd) : state.doc);
+}
+// Focus going to the file-name menu closes the parts menu, but the "/" command typed there is still one: it stays out
+// of saves, and out of the script when it is left through the menu, until the person is back in the text (TOOLS-358).
+function keepMenuSlash() { if (slash.open) menuSlash = { id: slash.id, start: slash.start, end: slash.end }; }
+$("#docSwitch").addEventListener("pointerdown", keepMenuSlash, { capture: true });
+$("#docSwitch").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") keepMenuSlash(); }, { capture: true });
+scriptEl.addEventListener("focusin", () => { menuSlash = null; });
+// The "/" command being typed now: the open parts menu's, or the one kept while the file-name menu has focus (still
+// there, as typed).
+function commandNow() {
+  if (slash.open) return slash;
+  const b = menuSlash && state.doc && byId(menuSlash.id);
+  const c = b && Doc.slashCommand(Doc.contentOf(b), menuSlash.end);
+  return c && c.start === menuSlash.start && c.end === menuSlash.end ? menuSlash : null;
 }
 scriptEl.addEventListener("input", (e) => { if (!e.isComposing) updateSlash(true); });
 scriptEl.addEventListener("compositionend", () => updateSlash(true));
 document.addEventListener("selectionchange", () => { if (slash.open) updateSlash(false); });
-scriptEl.addEventListener("focusout", (e) => { if (slash.open && !slashMenu.contains(e.relatedTarget)) closeSlash(); });
+scriptEl.addEventListener("focusout", (e) => {
+  if (slash.open && e.relatedTarget?.closest?.("#docSwitch, #scriptMenu")) keepMenuSlash();
+  if (slash.open && !slashMenu.contains(e.relatedTarget)) closeSlash();
+});
 addEventListener("scroll", positionSlash, { passive: true });
 addEventListener("resize", positionSlash);
 // The keys go to the menu first while it is open.
