@@ -2589,10 +2589,14 @@ async function openHandle(handle) {
     if (kept) dropKept(handle);
     loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place });
     remember(handle, browser);
-    kept?.opening.resolve(true);
+    if (kept) { kept.opening.resolve(true); delete kept.opening; }
     return true;
   } catch {
-    if (kept?.opening) { kept.opening.resolve(false); delete kept.opening; } // still aside
+    if (kept?.opening) {
+      kept.opening.resolve(false);
+      delete kept.opening;
+      if (kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); } // still aside
+    }
     openProblem(handle.name);
     return false;
   }
@@ -3684,7 +3688,8 @@ function handleCall(call, ws = agent.ws) {
       return brollApi.agentTool(tool, args, send, NO_SCRIPT);
     }
     if (tool === "open_script") return void openScript(args, agentBy()).then(send, failed);
-    const kept = tool === "answer_ask" && !state.asks.some((a) => a.id === args.askId) ? Aside.findAsk(asides.filter((x) => !x.opening), args.askId) : null;
+    const kept = tool === "answer_ask" && !state.asks.some((a) => a.id === args.askId) ? Aside.findAsk(asides, args.askId) : null;
+    if (kept?.aside.opening) return send({ error: `${kept.aside.name} is opening now. Answer this ask again in a moment; list_asks shows it.` });
     if (kept) return send(Aside.takesAnswer(kept.ask) ? answerKept(kept.aside, kept.ask, args) : { error: `This ask is in ${kept.aside.name}, which is not open now. Ask the person to open it, then answer it there.` });
     if (!state.doc) return send({ error: NO_SCRIPT });
     if (tool === "get_script") return send({ result: scriptInfo() });
@@ -3780,6 +3785,8 @@ async function openScript(args, by) {
   if (!r) return { error: `No recent script is called ${name}. list_scripts gives their names.` };
   if (state.doc && (await sameFile(r.handle, state.handle))) return { result: `${r.name} is already open.` };
   if (await permitted(r.handle, false)) {
+    // The person may have opened it meanwhile (a script kept aside, from its menu row): it is not read again.
+    if (state.doc && (await sameFile(r.handle, state.handle))) return { result: `${r.name} is already open.` };
     if (await openHandle(r.handle)) return { result: `Opened ${r.name}. get_script reads it.` };
     return { error: `The editor couldn't open ${r.name}: it may have been moved or deleted.` };
   }
@@ -3806,6 +3813,8 @@ async function openScript(args, by) {
     const ok = allowed() && (await permitted(r.handle, true));
     if (choice !== "open") return;
     if (!(ok && allowed())) return notNow();
+    if (state.doc && (await sameFile(r.handle, state.handle))) return notNow(); // opened meanwhile: not read again
+    if (choice !== "open") return;
     choice = "done";
     // The line, and with it the wait for the agent, stays until the file is open (or why it isn't shows).
     openHandle(r.handle);
