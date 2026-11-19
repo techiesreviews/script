@@ -321,9 +321,24 @@ async function runSlash(width, height) {
   await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
   await page.key("Escape", "Escape", 27);
   await page.until(`!document.querySelector("#scriptMenu").matches(":popover-open")`, "the menu closes");
-  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note 2")); el.focus(); })()`); // back in the text
+  // Back in the text with a real click on a line.
+  const spot = await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note 3")); el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; })()`);
+  for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...spot, button: "left", clickCount: 1 });
   await page.until(fileHas(B, " /hoo"), "back in the text, the typed words save as usual", 6000);
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "and the not-saved dot goes", 6000);
+  // An answer lands while the menu is open and puts the caret back in the text; Escape, and typing on: it saves again.
+  const ask3 = await askShorter(page, mcp, "Bread note 6");
+  await typeCommand(page, "Bread note 6", " /sil");
+  await page.click("#docSwitch");
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open")`, "the script menu");
+  const r3 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask3?.id, kind: "replace", text: "Bread note six." } });
+  check(!r3?.result?.isError, "an answer lands while the menu is open", toolText(r3));
+  await page.key("Escape", "Escape", 27);
+  await page.until(`!document.querySelector("#scriptMenu").matches(":popover-open")`, "the menu closes");
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note six")); if (!el.contains(document.activeElement) && document.activeElement !== el) { el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); } })()`);
+  await page.send("Input.insertText", { text: "x" });
+  await page.until(fileHas(B, " /silx"), "after Escape and typing on, the words save as usual", 6000);
+
   // Switching through the menu while a command is typed; meanwhile the agent shortens the words before it.
   const ask2 = await askShorter(page, mcp, "Bread note 4");
   await typeCommand(page, "Bread note 4", " /on");
@@ -354,7 +369,7 @@ async function runSlash(width, height) {
   }
   const text = await page.eval(`document.querySelector("#script").textContent`);
   const line4 = (await page.eval(lineText("Bread note four"))) ?? (await page.eval(lineText("Bread note 4")));
-  check(text.includes(LONG.slice(0, 60)) && typeof line4 === "string" && !line4.includes("/"), "Ctrl+Z takes the agent's change out and never brings any part of the command back", JSON.stringify(line4));
+  check(text.includes(LONG.slice(0, 60)) && line4 === before, "Ctrl+Z takes the agent's change out and never brings any part of the command back", JSON.stringify(line4));
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
