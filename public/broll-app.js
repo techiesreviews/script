@@ -915,10 +915,11 @@ export function createBroll(host) {
           const shot = Broll.parseBroll(md).shots.find((shot) => shot.id === id);
           const ids = redo ? destination : origin, from = redo ? origin : destination;
           // Prefer current words. A later text Undo may already have removed this intermediate position.
-          const doc = [...ids, ...from].every((pid) => byId(pid)) ? state.doc : paragraphs;
+          const doc = ids.every((pid) => byId(pid)) ? state.doc : paragraphs;
+          const source = from.every((pid) => byId(pid)) ? state.doc : paragraphs;
           const spoken = Broll.spokenBlocks(doc);
           // An adjacent history step may have refreshed this same position's quote after typing.
-          const samePlace = shot && Broll.matchOver(spoken, shot.over).join() === from.join();
+          const samePlace = shot && Broll.matchOver(Broll.spokenBlocks(source), shot.over).join() === from.join();
           if ((!samePlace && shot?.over !== expected) || !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid))) {
             invalid = true; // This step's position no longer matches, so retrying cannot succeed.
             throw new Error("The shot changed.");

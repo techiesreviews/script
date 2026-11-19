@@ -149,3 +149,24 @@ RESULT: ok bg se01-chrome-order pid 880614
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 RESULT: ok bg stop se01-chrome-order pgid 880614
 RESULT: ok bg stop se01-local-order pgid 879867
+
+Surviving-target correction:
+The next Opus review found the retained context was chosen too broadly when a source paragraph disappeared.
+Surviving target words: met — the combined regression rewrites A, inserts P, moves A to P and then elsewhere,
+holds the first inverse save, then undoes both moves, P's insertion and A's rewrite. It failed with no matched
+shot. Source matching and destination restoration now choose their document independently: an existing target
+always uses its current words. Only missing paragraphs use retained context. The test now restores A's current,
+untyped words. The held-Undo/new-drag regression also checks restoration of the preceding Undo's Check flag.
+The first attempted test only appended a marker, leaving the original quote valid; it passed and was tightened
+to rewrite all original words before reproducing the failure. No application change preceded that failure.
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T232141Z
+RESULT: ok unit 9/9 (1 files) log .scratch/unit/20261119T232158-986985.log
+RESULT: fail unit 8/9 (1 files) log .scratch/unit/20261119T232214-994531.log
+RESULT: ok unit 21/21 (3 files) log .scratch/unit/20261119T232239-1007358.log
+RESULT: ok specs (554/554 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-target pid 1012065
+RESULT: ok bg se01-chrome-target pid 1012365
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-target pgid 1012365
+RESULT: ok bg stop se01-local-target pgid 1012065
