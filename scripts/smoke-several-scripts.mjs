@@ -301,10 +301,51 @@ async function runEdges() {
   await page.close();
 }
 
+// A "/" command being typed when the person switches through the file-name menu (lead, 2026-11-19, TOOLS-358): it
+// never reaches the script's file, not when it is left and not when the agent's answer lands, and Ctrl+Z can't bring
+// it back.
+async function runSlash() {
+  console.log("--- a half-typed / command when switching (1280 px)");
+  const { page, mcp, A, B } = await start(1280, 800);
+  const ask = await askShorter(page, mcp, "Then you cover");
+  await page.eval(`(() => { const el = [...document.querySelectorAll('#script .block[data-type="para"]')].find((x) => x.textContent.startsWith("Bread note 2")); el.scrollIntoView({ block: "center" }); el.focus(); getSelection().selectAllChildren(el); getSelection().collapseToEnd(); })()`);
+  for (const ch of " /on") { await page.send("Input.insertText", { text: ch }); await sleep(40); }
+  await page.until(`!document.querySelector("#slashMenu").hidden`, "the parts menu opens on /on");
+  await page.click("#docSwitch"); // a real click: focus goes to the menu
+  await page.until(`document.querySelector("#scriptMenu").matches(":popover-open") && document.querySelector("#scriptList .scripts__open[aria-current]")`, "the script menu");
+  await sleep(2000); // longer than the auto-save pause
+  check(!(await readScript(page, B))?.includes(" /on"), "with the file-name menu open, /on is not saved into B's file");
+  await page.eval(`(${row(A)}).querySelector(".scripts__open").click()`);
+  await page.until(isOpen(A), "A opens");
+  await sleep(500);
+  check(!(await readScript(page, B))?.includes(" /on"), "leaving B through the menu does not save /on into B's file");
+  const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: SHORT } });
+  check(!r?.result?.isError, "the answer lands in B", toolText(r));
+  await page.until(fileHas(B, SHORT), "B's file holds the change");
+  check(!(await readScript(page, B))?.includes(" /on"), "the agent's answer does not bring /on into B's file");
+  check(await page.eval(`localStorage.getItem("script-editor:draft:" + ${JSON.stringify(B)}) === null || !localStorage.getItem("script-editor:draft:" + ${JSON.stringify(B)}).includes(" /on")`), "B's draft has no /on");
+  await openFromMenu(page, B);
+  await page.until(`!!document.querySelector("#script .agent-change")`, "B opens at the change");
+  check(!(await page.eval(`document.querySelector("#script").textContent`)).includes(" /on"), "B opens without /on");
+  for (let i = 0; i < 3; i++) {
+    await page.eval(`document.activeElement?.blur(); true`);
+    for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
+    await sleep(200);
+  }
+  const text = await page.eval(`document.querySelector("#script").textContent`);
+  check(text.includes(LONG.slice(0, 60)) && !text.includes(" /on"), "Ctrl+Z takes the agent's change out and never brings /on back");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+// SMOKE_ONLY=slash (or desktop, phone, edges) runs one part.
+const only = process.env.SMOKE_ONLY || "";
 try {
-  await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
-  await run({ width: 390, height: 844, label: "phone", undoBy: "key" });
-  await runEdges();
+  if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
+  if (!only || only === "phone") await run({ width: 390, height: 844, label: "phone", undoBy: "key" });
+  if (!only || only === "edges") await runEdges();
+  if (!only || only === "slash") await runSlash();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
