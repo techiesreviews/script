@@ -341,6 +341,24 @@ test("saving: idle() ends once every save asked for so far is written, the left 
   assert.equal(s.files.disk.get("a.md").text, "# A\n\nAgain.\n");
 });
 
+test("saving: idle() waits through a save that was waiting behind the running one (second look on 1068e69)", async () => {
+  const s = setup();
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nFirst.\n";
+  s.saving.save(); // runs and waits
+  await settle();
+  s.ed.text = "# A\n\nSecond.\n";
+  s.saving.save(); // waits behind it
+  let quiet = false;
+  const p = s.saving.idle().then(() => { quiet = true; });
+  const release2 = (release(), s.files.hold("a.md"));
+  await until(() => s.files.log.some(([n, t]) => n === "a.md" && t === "# A\n\nSecond.\n"));
+  assert.equal(quiet, false, "the second save still runs");
+  release2();
+  await p;
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nSecond.\n");
+});
+
 test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
   const s = setup();
   const A = s.script.handle;

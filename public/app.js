@@ -2394,7 +2394,9 @@ function leaveScript(next) {
   dropKept(state.handle);
   const kept = state.pendingDraft || state.conflict ? null : Aside.leave({
     // A "/" command being typed is not part of the script (saveText leaves it out too); asks find their words again.
-    handle: state.handle, name: state.name, browser: state.inBrowser, doc: slash.open ? Doc.withoutCommand(state.doc, slash) : state.doc, asks: state.asks, undo: state.undo, redo: state.redo,
+    // Its undo steps may hold parts of it, so they stay behind, as when any script is left.
+    handle: state.handle, name: state.name, browser: state.inBrowser, doc: slash.open ? Doc.withoutCommand(state.doc, slash) : state.doc, asks: state.asks,
+    undo: slash.open ? [] : state.undo, redo: slash.open ? [] : state.redo,
     savedText: state.savedText, fileModified: state.fileModified, place, unseen: lookFor ? [...lookFor] : [],
   });
   // Its B-roll shots, as matched to its lines now: an answer there that changes a covered line gives its shot "Check".
@@ -2610,6 +2612,7 @@ async function openOne(handle, was) {
       let resolve;
       kept.opening = { promise: new Promise((r) => { resolve = r; }), resolve: (v) => resolve(v) };
       await kept.writes;
+      await saving.idle(); // the save made when it was left too: its own write is never taken for someone else's
     }
     const file = await handle.getFile();
     const text = await file.text();

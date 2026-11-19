@@ -396,7 +396,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   async function drain(moved) {
     for (;;) {
       const { left, current } = SaveQueue.splitQueue(queue, script.handle);
-      if (!left.length) { queue = SaveQueue.emptyQueue(); script.saving = false; settleIdle(); finish(current, moved); return; }
+      if (!left.length) { queue = SaveQueue.emptyQueue(); script.saving = false; finish(current, moved); settleIdle(); return; } // after a waiting save starts
       queue = { waiting: current, left: [] };
       for (const snap of left) {
         const written = wroteLeft(await writeLeft(snap));
