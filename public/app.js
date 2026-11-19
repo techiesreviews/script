@@ -2403,7 +2403,7 @@ function adoptAsks(asks) {
 // holds a change not seen yet) the script itself is kept aside, so the answer lands in it while another one is open.
 function leaveScript(next) {
   if (state.guest || !state.handle || next === state.handle) return;
-  const place = { y: ui.view === "script" ? scrollY : ui.scriptY, caret: ui.view === "script" ? Aside.caretPlace(state.doc, lastCaret) : null };
+  const place = { y: ui.view === "script" ? scrollY : ui.scriptY, caret: Aside.caretPlace(state.doc, lastCaret) }; // the caret, whatever the view
   dropKept(state.handle);
   const cmd = commandNow(); // also one kept while the file-name menu has focus
   const kept = state.pendingDraft || state.conflict ? null : Aside.leave({
@@ -2471,7 +2471,13 @@ function goToPlace(kept, place) {
   }
   if (kept?.unseen.size) lookFor = new Set(kept.unseen);
   if (!place) return void scrollTo({ top: 0 });
-  if (ui.view !== "script") { ui.scriptY = place.y; ui.scriptTop = undefined; return; }
+  if (ui.view !== "script") {
+    // The Storyboard shows: the place and the caret wait for the Script view (setView puts the caret back).
+    ui.scriptY = place.y; ui.scriptTop = undefined;
+    lastCaret = Aside.caretAt(state.doc, place.caret);
+    ui.caret = lastCaret;
+    return;
+  }
   const c = Aside.caretAt(state.doc, place.caret), b = c && blockNode(c.id);
   const folded = b?.closest("details"); // a caret in the folded lines at the top opens them, as placeCaret does
   if (folded && !folded.open) { folded.open = true; state.frontOpen = true; }
@@ -3053,8 +3059,21 @@ async function followTitle(handle) {
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
+// Is another script known under this name (not the file `handle`): the open one, one kept aside, one whose place is
+// kept, or one on the list? A script open without a file, or one that can't be compared, counts too (keep the data).
+async function nameShared(name, handle) {
+  if (state.doc && state.name === name && !state.handle) return true;
+  const known = [
+    ...(state.doc ? [{ name: state.name, handle: state.handle }] : []),
+    ...asides.map((s) => ({ name: s.name, handle: s.handle })),
+    ...places.map((p) => ({ name: p.handle?.name, handle: p.handle })),
+    ...(await recentScripts()).map((x) => ({ name: x.name, handle: x.handle })),
+  ];
+  for (const k of known) if (k.name === name && k.handle && !(await sameFile(k.handle, handle))) return true;
+  return false;
+}
 // Its draft and B-roll keys go too: they are by name, as for every script (a file opened later under the same name
-// starts without them).
+// starts without them), unless another script of that name is known (nameShared).
 async function deleteBrowserScript(r) {
   // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
   deleting.push(r.handle); // it can't be opened while it goes
@@ -3066,9 +3085,9 @@ async function deleteBrowserScript(r) {
     await saving.idle();
     await forget(r.handle);
     try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-    // Keys go by name: an open file of the same name (Save to video folder calls every one script.md) keeps its own.
-    const sameNameOpen = !!state.doc && state.name === r.name && !(await sameFile(state.handle, r.handle));
-    if (!sameNameOpen) dropKeys(r.name);
+    // Keys go by name (Save to video folder calls every one script.md): they go only when no other script of that name
+    // is known, open, kept aside or on the list. When in doubt, they stay.
+    if (!(await nameShared(r.name, r.handle))) dropKeys(r.name);
   } finally {
     deleting.splice(deleting.indexOf(r.handle), 1);
   }
@@ -3418,6 +3437,10 @@ function setView(v) {
   editorJump();
   // The Keep all row may have come or gone while away (step Q): the text comes back where it was all the same.
   scrollTo({ top: board || !ui.scriptY ? 0 : Math.max(0, ui.scriptY + sheetTop() - (ui.scriptTop ?? sheetTop())) });
+  // A script opened while the Storyboard showed: its caret comes back in the Script view (TOOLS-358).
+  const c = !board && ui.caret, b = c && byId(c.id) && blockNode(c.id);
+  ui.caret = null;
+  if (b && !b.closest("details:not([open])")) { const y = scrollY; b.focus({ preventScroll: true }); setCaretAt(b, c.offset); scrollTo({ top: y }); }
 }
 function renderView() {
   const board = ui.view === "board" && !!state.doc;
