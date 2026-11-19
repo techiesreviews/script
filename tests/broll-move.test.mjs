@@ -6,7 +6,7 @@ import * as Doc from "../public/doc.js";
 import * as Broll from "../public/broll.js";
 import * as Changes from "../public/changes.js";
 
-// Exercise moveShot itself, including its inverse and expected-Over guard, with a queued in-memory sidecar.
+// Exercise moveShot itself, including its inverse and its guard on where the shot is, with a queued in-memory sidecar.
 // The browser smoke covers the pointer handlers and real browser storage without exposing another public API.
 function movement() {
   const source = readFileSync(new URL("../public/broll-app.js", import.meta.url), "utf8");
@@ -16,12 +16,17 @@ function movement() {
   const paras = Broll.spokenBlocks(state.doc);
   let text = Broll.addShot(Broll.newList("Throwaway"), { id: "B1", kind: "broll", what: "Throwaway shot", how: "Keep this detail", over: Broll.overFor(state.doc, Broll.wholeParas(state.doc, [paras[0].id])) });
   const broll = { token: 1, shots: [] };
-  const adopt = () => { broll.shots = Broll.parseBroll(text).shots; Broll.matchShots(state.doc, broll.shots); };
+  // As the app adopts a written list: every shot is matched to the script again and keeps its Check flag.
+  const adopt = () => {
+    const flagged = new Set(broll.shots.filter((shot) => shot.check).map((shot) => shot.id));
+    broll.shots = Broll.parseBroll(text).shots; Broll.matchShots(state.doc, broll.shots);
+    for (const shot of broll.shots) shot.check = flagged.has(shot.id);
+  };
   adopt();
   broll.shots[0].check = true;
   let move, queue = Promise.resolve(), writes = 0, hold = null, broken = false;
   const shotById = (id) => broll.shots.find((shot) => shot.id === id);
-  const context = { state, broll, Doc, Broll, shotById, covered: (shot) => shot.blockIds,
+  const context = { state, broll, Doc, Broll, shotById, covered: (shot) => (shot.blockIds || []).filter((id) => Doc.blockById(state.doc, id)),
     Changes, Date, UNDO_LIMIT: 300, TYPING_GROUP_MS: 1000, together: null,
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
     followAnchors() {}, reanchorAll() {}, renderAll() {}, hideBar() {}, changed() {}, emit() {},
@@ -166,7 +171,7 @@ test("B-roll move history: dragging during a held Undo returns to the restored o
   m.undo(); await settle();
   const next = m.moveShot(2);
   release(); await next; await settle();
-  assert.equal(!!m.broll.shots[0].check, false, "the new drag clears Check");
+  assert.equal(m.broll.shots[0].check, false, "the new drag clears the Check flag the Undo before it restored");
   m.undo(); await settle();
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
   assert.equal(m.broll.shots[0].check, true, "Undo restores the Check flag from the preceding inverse");
@@ -222,4 +227,13 @@ test("B-roll move history: a failed Undo save stops the Undo waiting behind it, 
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the first position is still reachable");
   m.redo(); m.redo(); await settle();
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+});
+
+test("B-roll move history: a shot shown on no paragraph for a moment is still found by its saved quote", async () => {
+  const m = movement();
+  await m.moveShot(1);
+  m.broll.shots[0].blockIds = []; // as right after the script's text was replaced, before the shots are matched again
+  m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  assert.equal(m.state.redo.length, 1);
 });

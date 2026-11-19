@@ -17,7 +17,7 @@ function history() {
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
     followAnchors() {}, reanchorAll() {}, renderAll() {}, hideBar() {}, changed() {}, emit() {},
   };
-  runInNewContext(`${section}\nthis.api = { checkpoint, undo, redo, checkpointBrollMove };`, context);
+  runInNewContext(`${section}\nthis.api = { checkpoint, undo, redo, checkpointBrollMove, queueBrollHistory };`, context);
   const type = (text) => {
     const para = state.doc.blocks.find((b) => b.type === "para");
     context.api.checkpoint("type", para.id);
@@ -77,17 +77,35 @@ test("B-roll move: a failed Undo keeps the step available and preserves script h
   assert.equal(h.state.undo.length, 1);
 });
 
-test("B-roll move: a failed initial save removes its step, and a changed list invalidates old moves", async () => {
+test("B-roll move: typing while a move's Undo saves stops the Undo waiting behind it", async () => {
   const h = history();
   h.type(" UNDO-SENTINEL-A");
-  const cancel = h.checkpointBrollMove({ valid: () => true, undo: async () => true, redo: async () => true });
-  h.undo(); // Its inverse is already waiting when the initial save fails.
-  assert.equal(h.state.redo.length, 1);
-  cancel();
-  await settle();
-  assert.equal(h.state.undo.length, 1);
-  assert.equal(h.state.redo.length, 0, "initial-save cancellation removes the pending inverse too");
-  h.checkpointBrollMove({ valid: () => false, undo: () => assert.fail("must not write to a different list"), redo: () => assert.fail("must not write to a different list") });
+  let finish;
+  const saved = new Promise((resolve) => { finish = resolve; });
+  h.checkpointBrollMove({ valid: () => true, undo: () => saved, redo: async () => true });
+  h.undo(); h.undo(); // The move's Undo is saving; the second one waits its turn behind it.
+  h.type(" Typed while saving");
+  finish(true); await settle();
+  assert.match(h.words(), /UNDO-SENTINEL-A Typed while saving/, "the waiting Undo takes neither the new typing nor the older typing");
+  assert.equal(h.state.undo.length, 2);
+});
+
+test("B-roll move: an Undo pressed while the move's first save fails undoes nothing, and a changed list invalidates old moves", async () => {
+  const h = history();
+  h.type(" UNDO-SENTINEL-A");
+  const typed = h.words();
+  let fail, ran = false;
+  const save = h.queueBrollHistory(() => new Promise((_, reject) => { fail = reject; }));
+  const cancel = h.checkpointBrollMove({ valid: () => true, undo: async () => { ran = true; return true; }, redo: async () => true });
+  save.catch(cancel);
+  h.undo(); // Waits its turn behind the first save.
+  fail(new Error("Not saved.")); await settle();
+  assert.equal(h.state.undo.length, 1, "the move that never happened leaves no step");
+  assert.equal(h.state.redo.length, 0);
+  assert.equal(ran, false);
+  assert.equal(h.words(), typed, "the waiting Undo is not spent on the typing before the move");
+  h.checkpointBrollMove({ valid: () => false, undo: async () => { ran = true; return true; }, redo: async () => true });
   h.undo(); await settle();
+  assert.equal(ran, false, "a move of a different list is never written");
   assert.doesNotMatch(h.words(), /UNDO-SENTINEL-A/);
 });

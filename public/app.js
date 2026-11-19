@@ -845,6 +845,7 @@ async function openPrompter() {
 function checkpoint(kind, id, before = null) {
   // In a shared script, undo follows each person's own changes instead (see together/room.js).
   if (together?.active) return;
+  historyAge++;
   const now = Date.now(), last = state.lastStep;
   if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
   state.undo.push({ doc: before || Doc.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
@@ -855,43 +856,53 @@ function checkpoint(kind, id, before = null) {
 // A move shares the script's chronological history, but never carries a copy of its words.
 function checkpointBrollMove(move) {
   if (together?.active) return () => {};
-  const history = { ...move, cancelled: false, stacks: new Set([state.undo]) };
-  state.undo.push({ brollMove: history, moveRedo: false });
-  if (state.undo.length > UNDO_LIMIT) state.undo.shift();
+  const stack = state.undo, step = { brollMove: move, moveRedo: false };
+  historyAge++;
+  stack.push(step);
+  if (stack.length > UNDO_LIMIT) stack.shift();
   state.redo = [];
   state.lastStep = null;
-  // A move whose initial save failed never happened. Remove even an inverse already waiting for that save.
-  return () => {
-    history.cancelled = true;
-    for (const stack of history.stacks) {
-      for (let i = stack.length - 1; i >= 0; i--) if (stack[i].brollMove === history) stack.splice(i, 1);
-    }
-  };
+  // A move whose first save failed never happened. Nothing has undone it yet: history waits its turn behind that save.
+  return () => { const i = stack.indexOf(step); if (i >= 0) stack.splice(i, 1); };
 }
-let brollHistoryWrites = Promise.resolve();
+// Saving a moved shot takes a moment, so history takes turns: a move's save, and any Undo or Redo asked for while one
+// is under way, each wait for the one before and then meet the script and the list as that one left them. A save that
+// fails, or a new change, ages the history: steps still waiting were asked of a state that never came, so they stop
+// there and every word and position stays reachable.
+let historyTurn = Promise.resolve(), historyBusy = 0, historyAge = 0;
 function queueBrollHistory(run) {
-  const pending = brollHistoryWrites.then(run);
-  brollHistoryWrites = pending.catch(() => {});
-  return pending;
+  const turn = historyBusy++ ? historyTurn.then(run) : new Promise((resolve) => resolve(run()));
+  historyTurn = turn.catch(() => { historyAge++; }).then(() => { historyBusy--; });
+  return turn;
 }
-const staleMove = (snap) => snap.brollMove && (snap.brollMove.cancelled || !snap.brollMove.valid());
-function restore(snap, from, to) {
-  if (snap.brollMove) {
-    const move = snap.brollMove, at = from.length;
-    const back = { brollMove: move, moveRedo: !snap.moveRedo };
-    move.stacks.add(to);
-    to.push(back); // Redo is available immediately; later typing can invalidate it while the list saves.
+const staleMove = (snap) => snap.brollMove && !snap.brollMove.valid();
+function historyStep(undoing) {
+  const stack = () => (undoing ? state.undo : state.redo);
+  const from = stack(), to = undoing ? state.redo : state.undo, age = historyAge;
+  const step = () => {
+    if (age !== historyAge || from !== stack()) return; // aged meanwhile, or another script is open now
+    let s = from.pop();
+    while (s && staleMove(s)) s = from.pop();
+    if (!s) return;
+    if (!s.brollMove) return restore(s, to);
+    const back = { brollMove: s.brollMove, moveRedo: !s.moveRedo }, at = from.length;
+    to.push(back); // at once, so a change made while the list saves comes after it
     state.lastStep = null;
-    // A following text Undo can remove an intermediate paragraph before its queued shot write runs.
-    const paragraphs = Doc.cloneDoc(state.doc);
-    queueBrollHistory(() => move[snap.moveRedo ? "redo" : "undo"](paragraphs)).then((ok) => {
+    return s.brollMove[s.moveRedo ? "redo" : "undo"]().then((ok) => {
+      if (ok) return;
+      historyAge++;
       const i = to.indexOf(back);
-      if (ok || i < 0) return;
-      to.splice(i, 1);
-      if (!staleMove(snap)) from.splice(Math.min(at, from.length), 0, snap);
+      if (i >= 0) to.splice(i, 1);
+      // Not saved: the step keeps its place and can be tried again. One that no longer fits the shot is dropped.
+      if (!staleMove(s)) from.splice(Math.min(at, from.length), 0, s);
     });
-    return;
-  }
+  };
+  if (historyBusy) return void queueBrollHistory(step);
+  // Nothing is saving: a step in the script's words happens at once, as it always did; a move's save opens a turn.
+  const saving = step();
+  if (saving) queueBrollHistory(() => saving);
+}
+function restore(snap, to) {
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
   const { back, closed } = Changes.landStep(state.asks, snap.land);
   to.push({ doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
@@ -911,15 +922,11 @@ function restore(snap, from, to) {
 }
 function undo() {
   if (together?.active) { hideBar(); return void together.undo(); }
-  let s = state.undo.pop();
-  while (s && staleMove(s)) s = state.undo.pop();
-  if (s) restore(s, state.undo, state.redo);
+  historyStep(true);
 }
 function redo() {
   if (together?.active) return;
-  let s = state.redo.pop();
-  while (s && staleMove(s)) s = state.redo.pop();
-  if (s) restore(s, state.redo, state.undo);
+  historyStep(false);
 }
 
 /* ---------- Ask anchors follow edits ---------- */
