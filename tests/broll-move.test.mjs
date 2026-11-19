@@ -44,7 +44,7 @@ function movement() {
   context.checkpointBrollMove = (entry) => { move = entry; return checkpoint(entry); };
   return { broll, get text() { return text; }, get writes() { return writes; }, get move() { return move; },
     state, paras, undo: () => context.undo(), redo: () => context.redo(),
-    type: (text) => { context.checkpoint("type", paras[2].id); Doc.setContent(state.doc, paras[2].id, Doc.contentOf(Doc.blockById(state.doc, paras[2].id)) + text); },
+    type: (text, index = 2) => { context.checkpoint("type", paras[index].id); Doc.setContent(state.doc, paras[index].id, Doc.contentOf(Doc.blockById(state.doc, paras[index].id)) + text); },
     insertPara: () => {
       context.checkpoint("insert");
       const block = Doc.parse("Temporary inserted paragraph.\n").blocks.find((b) => b.type === "para");
@@ -164,5 +164,20 @@ test("B-roll move history: dragging during a held Undo returns to the restored o
   const next = m.moveShot(2);
   release(); await next; await settle();
   m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+});
+
+
+test("B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph", async () => {
+  const m = movement();
+  m.type("", 0);
+  Doc.setContent(m.state.doc, m.paras[0].id, "UNDO-SENTINEL completely rewritten original paragraph.");
+  const target = m.insertPara();
+  await m.moveShot(target); await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  m.undo(); m.undo(); m.undo();
+  release(); await settle();
+  assert.doesNotMatch(Doc.serialize(m.state.doc), /UNDO-SENTINEL|Temporary inserted/);
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
 });
