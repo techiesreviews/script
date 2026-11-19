@@ -40,6 +40,9 @@ export function legacyPlan(keys, { browser = false, moving = false } = {}) {
 export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
   const known = new WeakMap(); // handle -> key, for the handles this tab looked up or made
   let ready = Promise.resolve();
+  // The move of the keys kept by name (migrate) was asked for and is not done on this page (it failed, or its list
+  // could not be read): a file without an id goes by its name meanwhile and takes nothing alone (SL-1, SL-3).
+  let pending = false;
   const read = async () => {
     const list = await store.get(IDS_KEY);
     return Array.isArray(list) ? list.filter((r) => r?.handle && typeof r.id === "string") : [];
@@ -53,14 +56,25 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
   // The key a script goes by now: a file looked up here has its own; any other script goes by its name.
   const keyOf = (handle, name) => (handle && known.get(handle)) || name;
 
+  // Opened again: to the front, so a full list lets go of the files not opened here for longest. Best effort: a write
+  // that fails leaves it where it is, and it keeps its key.
+  async function toFront(list, id) {
+    if (list[0]?.id === id) return;
+    await store.put(IDS_KEY, [...list.filter((r) => r.id === id), ...list.filter((r) => r.id !== id)]).catch(() => {});
+  }
   // The key of a file on the computer, looked up (async). A file seen for the first time gets an id and takes what is
-  // still kept under its name. Where storage refuses, the file goes by its name, as before.
+  // still kept under its name. Where storage refuses, or while the move is pending, the file goes by its name.
   function forFile(handle) {
-    if (known.has(handle)) return Promise.resolve(known.get(handle));
+    if (known.has(handle)) {
+      // A handle looked up before (the open script, reopened) moves to the front too (SL-4).
+      const key = known.get(handle);
+      return ready.then(() => lock(async () => toFront(await read(), key.slice("file:".length)))).catch(() => {}).then(() => key);
+    }
     return ready.then(() => lock(async () => {
       if (known.has(handle)) return known.get(handle);
       const list = await read();
       let id = await idIn(list, handle);
+      if (!id && pending) return handle.name;
       if (!id) {
         id = newId();
         await store.put(IDS_KEY, [{ handle, id }, ...list].slice(0, IDS_MAX));
@@ -70,11 +84,7 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
           await store.put(IDS_KEY, list);
           return handle.name;
         }
-      } else if (list[0].id !== id) {
-        // Opened again: to the front, so a full list lets go of the files not opened here for longest. Best effort: a
-        // write that fails leaves it where it is, and it keeps its key.
-        await store.put(IDS_KEY, [...list.filter((r) => r.id === id), ...list.filter((r) => r.id !== id)]).catch(() => {});
-      }
+      } else await toFront(list, id);
       known.set(handle, fileKey(id));
       return fileKey(id);
     })).catch(() => handle.name);
@@ -100,8 +110,9 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
   // each name's keys from before go to its files. Opens wait for it. When a name's keys could not all be handed over
   // (storage full), it is not marked done, and the next page tries again (handOver only fills places never written).
   function migrate(listFiles) {
+    pending = true; // until it is known to be done: a list that can't be read never counts as "no files" (SL-3)
     ready = ready.then(() => lock(async () => {
-      if (await store.get(MIGRATED_KEY)) return;
+      if (await store.get(MIGRATED_KEY)) return void (pending = false);
       const list = await read(), added = [], byName = new Map();
       for (const f of await listFiles()) {
         let id = await idIn([...added, ...list], f.handle);
@@ -113,9 +124,9 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver }) {
       await store.put(IDS_KEY, [...added.map(entry), ...list].slice(0, IDS_MAX));
       const failed = new Set();
       for (const [name, keys] of byName) if (!(await hand(name, keys, { moving: true }))) failed.add(name);
-      if (!failed.size) return void (await store.put(MIGRATED_KEY, Date.now()));
+      if (!failed.size) { await store.put(MIGRATED_KEY, Date.now()); pending = false; return; }
       // A name not handed over keeps no new ids: its files go by that name, where its old keys still are, until the
-      // next page tries again (a file opened meanwhile tries again too).
+      // next page tries again with all of them (none takes them alone meanwhile: `pending`, SL-1).
       await store.put(IDS_KEY, [...added.filter((r) => !failed.has(r.name)).map(entry), ...list].slice(0, IDS_MAX));
     })).catch(() => {});
     return ready;

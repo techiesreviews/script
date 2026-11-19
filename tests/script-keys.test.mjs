@@ -165,6 +165,58 @@ test("script keys: a file seen later whose hand-over fails gets no id yet, so th
   assert.deepEqual(handed, [["script.md", [k]]]);
 });
 
+// A page over a store in a Map whose hand-over and list can be made to fail (SL-1, SL-3: lead's fix round, 2026-11-19).
+// `fail` is read live, so storage can come back on the same page.
+function pendingSetup(store, fail = {}) {
+  const handed = [];
+  const keys = createScriptKeys({
+    store: { get: async (k) => store.get(k), put: async (k, v) => { store.set(k, v); } },
+    sameFile, lock: (fn) => fn(), newId: () => `p${++n}`,
+    handOver: async (name, list, o) => { if (fail.hand) throw new Error("full"); handed.push(o ? [name, list, o] : [name, list]); },
+  });
+  const files = [{ handle: file("b/script.md"), name: "script.md" }, { handle: file("a/script.md"), name: "script.md" }];
+  const migrated = keys.migrate(async () => { if (fail.list) throw new Error("the recent list can't be read"); return files; });
+  return { keys, handed, migrated };
+}
+
+test("script keys (SL-1): after a failed move, a file opened on the same page takes nothing alone, also once storage is back; the next page hands the name to all its files", async () => {
+  const store = new Map(), fail = { hand: true };
+  const first = pendingSetup(store, fail);
+  await first.migrated;
+  fail.hand = false; // storage works again, on the same page
+  assert.equal(await first.keys.forFile(file("a/script.md")), "script.md", "goes by its name while the move is pending");
+  assert.deepEqual(first.handed, [], "no one-file move");
+  const next = pendingSetup(store);
+  await next.migrated;
+  assert.ok(store.has(MIGRATED_KEY));
+  assert.equal(next.handed.length, 1);
+  assert.equal(next.handed[0][1].length, 2, "the retry hands the name to both files");
+});
+
+test("script keys (SL-3): a recent list that can't be read never marks the move done, and no file takes the name's keys alone meanwhile", async () => {
+  const store = new Map();
+  const first = pendingSetup(store, { list: true });
+  await first.migrated;
+  assert.equal(store.has(MIGRATED_KEY), false);
+  assert.equal(await first.keys.forFile(file("a/script.md")), "script.md");
+  assert.deepEqual(first.handed, []);
+  const next = pendingSetup(store);
+  await next.migrated;
+  assert.ok(store.has(MIGRATED_KEY));
+  assert.equal(next.handed.length, 1);
+  assert.equal(next.handed[0][1].length, 2);
+});
+
+test("script keys (SL-4): reopening the same handle object moves it to the front too, so a full list keeps it", async () => {
+  const { keys, store } = setup();
+  const h = file("a/script.md");
+  const a = await keys.forFile(h);
+  for (let i = 0; i < IDS_MAX - 1; i++) await keys.forFile(file(`g${i}/x.md`));
+  assert.equal(await keys.forFile(h), a); // the same handle again, as the open script
+  await keys.forFile(file("new2/x.md"));
+  assert.equal(await setup({ store }).keys.forFile(file("a/script.md")), a);
+});
+
 test("script keys: the old keys of a name go to its files (the newest takes the draft) and the name lets go, unless a script in the browser has that name", () => {
   assert.deepEqual(legacyPlan(["file:b", "file:a"], { browser: false }), { broll: ["file:b", "file:a"], draft: "file:b", clear: true });
   assert.deepEqual(legacyPlan(["file:b"], { browser: true, moving: true }), { broll: ["file:b"], draft: null, clear: false });
