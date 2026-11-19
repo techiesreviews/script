@@ -553,6 +553,16 @@ test("hand-over: undo takes back the draft copy of a try whose ids could not be 
   own.local.set("draft:file:a", draftAt("The file's own, newer words.", 9));
   (await own.handOver("script.md", ["file:a"])).undo();
   assert.equal(own.local.get("draft:file:a"), draftAt("The file's own, newer words.", 9), "a draft the try did not write is left alone");
+  // Words another tab wrote under the file's key since the copy are not the try's to take back (review round 14).
+  for (const before of [null, draftAt("An older copy.", 2)]) {
+    const since = overSetup();
+    oldKeys(since);
+    if (before) since.local.set("draft:file:a", before);
+    const go = await since.handOver("script.md", ["file:a"]);
+    since.local.set("draft:file:a", draftAt("Typed in another tab.", 20));
+    go.undo();
+    assert.equal(since.local.get("draft:file:a"), draftAt("Typed in another tab.", 20));
+  }
 });
 
 test("script keys: ids that can't be kept leave no draft copy behind under them, however often the open or the move is tried (review round 13)", async () => {
