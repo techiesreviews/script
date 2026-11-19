@@ -90,10 +90,11 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
       if (link != null) await idb.put(key.link(name), null);
     };
     // A try whose ids could not be kept takes its draft copy back (the name still has the original), so no copy piles
-    // up in local storage under keys nobody will look up. Copies in IndexedDB stay: where the ids can't be written
-    // there, they could not be either.
+    // up in local storage under keys nobody will look up; only while the key still holds that copy (a file that had an
+    // id before may get newer words from another tab meanwhile). List and link copies in IndexedDB stay: few, since
+    // the ids are refused there too, and never read.
     letGo.undo = () => {
-      if (!takes) return;
+      if (!takes || local.read(key.draft(plan.draft)) !== draft) return;
       if (own == null) remove(key.draft(plan.draft));
       else local.write(key.draft(plan.draft), own);
     };
@@ -171,8 +172,8 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
   // The key of a file on the computer, looked up in the stored list at every open (async). A file seen for the first
   // time gets an id and takes what is still kept under its name: the copies first, then its id is kept, and only then
   // the name lets go, so a stop in between loses nothing (no id yet: the next open tries again). Where the list can't
-  // be read or written, a file goes on by the key this tab knows for it, else by its name; while the move is pending,
-  // a file without an id goes by its name, where its old keys still are.
+  // be read or written, a file goes on by the key this tab knows for it, else by its name; while its name waits for
+  // the move (`waits`), a file without an id goes by that name, where its old keys still are.
   function forFile(handle) {
     return ready.then(() => lock(async () => {
       const list = await read();
