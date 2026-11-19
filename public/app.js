@@ -3092,6 +3092,7 @@ async function renderScriptList() {
     }
     if (r.current) open.insertAdjacentHTML("beforeend", icon("check"));
     open.addEventListener("click", async () => {
+      if (menuSlash && !r.current && r.handle) menuSlash.switching = true; // the "/" command stays out of the script left
       $("#scriptMenu").hidePopover();
       if (r.current || !r.handle) return;
       await permitted(r.handle, true);
@@ -3142,8 +3143,8 @@ $("#scriptSearch").addEventListener("keydown", (e) => {
   e.preventDefault();
   $("#scriptList .scripts__open")?.click();
 });
-$("#menuOpen").addEventListener("click", () => { $("#scriptMenu").hidePopover(); openFile(); });
-$("#menuNew").addEventListener("click", () => { $("#scriptMenu").hidePopover(); newScript(); });
+$("#menuOpen").addEventListener("click", () => { if (menuSlash) menuSlash.switching = true; $("#scriptMenu").hidePopover(); openFile(); });
+$("#menuNew").addEventListener("click", () => { if (menuSlash) menuSlash.switching = true; $("#scriptMenu").hidePopover(); newScript(); });
 (async () => {
   if (!(canPick || browserSaving) || roomLink) return;
   lastHandle = (await recentScripts())[0]?.handle ?? null;
@@ -3529,6 +3530,13 @@ function endMenuSlash(e) {
 }
 document.addEventListener("focusin", endMenuSlash);
 document.addEventListener("pointerdown", endMenuSlash, { capture: true });
+// Typing again, or the menu closing with focus left outside it (Escape after an answer put the caret back in the text,
+// or Tab out of it), ends it too. A row click is a switch on its way (`switching`), so it keeps it.
+scriptEl.addEventListener("input", () => { if (menuSlash) { menuSlash = null; saving.schedule(); } });
+$("#scriptMenu").addEventListener("toggle", (e) => {
+  if (e.newState !== "closed" || !menuSlash) return;
+  setTimeout(() => { if (menuSlash && !menuSlash.switching && !document.activeElement?.closest?.("#docSwitch, #scriptMenu")) { menuSlash = null; saving.schedule(); } });
+});
 // The "/" command being typed now: the open parts menu's, or the one kept while the file-name menu has focus, found
 // again as typed nearest its place (an agent's answer may have moved it meanwhile).
 function commandNow() {
@@ -3539,7 +3547,7 @@ function commandNow() {
   let best = null;
   for (let at = content.indexOf(word); at >= 0; at = content.indexOf(word, at + 1)) {
     const c = Doc.slashCommand(content, at + word.length);
-    if (c && c.start === at && c.end === at + word.length && (!best || Math.abs(at - menuSlash.start) < Math.abs(best - menuSlash.start))) best = at;
+    if (c && c.start === at && c.end === at + word.length && (best === null || Math.abs(at - menuSlash.start) < Math.abs(best - menuSlash.start))) best = at;
   }
   if (best === null) return null;
   Object.assign(menuSlash, { start: best, end: best + word.length });
