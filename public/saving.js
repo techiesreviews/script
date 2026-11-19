@@ -30,7 +30,7 @@ export async function fingerprint(text) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text));
   return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-const sameWords = async (a, b) => a === b || (await fingerprint(a)) === (await fingerprint(b));
+export const sameWords = async (a, b) => a === b || (await fingerprint(a)) === (await fingerprint(b));
 // Write access: a click may show the browser's prompt (`ask`); without it only access given before counts.
 export async function permitted(handle, ask, mode = "readwrite") {
   const o = { mode };

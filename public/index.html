@@ -15,7 +15,7 @@
 <div class="app" id="app">
   <header class="top">
     <div class="doc" id="docInfo" hidden>
-      <button class="doc__switch" id="docSwitch" type="button" popovertarget="scriptMenu"><span class="doc__title"><span class="doc__name" id="fileName"></span><span data-icon="chevron"></span></span><span class="doc__meta" id="docMeta"></span></button>
+      <button class="doc__switch" id="docSwitch" type="button" popovertarget="scriptMenu"><span class="doc__title"><span class="doc__name" id="fileName"></span><span data-icon="chevron"></span><span class="ai-dot" id="aiDot" role="img" aria-label="AI done in another script" hidden></span></span><span class="doc__meta" id="docMeta"></span></button>
       <span class="doc__state"><span class="save-state" id="saveState"></span><button class="allow-save" id="allowSave" type="button" hidden></button></span>
     </div>
     <div class="menu menu--scripts" id="scriptMenu" popover>
@@ -140,6 +140,7 @@
   <span class="edit-bar__sr" id="askLive" aria-live="polite"></span>
 </div>
 
+<span class="edit-bar__sr" id="asideLive" aria-live="polite"></span>
 <div class="slash-menu" id="slashMenu" role="listbox" aria-label="Parts" hidden></div>
 
 <div class="voice-card" id="voiceCard" role="dialog" aria-label="Sounds like me" hidden>
