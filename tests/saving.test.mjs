@@ -289,6 +289,28 @@ test("saving: a script left while its auto-save runs, then answered by the agent
   assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed more. Answered.\n");
 });
 
+test("saving: saveLeft says it is done only once its own words are written, also when an older write of that file is on its way (second look, P1)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.save({ auto: true }); // A's own save runs and waits
+  await settle();
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  const p2 = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nTwo.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  release();
+  const release2 = s.files.hold("a.md"); // the queued write of "Two." waits too
+  await until(() => s.files.log.some(([n, t]) => n === "a.md" && t === "# A\n\nTwo.\n"));
+  let third = null;
+  const p3 = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nThree.\n", browser: false, savedText: "# A\n\nOne.\n" }).then((w) => { third = w; });
+  release2();
+  assert.equal((await p2)?.text, "# A\n\nTwo.\n");
+  await p3;
+  assert.equal(third?.text, "# A\n\nThree.\n", "the newer words' promise ends with their own write");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nThree.\n");
+});
+
 test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
   const s = setup();
   const A = s.script.handle;

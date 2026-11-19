@@ -2448,7 +2448,9 @@ function goToPlace(kept, place) {
   if (!place) return void scrollTo({ top: 0 });
   if (ui.view !== "script") { ui.scriptY = place.y; ui.scriptTop = undefined; return; }
   const c = Aside.caretAt(state.doc, place.caret), b = c && blockNode(c.id);
-  if (b && !b.closest("details:not([open])")) { b.focus({ preventScroll: true }); setCaretAt(b, c.offset); lastCaret = c; }
+  const folded = b?.closest("details"); // a caret in the folded lines at the top opens them, as placeCaret does
+  if (folded && !folded.open) { folded.open = true; state.frontOpen = true; }
+  if (b) { b.focus({ preventScroll: true }); setCaretAt(b, c.offset); lastCaret = c; }
   scrollTo({ top: place.y });
 }
 // The agent's changes from while the script was aside are seen once they have been on screen, below the top bar.

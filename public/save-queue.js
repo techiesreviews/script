@@ -9,9 +9,12 @@
 
 export const emptyQueue = () => ({ waiting: null, left: [] });
 
-// Within one file the strongest request wins: a forced or clicked save never shrinks into an auto-save.
+// Within one file the strongest request wins: a forced or clicked save never shrinks into an auto-save. Those waiting
+// to hear the result (`waits`, saving.saveLeft) all hear it from the merged, newest words.
 function merge(older, newer) {
-  return { ...newer, force: older.force || newer.force, auto: older.auto && newer.auto };
+  const out = { ...newer, force: older.force || newer.force, auto: older.auto && newer.auto };
+  if (older.waits || newer.waits) out.waits = [...(older.waits || []), ...(newer.waits || [])];
+  return out;
 }
 
 function keepSnapshot(left, snap, same) {

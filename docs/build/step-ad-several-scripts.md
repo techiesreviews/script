@@ -14,7 +14,7 @@ Lex (2026-11-19, Orbit TOOLS-358, prototype TOOLS-356 approved in its final stat
 - **Opening twice at once** (review round 2): while a kept script opens it takes no answer, and a second open of it (the person's click while the agent's `open_script` runs) waits for the first; the agent's `open_script` for a script the person opened meanwhile says it is already open and reads nothing again (round 3).
 - **A Save as at the same moment** (review round 1, P2): a Save as or a save into the browser that runs while an answer lands in a kept script now writes that script's words to its own file before it ends; before, the queue was cleared and opening that script waited for good.
 
-- **Its own save still waiting** (second look, P1): a script left while its own auto-save runs has its newer words waiting for that save; an answer that lands then is newer still and wins, so the older words never overwrite it (`SaveQueue.queueLeft`). A change in the folded lines at the top opens them when the script opens at it (second look, P2).
+- **Its own save still waiting** (second look, P1): a script left while its own auto-save runs has its newer words waiting for that save; an answer that lands then is newer still and wins, so the older words never overwrite it (`SaveQueue.queueLeft`). A `saveLeft` call hears it is done only from the write of its own words (or newer ones merged into them), never from an older write of the same file still on its way (second look on 97954a7, P1). A change, or a caret, in the folded lines at the top opens them when the script opens there (second look, P2).
 
 ## Checks
 
