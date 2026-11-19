@@ -2576,13 +2576,26 @@ async function openFile() {
   permitted(handle, true);
   await openHandle(handle);
 }
-async function openHandle(handle) {
+// Opens run one after the other (TOOLS-358): a script kept aside, opened from its menu row while the agent's
+// open_script opens it too, opens once, from memory; a script being deleted does not open.
+let openQueue = Promise.resolve();
+const deleting = [];
+function openHandle(handle) {
+  const was = state.handle;
+  const run = openQueue.then(() => openOne(handle, was));
+  openQueue = run.catch(() => {});
+  return run;
+}
+async function openOne(handle, was) {
   let kept = null;
   try {
     // The switcher hands over a fresh handle object for a known file; reuse the one the save queue holds.
     for (const known of [state.handle, ...saving.queued()]) {
       if (known && known !== handle && (await sameFile(known, handle))) { handle = known; break; }
     }
+    // An open that ran first opened this file meanwhile: it is not read again (a reload of the open script still is).
+    if (state.doc && handle === state.handle && was !== state.handle) return true;
+    for (const d of deleting) if (await sameFile(d, handle)) return false;
     // A script kept aside takes no answer while it opens (and a second open of it waits for the first); its file holds
     // the agent's last change before it is compared.
     kept = await keptFor(handle);
@@ -2613,6 +2626,7 @@ async function openHandle(handle) {
       // Still aside, unless the person deleted it or took it off the list meanwhile.
       if (!kept.gone && !kept.removed && kept.handle !== state.handle && !asides.includes(kept)) { asides.push(kept); renderKept(); }
     }
+    if (kept?.gone) return false; // the person deleted it: nothing failed
     openProblem(handle.name);
     return false;
   }
@@ -2900,11 +2914,13 @@ async function without(list, handle) {
 let recentQueue = Promise.resolve();
 function updateRecent(change) {
   recentQueue = recentQueue.then(async () => {
-    const list = await change(await recentScripts());
+    const old = await recentScripts();
+    const list = await change(old);
     await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r)));
     lastHandle = list[0]?.handle ?? null;
-    // A kept file that fell off the list has no row to lead to it: it leaves memory, and its dot with it (TOOLS-358).
-    for (const k of asides.filter((x) => !x.browser && !x.opening)) if (!(await anySame(list, k.handle))) dropKept(k.handle);
+    // A kept file that fell off the list just now has no row to lead to it: it leaves memory, and its dot with it
+    // (TOOLS-358). One that was never on a list read here (storage off) stays.
+    for (const k of asides.filter((x) => !x.browser && !x.opening)) if ((await anySame(old, k.handle)) && !(await anySame(list, k.handle))) dropKept(k.handle);
   }).catch(() => {});
   return recentQueue;
 }
@@ -3001,14 +3017,19 @@ async function followTitle(handle) {
 // starts without them).
 async function deleteBrowserScript(r) {
   // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
-  const kept = await keptFor(r.handle);
-  if (kept) { kept.gone = true; dropKept(kept.handle); await kept.writes; }
-  // A save of it still on its way (the one made when it was left, or one waiting behind another) ends first, so it
-  // can't bring a draft back under its name after the delete.
-  while (state.saving) await new Promise((done) => setTimeout(done, 50));
-  await forget(r.handle);
-  try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-  dropKeys(r.name);
+  deleting.push(r.handle); // it can't be opened while it goes
+  try {
+    const kept = await keptFor(r.handle);
+    if (kept) { kept.gone = true; dropKept(kept.handle); await kept.writes; }
+    // A save of it still on its way (the one made when it was left, or one waiting behind another) ends first, so it
+    // can't bring a draft back under its name after the delete.
+    await saving.idle();
+    await forget(r.handle);
+    try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
+    dropKeys(r.name);
+  } finally {
+    deleting.splice(deleting.indexOf(r.handle), 1);
+  }
 }
 function dropKeys(name) {
   saving.drafts.del(name);

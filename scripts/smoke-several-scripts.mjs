@@ -278,6 +278,24 @@ async function runEdges() {
   check((await page.eval(`document.querySelector("#script").textContent`)).includes("Someone else wrote this."), "B shows what its file holds now");
   await page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent === "Restore").click(); true`);
   await page.until(`document.querySelector("#script").textContent.includes("Bread needs four things.")`, "Restore brings the agent's words back");
+  // Deleting a script the agent just worked in: its dot, its row, its file and its draft all go, and none comes back.
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "B is saved after Restore", 8000);
+  const third = await askShorter(page, mcp, "Bread note 3");
+  await openFromMenu(page, A);
+  const r3 = await mcp("tools/call", { name: "answer_ask", arguments: { askId: third?.id, kind: "replace", text: "Bread note three." } });
+  check(!r3?.result?.isError, "a third answer lands in B", toolText(r3));
+  await page.until(`!document.querySelector("#aiDot").hidden`, "the dot for B");
+  await menuOpen(page);
+  await page.eval(`(${row(B)}).querySelector(".scripts__remove").click(); true`);
+  await page.until(`!!(${row(B)})?.querySelector(".scripts__delete")`, "Delete asks once more");
+  await page.eval(`(${row(B)}).querySelector(".scripts__delete").click(); true`);
+  await page.until(`!(${row(B)})`, "B's row is gone", 8000);
+  await sleep(600);
+  check(await page.eval(`document.querySelector("#aiDot").hidden`), "the dot goes with the deleted script");
+  check(await page.eval(`localStorage.getItem("script-editor:draft:" + ${JSON.stringify(B)}) === null`), "no draft comes back under the deleted script's name");
+  check((await readScript(page, B)) === null, "the deleted script's file is gone");
+  const r4 = await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 0 } });
+  check(!toolText(r4).includes(B), "the agent gets no ask of the deleted script", toolText(r4));
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
