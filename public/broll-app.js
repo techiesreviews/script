@@ -889,7 +889,7 @@ export function createBroll(host) {
     const over = Broll.moveOver(state.doc, covered(s), sel);
     if (!over) return; // onto the lines it covers already
     const token = broll.token;
-    let before;
+    let before, invalid = false;
     const checked = !!s.check;
     const write = changeList((md) => {
       before = Broll.parseBroll(md).shots.find((shot) => shot.id === id)?.over;
@@ -902,7 +902,10 @@ export function createBroll(host) {
         if (token !== broll.token) return false;
         await changeList((md) => {
           const shot = Broll.parseBroll(md).shots.find((shot) => shot.id === id);
-          if (shot?.over !== (redo ? before : over)) throw new Error("The shot changed.");
+          if (shot?.over !== (redo ? before : over)) {
+            invalid = true; // A changed or deleted shot cannot be restored by retrying this history step.
+            throw new Error("The shot changed.");
+          }
           return Broll.updateShot(md, id, { over: redo ? over : before });
         });
         if (token !== broll.token) return false;
@@ -910,7 +913,7 @@ export function createBroll(host) {
         if (shot) { shot.check = redo ? false : checked; syncFlags(); renderBroll(); }
         return true;
       } catch (err) {
-        if (token === broll.token && shotById(id)) {
+        if (!invalid && token === broll.token && shotById(id)) {
           openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
           failShotCard(err);
         }
@@ -918,7 +921,7 @@ export function createBroll(host) {
       }
     };
     // Register before the queued write finishes, so an immediate Undo waits for this move instead of undoing typing.
-    const cancel = checkpointBrollMove({ valid: () => token === broll.token, undo: () => restoreMove(false), redo: () => restoreMove(true) });
+    const cancel = checkpointBrollMove({ valid: () => !invalid && token === broll.token && !!shotById(id), undo: () => restoreMove(false), redo: () => restoreMove(true) });
     try { await write; }
     catch (err) {
       cancel();

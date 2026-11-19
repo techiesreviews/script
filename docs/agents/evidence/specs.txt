@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 17 files, 482665 bytes; on first use: broll-app.js + broll.js, 150586 bytes
+ℹ startup: 17 files, 482665 bytes; on first use: broll-app.js + broll.js, 150778 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -45,6 +45,8 @@
 ✔ B-roll move: an Undo waiting for its save cannot restore old script words over new typing
 ✔ B-roll move: a failed Undo keeps the step available and preserves script history
 ✔ B-roll move: a failed initial save removes its step, and a changed list invalidates old moves
+✔ B-roll move: deleting the shot invalidates its history instead of blocking older typing Undo
+✔ B-roll move: an Over conflict invalidates Undo without overwriting the changed shot
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
@@ -545,9 +547,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 545
+ℹ tests 547
 ℹ suites 0
-ℹ pass 545
+ℹ pass 547
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

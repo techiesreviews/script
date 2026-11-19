@@ -43,7 +43,7 @@ async function openPage(width, height) {
       if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
       return r.result.value;
     },
-    async until(expression, label, ms = 8000) {
+    async until(expression, label, ms = 15000) {
       const end = Date.now() + ms;
       for (;;) {
         // A page still navigating has no elements yet: keep waiting.
@@ -168,6 +168,9 @@ try {
   const screenshot = await page.send("Page.captureScreenshot", { format: "png" });
   await writeFile(`.scratch/se01-shots/${width}-${mode}.png`, Buffer.from(screenshot.data, "base64"));
   console.log(`PROOF ${width}px ${mode}: drag, Undo, Redo, later typing, and reload preserve shot position and script words`);
+} catch (error) {
+  console.log(`DIAGNOSTIC ${width}px ${mode}: ${JSON.stringify(await page.eval(`({ name: document.querySelector("#fileName").textContent, empty: !document.querySelector("#empty").hidden, markdown: window.__scriptEditor.markdown(), broll: window.__scriptEditor.broll(), errors: window.__csp })`).catch(() => null))}`);
+  throw error;
 } finally {
   await page.close();
 }

@@ -9,7 +9,9 @@ import * as Changes from "../public/changes.js";
 // these checks control the asynchronous save so typing, fast Undo/Redo and failed writes are deterministic.
 function history() {
   const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
-  const section = source.slice(source.indexOf("function checkpoint("), source.indexOf("/* ---------- Ask anchors follow edits"));
+  const start = source.indexOf("function checkpoint("), end = source.indexOf("/* ---------- Ask anchors follow edits");
+  assert.ok(start >= 0 && end > start, "the app history source boundaries exist");
+  const section = source.slice(start, end);
   const state = { doc: Doc.parse("# Throwaway\n\nOriginal words.\n"), undo: [], redo: [], asks: [], lastStep: null };
   const context = { state, Doc, Changes, together: null, Date, UNDO_LIMIT: 300, TYPING_GROUP_MS: 1000,
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
@@ -79,8 +81,12 @@ test("B-roll move: a failed initial save removes its step, and a changed list in
   const h = history();
   h.type(" UNDO-SENTINEL-A");
   const cancel = h.checkpointBrollMove({ valid: () => true, undo: async () => true, redo: async () => true });
+  h.undo(); // Its inverse is already waiting when the initial save fails.
+  assert.equal(h.state.redo.length, 1);
   cancel();
+  await settle();
   assert.equal(h.state.undo.length, 1);
+  assert.equal(h.state.redo.length, 0, "initial-save cancellation removes the pending inverse too");
   h.checkpointBrollMove({ valid: () => false, undo: () => assert.fail("must not write to a different list"), redo: () => assert.fail("must not write to a different list") });
   h.undo(); await settle();
   assert.doesNotMatch(h.words(), /UNDO-SENTINEL-A/);
