@@ -2312,7 +2312,13 @@ function persistDraft() {
 function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null, draft: given = null }) {
   // Leaving a script: keep its place (and the script itself while its agent works in it), write what is still waiting
   // to its own file, and keep a draft as a safety net.
-  if (state.doc) { leaveScript(handle); persistDraft(); saving.flush(); }
+  if (state.doc) {
+    // A script kept aside keeps its words in memory and leaves no draft under its name, also no older one: another
+    // script of that name (Save to video folder calls every one script.md) may open next and would read it.
+    if (leaveScript(handle)) { clearTimeout(draftTimer); saving.drafts.del(state.name); }
+    else persistDraft();
+    saving.flush();
+  }
   // A new script left as it came is not kept: empty ones would pile up in the browser. It goes once this tab has let
   // go of its name (below), and only while no other tab has it open or has saved words into it.
   const unused = state.doc && state.inBrowser && state.blank && handle !== state.handle && Doc.serialize(state.doc) === state.blank && !state.asks.length
@@ -2411,6 +2417,7 @@ function leaveScript(next) {
   }
   else places.push({ handle: state.handle, place });
   if (places.length > RECENT_MAX) places.shift();
+  return kept;
 }
 async function keptFor(handle) {
   for (const s of asides) if (await sameFile(s.handle, handle)) return s;
@@ -2716,6 +2723,8 @@ const saving = createSaving({
       if (s) Object.assign(s, { savedText: text, fileModified: modified });
       else if (handle === state.handle) { Object.assign(state, { savedText: text, fileModified: modified }); renderSaveState(); }
     },
+    // A script kept aside keeps its words in memory: its failed saves leave no draft under its name.
+    keepsWords: (handle) => asides.some((s) => s.handle === handle),
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, words, browser = false }) {
       remember(handle, browser);
