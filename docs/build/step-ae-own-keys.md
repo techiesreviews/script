@@ -20,3 +20,31 @@ Lead (2026-11-19, Orbit TOOLS-361, follow-up to TOOLS-358): key the safety-net c
 ## Done
 
 - Feature list: `docs/features.md`, "Several scripts" (the reload limit is gone).
+
+### Follow-ups
+
+- Validation gaps (gap): R7-19 still open: this is the merged item for R7-1 and R7-8 to R7-12. It has not been added.
+- Validation gaps (gap): R7-18 still open: this is the merged item for R7-2, R7-7 and R7-13. It has not been added.
+- Validation gaps (gap): R7-17 still open: this is the merged item for R7-3, R7-6 and R7-14. It has not been added.
+- Validation gaps (gap): R7-16 still open: this is the merged item for R7-4, R7-5 and R7-15. It has not been added.
+- Validation gaps (gap): R7-15 still open: this is the same missing test as R7-4.
+- Validation gaps (gap): R7-14 still open: this is the same missing test as R7-3.
+- Validation gaps (gap): R7-13 still open: this is the same missing test as R7-2. `handOver` is unmoved and untested.
+- Validation gaps (gap): R7-12 still open: `scripts/smoke-several-scripts.mjs` is unchanged.
+- Validation gaps (gap): R7-11 still open: there is still no `SMOKE_ONLY=migratebrowser` part, and `runMigrate` is unchanged.
+- Validation gaps (gap): R7-10 still open: `moving: true` is still tested only through the pure `legacyPlan`. No browser run reaches `handOver`.
+- Validation gaps (gap): R7-9 still open: this is the same missing smoke item as R7-1. `runMigrate` is unchanged.
+- Validation gaps (gap): R7-8 still open: this is the same missing smoke item as R7-1. `runMigrate` is unchanged.
+- Validation gaps (gap): R7-7 still open: this is the same missing test as R7-2. Three paths in `handOver` are still untested: the full storage, the skip of a stored `null`, and deleting the name's draft.
+- Validation gaps (gap): R7-6 still open: this is the same missing test as R7-3. Nothing was added this round.
+- Validation gaps (gap): R7-5 still open: this is the same missing test as R7-4. Nothing was added this round.
+- Validation gaps (gap): R7-4 still open: `tests/saving.test.mjs` is unchanged. There is still no Save as of a browser `script.md` into a disk `script.md` where `adopt` gives back the name.
+- Validation gaps (gap): R7-3 still open: `tests/saving.test.mjs` is unchanged. No test resolves `keys.adopt` by hand after `open()` of another script.
+- Validation gaps (gap): R7-2 still open: `handOver` is still in `public/app.js`, and no smoke part was added. No unit or smoke test runs its full-storage path.
+- Validation gaps (gap): R7-1 still open: the only change since 9e87f21 is the startup byte count in `docs/agents/evidence/specs.txt`. `scripts/smoke-several-scripts.mjs` is unchanged, and it still has no browser `script.md` next to disk `a/script.md` and `b/script.md`.
+- Validation gaps (gap): The 19 open ids above come down to four tests. Each is still missing:
+- Validation gaps (gap): (R7-16) In `tests/saving.test.mjs`, do Save as of a browser `script.md` into a disk handle named `script.md`, with `keys.adopt: (h) => Promise.resolve(h.name)`. Check three things: no keys are moved; the draft and B-roll keys under `script.md` are still there after the browser copy's cleanup, because `nameShared` holds; the disk file opens with them.
+- Validation gaps (gap): (R7-17) In `tests/saving.test.mjs`, make `keys.adopt` return a promise you resolve by hand. Start `saveAs()` on a browser script, call `open()` on another script, then resolve. Check two things: the script that is now open keeps its own name, key and draft; the Save as result is applied only to the script it was made for.
+- Validation gaps (gap): (R7-18) Either move `handOver` into `public/script-keys.js` with its storage passed in, or add a `SMOKE_ONLY=migratefull` part. Store `broll:script.md`, `brollList:script.md` and a draft under `script.md`, then make writes under the new file key fail once. Check: only empty places are filled; the list is written before the link; the name keeps its data when one copy fails; a stored `null` is skipped; the name's draft is deleted when the file already has its own; the move is not marked done after the throw.
+- Validation gaps (gap): (R7-19) In `scripts/smoke-several-scripts.mjs`, in `runMigrate` or a new `SMOKE_ONLY=migratebrowser` part, set this up before the reload: a browser `script.md` in the private `scripts` folder, listed in `recent` as `{ name: "script.md", browser: true }`, with its own draft and B-roll link; disk files `a/script.md` and `b/script.md` on the recent list; `broll:script.md` set. After the reload, check: both disk files show the list; neither disk file offers "Unsaved changes"; the browser `script.md` still offers its own draft and keeps its own link.
+
