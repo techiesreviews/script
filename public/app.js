@@ -2435,6 +2435,8 @@ function adoptKept(kept) {
 function goToPlace(kept, place) {
   const first = kept && Aside.firstUnseen(kept);
   const el = first && scriptEl.querySelector(`[data-ask="${CSS.escape(first)}"]`);
+  const fold = el?.closest("details"); // a change in the folded lines at the top opens them, as the caret does
+  if (fold && !fold.open && ui.view === "script") { fold.open = true; state.frontOpen = true; }
   if (el && ui.view === "script") {
     lookFor = new Set(kept.unseen);
     const top = $(".top").getBoundingClientRect().bottom;

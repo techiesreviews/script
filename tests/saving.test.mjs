@@ -270,6 +270,25 @@ test("saving: saveLeft during a Save as or a save into the browser still reaches
   assert.equal(t.script.saving, false);
 });
 
+test("saving: a script left while its auto-save runs, then answered by the agent, ends with the answer in its file (second look, P1)", async () => {
+  const s = setup();
+  const A = s.script.handle;
+  const release = s.files.hold("a.md");
+  s.ed.text = "# A\n\nOne. Typed.\n";
+  s.saving.save({ auto: true }); // A's auto-save runs and waits
+  await settle();
+  s.ed.text = "# A\n\nOne. Typed more.\n";
+  s.saving.flush(); // leaving A: its newer words wait for the running save
+  s.files.outside("b.md", "# B\n");
+  s.open({ name: "b.md" }, "# B\n");
+  const p = s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne. Typed more. Answered.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  release();
+  const written = await p;
+  await until(() => !s.script.saving);
+  assert.equal(written?.text, "# A\n\nOne. Typed more. Answered.\n");
+  assert.equal(s.files.disk.get("a.md").text, "# A\n\nOne. Typed more. Answered.\n");
+});
+
 test("saving: saveLeft never writes over a file changed on disk: its words wait as a draft", async () => {
   const s = setup();
   const A = s.script.handle;
