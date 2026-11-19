@@ -743,6 +743,30 @@ async function runOwnKeys() {
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
 }
+// A reload while the agent still holds an ask in a background script: the ask comes back from the draft the script
+// wrote as it was left, and the agent's answer still lands (review round 2 on TOOLS-361).
+async function runReloadHeld() {
+  console.log("--- a reload while the agent holds an ask in a background script (1280 px)");
+  const { page, mcp } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  const ask = await askShorter(page, mcp, "Then you cover", PART);
+  check(!!ask, "the agent takes an ask in the bread script.md");
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await sleep(600);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the start screen after the reload");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`!!document.querySelector("#script .ask")`, "the ask the agent holds is back in the bread script.md");
+  const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: OVERNIGHT } });
+  check(!r?.result?.isError, "the agent's answer to it still lands", toolText(r));
+  await page.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(OVERNIGHT)})`, "the answer is in the bread script.md");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
 // A browser script.md's own keys go by its name: a file script.md seen for the first time takes none of them, and once
 // the browser script is deleted (a file script.md on the list) they go, so the next new file script.md starts clean
 // (review round 1 on TOOLS-361).
@@ -880,7 +904,7 @@ async function runOpenCancelled() {
 }
 
 // SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
-// ownkeys, migrate, deletefirst) runs one part.
+// ownkeys, migrate, deletefirst, reloadheld) runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -898,6 +922,7 @@ try {
   if (!only || only === "ownkeys") await runOwnKeys();
   if (!only || only === "migrate") await runMigrate();
   if (!only || only === "deletefirst") await runDeleteThenNew();
+  if (!only || only === "reloadheld") await runReloadHeld();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }

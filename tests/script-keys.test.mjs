@@ -124,6 +124,14 @@ test("script keys: a file opened again moves to the front, so a full list lets g
   assert.equal(await setup({ store }).keys.forFile(file("a/script.md")), a);
 });
 
+test("script keys: a file found in the list keeps its key when moving it to the front can't be written (review round 2)", async () => {
+  const first = setup();
+  const a = await first.keys.forFile(file("a/script.md"));
+  await first.keys.forFile(file("b/script.md")); // a is no longer at the front
+  const full = setup({ store: first.store, refuse: true });
+  assert.equal(await full.keys.forFile(file("a/script.md")), a);
+});
+
 test("script keys: the old keys of a name go to its files (the newest takes the draft) and the name lets go, unless a script in the browser has that name", () => {
   assert.deepEqual(legacyPlan(["file:b", "file:a"], { browser: false }), { broll: ["file:b", "file:a"], draft: "file:b", clear: true });
   assert.deepEqual(legacyPlan(["file:b"], { browser: true, moving: true }), { broll: ["file:b"], draft: null, clear: false });
