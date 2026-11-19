@@ -707,7 +707,9 @@ async function runOpenCancelled() {
   await fb.page.eval(`document.querySelector("#menuOpen").click(); true`);
   await sleep(300);
   await fb.page.eval(`document.querySelector("#exportBtn").focus(); true`); // focus comes back elsewhere after the dialog
-  const pickPath = new URL("../.scratch/tools-358/picked.md", import.meta.url).pathname;
+  const pickDir = new URL("../.scratch/tools-358/", import.meta.url).pathname;
+  mkdirSync(pickDir, { recursive: true }); // a fresh checkout has no .scratch folder
+  const pickPath = `${pickDir}picked.md`;
   writeFileSync(pickPath, "# Picked\n\nA picked script.\n");
   await fb.page.send("DOM.setFileInputFiles", { files: [pickPath], nodeId: await fileInput() });
   await fb.page.until(`document.querySelector("#fileName").textContent === "picked.md"`, "the picked script opens");
