@@ -113,4 +113,7 @@ ok no page error or CSP violation
 --- a / command, then Open a script… cancelled (1280 px)
 ok B is still open
 ok no page error or CSP violation
+--- the same where the browser has no file picker (1280 px)
+ok with no file picker, picking a file still leaves the / command out of B
+ok no page error or CSP violation (no file picker)
 RESULT: ok several-scripts
