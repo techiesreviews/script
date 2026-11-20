@@ -1,4 +1,4 @@
-# Step AE browser check (TOOLS-361): node scripts/smoke-several-scripts.mjs against wrangler dev, headless Chrome 158, 2026-11-20, on the final head (Fable's round: the hand-over copies first and reads loudly; one file, one key). Also passed on this head: smoke-saving.mjs (102 ok), smoke-broll-lazy.mjs (91 ok), smoke-keep-all.mjs (933 ok), smoke-video-folder.mjs (93 ok), smoke-csp.mjs (51 ok), smoke-rare-parts.mjs (122 ok). Failed before: ownkeys, migrate, reloadheld on 557541f (6, 3, 3); deletefirst on 2aaf543 (3); migratefull on 201224f (1); migratefull (two files), migratelist and movedcopy on b5c06f9 (2, 2, 2); migratedraft, copiesread and samekey on d7bcd07 (4, 3, 3).
+# Step AE browser check (TOOLS-361): node scripts/smoke-several-scripts.mjs against wrangler dev, headless Chrome 158, 2026-11-20, on the final code (c1b1344, the round across tabs: no hand-over write trusts a read made before a wait; a file a tab has in use never falls off the id list). Also passed on this head: smoke-saving.mjs (102 ok), smoke-broll-lazy.mjs (91 ok), smoke-keep-all.mjs (933 ok), smoke-video-folder.mjs (93 ok), smoke-csp.mjs (51 ok), smoke-rare-parts.mjs (122 ok). Failed before: ownkeys, migrate, reloadheld on 557541f (6, 3, 3); deletefirst on 2aaf543 (3); migratefull on 201224f (1); migratefull (two files), migratelist and movedcopy on b5c06f9 (2, 2, 2); migratedraft, copiesread and samekey on d7bcd07 (4, 3, 3); twotabs, handrace and handinuse on 276455f (6, 5, 6).
 --- desktop (1280 px)
 ok the agent gets B's ask (the open script's: no file name with it)
 ok B's row: spinner and "AI working", no dot
@@ -178,5 +178,36 @@ ok Save as onto a file that has a key keeps that key, one entry
 ok the key fell off the list
 ok looked at again, the tab puts the key back
 ok the next page finds the file under the same key
+ok no page error or CSP violation
+--- two tabs: a file open in one is never pushed off the id list by the other (1280 px)
+ok the file open in the first tab has a key of its own
+ok the first tab holds a lock for its id
+ok the second tab sees that lock
+ok the list is full, the first tab's file at its end
+ok the second tab's file has its key, at the front
+ok the list stays within its size
+ok the file open in the first tab is still on the list
+ok a file in use counts as opened most recently: right behind the one just opened
+ok the list let go of the file not opened for longest instead
+ok the first tab's next page finds the file under the same key
+ok the first tab closed: its lock is gone
+ok no page error or CSP violation
+--- moving to keys while another tab keeps words under the file's key (1280 px)
+ok the words the other tab kept under the file's key are not written over
+ok the name keeps its draft
+ok and its list and link
+ok the move is not marked done
+ok the words written later stay under the file's key
+ok the name's older draft goes
+ok no page error or CSP violation
+--- moving to keys while another tab has the file open (1280 px)
+ok the file open in the first tab has a key of its own
+ok no draft is written under the key of a file the first tab has in use
+ok the name keeps its draft
+ok and its list and link
+ok the move is not marked done
+ok the file has the words its name kept
+ok and the name let go of them
+ok under the same key
 ok no page error or CSP violation
 RESULT: ok several-scripts
