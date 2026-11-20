@@ -887,10 +887,10 @@ export function createBroll(host) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
     const destination = sel.map((part) => part.id);
-    const over = Broll.moveOver(state.doc, covered(s), sel);
-    if (!over) return; // onto the lines it covers already
+    if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
     const token = broll.token;
-    let origin, before, checked, invalid = false;
+    let origin, before, over, checked, invalid = false;
+    const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
     // Where the shot is when a step's turn comes: beside the paragraphs it shows on, whose words may have changed since
     // its quote was written. When it shows on none, or the list was changed outside this page: where its quote matches.
     const placeNow = (md) => {
@@ -899,13 +899,16 @@ export function createBroll(host) {
       const ids = saved.over === shown.over ? covered(shown) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
-    // In its turn, after any Undo or Redo still saving: the move starts from where that step leaves the shot.
+    // In its turn, after any Undo or Redo still saving: the move starts from where that step leaves the shot, and its
+    // quote is of the words its paragraphs have by then (typing goes on while it waits).
     const write = queueBrollHistory(async () => {
       if (token !== broll.token) throw new Error("The B-roll list changed.");
       await changeList((md) => {
         const now = placeNow(md);
         if (!now) throw new Error("The shot changed.");
+        if (gone(destination, Broll.spokenBlocks(state.doc))) throw new Error("The script changed.");
         ({ over: before, ids: origin, check: checked } = now);
+        over = Broll.overFor(state.doc, Broll.wholeParas(state.doc, destination));
         return Broll.updateShot(md, id, { over });
       });
       const now = token === broll.token && shotById(id);
@@ -918,7 +921,7 @@ export function createBroll(host) {
       try {
         await changeList((md) => {
           const now = placeNow(md), spoken = Broll.spokenBlocks(state.doc);
-          if (now?.ids.join() !== from.join() || !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid))) {
+          if (now?.ids.join() !== from.join() || gone(ids, spoken)) {
             invalid = true; // The shot was changed since: this step will never fit again, so history skips it.
             throw new Error("The shot changed.");
           }
