@@ -38,7 +38,7 @@ Lead (2026-11-19, Orbit TOOLS-361, follow-up to TOOLS-358): key the safety-net c
 ## Done
 
 - Feature list: `docs/features.md`, "Several scripts" (the reload limit is gone).
-- Feature list: no change (the Save as fix of 2026-11-20 keeps a draft that was deleted in a rare case; nothing new to see or do).
+- Feature list: no change (the Save as fix of 2026-11-20 keeps a draft that was deleted in a rare case; nothing new to see or do)
 
 ### Follow-ups
 
