@@ -3032,6 +3032,9 @@ async function isInBrowser(handle) {
 // file on the computer has an id of its own, kept with its handle; a script in the browser or without a file goes by
 // its name.
 const fileIdLocks = navigator.locks ?? tabLocks();
+// The tabs tell each other which files they have in use (a Web Lock per id): a full id list never lets go of one, and
+// the hand-over of old keys never writes a draft under the key of a file another tab has in use.
+const filesInUse = createInUse(fileIdLocks);
 const scriptKeys = createScriptKeys({
   store: { get: idbRead, put: idbPut },
   sameFile,
@@ -3040,8 +3043,7 @@ const scriptKeys = createScriptKeys({
   handOver,
   // The scripts this tab has in use: their keys stay on the list while it writes under them.
   live: () => [state.handle, ...asides.map((s) => s.handle)],
-  // The tabs tell each other which files they have in use (a Web Lock per id), so a full list never lets go of one.
-  inUse: createInUse(fileIdLocks),
+  inUse: filesInUse,
 });
 const scriptKey = () => scriptKeys.keyOf(state.handle, state.name);
 // What was kept under a file name before TOOLS-361 goes to the files of that name (script-keys.js createHandOver):
@@ -3055,6 +3057,7 @@ const overTo = createHandOver({
   key: { draft: draftKey, link: (k) => brollKey(k), list: (k) => listKey(k) },
   browserHas,
   keeps: (name) => name === SAMPLE.name,
+  inUse: filesInUse,
 });
 async function handOver(name, keys, o) {
   const letGo = await keyed(() => overTo(name, keys, o));
