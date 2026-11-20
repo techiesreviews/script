@@ -251,6 +251,57 @@ test("saving: Save as onto a file that has its key already keeps that key; the d
   assert.equal(t.s.store.has("draft:file:b"), false);
   assert.deepEqual(t.s.store.get("draft:file:a"), { text: null, at: 1, asks: [{ id: "mine" }] });
 });
+// Second look on the release (PR #89, P1): the draft kept for what the picked file held before goes, but not when the
+// picked file is the script's own: its draft was kept as the person left it while the key was still on its way.
+// `adopt` waits here until the test lets it answer.
+function pausedAdopt(s, key) {
+  let answer, asked = false;
+  const kept = new Promise((r) => { answer = () => r(key); });
+  s.ports.keys.adopt = () => { asked = true; return kept; };
+  s.saving = createSaving(s.ports);
+  return { answer, asked: () => asked };
+}
+test("saving: Save as onto the script's own file, left before its key is kept: the draft kept for it as it was left stays", async () => {
+  const { s, A, B, open } = keyedSetup();
+  const adopt = pausedAdopt(s, "file:a");
+  open(A, "# A\n\nOne.\n");
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "a/script.md" }); // the picker's own handle for a
+  const run = s.saving.saveAs();
+  await until(adopt.asked); // the file is written; its key is on its way
+  // The person opens another script: the app keeps the one they leave, with its asks, marks and "Check" flags.
+  const left = { text: null, at: 1, asks: [{ id: "mine" }], broll: { B1: "check" } };
+  s.store.set("draft:file:a", left);
+  s.store.set("draft:file:b", { text: null, at: 1, asks: [{ id: "theirs" }] });
+  open(B, "# B\n\nTwo.\n");
+  adopt.answer();
+  await run;
+  assert.deepEqual(s.store.get("draft:file:a"), left, "the script that was left keeps its draft");
+  assert.deepEqual(s.store.get("draft:file:b"), { text: null, at: 1, asks: [{ id: "theirs" }] }, "and so does the script open now");
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), [], "no keys move");
+  assert.equal(s.script.handle, B, "the script open now keeps its file");
+  assert.equal(s.files.disk.get("a/script.md").text, "# A\n\nOne.\n");
+});
+test("saving: Save as onto another file, left before its key is kept: only the draft kept for what that file held before goes", async () => {
+  const { s, A, B, open } = keyedSetup();
+  const adopt = pausedAdopt(s, "file:c");
+  s.files.outside("c/script.md", "# C\n\nOld.\n");
+  open(A, "# A\n\nOne.\n");
+  s.store.set("draft:file:c", { text: "# C\n\nOld words.\n", at: 1, asks: [{ id: "old" }] });
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "c/script.md" });
+  const run = s.saving.saveAs();
+  await until(adopt.asked);
+  s.store.set("draft:file:a", { text: null, at: 1, asks: [{ id: "mine" }] }); // kept as the person leaves it
+  s.store.set("draft:file:b", { text: null, at: 1, asks: [{ id: "theirs" }] });
+  open(B, "# B\n\nTwo.\n");
+  adopt.answer();
+  await run;
+  assert.equal(s.store.has("draft:file:c"), false, "no asks or words of what the picked file held before come back");
+  assert.deepEqual(s.store.get("draft:file:a"), { text: null, at: 1, asks: [{ id: "mine" }] });
+  assert.deepEqual(s.store.get("draft:file:b"), { text: null, at: 1, asks: [{ id: "theirs" }] });
+  assert.equal(s.script.handle, B);
+  assert.equal(s.script.name, "script.md");
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), []);
+});
 test("saving: a left script's failed saves keep its draft under its own key, running or queued; another file of that name keeps its own", async () => {
   const { s, A, B, open } = keyedSetup();
   open(A, "# A\n\nOne.\n");
