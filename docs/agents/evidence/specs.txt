@@ -61,6 +61,8 @@
 ✔ B-roll move history: a failed Undo save stops the Undo waiting behind it, and both positions stay reachable
 ✔ B-roll move history: a shot shown on no paragraph for a moment is still found by its saved quote
 ✔ B-roll move history: typing while an Undo finds its move stale is not undone by that Undo
+✔ B-roll move history: a drag waiting behind an Undo's save lands on its paragraph's current words
+✔ B-roll move history: a drag whose paragraph is gone when its turn comes never happened
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
