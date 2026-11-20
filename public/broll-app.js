@@ -899,6 +899,19 @@ export function createBroll(host) {
       const ids = saved.over === shown.over ? covered(shown) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
+    // A written list is matched to the script again by its quotes. Words typed into the shot's paragraphs while it was
+    // being written leave the fresh quote matching nothing: the shot then stays on the paragraphs it was put on, with
+    // "Check". `check`: its flag when the quote did match.
+    const land = (ids, check) => {
+      const shot = token === broll.token && shotById(id);
+      if (!shot) return;
+      const typed = covered(shot).join() !== ids.join() && !gone(ids, Broll.spokenBlocks(state.doc));
+      if (typed) Object.assign(shot, { blockIds: ids, sig: Broll.coverText(state.doc, ids) });
+      else if (shot.check === check) return;
+      shot.check = typed || check;
+      syncFlags();
+      renderBroll();
+    };
     // Undo and Redo run in their turn too (the app's queueBrollHistory), so the script and the list are as the step
     // before left them: the shot goes back only from the place this move left it, onto paragraphs that are still spoken.
     const restoreMove = async (redo) => {
@@ -916,8 +929,7 @@ export function createBroll(host) {
           return Broll.updateShot(md, id, { over: keep });
         });
         if (token !== broll.token) return false;
-        const shot = shotById(id);
-        if (shot) { shot.check = redo ? false : checked; syncFlags(); renderBroll(); }
+        land(ids, redo ? false : checked);
         return true;
       } catch (err) {
         if (!invalid && token === broll.token && shotById(id)) {
@@ -943,8 +955,7 @@ export function createBroll(host) {
         return Broll.updateShot(md, id, { over });
       });
       if (over == null) return void cancel(); // nothing moved: nothing to undo
-      const now = token === broll.token && shotById(id);
-      if (now?.check) { now.check = false; syncFlags(); renderBroll(); }
+      land(destination, false);
     });
     try { await write; }
     catch (err) {
