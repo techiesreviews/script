@@ -451,6 +451,9 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
     if (!editor.ready() || script.saving) return;
     const text = editor.text(), mine = opened;
     const was = script.inBrowser ? script.handle : null;
+    // This script's own key, as it is before any wait: if the person leaves it meanwhile, the app keeps its draft
+    // under that key.
+    const own = keys.of(script.handle, script.name);
     // Where files can't be saved, a script in the browser stays there and a copy downloads.
     if (was && !files.pickSave) return files.download(text, script.name);
     script.saveError = "";
@@ -484,8 +487,10 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
         } else {
           // Another script opened while it was written: the file holds this text and is listed; the script open now
           // keeps its own file, name, draft and B-roll keys, and the browser copy stays. The draft kept for what the
-          // picked file held before goes, unless that file is the script open now.
-          if (to !== handle.name && to !== keys.of(script.handle, script.name)) drafts.del(to);
+          // picked file held before goes, unless that file is the script open now, or this script's own file (Save as
+          // onto itself): the draft under its key is the one kept as the person left it, with its asks, marks and
+          // "Check" flags, for the words just written.
+          if (to !== handle.name && to !== own && to !== keys.of(script.handle, script.name)) drafts.del(to);
           on.placed(handle, {});
         }
       } else {
