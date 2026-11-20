@@ -3,15 +3,17 @@ import assert from "node:assert/strict";
 
 // TOOLS-361: what is kept beside a script (its safety-net draft, its B-roll link and list, its "Check" flags) goes by
 // the script's own key, not its file name. A file on the computer gets an id of its own, kept with its handle.
-const { createScriptKeys, createHandOver, legacyPlan, fileKey, IDS_KEY, MIGRATED_KEY, IDS_MAX } = await import("../public/script-keys.js");
+const { createScriptKeys, createHandOver, createInUse, legacyPlan, fileKey, IDS_KEY, MIGRATED_KEY, IDS_MAX } = await import("../public/script-keys.js");
+const { tabLocks } = await import("../public/saving.js");
 
 // Files stand in as objects with a path: two handle objects for one path are the same file (isSameEntry).
 const file = (path) => ({ name: path.split("/").pop(), path });
 const sameFile = async (a, b) => !!a && !!b && a.path === b.path;
 let n = 0; // ids never repeat, also across pages
 // `off`: switches a test may flip while the page lives (storage refusing writes, or reads). `live`: the files of the
-// scripts the tab has in use (open, or kept aside).
-function setup({ store = new Map(), refuse = false, unreadable = false, live = () => [] } = {}) {
+// scripts the tab has in use (open, or kept aside). `inUse`: what the tabs tell each other about the ids they have in
+// use (createInUse; left out: a browser where they can't).
+function setup({ store = new Map(), refuse = false, unreadable = false, live = () => [], inUse } = {}) {
   let chain = Promise.resolve();
   const handed = [], released = [], off = { refuse, unreadable }; // released: the names that let go of their old keys
   const keys = createScriptKeys({
@@ -24,9 +26,25 @@ function setup({ store = new Map(), refuse = false, unreadable = false, live = (
     newId: () => `id${++n}`,
     handOver: async (name, list, o) => { handed.push(o ? [name, list, o] : [name, list]); return async () => { released.push(name); }; },
     live,
+    inUse,
   });
   return { keys, store, handed, released, off };
 }
+// What the tabs of one browser tell each other. `page()` is one tab's side of it (`close()` ends that tab: it holds
+// nothing any more); `gone()` stands for tabs that opened files and have closed since: they see the others' ids and
+// hold none.
+function tabsInUse() {
+  const tabs = new Set(); // each tab's ids
+  const ids = async () => [...new Set([...tabs].flatMap((mine) => [...mine]))];
+  const page = () => {
+    const mine = new Set();
+    tabs.add(mine);
+    return { hold: async (id) => { mine.add(id); }, ids, close: () => tabs.delete(mine) };
+  };
+  return { page, gone: () => ({ hold: async () => {}, ids }), ids };
+}
+const idOfKey = (key) => key.slice("file:".length);
+const listedIds = (store) => (store.get(IDS_KEY) ?? []).map((r) => r.id);
 const entriesFor = (store, path) => (store.get(IDS_KEY) ?? []).filter((r) => r.handle.path === path);
 
 test("script keys: a file gets a key of its own; the same file again gets it too; another file of that name gets another", async () => {
@@ -185,6 +203,133 @@ test("script keys (P1): Save as onto a file kept aside whose key fell off the li
   assert.equal(await keys.adopt(file("c/script.md")), k); // the picker's own handle
   assert.equal(entriesFor(store, "c/script.md").length, 1);
   assert.equal(await setup({ store }).keys.forFile(file("c/script.md")), k);
+});
+
+// The round of 2026-11-20 on the second look's P1: another tab could push a file a tab still has in use off the list.
+test("script keys (P1): a file one tab has in use is never pushed off the list by the files other tabs open; once no tab has it in use, a full list lets go of it", async () => {
+  const tabs = tabsInUse(), mine = tabs.page();
+  const { keys, store } = setup({ inUse: mine });
+  const a = await keys.forFile(file("a/script.md")); // open in this tab, which is not looked at again meanwhile
+  const others = setup({ store, inUse: tabs.gone() });
+  for (let i = 0; i < IDS_MAX + 20; i++) await others.keys.forFile(file(`q${i}/x.md`));
+  assert.equal(entriesFor(store, "a/script.md").length, 1, "still on the list");
+  assert.equal(store.get(IDS_KEY).length, IDS_MAX, "and the list stays within its size");
+  assert.equal(listedIds(store)[1], idOfKey(a), "a file in use counts as opened most recently: right behind the one just opened");
+  mine.close(); // the tab has gone
+  for (let i = 0; i < IDS_MAX; i++) await others.keys.forFile(file(`r${i}/x.md`));
+  assert.equal(entriesFor(store, "a/script.md").length, 0, "no tab has it in use: the files not opened for longest go");
+});
+
+test("script keys (P1): a tab tells the others about every key it comes to know: at an open, and at Save as", async () => {
+  const tabs = tabsInUse();
+  const { keys } = setup({ inUse: tabs.page() });
+  const a = await keys.forFile(file("a/script.md")), c = await keys.adopt(file("c/script.md"));
+  assert.deepEqual((await tabs.ids()).map(fileKey).sort(), [a, c].sort());
+});
+
+test("script keys (P1): the scripts a tab has in use go to the front of the list when it is looked at again, and at every open", async () => {
+  const open = [];
+  const { keys, store } = setup({ live: () => open }); // a browser where the tabs can't tell each other
+  const h = file("a/script.md");
+  const a = idOfKey(await keys.forFile(h));
+  open.push(h);
+  const other = setup({ store });
+  for (let i = 0; i < IDS_MAX - 1; i++) await other.keys.forFile(file(`k${i}/x.md`));
+  assert.equal(listedIds(store).at(-1), a, "the other tab's files pushed it to the end: one more and it is gone");
+  await keys.keep(); // the tab is looked at again
+  assert.equal(listedIds(store)[0], a, "to the front");
+  for (let i = 0; i < IDS_MAX - 1; i++) await other.keys.forFile(file(`l${i}/x.md`));
+  assert.equal(listedIds(store).at(-1), a);
+  const y = idOfKey(await keys.forFile(file("y/y.md"))); // this tab opens another file
+  assert.deepEqual(listedIds(store).slice(0, 2), [y, a], "right behind the file just opened");
+  assert.equal(store.get(IDS_KEY).length, IDS_MAX);
+});
+
+test("script keys: two tabs looked at in turn leave the list as it is: the files in use keep their order among themselves", async () => {
+  const tabs = tabsInUse(), store = new Map(), open = { one: [], two: [] };
+  const one = setup({ store, inUse: tabs.page(), live: () => open.one }), two = setup({ store, inUse: tabs.page(), live: () => open.two });
+  const x = file("x/x.md"), y = file("y/y.md");
+  await one.keys.forFile(x);
+  open.one.push(x);
+  await two.keys.forFile(y);
+  open.two.push(y);
+  const before = listedIds(store);
+  let writes = 0;
+  const set = store.set.bind(store);
+  store.set = (k, v) => { writes++; return set(k, v); };
+  for (const tab of [one, two, one, two]) await tab.keys.keep();
+  assert.deepEqual(listedIds(store), before);
+  assert.equal(writes, 0, "nothing changed, so nothing is written");
+});
+
+test("script keys (P1): where it can't be told which files the tabs have in use, the list lets go of none", async () => {
+  const { keys, store } = setup({ inUse: { hold: async () => {}, ids: async () => { throw new Error("the locks can't be asked"); } } });
+  for (let i = 0; i < IDS_MAX + 3; i++) await keys.forFile(file(`n${i}/x.md`));
+  assert.equal(store.get(IDS_KEY).length, IDS_MAX + 3);
+});
+
+test("script keys (P1): the move keeps the files other tabs have in use on the list too", async () => {
+  const tabs = tabsInUse(), theirs = tabs.page(), store = new Map();
+  // A full list from before (a move that could not finish), the file another tab has in use at its end.
+  store.set(IDS_KEY, [...Array.from({ length: IDS_MAX - 1 }, (_, i) => ({ handle: file(`m${i}/x.md`), id: `old${i}` })), { handle: file("a/script.md"), id: "theirs" }]);
+  await theirs.hold("theirs");
+  const { keys } = setup({ store, inUse: tabs.page() });
+  await keys.migrate(async () => ["b/new.md", "c/new.md", "d/new.md"].map((p) => ({ handle: file(p), name: "new.md" })));
+  assert.ok(store.get(MIGRATED_KEY));
+  assert.equal(entriesFor(store, "a/script.md").length, 1);
+  assert.equal(store.get(IDS_KEY).length, IDS_MAX);
+  assert.equal(entriesFor(store, "d/new.md").length, 1, "and the files on the recent list have their ids");
+});
+
+// createInUse over the Web Locks of one browser, as navigator.locks gives them to each of its pages: a lock is held
+// until its function's promise ends, or the page goes away (`close`). `refuse`: requests fail.
+function browserLocks() {
+  const all = []; // { name, mode, page }
+  let nextPage = 0;
+  return (o = {}) => {
+    const page = ++nextPage;
+    return {
+      request: async (name, options, fn) => {
+        if (o.refuse) throw new Error("the page may not hold locks");
+        await null; // granted a moment later
+        all.push({ name, mode: options.mode, page });
+        return fn({ name, mode: options.mode });
+      },
+      query: async () => { if (o.blind) throw new Error("the locks can't be asked"); return { held: all.map(({ name, mode }) => ({ name, mode })), pending: [] }; },
+      close: () => { for (let i = all.length - 1; i >= 0; i--) if (all[i].page === page) all.splice(i, 1); },
+    };
+  };
+}
+
+test("in use: a page holds a shared lock for each id until it goes away, and every page sees the ids all of them hold", async () => {
+  const locks = browserLocks(), one = locks(), two = locks();
+  const first = createInUse(one), second = createInUse(two);
+  await first.hold("a");
+  await first.hold("a"); // asked again: held once
+  await second.hold("a"); // the same file open in two tabs
+  await second.hold("b");
+  assert.deepEqual((await first.ids()).sort(), ["a", "b"], "held before hold() is done: no other tab's write comes in between");
+  assert.deepEqual((await (await one.query()).held).map((l) => l.mode), ["shared", "shared", "shared"]);
+  two.close();
+  assert.deepEqual(await first.ids(), ["a"], "the first tab still holds it");
+  one.close();
+  assert.deepEqual(await createInUse(locks()).ids(), [], "all tabs gone: nothing is in use");
+});
+
+test("in use: a lock that can't be had never stops an open, and ids that can't be asked for are an error, never \"none\"", async () => {
+  const locks = browserLocks();
+  const refused = createInUse(locks({ refuse: true }));
+  await refused.hold("a"); // done all the same
+  assert.deepEqual(await refused.ids(), []);
+  const blind = createInUse(locks({ blind: true }));
+  await blind.hold("b");
+  await assert.rejects(blind.ids());
+});
+
+test("in use: a browser without Web Locks (one tab's stand-in) still knows the ids its own page holds", async () => {
+  const alone = createInUse(tabLocks());
+  await alone.hold("a");
+  assert.deepEqual(await alone.ids(), ["a"]);
 });
 
 test("script keys: moving to keys is tried again on the next page when a name's keys could not all be handed over", async () => {
@@ -400,15 +545,18 @@ test("script keys: a name that can't let go at the move: not marked done, its fi
 });
 
 // The hand-over itself (createHandOver), with IndexedDB and local storage standing in as Maps. `bad`: the keys whose
-// read, write or removal fails; `stuck`: the keys a removal leaves in place without saying so.
+// read, write or removal fails; `stuck`: the keys a removal leaves in place without saying so. `tab.other(key)`, when
+// set, is another tab at work while this one waits for its write of `key` to IndexedDB.
 function overSetup({ browser = async () => false } = {}) {
-  const idb = new Map(), local = new Map(), wrote = [];
+  const idb = new Map(), local = new Map(), wrote = [], tab = { other: null };
   const bad = { read: new Set(), write: new Set(), remove: new Set(), stuck: new Set() };
   const fail = (what, k) => { if (bad[what].has(k)) throw new Error(`${what} ${k} failed`); };
   const handOver = createHandOver({
     idb: {
       read: async (k) => { fail("read", k); return structuredClone(idb.get(k)); },
-      put: async (k, v) => { fail("write", k); wrote.push(k); idb.set(k, v); },
+      put: async (k, v) => { tab.other?.(k); fail("write", k); wrote.push(k); idb.set(k, v); },
+      // Looked at and written in one go, as one IndexedDB transaction does it.
+      fill: async (k, v) => { tab.other?.(k); fail("write", k); if (idb.get(k) !== undefined) return false; wrote.push(k); idb.set(k, v); return true; },
     },
     local: {
       read: (k) => { fail("read", k); return local.has(k) ? local.get(k) : null; },
@@ -419,7 +567,7 @@ function overSetup({ browser = async () => false } = {}) {
     browserHas: browser,
     keeps: (name) => name === "demo.md",
   });
-  return { idb, local, bad, wrote, handOver };
+  return { idb, local, bad, wrote, tab, handOver };
 }
 const draftAt = (text, at) => JSON.stringify({ text, at, asks: [] });
 // What a name held before TOOLS-361: a draft, a B-roll link and a B-roll list kept in the browser.
@@ -563,6 +711,47 @@ test("hand-over: undo takes back the draft copy of a try whose ids could not be 
     go.undo();
     assert.equal(since.local.get("draft:file:a"), draftAt("Typed in another tab.", 20));
   }
+});
+
+// The round of 2026-11-20 on the second look's P0: the hand-over chose between two drafts, waited for the list and
+// link copies, and then wrote: words another tab kept in that wait were written over.
+test("hand-over (P0): words another tab keeps under the file's key while the copies are made are never written over: it stops, and the next try decides again", async () => {
+  for (const before of [null, draftAt("An older copy.", 2)]) {
+    const o = overSetup();
+    oldKeys(o);
+    if (before) o.local.set("draft:file:a", before);
+    o.tab.other = () => o.local.set("draft:file:a", draftAt("Typed in another tab.", 20));
+    await assert.rejects(o.handOver("script.md", ["file:a"]), "stopped: nothing to let go");
+    assert.equal(o.local.get("draft:file:a"), draftAt("Typed in another tab.", 20));
+    assert.equal(o.local.get("draft:script.md"), draftAt("Words typed before.", 5), "the name keeps its draft");
+    assert.ok(o.idb.get("broll:script.md") && o.idb.get("brollList:script.md"), "and its link and list");
+    o.tab.other = null;
+    await (await o.handOver("script.md", ["file:a"]))(); // the next try
+    assert.equal(o.local.get("draft:file:a"), draftAt("Typed in another tab.", 20), "the words written later stay");
+    assert.equal(o.local.has("draft:script.md"), false);
+  }
+});
+
+test("hand-over (P0): words another tab keeps under the name while the copies are made stop it too: no copy of the older words is made", async () => {
+  const o = overSetup();
+  oldKeys(o);
+  o.tab.other = () => o.local.set("draft:script.md", draftAt("Typed under the name meanwhile.", 20));
+  await assert.rejects(o.handOver("script.md", ["file:a"]));
+  assert.equal(o.local.has("draft:file:a"), false);
+  o.tab.other = null;
+  await (await o.handOver("script.md", ["file:a"]))();
+  assert.equal(o.local.get("draft:file:a"), draftAt("Typed under the name meanwhile.", 20), "the next try hands the newer words over");
+});
+
+test("hand-over: a list or link another tab keeps under a file's key while the copies are made is not written over", async () => {
+  const o = overSetup();
+  oldKeys(o);
+  // While the first copy is written, another tab that has the a file open keeps a list of its own and links one.
+  o.tab.other = (k) => { if (k === "brollList:file:b") { o.idb.set("brollList:file:a", "# Theirs\n"); o.idb.set("broll:file:a", { name: "theirs.md" }); } };
+  await o.handOver("script.md", ["file:b", "file:a"], { moving: true });
+  assert.equal(o.idb.get("brollList:file:a"), "# Theirs\n");
+  assert.deepEqual(o.idb.get("broll:file:a"), { name: "theirs.md" });
+  assert.equal(o.idb.get("brollList:file:b"), "# B-roll\n", "the other file still gets its copy");
 });
 
 test("script keys: ids that can't be kept leave no draft copy behind under them, however often the open or the move is tried (review round 13)", async () => {

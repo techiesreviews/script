@@ -5,8 +5,10 @@
 //   (`fileIds`: [{ handle, id }], the file opened most recently first): its key is `file:<id>`. The same file opened
 //   again (the switcher hands over a fresh handle) is found by `isSameEntry` and keeps its key; another file of the
 //   same name gets another. The stored list decides, at every open: one file has one key, in every tab and through
-//   every handle (Save as onto a file keeps the key it had), and a key a tab still writes under that fell off the
-//   list is put back.
+//   every handle (Save as onto a file keeps the key it had). The list holds 200 files and lets go of those not opened
+//   for longest, never of one a tab has in use: each tab holds a Web Lock per id it has looked up (`createInUse`), so
+//   the tabs know each other's. A key a tab still writes under that fell off the list all the same (a browser without
+//   Web Locks) is put back.
 // - A script in the browser goes by its name: names there are unique, and a rename moves its keys (app.js moveKeys).
 // - A script without a file (the demo, a file opened where files can't be saved) goes by its name, as before.
 // Keys kept by name before this change stay readable: the files on the recent list take them once (`migrate`), and a
@@ -41,14 +43,17 @@ export function legacyPlan(keys, { browser = false, moving = false } = {}) {
  * old keys away from the name and is called once the files' ids are kept (createScriptKeys does that), or null when
  * the name has nothing to let go. letGo.undo() takes the draft copy back, for a try whose ids could not be kept.
  * - idb: IndexedDB { read(key) → the value, undefined when nothing is stored (a link or list removed on purpose is a
- *   stored null); rejects when it can't read · put(key, value) → rejects when it can't write }
+ *   stored null); rejects when it can't read · put(key, value) → rejects when it can't write · fill(key, value) →
+ *   writes only where nothing was ever stored, looked at and written in one transaction, so no other tab comes in
+ *   between; rejects when it can't }
  * - local: local storage as it is stored { read(key) → a string, or null · write(key, string) · remove(key) }; each
  *   throws when it can't
  * - key: { draft(k), link(k), list(k) } → where a script key's draft, B-roll link and B-roll list are stored
  * - browserHas(name) → whether a script in the browser has that name; rejects when that can't be told
  * - keeps(name) → a name that keeps its own keys (the demo)
  * Every read comes before the first write, and a read that fails stops the hand-over: it is never taken for "nothing
- * there" (a draft that could not be read would count as handed over, and be deleted).
+ * there" (a draft that could not be read would count as handed over, and be deleted). What a write goes by is read
+ * again as it is made (see "The copies" below): other tabs do not wait for a hand-over.
  */
 export function createHandOver({ idb, local, key, browserHas, keeps = () => false }) {
   // When a draft was written. One that can't be read as a draft is an error: which of two is newer can't be told.
@@ -73,12 +78,20 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
     const own = plan.draft && draft != null ? local.read(key.draft(plan.draft)) : null;
     const takes = !!plan.draft && draft != null && own !== draft && (own == null || writtenAt(draft) > writtenAt(own));
     // The copies: the list before its link, the draft last. A write that fails stops here, with everything still
-    // under the name.
+    // under the name. Other tabs write while this one waits (a draft at any time, outside every lock), so no write
+    // here trusts a read made before a wait: a place is looked at again and filled in one go (`fill`), and the two
+    // drafts are read again right before the write, with no wait in between. Words kept meanwhile under the file's
+    // key or under the name stop the hand-over: nothing is written over and nothing let go, and the next try decides
+    // again.
     for (const p of places) {
-      if (list != null && p.list === undefined) await idb.put(key.list(p.k), list);
-      if (link != null && p.link === undefined) await idb.put(key.link(p.k), link);
+      if (list != null && p.list === undefined) await idb.fill(key.list(p.k), list);
+      if (link != null && p.link === undefined) await idb.fill(key.link(p.k), link);
     }
-    if (takes) local.write(key.draft(plan.draft), draft);
+    if (takes) {
+      const still = local.read(key.draft(plan.draft)) === own && local.read(key.draft(name)) === draft;
+      if (!still) throw new Error("A draft changed while it was handed over.");
+      local.write(key.draft(plan.draft), draft);
+    }
     if (!plan.clear) return null;
     // The name lets go: its draft first, then its list and link. A draft written under the name since the copy is
     // never deleted: letting go stops, and the next try hands those words over.
@@ -103,7 +116,35 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
 }
 
 /**
- * createScriptKeys({ store, sameFile, lock, newId, handOver, live })
+ * createInUse(locks) → { hold(id), ids() }: which file ids the tabs of this browser have in use, so that a full id
+ * list never lets go of one of them (createScriptKeys). A page holds a shared Web Lock for each id it has looked up,
+ * until it goes away (a reload, a close, a crash: the browser gives the lock back), and every page can ask which ids
+ * are held. Nobody asks for these locks alone, so a request never waits for another tab.
+ * - locks: navigator.locks (`request`, `query`). One tab's stand-in (saving.js tabLocks) has no `query`: it knows the
+ *   ids of its own page only.
+ * - hold(id) → done once the lock is held, so no other tab's write of the list comes before it. A lock that can't be
+ *   had never stops an open: the other tabs are then not told, and the id is still put back if it falls off the list
+ *   (createScriptKeys).
+ * - ids() → the ids held by any page; rejects when that can't be asked (never "none").
+ */
+export const IN_USE = "script-editor:file-in-use:";
+export function createInUse(locks) {
+  const mine = new Set();
+  const hold = (id) => (mine.has(id) ? Promise.resolve() : new Promise((done) => {
+    const held = () => { mine.add(id); done(); return new Promise(() => {}); }; // not given back while the page lives
+    Promise.resolve().then(() => locks.request(IN_USE + id, { mode: "shared" }, held)).catch(done);
+  }));
+  async function ids() {
+    if (!locks.query) return [...mine];
+    const { held } = await locks.query();
+    return [...new Set(held.filter((l) => l.name.startsWith(IN_USE)).map((l) => l.name.slice(IN_USE.length)))];
+  }
+  return { hold, ids };
+}
+const UNTOLD = { hold: async () => {}, ids: async () => [] }; // tabs that can't tell each other anything
+
+/**
+ * createScriptKeys({ store, sameFile, lock, newId, handOver, live, inUse })
  * - store: { get(key) → value, or undefined (or null) when nothing is stored; rejects when it can't read (never
  *   "nothing" for a failed read: the list would be written over), put(key, value) → rejects when storage refuses }
  * - sameFile(a, b) → whether two handles are one file; lock(fn) → fn's result, alone among the tabs
@@ -111,8 +152,10 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
  *   (createHandOver); `moving` for the one move of the files on the recent list. It gives letGo() (or nothing): the
  *   name lets go of them, called here once the files' ids are kept
  * - live() → the files of the scripts this tab has in use (open, or kept aside): the keys it still writes under
+ * - inUse: { hold(id), ids() } → what the tabs tell each other about the ids they have in use (createInUse). Left
+ *   out, they can't: then only this tab's own scripts in use are known (`live`)
  */
-export function createScriptKeys({ store, sameFile, lock, newId, handOver, live = () => [] }) {
+export function createScriptKeys({ store, sameFile, lock, newId, handOver, live = () => [], inUse = UNTOLD }) {
   const known = new WeakMap(); // handle -> key, as the stored list last gave it to this tab
   let ready = Promise.resolve();
   // The move of the keys kept by name (migrate) was asked for and is not done on this page: a file without an id whose
@@ -134,18 +177,29 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
   // The key a script goes by now: a file looked up here has its own; any other script goes by its name.
   const keyOf = (handle, name) => (handle && known.get(handle)) || name;
 
-  // The list as it should be kept now, or null when it is that already. `first`, the entry of the file opened or
-  // saved into, goes to the front, so a full list lets go of the files not opened here for longest. The ids this tab
-  // still writes under that fell off the list (other tabs filled it) go back on it: the scripts it has in use (`live`).
+  // The list as it should be kept now, or null when it is that already. `front` comes first: the entry of the file
+  // opened or saved into (at the move: of the files given ids). Then the files in use, which count as opened most
+  // recently: the scripts this tab has in use (`live`; an id of theirs that fell off the list goes back on it) and
+  // the ids any tab holds (`inUse`). Then the rest, in the order it had. A full list lets go of the files not opened
+  // for longest among that rest, and never of a file in use: a tab that is not looked at for a long time does not
+  // lose a key it still writes under to the files other tabs open. Where it can't be told which ids are held, the
+  // list lets go of none.
   // A script in use that the list has under another id by now is left alone: the list decides, at its next open.
-  async function withMine(list, first = null) {
-    const back = [];
+  async function arranged(list, front = []) {
+    const taken = new Set(front.map((r) => r.id)), mine = new Set(), back = [];
     for (const handle of live()) {
       const id = known.has(handle) ? idOf(known.get(handle)) : null;
-      if (!id || id === first?.id || back.some((r) => r.id === id) || list.some((r) => r.id === id)) continue;
-      if (!(await idIn(list, handle))) back.push({ handle, id });
+      if (!id || taken.has(id) || mine.has(id)) continue;
+      if (list.some((r) => r.id === id)) mine.add(id);
+      else if (!(await idIn(list, handle))) { mine.add(id); back.push({ handle, id }); }
     }
-    const next = [...(first ? [first] : []), ...back, ...list.filter((r) => r.id !== first?.id)].slice(0, IDS_MAX);
+    const held = await inUse.ids().then((ids) => new Set(ids), () => null); // null: it can't be told
+    const used = (r) => !held || mine.has(r.id) || held.has(r.id);
+    // The files in use stay in the order they had among themselves, so tabs looked at in turn do not write the list
+    // again each time.
+    const rest = [...back, ...list.filter((r) => !taken.has(r.id))];
+    const kept = [...front, ...rest.filter(used)], free = rest.filter((r) => !used(r));
+    const next = [...kept, ...free.slice(0, Math.max(0, IDS_MAX - kept.length))];
     return next.length === list.length && next.every((r, i) => r.id === list[i].id) ? null : next;
   }
   // The id this tab remembers for a file: for this handle, or for a script in use that is the same file.
@@ -155,17 +209,23 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
     return null;
   }
   // The id of a file that has one: the stored list decides (one file, one key, in every tab and through every
-  // handle); an id this tab remembers that fell off the list still counts, and goes back on it (withMine).
+  // handle); an id this tab remembers that fell off the list still counts, and goes back on it (arranged).
   async function idFor(list, handle) {
     const id = (await idIn(list, handle)) ?? (await remembered(handle));
-    if (id) known.set(handle, fileKey(id)); // before any write: a list that can't be written leaves the file its key
+    if (id) await know(handle, id); // before any write: a list that can't be written leaves the file its key
     return id;
+  }
+  // The tab knows the file by this key from here on, and the other tabs are told its id is in use. Always inside the
+  // list's lock, so no other tab writes the list between the two.
+  async function know(handle, id) {
+    known.set(handle, fileKey(id));
+    await inUse.hold(id);
   }
   // Keeps the list with this file's entry in front, then the tab knows the file by that key.
   async function keepId(list, handle, id) {
-    const next = await withMine(list, { handle, id });
+    const next = await arranged(list, [{ handle, id }]);
     if (next) await store.put(IDS_KEY, next);
-    known.set(handle, fileKey(id));
+    await know(handle, id);
     return fileKey(id);
   }
 
@@ -204,11 +264,12 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
     return run;
   }
 
-  // The tab is looked at again: the keys of the scripts it has in use go back on the list if other tabs pushed them
-  // off meanwhile, before a reload could lose what was written under them.
+  // The tab is looked at again: the scripts it has in use go to the front of the list, and back on it if other tabs
+  // pushed them off meanwhile (where the tabs can't tell each other), before a reload could lose what was written
+  // under them.
   function keep() {
     return ready.then(() => lock(async () => {
-      const next = await withMine(await read());
+      const next = await arranged(await read());
       if (next) await store.put(IDS_KEY, next);
     })).catch(() => {});
   }
@@ -237,8 +298,10 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
         try { letGo.set(name, await handOver(name, keys, { moving: true })); } catch { failed.add(name); }
       }
       const mine = added.filter((r) => !failed.has(r.name)).map(({ handle, id }) => ({ handle, id }));
+      // All of them are kept, however many, and so are the files the tabs have in use (`arranged`).
       if (mine.length) {
-        await store.put(IDS_KEY, [...mine, ...list].slice(0, Math.max(IDS_MAX, mine.length))).catch((e) => { takeBack(letGo.values()); throw e; });
+        const keepIds = async () => store.put(IDS_KEY, await arranged(list, mine));
+        await keepIds().catch((e) => { takeBack(letGo.values()); throw e; });
       }
       // A name that can't let go keeps its old keys beside the copies: nothing is lost, and the next page finishes it.
       for (const [name, go] of letGo) if (go) await go().catch(() => failed.add(name));

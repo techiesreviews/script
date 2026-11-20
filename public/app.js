@@ -10,7 +10,7 @@ import { TOKEN_MAX_AGE_MS as AGENT_MAX_AGE, NO_ASKS } from "./agent-link.js";
 import { listState, settleFolder, folderNote } from "./folder-note.js";
 import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
 import * as Aside from "./aside.js";
-import { createScriptKeys, createHandOver } from "./script-keys.js";
+import { createScriptKeys, createHandOver, createInUse } from "./script-keys.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -2278,6 +2278,19 @@ async function idbPut(k, v) {
     t.onerror = t.onabort = () => rej(t.error || new Error("IndexedDB write failed"));
   });
 }
+// Like idbPut, but only where nothing was ever stored, and looked at and written in one transaction, so no other tab
+// comes in between (the hand-over of old keys, script-keys.js). Gives whether it wrote.
+async function idbFill(k, v) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const t = db.transaction("handles", "readwrite"), s = t.objectStore("handles"), q = s.get(k);
+    let wrote = false, failed = null;
+    // A put that throws is kept for the answer: thrown from here it would only reach the window as an error.
+    q.onsuccess = () => { if (q.result !== undefined) return; try { s.put(v, k); wrote = true; } catch (e) { failed = e; t.abort(); } };
+    t.oncomplete = () => res(wrote);
+    t.onerror = t.onabort = () => rej(failed || t.error || new Error("IndexedDB write failed"));
+  });
+}
 // The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count; the demo's
 // unlinked { none: true } does).
 async function idbLinkedNames() {
@@ -3027,6 +3040,8 @@ const scriptKeys = createScriptKeys({
   handOver,
   // The scripts this tab has in use: their keys stay on the list while it writes under them.
   live: () => [state.handle, ...asides.map((s) => s.handle)],
+  // The tabs tell each other which files they have in use (a Web Lock per id), so a full list never lets go of one.
+  inUse: createInUse(fileIdLocks),
 });
 const scriptKey = () => scriptKeys.keyOf(state.handle, state.name);
 // What was kept under a file name before TOOLS-361 goes to the files of that name (script-keys.js createHandOver):
@@ -3035,7 +3050,7 @@ const scriptKey = () => scriptKeys.keyOf(state.handle, state.name);
 // keeps its own. Every read fails loudly, the copies come first, and the name lets go (the step it gives back) only
 // once the files' ids are kept. Both steps run in the B-roll keys' queue.
 const overTo = createHandOver({
-  idb: { read: idbRead, put: idbPut },
+  idb: { read: idbRead, put: idbPut, fill: idbFill },
   local: localRaw,
   key: { draft: draftKey, link: (k) => brollKey(k), list: (k) => listKey(k) },
   browserHas,

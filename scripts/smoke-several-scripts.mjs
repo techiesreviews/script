@@ -53,12 +53,15 @@ const STUBS = `(() => {
   };
 })();`;
 
-async function openTab(width, height, extra = "") {
-  const { browserContextId } = await send("Target.createBrowserContext");
+// A tab in a fresh profile, or a second tab in the profile of another (`context`: that tab's `page.context`).
+async function openTab(width, height, extra = "", context = null) {
+  const { browserContextId } = context ? { browserContextId: context } : await send("Target.createBrowserContext");
   const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   const page = {
+    context: browserContextId,
     close: () => send("Target.disposeBrowserContext", { browserContextId }),
+    closeTab: () => send("Target.closeTarget", { targetId }), // this tab only: the profile and its other tabs stay
     send: (method, params) => send(method, params, sessionId),
     async eval(expression) {
       const r = await page.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
@@ -955,6 +958,78 @@ async function runSameKey() {
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
 }
+// The round of 2026-11-20, the second look's P1: a file one tab has in use is never pushed off the id list by the files
+// another tab opens. Each tab holds a Web Lock per id; the tab that writes the list asks which are held.
+const heldFor = (key) => `navigator.locks.query().then((q) => q.held.some((l) => l.name === "script-editor:file-in-use:" + ${JSON.stringify(key)}.slice("file:".length) && l.mode === "shared"))`;
+async function runTwoTabs() {
+  console.log("--- two tabs: a file open in one is never pushed off the id list by the other (1280 px)");
+  const { page } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  const A = await keyOfDisk(page, "a/script.md");
+  check(/^file:/.test(A || ""), "the file open in the first tab has a key of its own", A);
+  check(await page.eval(heldFor(A || "")), "the first tab holds a lock for its id");
+  // A second tab of the same browser. 199 other files were opened since (here: put on the list in front of it), so
+  // the list is full with the first tab's file at its end; then the second tab opens one more.
+  const other = await openTab(1280, 800, "", page.context);
+  await other.send("Page.navigate", { url: `${BASE}/` });
+  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the second tab");
+  check(await other.eval(heldFor(A || "")), "the second tab sees that lock");
+  await other.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const fill = await disk.getDirectoryHandle("fill", { create: true }); const added = []; for (let i = 0; i < 199; i++) added.push({ handle: await fill.getFileHandle("f" + i + ".md", { create: true }), id: "fill" + i }); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"), s = t.objectStore("handles"), q = s.get("fileIds"); q.onsuccess = () => s.put([...added, ...q.result], "fileIds"); t.oncomplete = res; }; }); return true; })()`);
+  const ids = async () => JSON.parse(await other.eval(`new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const q = r.result.transaction("handles").objectStore("handles").get("fileIds"); q.onsuccess = () => res(JSON.stringify((q.result || []).map((e) => e.id))); }; })`));
+  const before = await ids();
+  check(before.length === 200 && `file:${before.at(-1)}` === A, "the list is full, the first tab's file at its end", `${before.length} ${before.at(-1)}`);
+  await writeDisk(other, "b/other.md", md(WALK));
+  await pickOpen(other, "b/other.md", "What if the best part");
+  for (let i = 0; i < 60 && !(await keyOfDisk(other, "b/other.md")); i++) await sleep(60);
+  const B = await keyOfDisk(other, "b/other.md"), after = await ids();
+  check(/^file:/.test(B || "") && `file:${after[0]}` === B, "the second tab's file has its key, at the front", `${B} ${after[0]}`);
+  check(after.length === 200, "the list stays within its size", after.length);
+  check((await keyOfDisk(other, "a/script.md")) === A, "the file open in the first tab is still on the list", JSON.stringify(after.slice(0, 3)));
+  check(`file:${after[1]}` === A, "a file in use counts as opened most recently: right behind the one just opened", after[1]);
+  check(!after.includes("fill198"), "the list let go of the file not opened for longest instead");
+  // The first tab reloads: its next page finds what it kept under that key.
+  await nextPage(page, "the first tab's next page");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  check((await keyOfDisk(page, "a/script.md")) === A, "the first tab's next page finds the file under the same key");
+  // The first tab closes: its lock goes with it, so the list may let go of the file again one day.
+  await page.closeTab();
+  for (let i = 0; i < 60 && (await other.eval(heldFor(A || ""))); i++) await sleep(60);
+  check(!(await other.eval(heldFor(A || ""))), "the first tab closed: its lock is gone");
+  const errs = await other.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await other.close();
+}
+// The round of 2026-11-20, the second look's P0: while the move waits for its list and link copies, another tab keeps
+// words under the file's key (played here inside the write of the first copy). They are never written over: the
+// hand-over stops, the name keeps everything and the move is not marked done; the next page decides again, and the
+// file offers the words written later.
+const TYPED = `${md(BREAD).trimEnd()}\n\nTyped in the other tab meanwhile.\n`;
+const OTHER_TAB_ONCE = `(() => { if (localStorage.getItem("smoke:otherTab") !== "1") return; const put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function (v, k) { if (typeof k === "string" && k.startsWith("brollList:file:") && localStorage.getItem("smoke:otherTab") === "1") { localStorage.removeItem("smoke:otherTab"); localStorage.setItem("script-editor:draft:" + k.slice("brollList:".length), JSON.stringify({ text: ${JSON.stringify(TYPED)}, at: Date.now() + 120000, asks: [] })); } return put.call(this, v, k); }; })();`;
+async function runHandRace() {
+  console.log("--- moving to keys while another tab keeps words under the file's key (1280 px)");
+  const { page } = await connect(1280, 800, OTHER_TAB_ONCE);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  // A move that could not finish before: the file has its id, and its name still has a draft, a list and a link.
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.put([{ handle: h, id: "had1" }], "fileIds"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(UNSAVED)}, at: Date.now() + 60000, asks: [] })); localStorage.setItem("smoke:otherTab", "1"); return true; })()`);
+  await nextPage(page, "a page whose move meets words from another tab");
+  await page.until(`localStorage.getItem("smoke:otherTab") === null`, "the other tab wrote while the copies were made", 6000);
+  await sleep(1200);
+  check((await draftOf(page, "file:had1"))?.includes("Typed in the other tab meanwhile"), "the words the other tab kept under the file's key are not written over");
+  check((await draftOf(page, "script.md"))?.includes("Words typed before the update"), "the name keeps its draft");
+  check((await idbGet(page, "broll:script.md")) !== "null" && (await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST), "and its list and link");
+  check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  await nextPage(page, "the next page");
+  await page.until(idbHas("fileIdsSince"), "the next page finishes the move", 6000);
+  check((await draftOf(page, "file:had1"))?.includes("Typed in the other tab meanwhile"), "the words written later stay under the file's key");
+  check((await draftOf(page, "script.md")) === null, "the name's older draft goes");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(offersUnsaved, "the file offers the words the other tab kept");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "and shows the list its name had");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
 // A browser script.md's own keys go by its name: a file script.md seen for the first time takes none of them, and once
 // the browser script is deleted (a file script.md on the list) they go, so the next new file script.md starts clean
 // (review round 1 on TOOLS-361).
@@ -1092,7 +1167,8 @@ async function runOpenCancelled() {
 }
 
 // SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
-// ownkeys, migrate, deletefirst, reloadheld, migratefull, migratelist, movedcopy, migratedraft, copiesread, samekey)
+// ownkeys, migrate, deletefirst, reloadheld, migratefull, migratelist, movedcopy, migratedraft, copiesread, samekey,
+// twotabs, handrace)
 // runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
@@ -1118,6 +1194,8 @@ try {
   if (!only || only === "migratedraft") await runMigrateDraft();
   if (!only || only === "copiesread") await runCopiesUnread();
   if (!only || only === "samekey") await runSameKey();
+  if (!only || only === "twotabs") await runTwoTabs();
+  if (!only || only === "handrace") await runHandRace();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }
