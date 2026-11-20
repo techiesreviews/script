@@ -266,3 +266,12 @@ RESULT: fail unit 26/27 (2 files) (the full-history regression, before the fix)
 RESULT: ok unit 35/35 (3 files)
 RESULT: ok specs (568/568 tests passed)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Third GPT look (one P2 race, one test gap):
+Words added to the target paragraph during a save left "Check" off (the saved quote still matched): fixed. A move,
+its Undo and its Redo now remember what the paragraphs said when the quote was chosen and flag the shot when that
+changed by the time the list is written. The regression covers all three and failed first.
+RESULT: fail unit 20/21 (1 files) (the Check regression, before the fix)
+RESULT: ok unit 36/36 (3 files)
+RESULT: ok specs (569/569 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
