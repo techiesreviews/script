@@ -886,7 +886,7 @@ export function createBroll(host) {
     const destination = sel.map((part) => part.id);
     if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
     const token = broll.token;
-    let origin, before, over, checked, invalid = false;
+    let origin, before, over, checked, words, invalid = false;
     const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
     // Where the shot is when a step's turn comes: beside the paragraphs it shows on, whose words may have changed since
     // its quote was written. When it shows on none, or the list was changed outside this page: where its quote matches.
@@ -896,16 +896,17 @@ export function createBroll(host) {
       const ids = saved.over === shown.over ? covered(shown) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
-    // A written list is matched to the script again by its quotes. Words typed into the shot's paragraphs while it was
-    // being written leave the fresh quote matching nothing: the shot then stays on the paragraphs it was put on, with
-    // "Check". `check`: its flag when the quote did match.
+    // A written list is matched to the script again by its quotes, and takes a moment to write. Words typed into the
+    // shot's paragraphs meanwhile (`words`: what they said when the quote was chosen) give it "Check"; when they leave
+    // the fresh quote matching nothing, the shot stays on the paragraphs it was put on. `check`: its flag otherwise.
     const land = (ids, check) => {
       const shot = token === broll.token && shotById(id);
       if (!shot) return;
-      const typed = covered(shot).join() !== ids.join() && !gone(ids, Broll.spokenBlocks(state.doc));
-      if (typed) Object.assign(shot, { blockIds: ids, sig: Broll.coverText(state.doc, ids) });
-      else if (shot.check === check) return;
-      shot.check = typed || check;
+      const lost = covered(shot).join() !== ids.join() && !gone(ids, Broll.spokenBlocks(state.doc));
+      if (lost) Object.assign(shot, { blockIds: ids, sig: Broll.coverText(state.doc, ids) });
+      const flag = check || lost || (covered(shot).join() === ids.join() && Broll.coverText(state.doc, ids) !== words);
+      if (!lost && shot.check === flag) return;
+      shot.check = flag;
       syncFlags();
       renderBroll();
     };
@@ -923,6 +924,7 @@ export function createBroll(host) {
           // Keep the exact quote while it matches; a stale one follows the same paragraphs' current words.
           const quote = redo ? over : before;
           const keep = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+          words = Broll.coverText(state.doc, ids);
           return Broll.updateShot(md, id, { over: keep });
         });
         if (token !== broll.token) return false;
@@ -949,6 +951,7 @@ export function createBroll(host) {
         ({ over: before, ids: origin, check: checked } = now);
         if (origin.join() === destination.join()) return md; // the step before put the shot here already
         over = Broll.overFor(state.doc, Broll.wholeParas(state.doc, destination));
+        words = Broll.coverText(state.doc, destination);
         return Broll.updateShot(md, id, { over });
       });
       if (over == null) return void cancel(); // nothing moved: nothing to undo
