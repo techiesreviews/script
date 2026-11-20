@@ -22,6 +22,8 @@ export const MIGRATED_KEY = "fileIdsSince"; // when the keys kept by name were h
 export const IDS_MAX = 200;
 export const fileKey = (id) => `file:${id}`;
 const idOf = (key) => key.slice("file:".length);
+// What createInUse gives, for tabs that can't tell each other anything (a caller that leaves `inUse` out).
+const UNTOLD = { hold: async () => {}, ids: async () => [], elsewhere: async () => false };
 
 /**
  * legacyPlan(keys, { browser, moving }) → what the keys kept under one name before TOOLS-361 become, or null.
@@ -51,11 +53,14 @@ export function legacyPlan(keys, { browser = false, moving = false } = {}) {
  * - key: { draft(k), link(k), list(k) } → where a script key's draft, B-roll link and B-roll list are stored
  * - browserHas(name) → whether a script in the browser has that name; rejects when that can't be told
  * - keeps(name) → a name that keeps its own keys (the demo)
+ * - inUse: { elsewhere(id) } → whether another tab has a file in use (createInUse). handOver runs inside the id list's
+ *   lock (createScriptKeys calls it there), which is what makes that answer hold until the write. Left out: tabs
+ *   that can't tell each other, where the hand-over goes by what it reads
  * Every read comes before the first write, and a read that fails stops the hand-over: it is never taken for "nothing
  * there" (a draft that could not be read would count as handed over, and be deleted). What a write goes by is read
  * again as it is made (see "The copies" below): other tabs do not wait for a hand-over.
  */
-export function createHandOver({ idb, local, key, browserHas, keeps = () => false }) {
+export function createHandOver({ idb, local, key, browserHas, keeps = () => false, inUse = UNTOLD }) {
   // When a draft was written. One that can't be read as a draft is an error: which of two is newer can't be told.
   const writtenAt = (raw) => { const at = JSON.parse(raw)?.at; return typeof at === "number" ? at : 0; };
   // A removal that did not take is an error too, so nothing counts as let go while it is still there.
@@ -81,13 +86,17 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
     // under the name. Other tabs write while this one waits (a draft at any time, outside every lock), so no write
     // here trusts a read made before a wait: a place is looked at again and filled in one go (`fill`), and the two
     // drafts are read again right before the write, with no wait in between. Words kept meanwhile under the file's
-    // key or under the name stop the hand-over: nothing is written over and nothing let go, and the next try decides
-    // again.
+    // key or under the name, or another tab that has the file in use, stop the hand-over: nothing is written over and
+    // nothing let go, and the next try decides again.
     for (const p of places) {
       if (list != null && p.list === undefined) await idb.fill(key.list(p.k), list);
       if (link != null && p.link === undefined) await idb.fill(key.link(p.k), link);
     }
     if (takes) {
+      // A tab that has the file in use may keep words under its key at any moment, and local storage has no lock: the
+      // draft is written only while no other tab has it (none can take it up before the id list's lock is given
+      // back, see createInUse). The read right before the write covers this tab's own scripts, and the name.
+      if (await inUse.elsewhere(idOf(plan.draft))) throw new Error("Another tab has the file in use.");
       const still = local.read(key.draft(plan.draft)) === own && local.read(key.draft(name)) === draft;
       if (!still) throw new Error("A draft changed while it was handed over.");
       local.write(key.draft(plan.draft), draft);
@@ -126,22 +135,35 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
  *   had never stops an open: the other tabs are then not told, and the id is still put back if it falls off the list
  *   (createScriptKeys).
  * - ids() → the ids held by any page; rejects when that can't be asked (never "none").
+ * - elsewhere(id) → whether another page holds the id; rejects when that can't be asked (never "no"). A page comes
+ *   to know a file's key, and so to write under it, only inside the id list's lock and with this lock held
+ *   (createScriptKeys `know`). So inside that lock, "no other page holds it" means no other tab writes under that
+ *   key until the lock is given back (createHandOver goes by that).
  */
-export const IN_USE = "script-editor:file-in-use:";
+const IN_USE = "script-editor:file-in-use:";
 export function createInUse(locks) {
-  const mine = new Set();
-  const hold = (id) => (mine.has(id) ? Promise.resolve() : new Promise((done) => {
-    const held = () => { mine.add(id); done(); return new Promise(() => {}); }; // not given back while the page lives
-    Promise.resolve().then(() => locks.request(IN_USE + id, { mode: "shared" }, held)).catch(done);
-  }));
+  const mine = new Set(), asked = new Map(); // the ids this page holds; id -> its one request
+  function hold(id) {
+    if (!asked.has(id)) asked.set(id, new Promise((done) => {
+      const held = () => { mine.add(id); done(); return new Promise(() => {}); }; // not given back while the page lives
+      // One that can't be had is asked for again the next time.
+      Promise.resolve().then(() => locks.request(IN_USE + id, { mode: "shared" }, held)).catch(() => { asked.delete(id); done(); });
+    }));
+    return asked.get(id);
+  }
   async function ids() {
     if (!locks.query) return [...mine];
     const { held } = await locks.query();
     return [...new Set(held.filter((l) => l.name.startsWith(IN_USE)).map((l) => l.name.slice(IN_USE.length)))];
   }
-  return { hold, ids };
+  // More holders than this page's own one. One tab's stand-in knows no other tab.
+  async function elsewhere(id) {
+    if (!locks.query) return false;
+    const { held } = await locks.query();
+    return held.filter((l) => l.name === IN_USE + id).length > (mine.has(id) ? 1 : 0);
+  }
+  return { hold, ids, elsewhere };
 }
-const UNTOLD = { hold: async () => {}, ids: async () => [] }; // tabs that can't tell each other anything
 
 /**
  * createScriptKeys({ store, sameFile, lock, newId, handOver, live, inUse })
@@ -218,8 +240,8 @@ export function createScriptKeys({ store, sameFile, lock, newId, handOver, live 
   // The tab knows the file by this key from here on, and the other tabs are told its id is in use. Always inside the
   // list's lock, so no other tab writes the list between the two.
   async function know(handle, id) {
+    await inUse.hold(id); // first: the tab writes under a key only once the others can see that it does
     known.set(handle, fileKey(id));
-    await inUse.hold(id);
   }
   // Keeps the list with this file's entry in front, then the tab knows the file by that key.
   async function keepId(list, handle, id) {

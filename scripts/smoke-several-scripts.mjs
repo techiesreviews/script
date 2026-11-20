@@ -1030,6 +1030,39 @@ async function runHandRace() {
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
 }
+// The same P0 where the tabs can tell each other: a draft is never written under the key of a file another tab has in
+// use (that tab may keep words there at any moment). The first tab has the file open while the second tab's page
+// tries the move again: it stops; once the first tab has gone, the next page hands the words over.
+async function runHandInUse() {
+  console.log("--- moving to keys while another tab has the file open (1280 px)");
+  const { page } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  const A = await keyOfDisk(page, "a/script.md");
+  check(/^file:/.test(A || ""), "the file open in the first tab has a key of its own", A);
+  // A move that could not finish before: the file has its id, and its name still has a draft, a list and a link.
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(UNSAVED)}, at: Date.now() + 60000, asks: [] })); return true; })()`);
+  const other = await openTab(1280, 800, "", page.context);
+  await other.send("Page.navigate", { url: `${BASE}/` });
+  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the second tab");
+  await sleep(1200);
+  check((await draftOf(other, A)) === null, "no draft is written under the key of a file the first tab has in use");
+  check((await draftOf(other, "script.md"))?.includes("Words typed before the update"), "the name keeps its draft");
+  check((await idbGet(other, "broll:script.md")) !== "null" && (await idbGet(other, "brollList:script.md")) === JSON.stringify(BREAD_LIST), "and its list and link");
+  check((await idbGet(other, "fileIdsSince")) === "null", "the move is not marked done");
+  await page.closeTab();
+  for (let i = 0; i < 60 && (await other.eval(heldFor(A || ""))); i++) await sleep(60);
+  await nextPage(other, "the second tab's next page, the first tab gone");
+  await other.until(idbHas("fileIdsSince"), "the next page finishes the move", 6000);
+  check((await draftOf(other, A))?.includes("Words typed before the update"), "the file has the words its name kept");
+  check((await draftOf(other, "script.md")) === null, "and the name let go of them");
+  await pickOpen(other, "a/script.md", "Good bread needs");
+  await other.until(offersUnsaved, "the file offers the words typed before the update");
+  check((await keyOfDisk(other, "a/script.md")) === A, "under the same key");
+  const errs = await other.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await other.close();
+}
 // A browser script.md's own keys go by its name: a file script.md seen for the first time takes none of them, and once
 // the browser script is deleted (a file script.md on the list) they go, so the next new file script.md starts clean
 // (review round 1 on TOOLS-361).
@@ -1168,7 +1201,7 @@ async function runOpenCancelled() {
 
 // SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
 // ownkeys, migrate, deletefirst, reloadheld, migratefull, migratelist, movedcopy, migratedraft, copiesread, samekey,
-// twotabs, handrace)
+// twotabs, handrace, handinuse)
 // runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
@@ -1196,6 +1229,7 @@ try {
   if (!only || only === "samekey") await runSameKey();
   if (!only || only === "twotabs") await runTwoTabs();
   if (!only || only === "handrace") await runHandRace();
+  if (!only || only === "handinuse") await runHandInUse();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }

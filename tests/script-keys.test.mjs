@@ -546,9 +546,10 @@ test("script keys: a name that can't let go at the move: not marked done, its fi
 
 // The hand-over itself (createHandOver), with IndexedDB and local storage standing in as Maps. `bad`: the keys whose
 // read, write or removal fails; `stuck`: the keys a removal leaves in place without saying so. `tab.other(key)`, when
-// set, is another tab at work while this one waits for its write of `key` to IndexedDB.
+// set, is another tab at work while this one waits for its write of `key` to IndexedDB. `tab.has`: the ids another
+// tab has in use ("unknown": it can't be told).
 function overSetup({ browser = async () => false } = {}) {
-  const idb = new Map(), local = new Map(), wrote = [], tab = { other: null };
+  const idb = new Map(), local = new Map(), wrote = [], tab = { other: null, has: [] };
   const bad = { read: new Set(), write: new Set(), remove: new Set(), stuck: new Set() };
   const fail = (what, k) => { if (bad[what].has(k)) throw new Error(`${what} ${k} failed`); };
   const handOver = createHandOver({
@@ -566,6 +567,7 @@ function overSetup({ browser = async () => false } = {}) {
     key: { draft: (k) => `draft:${k}`, link: (k) => `broll:${k}`, list: (k) => `brollList:${k}` },
     browserHas: browser,
     keeps: (name) => name === "demo.md",
+    inUse: { elsewhere: async (id) => { if (tab.has === "unknown") throw new Error("the locks can't be asked"); return tab.has.includes(id); } },
   });
   return { idb, local, bad, wrote, tab, handOver };
 }
@@ -741,6 +743,58 @@ test("hand-over (P0): words another tab keeps under the name while the copies ar
   o.tab.other = null;
   await (await o.handOver("script.md", ["file:a"]))();
   assert.equal(o.local.get("draft:file:a"), draftAt("Typed under the name meanwhile.", 20), "the next try hands the newer words over");
+});
+
+test("hand-over (P0): a draft is never written under the key of a file another tab has in use: it stops, and hands the words over once no other tab has it", async () => {
+  for (const has of [["a"], "unknown"]) {
+    const o = overSetup();
+    oldKeys(o);
+    o.local.set("draft:file:a", draftAt("An older copy.", 2));
+    o.tab.has = has; // that tab may keep words under the key at any moment: only its absence makes the write safe
+    await assert.rejects(o.handOver("script.md", ["file:a"]), `${JSON.stringify(has)}: stopped`);
+    assert.equal(o.local.get("draft:file:a"), draftAt("An older copy.", 2), "not written over");
+    assert.equal(o.local.get("draft:script.md"), draftAt("Words typed before.", 5), "and the name keeps its draft");
+    o.tab.has = [];
+    await (await o.handOver("script.md", ["file:a"]))();
+    assert.equal(o.local.get("draft:file:a"), draftAt("Words typed before.", 5));
+    assert.equal(o.local.has("draft:script.md"), false);
+  }
+  // Nothing to write under the file's key (its own draft is the newer one): another tab having it in use stops nothing.
+  const own = overSetup();
+  oldKeys(own);
+  own.local.set("draft:file:a", draftAt("The file's own, newer words.", 9));
+  own.tab.has = ["a"];
+  await (await own.handOver("script.md", ["file:a"]))();
+  assert.equal(own.local.get("draft:file:a"), draftAt("The file's own, newer words.", 9));
+});
+
+test("in use: a page can tell whether another page has an id in use; its own hold does not count", async () => {
+  const locks = browserLocks(), one = locks(), two = locks();
+  const first = createInUse(one), second = createInUse(two);
+  await first.hold("a");
+  assert.equal(await first.elsewhere("a"), false, "only this page has it");
+  assert.equal(await second.elsewhere("a"), true);
+  await second.hold("a");
+  assert.equal(await first.elsewhere("a"), true, "the same file open in two tabs");
+  two.close();
+  assert.equal(await first.elsewhere("a"), false);
+  assert.equal(await first.elsewhere("never"), false);
+  await assert.rejects(createInUse(locks({ blind: true })).elsewhere("a"), "it can't be told: an error, never \"no\"");
+  assert.equal(await createInUse(tabLocks()).elsewhere("a"), false, "one tab's stand-in knows no other tab");
+});
+
+test("in use: an id asked for twice at once is held once, and one that could not be held is asked for again at the next open", async () => {
+  const locks = browserLocks(), page = locks(), o = { refuse: false };
+  const inUse = createInUse(page);
+  await Promise.all([inUse.hold("a"), inUse.hold("a")]);
+  assert.equal((await page.query()).held.length, 1);
+  const shaky = locks(o), later = createInUse(shaky);
+  o.refuse = true;
+  await later.hold("b");
+  assert.deepEqual(await later.ids(), ["a"], "not held");
+  o.refuse = false;
+  await later.hold("b");
+  assert.deepEqual((await later.ids()).sort(), ["a", "b"]);
 });
 
 test("hand-over: a list or link another tab keeps under a file's key while the copies are made is not written over", async () => {
