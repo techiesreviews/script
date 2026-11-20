@@ -252,3 +252,17 @@ RESULT: fail unit 18/19 (1 files) (the slow-writer regression, before the fix)
 RESULT: ok unit 33/33 (3 files)
 RESULT: ok specs (566/566 tests passed)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Opus review of the whole change at 75986da (three P3 notes, three test gaps, no blocker or should):
+Failed Undo's place in a full history: fixed. The step now goes back right above the step it sat on instead of at a
+remembered index; the regression with a 3-step history failed first.
+Moves of a script that was left and opened again are skipped: recorded in docs/features.md (the list is loaded again
+then, so the old moves no longer belong to it). No code change.
+Declined (rare, nothing lost): a shot dropped onto the paragraph it still shows on during the few milliseconds an
+Undo of it is saving is treated as "already there", and the Undo then takes it back.
+Test gap for Redo while its save is slow: closed (it passed at once). The browser check now waits for the first
+Undo's result instead of a fixed pause.
+RESULT: fail unit 26/27 (2 files) (the full-history regression, before the fix)
+RESULT: ok unit 35/35 (3 files)
+RESULT: ok specs (568/568 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases

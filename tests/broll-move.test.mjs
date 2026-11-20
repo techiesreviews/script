@@ -356,3 +356,15 @@ test("B-roll move history: words typed into the target paragraph while a move or
   assert.equal(m.broll.shots[0].check, true);
   assert.match(Doc.serialize(m.state.doc), /Rewritten first paragraph/);
 });
+
+test("B-roll move history: words typed into the target paragraph while a Redo saves keep the shot there, with Check", async () => {
+  const m = movement();
+  await m.moveShot(1);
+  m.undo(); await settle();
+  const release = m.holdNextSave();
+  m.redo(); await settle();
+  m.rewrite(1, "Rewritten middle paragraph while the Redo saves.");
+  release(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
+  assert.equal(m.broll.shots[0].check, true);
+});
