@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 18 files, 503956 bytes; on first use: broll-app.js + broll.js, 149226 bytes
+ℹ startup: 18 files, 511601 bytes; on first use: broll-app.js + broll.js, 149226 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -337,7 +337,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 18 files, 503956 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
+ℹ startup: 18 files, 511601 bytes; on first use: together/room.js 34578, export-pack.js 1696, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -480,6 +480,15 @@
 ✔ script keys: a file this tab knows keeps its key while the list can't be read or written
 ✔ script keys: where storage refuses, a file goes by its name and its name lets go of nothing; Save as too
 ✔ script keys (P1): Save as onto a file kept aside whose key fell off the list still keeps that key, never a second one
+✔ script keys (P1): a file one tab has in use is never pushed off the list by the files other tabs open; once no tab has it in use, a full list lets go of it
+✔ script keys (P1): a tab tells the others about every key it comes to know: at an open, and at Save as
+✔ script keys (P1): the scripts a tab has in use go to the front of the list when it is looked at again, and at every open
+✔ script keys: two tabs looked at in turn leave the list as it is: the files in use keep their order among themselves
+✔ script keys (P1): where it can't be told which files the tabs have in use, the list lets go of none
+✔ script keys (P1): the move keeps the files other tabs have in use on the list too
+✔ in use: a page holds a shared lock for each id until it goes away, and every page sees the ids all of them hold
+✔ in use: a lock that can't be had never stops an open, and ids that can't be asked for are an error, never "none"
+✔ in use: a browser without Web Locks (one tab's stand-in) still knows the ids its own page holds
 ✔ script keys: moving to keys is tried again on the next page when a name's keys could not all be handed over
 ✔ script keys: a read that fails gives the name and writes nothing, so no other file loses its key; moving to keys waits for a good read
 ✔ script keys: a file opened again moves to the front, so a full list lets go of the files not opened for longest
@@ -504,6 +513,12 @@
 ✔ hand-over: of two drafts the one written later stays under the file's key: its own, or the name's
 ✔ hand-over: letting go never deletes a draft written under the name since it was copied, nor says done when a removal did not take
 ✔ hand-over: undo takes back the draft copy of a try whose ids could not be kept: gone, or the file's older draft again
+✔ hand-over (P0): words another tab keeps under the file's key while the copies are made are never written over: it stops, and the next try decides again
+✔ hand-over (P0): words another tab keeps under the name while the copies are made stop it too: no copy of the older words is made
+✔ hand-over (P0): a draft is never written under the key of a file another tab has in use: it stops, and hands the words over once no other tab has it
+✔ in use: a page can tell whether another page has an id in use; its own hold does not count
+✔ in use: an id asked for twice at once is held once, and one that could not be held is asked for again at the next open
+✔ hand-over: a list or link another tab keeps under a file's key while the copies are made is not written over
 ✔ script keys: ids that can't be kept leave no draft copy behind under them, however often the open or the move is tried (review round 13)
 ✔ script keys: a name the move could not hand over waits alone: a file of another name still gets its key on that page (review round 13)
 ✔ hand-over: a name a browser script has stays its own: at the move the files get a copy of its list and link only; later a file takes nothing
@@ -585,9 +600,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 585
+ℹ tests 600
 ℹ suites 0
-ℹ pass 585
+ℹ pass 600
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
