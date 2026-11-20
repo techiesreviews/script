@@ -302,6 +302,26 @@ test("saving: Save as onto another file, left before its key is kept: only the d
   assert.equal(s.script.name, "script.md");
   assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), []);
 });
+test("saving: Save as of a browser script, left before the file's key is kept: its own draft and its browser copy stay (R7-17)", async () => {
+  const { s, B, open } = keyedSetup();
+  const adopt = pausedAdopt(s, "file:c");
+  s.files.outside("script.md", "# Mine\n\nIn the browser.\n");
+  s.saving.open({ handle: { name: "script.md" }, name: "script.md", browser: true, savedText: "# Mine\n\nIn the browser.\n", modified: 1 });
+  s.ed.text = "# Mine\n\nIn the browser.\n";
+  s.store.set("draft:file:c", { text: "# C\n\nOld words.\n", at: 1, asks: [{ id: "old" }] });
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "c/script.md" });
+  const run = s.saving.saveAs();
+  await until(adopt.asked);
+  s.store.set("draft:script.md", { text: null, at: 1, asks: [{ id: "mine" }] }); // kept under its name as the person leaves it
+  open(B, "# B\n\nTwo.\n");
+  adopt.answer();
+  await run;
+  assert.deepEqual(s.store.get("draft:script.md"), { text: null, at: 1, asks: [{ id: "mine" }] }, "the browser script's own draft stays");
+  assert.equal(s.store.has("draft:file:c"), false, "the draft kept for what the picked file held before goes");
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), []);
+  assert.deepEqual(s.events.filter((e) => e[0] === "placed"), [["placed", "script.md", {}]], "no `was`: the browser copy stays");
+  assert.equal(s.script.handle, B);
+});
 test("saving: a left script's failed saves keep its draft under its own key, running or queued; another file of that name keeps its own", async () => {
   const { s, A, B, open } = keyedSetup();
   open(A, "# A\n\nOne.\n");
