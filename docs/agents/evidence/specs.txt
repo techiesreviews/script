@@ -420,6 +420,7 @@
 ✔ saving: Save as onto a file that has its key already keeps that key; the draft kept for what the file held before goes
 ✔ saving: Save as onto the script's own file, left before its key is kept: the draft kept for it as it was left stays
 ✔ saving: Save as onto another file, left before its key is kept: only the draft kept for what that file held before goes
+✔ saving: Save as of a browser script, left before the file's key is kept: its own draft and its browser copy stay (R7-17)
 ✔ saving: a left script's failed saves keep its draft under its own key, running or queued; another file of that name keeps its own
 ✔ saving: saveLeft that meets a file changed elsewhere keeps the words in the draft under that file's own key
 ✔ saving: saveLeft writes a left script's new words to its own file with the auto-save rules, and says so
@@ -602,9 +603,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 602
+ℹ tests 603
 ℹ suites 0
-ℹ pass 602
+ℹ pass 603
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
