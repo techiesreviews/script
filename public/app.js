@@ -845,6 +845,7 @@ async function openPrompter() {
 function checkpoint(kind, id, before = null) {
   // In a shared script, undo follows each person's own changes instead (see together/room.js).
   if (together?.active) return;
+  historyAge++;
   const now = Date.now(), last = state.lastStep;
   if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
   state.undo.push({ doc: before || Doc.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
@@ -852,7 +853,60 @@ function checkpoint(kind, id, before = null) {
   state.redo = [];
   state.lastStep = { kind, id, at: now };
 }
-function restore(snap, from, to) {
+// A move shares the script's chronological history, but never carries a copy of its words.
+function checkpointBrollMove(move) {
+  if (together?.active) return () => {};
+  const stack = state.undo, step = { brollMove: move, moveRedo: false };
+  historyAge++;
+  stack.push(step);
+  if (stack.length > UNDO_LIMIT) stack.shift();
+  state.redo = [];
+  state.lastStep = null;
+  // A move whose first save failed, or moved nothing, never happened. Nothing has undone it yet (history waits its
+  // turn behind that save), and an Undo waiting for it stops there instead of taking the step before.
+  return () => { const i = stack.indexOf(step); if (i >= 0) { stack.splice(i, 1); historyAge++; } };
+}
+// Saving a moved shot takes a moment, so history takes turns: a move's save, and any Undo or Redo asked for while one
+// is under way, each wait for the one before and then meet the script and the list as that one left them. A save that
+// fails, or a new change (the person's or the agent's), ages the history: steps still waiting were asked of a state
+// that never came, so they stop there and every word and position stays reachable.
+let historyTurn = Promise.resolve(), historyBusy = 0, historyAge = 0;
+function queueBrollHistory(run) {
+  const turn = historyBusy++ ? historyTurn.then(run) : new Promise((resolve) => resolve(run()));
+  historyTurn = turn.catch(() => { historyAge++; }).then(() => { historyBusy--; });
+  return turn;
+}
+const staleMove = (snap) => snap.brollMove && !snap.brollMove.valid();
+function historyStep(undoing) {
+  const stack = () => (undoing ? state.undo : state.redo);
+  const from = stack(), to = undoing ? state.redo : state.undo, age = historyAge;
+  const step = () => {
+    if (age !== historyAge || from !== stack()) return; // aged meanwhile, or another script is open now
+    let s = from.pop();
+    while (s && staleMove(s)) s = from.pop();
+    if (!s) return;
+    if (!s.brollMove) return restore(s, to);
+    const back = { brollMove: s.brollMove, moveRedo: !s.moveRedo }, below = from.at(-1);
+    to.push(back); // at once, so a change made while the list saves comes after it
+    state.lastStep = null;
+    return s.brollMove[s.moveRedo ? "redo" : "undo"]().then((ok) => {
+      if (ok) return;
+      const i = to.indexOf(back);
+      if (i >= 0) to.splice(i, 1);
+      // The shot was changed since, as its turn found out: skipped like any stale move, on to the step before it.
+      if (staleMove(s)) return step();
+      // Not saved: the step keeps its place, right above the one it sat on (the bottom, when a full history has
+      // dropped that one meanwhile), and can be tried again.
+      historyAge++;
+      from.splice(from.indexOf(below) + 1, 0, s);
+    });
+  };
+  if (historyBusy) return void queueBrollHistory(step);
+  // Nothing is saving: a step in the script's words happens at once, as it always did; a move's save opens a turn.
+  const saving = step();
+  if (saving) queueBrollHistory(() => saving);
+}
+function restore(snap, to) {
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
   const { back, closed } = Changes.landStep(state.asks, snap.land);
   to.push({ doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
@@ -872,13 +926,11 @@ function restore(snap, from, to) {
 }
 function undo() {
   if (together?.active) { hideBar(); return void together.undo(); }
-  const s = state.undo.pop();
-  if (s) restore(s, state.undo, state.redo);
+  historyStep(true);
 }
 function redo() {
   if (together?.active) return;
-  const s = state.redo.pop();
-  if (s) restore(s, state.redo, state.undo);
+  historyStep(false);
 }
 
 /* ---------- Ask anchors follow edits ---------- */
@@ -3277,7 +3329,7 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // when a script has a linked list or B-roll asks, when the Storyboard opens, or when the agent sends B-roll; opening a
 // script without any of that downloads none of it. Until it is here, the app answers for it below: no list.
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
-const BROLL_SEAM = 2;
+const BROLL_SEAM = 4;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
 // is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
@@ -3315,7 +3367,7 @@ const brollHost = () => ({
   state, ui, scriptEl, $, $$, h, icon, esc, me, reduced, FILE_TYPES, SAMPLE, SAMPLE_BROLL, canPick, agent,
   isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
   emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
-  refreshBar, brollChanged, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
+  refreshBar, brollChanged, checkpointBrollMove, queueBrollHistory, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
   hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
   getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle,
 });

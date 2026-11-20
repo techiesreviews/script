@@ -1,0 +1,277 @@
+TOOLS-376 / sweep SE-01: undo after moving B-roll preserves script typing.
+
+Scope: only SE-01. No prototype required for this bug fix. The lead chose the scope while Lex was unavailable.
+Only a local static copy and fresh private browser contexts with throwaway scripts were used. No live editor,
+existing script, agent connection, board, release, preview deployment or production deployment was used.
+
+Proof lines (also required in the PR):
+Reproduce SE-01: met — before any fix, kit go se01-red ran scripts/smoke-broll-undo.mjs against http://127.0.0.1:8916 and Chrome CDP 9416. Before Undo: Over="Second spoken paragraph.", typing preserved=true. After Undo: Over still="Second spoken paragraph.", sentinel preserved=false. AssertionError: Undo after moving B-roll preserves unrelated typing.
+Tests first: met — committed browser regression 286be29 before application edits; kit unit tests/broll-history.test.mjs then failed 0/4 before the history seam existed (committed fe3dfae).
+Undo preserves typing: met — the same local browser regression now restores Over="First spoken paragraph." and sentinel preserved=true. It types through browser input, adds a shot through Add B-roll, drags with pointer input, focuses the shot and presses Ctrl+Z.
+Redo and chronological history: met — browser check repeats Ctrl+Shift+Z, types LATER-TYPING, undoes that typing first, then undoes the shot move; UNDO-SENTINEL-A survives. Reload and Reopen of that run's throwaway script retain the original shot position and exact script words.
+Desktop and phone: met — all four cases passed at 1440 and 390 CSS pixels, light and dark. No browser errors. Screenshots inspected under .scratch/se01-shots/ (private throwaway text only).
+Pending and failed saves: met — tests/broll-history.test.mjs controls a pending Undo write, typing while it waits, an Undo write failure and retry, initial-save cancellation, and an invalidated list. It runs the application's actual history functions.
+Smallest scope: met — only move history and its lazy-module seam change; no controls, layout, or other sweep findings change. A move only writes that shot's Over cell through the existing list queue. Its inverse checks the list token and expected Over before writing, so another list or a changed shot is not overwritten.
+Live scripts protected: met — the browser runner refuses non-loopback URLs and creates/disposes a private context per case. Local Chrome and static server were stopped after checks. No live script was opened, changed or synced.
+Open PR only: pending — run kit review, its GPT second look and kit pr --no-merge; never merge, release or deploy.
+
+Assumptions and limits:
+- Existing shared-room text Undo remains owned by the collaborative editor. This change uses the single-person history, like other local checkpoints; it does not redesign shared-room undo ordering.
+- scripts/agents/worktree.sh is absent. The requested command exited 127. Used the identical shared Agent Kit worktree.sh with ASE_OWNER=gpt-fix-script-editor and the prescribed branch/base instead. No edits in the shared checkout.
+- docs/agents/runner.md is absent; kitchen-extras.md explicitly documents that this project has no runner guide.
+- kit ux was attempted after updating docs/features.md. It fails because docs/agents/features.md is absent, despite the project's featureList setting. No UX verdict claimed. The project's extras confirm that no kit UX checks are scripted. Real local browser checks provide behavior evidence.
+- The first expanded browser runner failed after its first passing case because it closed its CDP connection inside the case loop. Fixed the harness lifetime; all four cases then passed, twice.
+
+Commands and RESULT lines observed through implementation:
+Requested worktree command: scripts/agents/worktree.sh: No such file or directory (exit 127).
+Root doctor: RESULT: fail doctor 1 failed: place
+Rulebook: RESULT: ok rulebook shared and docs/agents/kitchen-extras.md
+Worktree doctor: RESULT: ok doctor 13/13 checks passed
+RESULT: ok bg se01-local pid 2257871
+RESULT: ok bg se01-chrome pid 2257933
+RESULT: fail go se01-red exit 1 without a RESULT line; see .scratch/kit-jobs/se01-red/log
+RESULT: fail unit 0/4 (1 files) log .scratch/unit/20261119T224317-2273139.log
+RESULT: ok unit 12/12 (2 files) log .scratch/unit/20261119T224402-2276606.log
+RESULT: ok se01-browser undo restores shot and preserves typing
+RESULT: ok unit 12/12 (2 files) log .scratch/unit/20261119T224439-2281527.log
+RESULT: fail go se01-browser-all exit 1 without a RESULT line; see .scratch/kit-jobs/se01-browser-all/log
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok specs (545/545 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Review round 1 follow-up:
+R1-1: resolved. Two actual moveShot regression tests failed first (a deleted shot and an independently changed Over
+both incorrectly stayed valid). A move is now invalid when its shot disappears or its expected Over conflicts.
+The history drops that stale step; transient write failures remain retryable.
+R1-3: resolved. tests/broll-move.test.mjs proves deletion invalidates the real move; the history regression proves
+invalid moves are skipped and the next Undo still reaches older typing.
+R1-4: resolved for the guard and Check flag behavior. tests/broll-move.test.mjs runs the real moveShot function,
+its captured before/after Over, inverse, expected-Over guard, and Check flags against a queued sidecar. It does
+not add a production API merely to invoke a private helper in the stage fixture.
+R1-5: resolved. The initial-save cancellation regression now starts Undo first and checks the pending inverse is removed.
+Declined: R1-2 (P3) — the reviewer classifies this as a rare race requiring rapid Undo then Redo plus a failed
+sidecar write. The ordinary pending-save and failed-write retry paths pass. Serializing all history navigation
+would expand this single bug fix. A conflict now invalidates that move rather than trapping future text Undo;
+the moved position may still lack a usable inverse after that combination. This limitation remains for the lead.
+Optional documentation and source-marker nits were fixed.
+RESULT: ok bg stop se01-chrome pgid 2257933
+RESULT: ok bg stop se01-local pgid 2257871
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T224918Z
+RESULT: fail unit 0/2 (1 files) log .scratch/unit/20261119T225002-2414854.log
+
+Post-review validation:
+RESULT: ok unit 14/14 (3 files) log .scratch/unit/20261119T225040-2449009.log
+RESULT: ok specs (547/547 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-final pid 2461521
+RESULT: ok bg se01-chrome-final pid 2462169
+RESULT: fail se01-browser timed out: throwaway shot reopened
+The last phone/dark reload check timed out at the old 8-second deadline, after the other three cases passed.
+No drag or Undo assertion failed. Added failure diagnostics and increased the condition deadline to 15 seconds;
+the rerun passed all four cases without another application change. The timeout's cause is not established.
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-final pgid 2462169
+RESULT: ok bg stop se01-local-final pgid 2461521
+
+GPT second-look follow-up:
+The first GPT second look found two P1 issues: fast Undo across moves could overtake the second move's pending
+initial save, and an original quote could predate edits to its paragraph. Both were reproduced before fixing:
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T225417Z
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T225726Z
+RESULT: fail unit 2/4 (1 files) log .scratch/unit/20261119T225857-2662254.log
+Two-move Undo ordering: met — the combined real history/move test holds the second save, presses Undo twice,
+then releases the save. Before the fix the shot stayed on paragraph 2; now it returns to paragraph 1 and both
+moves can be redone. Move history writes are queued in keypress order, including their initial-save waits.
+Edited original paragraph: met — the combined test completely rewrites the original paragraph before moving.
+Before the fix Undo left the shot unmatched. Now Undo generates the saved Over from the same paragraph ids'
+current words, preserves those words and restores Check; Redo moves it again.
+Refreshed quotes across moves: met — an additional test rewrites the middle paragraph between moves and then
+undoes both. It failed after the two individual fixes because one step refreshed the quote expected by the
+older step. The guard now accepts an equivalent current paragraph match and still rejects a different Over.
+RESULT: ok unit 16/16 (3 files) log .scratch/unit/20261119T230010-2666518.log
+RESULT: ok bg list
+RESULT: ok specs (549/549 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-check pid 76723
+RESULT: ok bg se01-chrome-check pid 80038
+RESULT: fail unit 4/5 (1 files) log .scratch/unit/20261119T230358-88457.log
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok unit 17/17 (3 files) log .scratch/unit/20261119T230431-114567.log
+RESULT: ok specs (550/550 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-check pgid 80038
+RESULT: ok bg stop se01-local-check pgid 76723
+
+Final exact-quote follow-up:
+The next Opus review confirmed the queued history fix resolves the earlier rare reversal race. It found a P2:
+regenerating a whole-paragraph quote on every Undo unnecessarily changed a still-valid hand-written Over.
+Exact original Over: met — a new test gave the shot the hand-written quote "spoken paragraph.". Before the fix,
+Undo returned "First spoken paragraph.". The fix captures the original Over inside the initial queued write,
+keeps it byte-for-byte when it still matches the original paragraphs, and regenerates it only when stale.
+History-level conflict: met — the existing Over-conflict test now calls actual history Undo, checks both stacks,
+and proves the next Undo reaches older script typing. Its first run had a fixture bug (passing a spoken-block
+summary to Doc.contentOf); that fixture was corrected without another application change.
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T230756Z
+RESULT: fail unit 5/6 (1 files) log .scratch/unit/20261119T230828-291221.log
+RESULT: fail unit 17/18 (3 files) log .scratch/unit/20261119T230906-334934.log
+RESULT: fail specs (fixture error, 550/551 passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-last pid 362218
+RESULT: ok bg se01-chrome-last pid 363541
+RESULT: ok unit 18/18 (3 files) log .scratch/unit/20261119T230938-374805.log
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok specs (551/551 tests passed)
+RESULT: ok bg stop se01-chrome-last pgid 363541
+RESULT: ok bg stop se01-local-last pgid 362218
+
+Final ordering follow-up:
+The final automatic second look exhausted the free model's allowance and used GPT again under the kit's documented
+fallback. It found text Undo overtaking pending shot inverses and a new drag capturing its origin before Undo saved.
+Both were reproduced with combined real history/move regression tests before this correction.
+Text Undo while a move saves: met — the regression inserts a paragraph, moves onto it then elsewhere, holds Undo's
+save, and presses Undo three times. It failed first. Move inverses now retain the paragraph context from their
+keypress, so an intermediate paragraph removed by later text Undo does not invalidate those inverses. They use
+current words while anchors survive; the retained context is used only for missing intermediate anchors. No
+retained script text is ever assigned back by shot Undo. All three Redos survive.
+Drag while Undo saves: met — the regression holds Undo's write, drags again, releases the write, then undoes that
+new drag. It failed first. Initial moves now use the same history write queue and capture a changed origin from
+the actual sidecar at their queued write. The new drag's Undo returns to the position restored by preceding Undo.
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T231156Z
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T231558Z
+RESULT: fail unit 6/8 (1 files) log .scratch/unit/20261119T231731-827201.log
+RESULT: ok unit 20/20 (3 files) log .scratch/unit/20261119T231807-847995.log
+RESULT: ok specs (553/553 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-order pid 879867
+RESULT: ok bg se01-chrome-order pid 880614
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-order pgid 880614
+RESULT: ok bg stop se01-local-order pgid 879867
+
+Surviving-target correction:
+The next Opus review found the retained context was chosen too broadly when a source paragraph disappeared.
+Surviving target words: met — the combined regression rewrites A, inserts P, moves A to P and then elsewhere,
+holds the first inverse save, then undoes both moves, P's insertion and A's rewrite. It failed with no matched
+shot. Source matching and destination restoration now choose their document independently: an existing target
+always uses its current words. Only missing paragraphs use retained context. The test now restores A's current,
+untyped words. The held-Undo/new-drag regression also checks restoration of the preceding Undo's Check flag.
+The first attempted test only appended a marker, leaving the original quote valid; it passed and was tightened
+to rewrite all original words before reproducing the failure. No application change preceded that failure.
+RESULT: ok review git diff fe0232d9fba41d68d9b9af0de4b6613fcd1805ef...HEAD evidence /home/ubulex/Projects/script-editor/.scratch/reviews/gpt-fix-script-editor/20261119T232141Z
+RESULT: ok unit 9/9 (1 files) log .scratch/unit/20261119T232158-986985.log
+RESULT: fail unit 8/9 (1 files) log .scratch/unit/20261119T232214-994531.log
+RESULT: ok unit 21/21 (3 files) log .scratch/unit/20261119T232239-1007358.log
+RESULT: ok specs (554/554 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md'
+RESULT: ok bg se01-local-target pid 1012065
+RESULT: ok bg se01-chrome-target pid 1012365
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: ok bg stop se01-chrome-target pgid 1012365
+RESULT: ok bg stop se01-local-target pgid 1012065
+
+Take-over fix round (SL-1 and SL-2), 2026-11-20:
+The first builder ran out of fix rounds with SL-1 (P1) and SL-2 (P2) open. Both came from one cause: history steps
+ran out of order with the state they were recorded against (stacks changed at once, shot writes ran later, each step
+compared quotes it had kept). Tracking where every generated quote came from, and re-ordering dependent steps after
+a failure, would have added more state to that. The design was simplified instead:
+- History takes turns. A move's save, and any Undo or Redo pressed while one is under way, each wait for the one
+  before and then meet the script and the list as that one left them. A script-words step with nothing saving still
+  happens at once, as before.
+- A step that cannot be done safely stops there. A save that fails, or a new change, drops the Undo and Redo presses
+  still waiting; the failed step keeps its place and can be tried again. No words are undone by mistake.
+- A step finds the shot by where it shows in the open script (the paragraphs it covers), not by comparing kept quotes;
+  only when it shows on no paragraph, or the list was changed outside the page, by where its saved quote matches.
+This removed the kept copy of the paragraphs, the expected-quote and same-place checks, and the cross-stack cancel.
+
+SL-1 (recorded rewrite between two moves): met. The unit regression moves A to B, records a full rewrite of B, moves
+B to C, then undoes and redoes each step with a wait. It failed first at 4fb1a7f ("the third Undo reaches the first
+paragraph"). The local browser check now does the same by real drag, typing and Ctrl+Z at 1440 and 390 px, light and
+dark; run against the files of 4fb1a7f it failed with "timed out: third Undo reaches the first paragraph".
+SL-2 (failed Undo save with an Undo waiting): met. The unit regression moves A to B to C, presses Undo twice while
+the first Undo's save is held, fails that save, then retries. It failed first at 4fb1a7f ("both moves keep their
+Undo, in their order": 1 step left instead of 2). Now nothing moves, both steps stay in order, the retry reaches B,
+the next Undo reaches A, and both Redos work.
+Also covered: typing while an Undo saves stops the Undo waiting behind it; an Undo pressed while a move's first save
+fails undoes nothing; a shot shown on no paragraph for a moment is found by its saved quote. The fixture now keeps
+Check flags across writes as the app does, so "the new drag clears Check" tests the real line (Opus nit, round 6).
+Local safety: throwaway scripts in fresh private browser contexts on 127.0.0.1 only; no live editor, no real script,
+no agent connection. The local server and Chrome were kit bg jobs and were stopped.
+RESULT: ok doctor 13/13 checks passed
+RESULT: fail unit 9/11 (1 files) (the two new regressions, before the fix)
+RESULT: ok unit 25/25 (3 files)
+RESULT: ok specs (558/558 tests passed)
+RESULT: fail ux ENOENT: no such file or directory, open '<worktree>/docs/agents/features.md' (no kit ux checks are scripted for this project)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+RESULT: fail se01-browser timed out: third Undo reaches the first paragraph (the same check against the files of 4fb1a7f)
+
+After the Opus review of the take-over (no defects; one carried P3 and two test gaps):
+Carried P3 (an Undo that meets a changed shot used up the keypress with nothing shown): fixed. A move found stale in
+its turn is now skipped like a move already known to be stale, and the same Undo goes on to the step before it. A
+failed save still stops there and keeps the step. The Over-conflict regression now expects the same Undo to reach the
+older typing.
+Test gaps: closed. One regression opens another script while a move's Undo saves (without the guard it failed:
+the waiting Undo put the old script's words into the open one); one changes the shot while an Undo saves with a
+second Undo waiting (the shot is left alone, both stale moves are skipped, the typing is undone once).
+RESULT: ok unit 27/27 (3 files)
+RESULT: ok specs (560/560 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+Test gap from the second Opus round (typing while an Undo finds its move stale): closed; without the age check it failed.
+RESULT: ok specs (561/561 tests passed)
+
+GPT second look of the take-over (one P1 race, one test gap):
+A drag waiting behind an Undo's save kept its target's old words: fixed. The regression holds an Undo's save, drags
+onto the last paragraph, rewrites that paragraph, then releases; it failed first ("the saved quote matches the
+paragraph the shot was dropped on"). The move now makes its quote when its turn comes, and a move whose target
+paragraphs are gone by then never happens (second regression, also failed first). Both changes then undo and redo.
+Same kind, found while fixing: a drag onto the place a waiting Undo restores left a step that moved nothing and
+cleared the Check flag; it now moves nothing and leaves no step (regression failed first).
+RESULT: fail unit 14/16 (1 files) (the two queued-drag regressions, before the fix)
+RESULT: fail unit 16/17 (1 files) (the no-move regression, before the fix)
+RESULT: ok unit 31/31 (3 files)
+RESULT: ok specs (564/564 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Opus review after the queued-drag fixes (one P3 race, one test gap, one nit):
+An Undo waiting behind a drag that moves nothing took the step before it: fixed. Removing a move's step now ages
+the history, so the waiting Undo stops there. The regression failed first (the second Undo took the older typing).
+The no-move regression now also records that the drop clears Redo, as any new action does.
+RESULT: fail unit 17/18 (1 files) (the waiting-Undo regression, before the fix)
+RESULT: ok unit 32/32 (3 files)
+RESULT: ok specs (565/565 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Second GPT look (one P1 race, one test gap):
+Words typed into the target paragraph while the list itself is being written left the shot on no paragraph: fixed.
+This window is a few milliseconds and exists for every write of the list (the list is matched again by its quotes
+once written); for a move and its Undo or Redo the shot now stays on the paragraphs it was put on and gets "Check".
+The fixture can now hold the writer after the change was chosen; the regression failed first ("the moved shot
+stays on the paragraph it was dropped on").
+RESULT: fail unit 18/19 (1 files) (the slow-writer regression, before the fix)
+RESULT: ok unit 33/33 (3 files)
+RESULT: ok specs (566/566 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Opus review of the whole change at 75986da (three P3 notes, three test gaps, no blocker or should):
+Failed Undo's place in a full history: fixed. The step now goes back right above the step it sat on instead of at a
+remembered index; the regression with a 3-step history failed first.
+Moves of a script that was left and opened again are skipped: recorded in docs/features.md (the list is loaded again
+then, so the old moves no longer belong to it). No code change.
+Declined (rare, nothing lost): a shot dropped onto the paragraph it still shows on during the few milliseconds an
+Undo of it is saving is treated as "already there", and the Undo then takes it back.
+Test gap for Redo while its save is slow: closed (it passed at once). The browser check now waits for the first
+Undo's result instead of a fixed pause.
+RESULT: fail unit 26/27 (2 files) (the full-history regression, before the fix)
+RESULT: ok unit 35/35 (3 files)
+RESULT: ok specs (568/568 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Third GPT look (one P2 race, one test gap):
+Words added to the target paragraph during a save left "Check" off (the saved quote still matched): fixed. A move,
+its Undo and its Redo now remember what the paragraphs said when the quote was chosen and flag the shot when that
+changed by the time the list is written. The regression covers all three and failed first.
+RESULT: fail unit 20/21 (1 files) (the Check regression, before the fix)
+RESULT: ok unit 36/36 (3 files)
+RESULT: ok specs (569/569 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
