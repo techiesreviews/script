@@ -125,4 +125,33 @@ Lead (2026-11-19, Orbit TOOLS-361, follow-up to TOOLS-358): key the safety-net c
 - Validation gaps (gap): Everything open above (R10-1 to R10-28) still applies.
 - Validation gaps (gap): `tests/script-keys.test.mjs`: write a case where `migrate` fails for `script.md` with `a/script.md` and `b/script.md`. Then set `handOver` to succeed and call `forFile(a)` on the same `keysA`. Check two things: `handOver` is not called without `moving` (or `forFile` gives back `"script.md"`), and a second `keysB.migrate` hands `script.md` to both files' keys. That test would catch the first Spec defect.
 - Validation gaps (gap): `browserHas`: there is no check for a folder that can't be read, and none for a left copy. In a smoke part, patch `FileSystemDirectoryHandle.prototype.getFileHandle` to throw a `NotAllowedError` once for `script.md`. Check that `fileIdsSince` stays unset and the name keeps its draft, list and link. Then, with `script.md` in `movedCopies` and still in the private folder, check that the move gives the disk `script.md` the draft and the name lets go.
+- Validation gaps (gap): R15-25 still open: R12-35 / R13-1 are still missing, as above.
+- Validation gaps (gap): R15-24 still open: R7-17 is still missing, as above.
+- Validation gaps (gap): R15-23 still open: R7-16 is still missing, as above.
+- Validation gaps (gap): R15-22 still open: this round did not touch `scripts/smoke-several-scripts.mjs`. Nothing in it deletes `recent` or stores a handle under `last`.
+- Validation gaps (gap): R15-21 still open: `tests/saving.test.mjs` did not change in this round. R7-17 is still missing.
+- Validation gaps (gap): R15-20 still open: `tests/saving.test.mjs` did not change. Every `adopt` there still gives back `file:…` (lines 211, 228, 239).
+- Validation gaps (gap): R15-19 still open: R7-16 and R7-17 are still missing, because no saving test changed.
+- Validation gaps (gap): R15-18 still open: R7-16 and R7-17 are still missing, because no saving test changed.
+- Validation gaps (gap): R15-17 still open: same as R7-17. No saving test has an `adopt` that stays pending.
+- Validation gaps (gap): R15-16 still open: same as R7-16. All three `adopt` stubs (lines 211, 228, 239) give back `file:…`, and none gives back `handle.name`.
+- Validation gaps (gap): R15-15 still open: same as R7-16.
+- Validation gaps (gap): R15-14 still open: same as R7-17.
+- Validation gaps (gap): R15-13 still open: same as R7-17. No test switches scripts while `adopt` is pending.
+- Validation gaps (gap): R15-12 still open: same as R7-16. No test does Save as into a disk file of the same name while storage refuses.
+- Validation gaps (gap): R15-11 still open: same as R7-16.
+- Validation gaps (gap): R15-10 still open: same as R7-17.
+- Validation gaps (gap): R15-9 still open: R7-16 and R7-17 are still missing.
+- Validation gaps (gap): R15-8 still open: same as R7-16. The `to !== handle.name` guards in `public/saving.js` are still untested.
+- Validation gaps (gap): R15-7 still open: same as R7-17. No `adopt` in `tests/saving.test.mjs` stays pending.
+- Validation gaps (gap): R15-6 still open: R7-16 and R7-17 are still missing.
+- Validation gaps (gap): R15-5 still open: R7-16 and R7-17 are still missing, because no saving test changed in this round.
+- Validation gaps (gap): R15-4 still open: no smoke part reaches the `recentInventory` fallback to `last` in `public/app.js`. The smoke script has no `"last"` key at all.
+- Validation gaps (gap): R15-3 still open: `tests/saving.test.mjs` did not change. R7-16 is still missing.
+- Validation gaps (gap): R15-2 still open: `tests/saving.test.mjs` did not change. R7-17 is still missing.
+- Validation gaps (gap): R15-1 still open: since the last review only `docs/build/step-ae-own-keys.md` changed. `scripts/smoke-several-scripts.mjs` still has no part that deletes `recent` and stores a handle under `last`, so the `last` fallback is still not run (R12-35).
+- Validation gaps (gap): These three tests cover every open id above. None of them was added in this round.
+- Validation gaps (gap): R7-16, covering R15-3, -5, -6, -8, -9, -11, -12, -15, -16, -18, -19, -20 and -23. In `tests/saving.test.mjs`, set `keys.adopt: (h) => Promise.resolve(h.name)`. Then do Save as of a browser `script.md` into a disk handle named `script.md`. Check four things: no `renamed` event is sent and no keys are moved; `draft:script.md` is still there; after the browser copy's cleanup, the draft and B-roll keys under `script.md` are kept, because `nameShared` holds; the disk file opens with those keys.
+- Validation gaps (gap): R7-17, covering R15-2, -5, -6, -7, -9, -10, -13, -14, -17, -18, -19, -21 and -24. In `tests/saving.test.mjs`, make `keys.adopt` return a promise you resolve by hand. Start `saveAs()` on a browser script, call `open()` on another script, then resolve the promise. Check two things: the script that is now open keeps its own name, key and draft; the Save as result goes only to the saved handle: it gets the adopted key, and only `draft:<adopted key>` is removed.
+- Validation gaps (gap): R12-35, covering R15-1, -4, -22 and -25. In `scripts/smoke-several-scripts.mjs`, add a part that does this setup: delete `recent`; store a disk handle `a/script.md` under `last`; set `broll:script.md` and a draft under `script.md`; clear `fileIdsSince`, then reload. Then check four things: `fileIdsSince` is set; `a/script.md` has an id in `fileIds`; opening it shows the B-roll list and offers "Unsaved changes"; the name `script.md` no longer has those keys.
 
