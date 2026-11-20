@@ -7,13 +7,13 @@ import * as Changes from "../public/changes.js";
 
 // Run the app's actual history functions with no page. The browser regression drives the real drag and writer;
 // these checks control the asynchronous save so typing, fast Undo/Redo and failed writes are deterministic.
-function history() {
+function history(limit = 300) {
   const source = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const start = source.indexOf("function checkpoint("), end = source.indexOf("/* ---------- Ask anchors follow edits");
   assert.ok(start >= 0 && end > start, "the app history source boundaries exist");
   const section = source.slice(start, end);
   const state = { doc: Doc.parse("# Throwaway\n\nOriginal words.\n"), undo: [], redo: [], asks: [], lastStep: null };
-  const context = { state, Doc, Changes, together: null, Date, UNDO_LIMIT: 300, TYPING_GROUP_MS: 1000,
+  const context = { state, Doc, Changes, together: null, Date, UNDO_LIMIT: limit, TYPING_GROUP_MS: 1000,
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
     followAnchors() {}, reanchorAll() {}, renderAll() {}, hideBar() {}, changed() {}, emit() {},
   };
@@ -124,4 +124,19 @@ test("B-roll move: an Undo pressed while the move's first save fails undoes noth
   h.undo(); await settle();
   assert.equal(ran, false, "a move of a different list is never written");
   assert.doesNotMatch(h.words(), /UNDO-SENTINEL-A/);
+});
+
+test("B-roll move: a failed Undo goes back above the step it sat on, even when a full history dropped older steps meanwhile", async () => {
+  const h = history(3);
+  h.checkpoint("first"); h.checkpoint("second");
+  const second = h.state.undo.at(-1);
+  let finish;
+  const saved = new Promise((resolve) => { finish = resolve; });
+  h.checkpointBrollMove({ valid: () => true, undo: () => saved, redo: async () => true });
+  h.undo();
+  h.checkpoint("third"); h.checkpoint("fourth"); // the full history drops "first"
+  finish(false); await settle();
+  const at = h.state.undo.findIndex((step) => step.brollMove);
+  assert.equal(h.state.undo[at - 1], second, "the move is still right above the step from before it");
+  assert.equal(h.state.undo.length - at, 3, "both newer steps are above it");
 });
