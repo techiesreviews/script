@@ -286,8 +286,9 @@ test("B-roll move history: a drag waiting behind an Undo's save lands on its par
   assert.doesNotMatch(Doc.serialize(m.state.doc), /Rewritten last paragraph/);
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the drag's Undo returns to where the Undo before it left the shot");
   m.redo(); await settle();
+  assert.deepEqual(saved(), [m.paras[2].id], "Redo moves the shot onto the paragraph's words as they are then");
   m.redo(); await settle();
-  assert.deepEqual(saved(), [m.paras[2].id]);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id], "the shot stays on its paragraph when the rewrite is redone");
   assert.match(Doc.serialize(m.state.doc), /Rewritten last paragraph/);
 });
 
