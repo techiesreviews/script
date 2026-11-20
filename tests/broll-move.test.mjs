@@ -368,3 +368,26 @@ test("B-roll move history: words typed into the target paragraph while a Redo sa
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
   assert.equal(m.broll.shots[0].check, true);
 });
+
+test("B-roll move history: words added to the target paragraph while a move, its Undo or its Redo saves give the shot Check", async () => {
+  // The added words leave the saved quote matching, so only the paragraph's words tell that it changed.
+  const during = async (m, start, index) => {
+    m.broll.shots[0].check = false;
+    const release = m.holdNextSave();
+    const done = start(); await settle();
+    m.type(" added while saving", index);
+    release(); await done; await settle();
+    assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[index].id]);
+    assert.equal(m.broll.shots[0].check, true);
+  };
+  let m = movement();
+  await during(m, () => m.moveShot(1), 1);
+  m = movement();
+  m.broll.shots[0].check = false;
+  await m.moveShot(1);
+  await during(m, () => m.undo(), 0);
+  m = movement();
+  await m.moveShot(1);
+  m.undo(); await settle();
+  await during(m, () => m.redo(), 1);
+});
