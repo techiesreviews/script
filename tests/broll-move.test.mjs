@@ -306,3 +306,15 @@ test("B-roll move history: a drag whose paragraph is gone when its turn comes ne
   assert.equal(Broll.parseBroll(m.text).shots[0].over, first);
   assert.equal(m.state.undo.length, 1, "only the paragraph's own step is left: the drag left none");
 });
+
+test("B-roll move history: a drag onto the place a waiting Undo restores moves nothing and leaves no step", async () => {
+  const m = movement();
+  await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  const next = m.moveShot(0);
+  release(); await next; await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  assert.equal(m.broll.shots[0].check, true, "nothing moved, so the Check flag the Undo restored stays");
+  assert.equal(m.state.undo.length, 0, "a move that moved nothing is no Undo step");
+});
