@@ -232,3 +232,12 @@ RESULT: fail unit 16/17 (1 files) (the no-move regression, before the fix)
 RESULT: ok unit 31/31 (3 files)
 RESULT: ok specs (564/564 tests passed)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Opus review after the queued-drag fixes (one P3 race, one test gap, one nit):
+An Undo waiting behind a drag that moves nothing took the step before it: fixed. Removing a move's step now ages
+the history, so the waiting Undo stops there. The regression failed first (the second Undo took the older typing).
+The no-move regression now also records that the drop clears Redo, as any new action does.
+RESULT: fail unit 17/18 (1 files) (the waiting-Undo regression, before the fix)
+RESULT: ok unit 32/32 (3 files)
+RESULT: ok specs (565/565 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases

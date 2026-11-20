@@ -317,4 +317,19 @@ test("B-roll move history: a drag onto the place a waiting Undo restores moves n
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
   assert.equal(m.broll.shots[0].check, true, "nothing moved, so the Check flag the Undo restored stays");
   assert.equal(m.state.undo.length, 0, "a move that moved nothing is no Undo step");
+  assert.equal(m.state.redo.length, 0, "the drop was a new action all the same: Redo of the Undo before it is gone");
+});
+
+test("B-roll move history: an Undo waiting behind a drag that moves nothing is not spent on older typing", async () => {
+  const m = movement();
+  m.type(" OLD");
+  await m.moveShot(1);
+  const release = m.holdNextWrite();
+  m.undo();
+  const next = m.moveShot(0);
+  m.undo();
+  release(); await next; await settle();
+  assert.match(Doc.serialize(m.state.doc), / OLD/);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  assert.equal(m.state.undo.length, 1, "the typing keeps its Undo");
 });

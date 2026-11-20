@@ -862,8 +862,9 @@ function checkpointBrollMove(move) {
   if (stack.length > UNDO_LIMIT) stack.shift();
   state.redo = [];
   state.lastStep = null;
-  // A move whose first save failed never happened. Nothing has undone it yet: history waits its turn behind that save.
-  return () => { const i = stack.indexOf(step); if (i >= 0) stack.splice(i, 1); };
+  // A move whose first save failed, or moved nothing, never happened. Nothing has undone it yet (history waits its
+  // turn behind that save), and an Undo waiting for it stops there instead of taking the step before.
+  return () => { const i = stack.indexOf(step); if (i >= 0) { stack.splice(i, 1); historyAge++; } };
 }
 // Saving a moved shot takes a moment, so history takes turns: a move's save, and any Undo or Redo asked for while one
 // is under way, each wait for the one before and then meet the script and the list as that one left them. A save that
