@@ -219,3 +219,16 @@ RESULT: ok specs (560/560 tests passed)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
 Test gap from the second Opus round (typing while an Undo finds its move stale): closed; without the age check it failed.
 RESULT: ok specs (561/561 tests passed)
+
+GPT second look of the take-over (one P1 race, one test gap):
+A drag waiting behind an Undo's save kept its target's old words: fixed. The regression holds an Undo's save, drags
+onto the last paragraph, rewrites that paragraph, then releases; it failed first ("the saved quote matches the
+paragraph the shot was dropped on"). The move now makes its quote when its turn comes, and a move whose target
+paragraphs are gone by then never happens (second regression, also failed first). Both changes then undo and redo.
+Same kind, found while fixing: a drag onto the place a waiting Undo restores left a step that moved nothing and
+cleared the Check flag; it now moves nothing and leaves no step (regression failed first).
+RESULT: fail unit 14/16 (1 files) (the two queued-drag regressions, before the fix)
+RESULT: fail unit 16/17 (1 files) (the no-move regression, before the fix)
+RESULT: ok unit 31/31 (3 files)
+RESULT: ok specs (564/564 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases

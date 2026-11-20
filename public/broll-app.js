@@ -896,21 +896,6 @@ export function createBroll(host) {
       const ids = saved.over === shown.over ? covered(shown) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
-    // In its turn, after any Undo or Redo still saving: the move starts from where that step leaves the shot, and its
-    // quote is of the words its paragraphs have by then (typing goes on while it waits).
-    const write = queueBrollHistory(async () => {
-      if (token !== broll.token) throw new Error("The B-roll list changed.");
-      await changeList((md) => {
-        const now = placeNow(md);
-        if (!now) throw new Error("The shot changed.");
-        if (gone(destination, Broll.spokenBlocks(state.doc))) throw new Error("The script changed.");
-        ({ over: before, ids: origin, check: checked } = now);
-        over = Broll.overFor(state.doc, Broll.wholeParas(state.doc, destination));
-        return Broll.updateShot(md, id, { over });
-      });
-      const now = token === broll.token && shotById(id);
-      if (now?.check) { now.check = false; syncFlags(); renderBroll(); }
-    });
     // Undo and Redo run in their turn too (the app's queueBrollHistory), so the script and the list are as the step
     // before left them: the shot goes back only from the place this move left it, onto paragraphs that are still spoken.
     const restoreMove = async (redo) => {
@@ -939,8 +924,25 @@ export function createBroll(host) {
         return false;
       }
     };
-    // Registered before the save finishes, so an Undo pressed at once waits for this move instead of undoing typing.
+    // Registered before the save starts, so an Undo pressed at once waits for this move instead of undoing typing.
     const cancel = checkpointBrollMove({ valid: () => !invalid && token === broll.token && !!shotById(id), undo: () => restoreMove(false), redo: () => restoreMove(true) });
+    // In its turn, after any Undo or Redo still saving: the move starts from where that step leaves the shot, and its
+    // quote is of the words its paragraphs have by then (typing goes on while it waits).
+    const write = queueBrollHistory(async () => {
+      if (token !== broll.token) throw new Error("The B-roll list changed.");
+      await changeList((md) => {
+        const now = placeNow(md);
+        if (!now) throw new Error("The shot changed.");
+        if (gone(destination, Broll.spokenBlocks(state.doc))) throw new Error("The script changed.");
+        ({ over: before, ids: origin, check: checked } = now);
+        if (origin.join() === destination.join()) return md; // the step before put the shot here already
+        over = Broll.overFor(state.doc, Broll.wholeParas(state.doc, destination));
+        return Broll.updateShot(md, id, { over });
+      });
+      if (over == null) return void cancel(); // nothing moved: nothing to undo
+      const now = token === broll.token && shotById(id);
+      if (now?.check) { now.check = false; syncFlags(); renderBroll(); }
+    });
     try { await write; }
     catch (err) {
       cancel();
