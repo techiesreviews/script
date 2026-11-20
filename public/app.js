@@ -1,6 +1,6 @@
 // script.techies.tools · the editor UI. Plain ES module, no build step, no network except loading the sample.
 import * as Doc from "./doc.js";
-import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted, sameWords } from "./saving.js";
+import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted, sameWords, draftKey, LEFT_COPIES_KEY } from "./saving.js";
 import * as Changes from "./changes.js";
 import * as Links from "./links.js";
 import * as Cues from "./cues.js";
@@ -10,6 +10,7 @@ import { TOKEN_MAX_AGE_MS as AGENT_MAX_AGE, NO_ASKS } from "./agent-link.js";
 import { listState, settleFolder, folderNote } from "./folder-note.js";
 import { resolveTyped, suggestions, rememberAsk, findWords, plainOffset, barSpot, phoneDock, popSpot, seenFrom } from "./edit-bar.js";
 import * as Aside from "./aside.js";
+import { createScriptKeys, createHandOver, createInUse } from "./script-keys.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -79,6 +80,13 @@ const store = {
   set(k, v) { try { localStorage.setItem(LS + k, JSON.stringify(v)); return true; } catch { return false; } },
   del(k) { try { localStorage.removeItem(LS + k); } catch { /* storage off */ } },
 };
+// Local storage as it is stored, with its errors kept: for the hand-over of old keys (script-keys.js), where a read
+// that fails must never be taken for "nothing stored".
+const localRaw = {
+  read: (k) => localStorage.getItem(LS + k),
+  write: (k, v) => localStorage.setItem(LS + k, v),
+  remove: (k) => localStorage.removeItem(LS + k),
+};
 const me = (() => {
   let p = store.get("me");
   if (!p?.id) { p = { id: Doc.newId(10), name: "You" }; store.set("me", p); }
@@ -118,9 +126,6 @@ const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 
 // Several scripts (TOOLS-358): scripts left while the agent works in them (aside.js), and where each script left was
 // scrolled and its caret ({ handle, place }). In this tab's memory only.
 const asides = [], places = [];
-// The files whose words the app keeps itself since they were kept aside: their saves never fall back to a draft by name,
-// also a save still on its way after the script left memory (taken off the list). Until the script opens again.
-const keptWords = new WeakSet();
 let lastCaret = null; // the caret in the open script, kept while focus is in the menu
 let lookFor = null; // the agent's changes made while this script was aside, until they have been on screen
 let menuSlash = null; // a "/" command being typed when focus went to the file-name menu (commandNow)
@@ -2257,6 +2262,12 @@ async function idbGet(k) {
     return await new Promise((res) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result ?? null); q.onerror = () => res(null); });
   } catch { return null; }
 }
+// Like idbGet, but a failed read is an error, never "nothing stored" (the files' ids must not be written over, TOOLS-361).
+async function idbRead(k) {
+  const db = await idb();
+  // Nothing stored gives undefined; a link or list removed on purpose is a stored null.
+  return new Promise((res, rej) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error || new Error("IndexedDB read failed")); });
+}
 // Like idbSet, but a failed write is an error (a B-roll list kept in the browser must not vanish silently).
 async function idbPut(k, v) {
   const db = await idb();
@@ -2265,6 +2276,19 @@ async function idbPut(k, v) {
     t.objectStore("handles").put(v, k);
     t.oncomplete = res;
     t.onerror = t.onabort = () => rej(t.error || new Error("IndexedDB write failed"));
+  });
+}
+// Like idbPut, but only where nothing was ever stored, and looked at and written in one transaction, so no other tab
+// comes in between (the hand-over of old keys, script-keys.js). Gives whether it wrote.
+async function idbFill(k, v) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const t = db.transaction("handles", "readwrite"), s = t.objectStore("handles"), q = s.get(k);
+    let wrote = false, failed = null;
+    // A put that throws is kept for the answer: thrown from here it would only reach the window as an error.
+    q.onsuccess = () => { if (q.result !== undefined) return; try { s.put(v, k); wrote = true; } catch (e) { failed = e; t.abort(); } };
+    t.oncomplete = () => res(wrote);
+    t.onerror = t.onabort = () => rej(failed || t.error || new Error("IndexedDB write failed"));
   });
 }
 // The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count; the demo's
@@ -2306,20 +2330,19 @@ function persistDraft() {
   const open = Changes.withContext(state.asks.filter((a) => isOpen(a) || Changes.isMarked(a)), state.doc).map(Doc.withoutPictures);
   const dirty = isDirty();
   const flags = brollFlags();
-  if (!dirty && !open.length && !flags) { saving.drafts.del(state.name); return; }
-  saving.drafts.set(state.name, { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
+  if (!dirty && !open.length && !flags) { saving.drafts.del(scriptKey()); return; }
+  saving.drafts.set(scriptKey(), { text: dirty ? saveText() : null, at: Date.now(), asks: open, ...(flags ? { broll: flags } : {}) });
 }
 
 // `kept`: a script kept aside (TOOLS-358), opened again as it is in memory; `place`: where it was scrolled and its caret.
 // `draft`: this script's own draft, handed over (a script kept aside whose file changed), instead of the one by its name.
 function loadText(text, { name, handle = null, modified = 0, fresh = false, browser = false, kept = null, place = null, draft: given = null }) {
   // Leaving a script: keep its place (and the script itself while its agent works in it), write what is still waiting
-  // to its own file, and keep a draft as a safety net.
+  // to its own file, and keep a draft as a safety net, under the script's own key (TOOLS-361), also for a script
+  // kept aside: its asks and the agent's marked changes then come back after a reload.
   if (state.doc) {
-    // A script kept aside keeps its words in memory and leaves no draft under its name, also no older one: another
-    // script of that name (Save to video folder calls every one script.md) may open next and would read it.
-    if (leaveScript(handle)) { clearTimeout(draftTimer); saving.drafts.del(state.name); }
-    else persistDraft();
+    leaveScript(handle);
+    persistDraft();
     saving.flush();
   }
   // A new script left as it came is not kept: empty ones would pile up in the browser. It goes once this tab has let
@@ -2335,7 +2358,6 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.doc = kept ? kept.doc : Doc.parse(text);
   saving.open({ handle, name, browser, savedText: kept ? kept.savedText : fresh ? Doc.serialize(state.doc) : text, modified, fresh });
   const freed = holdOpen();
-  if (handle) keptWords.delete(handle); // open again: its own draft is its safety net again
   if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle); dropKeys(unused.name); } }).catch(() => {});
   state.undo = kept ? kept.undo : [];
   state.redo = kept ? kept.redo : [];
@@ -2351,7 +2373,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.pendingDraft = null;
   state.frontOpen = false;
   state.hint = null;
-  const draft = given ?? saving.drafts.get(name);
+  const draft = given ?? saving.drafts.get(scriptKey());
   setBrollFlags(kept ? keptFlags(kept) : draft?.broll);
   hideBanner();
   if (kept) adoptKept(kept);
@@ -2416,8 +2438,7 @@ function leaveScript(next) {
   // Its B-roll shots, as matched to its lines now: an answer there that changes a covered line gives its shot "Check".
   if (kept) {
     kept.shots = brollShots().map((x) => ({ id: x.id, blockIds: [...(x.blockIds || [])], sig: x.sig, check: !!x.check }));
-    kept.brollFlags = brollFlags(); // its own "Check" flags: never read back from a draft another script may hold
-    keptWords.add(kept.handle);
+    kept.brollFlags = brollFlags(); // its own "Check" flags, as they are now
     asides.push(kept);
   }
   else places.push({ handle: state.handle, place });
@@ -2527,22 +2548,30 @@ function answerKept(s, ask, args) {
   if (checked.answer.kind === "links") return { result: Changes.answerResult("links", { linked: ask.answer.links.length, skipped: plan?.skipped || [] }) };
   return { result: Changes.answerResult(checked.answer.kind, { cuesDropped: r.cuesDropped }) };
 }
-// A script kept aside goes to its own file (auto-save rules, saving.saveLeft), one write after the other. It writes no
-// draft: drafts go by file name, and another script of that name (Save to video folder calls every one script.md) may
-// hold it. Words that could not be written stay in memory and come back as "Unsaved changes" when it opens (keptDraft).
-// Limit: after a reload its asks and marks are gone; its file still has the agent's change.
+// A script kept aside goes to its own file (auto-save rules, saving.saveLeft), one write after the other. Its draft,
+// under its own key (TOOLS-361), keeps its open asks, the agent's marked changes and its "Check" flags, before and
+// after each write, so they come back after a reload; words that could not be written come back as "Unsaved changes".
 function saveKept(s) {
   if (s.gone) return;
   s.writes = (s.writes || Promise.resolve())
     .then(() => {
+      persistKept(s);
       const text = Doc.serialize(s.doc);
-      return s.gone || text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText, noDraft: true });
+      return s.gone || text === s.savedText ? null : saving.saveLeft({ handle: s.handle, name: s.name, text, browser: s.browser, savedText: s.savedText });
     })
     .then((w) => {
       // What the file holds now, also for a script taken off the list meanwhile (on.left no longer finds it there).
       if (w) Object.assign(s, { savedText: w.text, fileModified: w.modified });
+      persistKept(s);
     })
     .catch(() => {});
+}
+// The draft of a script kept aside, under its own key; none once it was deleted.
+function persistKept(s) {
+  if (s.gone) return;
+  const key = scriptKeys.keyOf(s.handle, s.name), draft = keptDraft(s);
+  if (draft) saving.drafts.set(key, draft);
+  else saving.drafts.del(key);
 }
 // Its own B-roll "Check" flags: the ones it had when it was left, and the ones its answers gave.
 const keptFlags = (s) => (s.brollFlags || s.flags ? { ...s.brollFlags, ...s.flags } : null);
@@ -2596,7 +2625,7 @@ function discardDraft() {
   if (draft?.asks) adoptAsks(draft.asks.filter((a) => a.scope === "script" || Changes.isMarked(a) || Doc.findQuote(state.doc, a.quote)));
   brollApi?.dropGone();
   brollIfAsks();
-  saving.drafts.del(state.name);
+  saving.drafts.del(scriptKey());
   renderAll(getCaret());
   changed();
   offerAsks();
@@ -2647,6 +2676,7 @@ async function openOne(handle, was) {
     const file = await handle.getFile();
     const text = await file.text();
     const browser = await isInBrowser(handle);
+    if (!browser) await scriptKeys.forFile(handle); // its own key for its draft and B-roll (TOOLS-361)
     // It opens as it is in memory, unless its file holds other words now (another tab or program wrote it): then it is
     // read from the file like any other, and its draft has the agent's change (TOOLS-358).
     const asIs = kept && (await sameWords(text, kept.savedText));
@@ -2721,6 +2751,7 @@ const saving = createSaving({
   // Scripts saved in the browser (step J), named after their title.
   browser: browserSaving ? { name: async (from, doc) => Doc.scriptFileName("", doc, await nameTaken(from)), create: (name, text) => createBrowserScript(name, text) } : null,
   drafts: store,
+  keys: { of: (handle, name) => scriptKeys.keyOf(handle, name), adopt: (handle) => scriptKeys.adopt(handle) },
   clock: { now: () => Date.now(), later: (fn, ms) => setTimeout(fn, ms), cancel: (id) => clearTimeout(id) },
   on: {
     status: () => renderSaveState(),
@@ -2736,8 +2767,6 @@ const saving = createSaving({
       if (s) Object.assign(s, { savedText: text, fileModified: modified });
       else if (handle === state.handle) { Object.assign(state, { savedText: text, fileModified: modified }); renderSaveState(); }
     },
-    // A script kept aside keeps its words in memory: its failed saves leave no draft under its name.
-    keepsWords: (handle) => keptWords.has(handle),
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, words, browser = false }) {
       remember(handle, browser);
@@ -2751,7 +2780,7 @@ async function reloadFromDisk() {
   hideBanner();
   if (!state.handle) return;
   // Keep what is on screen as a draft, so "Restore" brings it back.
-  if (isDirty()) saving.drafts.set(state.name, { text: saveText(), at: Date.now(), asks: state.asks.filter(isOpen), ...(brollFlags() ? { broll: brollFlags() } : {}) });
+  if (isDirty()) saving.drafts.set(scriptKey(), { text: saveText(), at: Date.now(), asks: state.asks.filter(isOpen), ...(brollFlags() ? { broll: brollFlags() } : {}) });
   await openHandle(state.handle);
 }
 function download(text, name, type) {
@@ -2999,9 +3028,63 @@ async function isInBrowser(handle) {
   if (!browserSaving || !handle) return false;
   try { return !!(await (await scriptsDir()).resolve(handle)); } catch { return false; }
 }
+// Each script's own key for its draft, its B-roll link and list, and its "Check" flags (TOOLS-361, script-keys.js): a
+// file on the computer has an id of its own, kept with its handle; a script in the browser or without a file goes by
+// its name.
+const fileIdLocks = navigator.locks ?? tabLocks();
+// The tabs tell each other which files they have in use (a Web Lock per id): a full id list never lets go of one, and
+// the hand-over of old keys never writes a draft under the key of a file another tab has in use.
+const filesInUse = createInUse(fileIdLocks);
+const scriptKeys = createScriptKeys({
+  store: { get: idbRead, put: idbPut },
+  sameFile,
+  lock: (fn) => fileIdLocks.request("script-editor:file-ids", fn),
+  newId: () => Doc.newId(12),
+  handOver,
+  // The scripts this tab has in use: their keys stay on the list while it writes under them.
+  live: () => [state.handle, ...asides.map((s) => s.handle)],
+  inUse: filesInUse,
+});
+const scriptKey = () => scriptKeys.keyOf(state.handle, state.name);
+// What was kept under a file name before TOOLS-361 goes to the files of that name (script-keys.js createHandOver):
+// each gets a copy of the B-roll link and list, the newest the draft, and the name lets go of them, unless a script in
+// the browser has that name (then they are its own; only the files on the list at the move get a copy). The demo
+// keeps its own. Every read fails loudly, the copies come first, and the name lets go (the step it gives back) only
+// once the files' ids are kept. Both steps run in the B-roll keys' queue.
+const overTo = createHandOver({
+  idb: { read: idbRead, put: idbPut, fill: idbFill },
+  local: localRaw,
+  key: { draft: draftKey, link: (k) => brollKey(k), list: (k) => listKey(k) },
+  browserHas,
+  keeps: (name) => name === SAMPLE.name,
+  inUse: filesInUse,
+});
+async function handOver(name, keys, o) {
+  const letGo = await keyed(() => overTo(name, keys, o));
+  return letGo && Object.assign(() => keyed(letGo), { undo: letGo.undo });
+}
+// Is there a script in the browser with this name? A folder that can't be read is an error (the hand-over stops and is
+// tried again), never "no". A copy left behind by a move to a file is not one, also while a tab still holds it (SL-2);
+// the names of those copies are read loudly too: a list that can't be read is an error, never "no copy left behind".
+async function browserHas(name) {
+  if (!browserSaving) return false;
+  const left = JSON.parse(localRaw.read(LEFT_COPIES_KEY) ?? "[]");
+  if (Array.isArray(left) && left.includes(name)) return false;
+  try { await (await scriptsDir()).getFileHandle(name); return true; } catch (e) { if (e?.name === "NotFoundError" || e?.name === "TypeError") return false; throw e; }
+}
+// The files on the computer on the recent list, for the move: a list that can't be read is an error, never "no files"
+// (SL-3: the move then stays pending and is tried again on the next page).
+async function recentInventory() {
+  const stored = await idbRead("recent");
+  const list = Array.isArray(stored) ? stored : await idbRead("last").then((last) => (last?.name ? [{ handle: last, name: last.name }] : []));
+  return list.filter((r) => !r?.browser && r?.handle?.name).map((r) => ({ handle: r.handle, name: r.name }));
+}
+// Once per browser profile, before any file opens: the files on the recent list take what was kept under their names.
+scriptKeys.migrate(recentInventory);
 // Names a new or renamed script may not take: recent files, scripts in the browser (also a copy left behind that is not
 // deleted yet), kept drafts, names with a B-roll link or list kept (a file taken off the list keeps them) and the open
-// script (all by name, in any capitals; drafts and B-roll keys go by name). `own`: the script being named.
+// script (all by name, in any capitals: a browser script's drafts and B-roll keys go by its name). `own`: the script
+// being named.
 async function nameTaken(own = "") {
   const names = new Set((await recentScripts()).map((r) => r.name.toLowerCase()));
   for (const n of copies.names()) names.add(n.toLowerCase());
@@ -3026,10 +3109,11 @@ async function createBrowserScript(name, text) {
   if (!keepAsked) { keepAsked = true; navigator.storage.persist?.().catch(() => {}); }
   return made;
 }
-// A script's name goes with its draft, its B-roll link and a B-roll list kept in the browser (drafts and B-roll keys
-// go by name, as for files on disk). `clear`: the old name goes away (a rename, a move to a file), so its B-roll keys
-// are cleared; else a file on disk or the demo keeps its own. The new name's link and list are replaced: by the link
-// as stored when the move runs in the queue, or `link` when none is stored (the demo links its list by itself).
+// A script's key goes with its draft, its B-roll link and a B-roll list kept in the browser (TOOLS-361: a file's own
+// id, a browser script's name; a rename in the browser, a move to a file and Save as move them). `clear`: the old key
+// goes away (a rename, a move out of the browser), so its B-roll keys are cleared; else a file on disk or the demo keeps
+// its own. The new key's link and list are replaced: by the link as stored when the move runs in the queue, or `link`
+// when none is stored (the demo links its list by itself).
 async function moveKeys(from, to, { clear = false, link = null } = {}) {
   if (from === to) return;
   saving.drafts.move(from, to);
@@ -3060,21 +3144,23 @@ async function followTitle(handle) {
   await moved;
   await updateRecent((list) => list.map((r) => (r.browser && r.name === from ? { ...r, handle, name } : r)));
 }
-// Is another script known under this name (not the file `handle`): the open one, one kept aside, one whose place is
-// kept, or one on the list? A script open without a file, or one that can't be compared, counts too (keep the data).
+// Is another script known that goes by this name (not the file `handle`): the open one, one kept aside, one whose place
+// is kept, or a browser script on the list? A script open without a file counts too (keep the data). Files on the
+// computer have keys of their own (TOOLS-361): one open, kept aside or with a kept place counts only while it still
+// goes by its name (storage refused); files on the list do not.
 async function nameShared(name, handle) {
   if (state.doc && state.name === name && !state.handle) return true;
   const known = [
     ...(state.doc ? [{ name: state.name, handle: state.handle }] : []),
     ...asides.map((s) => ({ name: s.name, handle: s.handle })),
     ...places.map((p) => ({ name: p.handle?.name, handle: p.handle })),
-    ...(await recentScripts()).map((x) => ({ name: x.name, handle: x.handle })),
-  ];
-  for (const k of known) if (k.name === name && k.handle && !(await sameFile(k.handle, handle))) return true;
+    ...(await recentScripts()).filter((x) => x.browser).map((x) => ({ name: x.name, handle: x.handle })),
+  ].filter((k) => scriptKeys.keyOf(k.handle, k.name) === name);
+  for (const k of known) if (k.handle && !(await sameFile(k.handle, handle))) return true;
   return false;
 }
-// Its draft and B-roll keys go too: they are by name, as for every script (a file opened later under the same name
-// starts without them), unless another script of that name is known (nameShared).
+// Its draft and B-roll keys go too: a browser script's keys are by its name (a script opened later under the same name
+// starts without them), unless another script that goes by that name is known (nameShared; when in doubt they stay).
 async function deleteBrowserScript(r) {
   // An answer for it has nowhere to go now; a write of it on its way ends before the file goes, and none follows.
   deleting.push(r.handle); // it can't be opened while it goes
@@ -3086,8 +3172,8 @@ async function deleteBrowserScript(r) {
     await saving.idle();
     await forget(r.handle);
     try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
-    // Keys go by name (Save to video folder calls every one script.md): they go only when no other script of that name
-    // is known, open, kept aside or on the list. When in doubt, they stay.
+    // A browser script's keys go by its name: they go only when no other script that goes by that name is known, open,
+    // kept aside or on the list (files on the computer have their own, TOOLS-361). When in doubt, they stay.
     if (!(await nameShared(r.name, r.handle))) dropKeys(r.name);
   } finally {
     deleting.splice(deleting.indexOf(r.handle), 1);
@@ -3262,6 +3348,10 @@ addEventListener("beforeunload", (e) => {
 });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { persistDraft(); saving.flush(); } });
 addEventListener("pagehide", () => { persistDraft(); saving.flush(); });
+// A tab looked at again: the keys of the scripts it has in use go back on the id list if other tabs pushed them off
+// meanwhile (TOOLS-361: the list holds 200), so a reload still finds what it wrote under them.
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") scriptKeys.keep(); });
+addEventListener("focus", () => scriptKeys.keep());
 
 /* ---------- Icons in the static markup ---------- */
 $$("[data-icon]").forEach((el) => {
@@ -3277,7 +3367,7 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // when a script has a linked list or B-roll asks, when the Storyboard opens, or when the agent sends B-roll; opening a
 // script without any of that downloads none of it. Until it is here, the app answers for it below: no list.
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
-const BROLL_SEAM = 2;
+const BROLL_SEAM = 3;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
 // is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
@@ -3286,20 +3376,20 @@ const brollPre = { token: 0, status: "none", link: null, flags: {}, room: null }
 const needsBroll = (a) => a.scope === "broll" || isBrollAnswer(a);
 const wrapOf = (id) => (id ? scriptEl.querySelector(`.line[data-wrap="${CSS.escape(id)}"]`) : null);
 
-// Its link and a list kept in the browser are stored by the script's name. Every read and write of a script's B-roll
-// link goes through one queue, in the order they were made, so a move to a new name (step J) and a link or unlink
-// made meanwhile never cross. The name is taken when the call is made.
-const brollKey = (name = state.name) => `broll:${name}`;
+// Its link and a list kept in the browser are stored by the script's own key (TOOLS-361: a file's id, else its name).
+// Every read and write of a script's B-roll link goes through one queue, in the order they were made, so a move to a
+// new name (step J) and a link or unlink made meanwhile never cross. The key is taken when the call is made.
+const brollKey = (name = scriptKey()) => `broll:${name}`;
 let brollKeys = Promise.resolve();
 function keyed(fn) {
   const run = brollKeys.then(fn);
   brollKeys = run.catch(() => {});
   return run;
 }
-const getLinkKey = (name = state.name) => keyed(() => idbGet(brollKey(name)));
-const setLinkKey = (value, name = state.name) => keyed(() => idbSet(brollKey(name), value));
+const getLinkKey = (name = scriptKey()) => keyed(() => idbGet(brollKey(name)));
+const setLinkKey = (value, name = scriptKey()) => keyed(() => idbSet(brollKey(name), value));
 // Lists without a file are kept in IndexedDB per script; one left in local storage from before moves over when read.
-const listKey = (name = state.name) => `brollList:${name}`;
+const listKey = (name = scriptKey()) => `brollList:${name}`;
 async function readKept(name) {
   const kept = await idbGet(listKey(name));
   if (typeof kept === "string") return kept;
@@ -3308,7 +3398,7 @@ async function readKept(name) {
   if (await idbPut(listKey(name), old).then(() => true, () => false)) store.del(listKey(name));
   return old;
 }
-const delKept = (name = state.name) => keyed(async () => { await idbSet(listKey(name), null); store.del(listKey(name)); });
+const delKept = (name = scriptKey()) => keyed(async () => { await idbSet(listKey(name), null); store.del(listKey(name)); });
 
 // What the module may use of the app. Values that change are read through a function.
 const brollHost = () => ({
@@ -3317,7 +3407,7 @@ const brollHost = () => ({
   emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
   refreshBar, brollChanged, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
   hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
-  getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle,
+  getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle, scriptKey,
 });
 // Loads the module once and, the first time, reads the open script's list; it settles once that first read is done.
 // A load that failed stays failed until the page is reloaded: browsers keep a failed module for the page's life.

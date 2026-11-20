@@ -1,5 +1,5 @@
 // Saving the open script: auto-save, Ctrl/Cmd+S, the changed-on-disk check, saves that wait while another one runs,
-// drafts kept by script name, and saving into the browser or to a new file. No DOM: the file system, local storage and
+// drafts kept by each script's own key (TOOLS-361: `keys`), and saving into the browser or to a new file. No DOM: the file system, local storage and
 // the clock are passed in, so the tests run it with a folder in memory (tests/saving.test.mjs).
 //
 // `script` is the open script's record (app.js reads it to draw the top bar). This module writes its save fields:
@@ -83,8 +83,9 @@ export function tabLocks() {
 // - one per script name for writing, held alone by each save, from its look at the file to the end of its write: two
 //   tabs' saves into one script run one after the other, so the second sees the first's words before it writes. A new
 //   script (`create`) and a script taking another name (`rename`) write under that name's lock too.
+export const LEFT_COPIES_KEY = "movedCopies"; // where the names of the copies left behind are kept (app.js browserHas reads it too)
 export function createLeftCopies({ store, dir, locks = tabLocks(), write = writeHandle }) {
-  const KEY = "movedCopies", PRINTS = "movedCopyPrints"; // the names, and each copy's fingerprint as the tab that moved it knew it
+  const KEY = LEFT_COPIES_KEY, PRINTS = "movedCopyPrints"; // the names, and each copy's fingerprint as the tab that moved it knew it
   const names = () => { const v = store.get(KEY); return Array.isArray(v) ? v : []; };
   const prints = () => { const v = store.get(PRINTS); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; };
   const free = (gone) => {
@@ -254,13 +255,16 @@ export function createLeftCopies({ store, dir, locks = tabLocks(), write = write
  *   into that script in every tab (createLeftCopies saving; optional) }
  * - browser: { name(from, doc) → a free name from the title, create(name, text) → { handle, modified } }
  * - drafts: local storage { get(key), set(key, value), del(key) }
+ * - keys: { of(handle, name) → the key a script's draft goes by (a file's own id, else its name), adopt(handle) → the
+ *   key of a file just saved into (Save as; may be a promise) } (TOOLS-361; optional: without it drafts go by name)
  * - clock: { now(), later(fn, ms) → id, cancel(id) }
  * - on: { status(), conflict(at), written(handle), done(moved), renamed(from, to, { clear }),
  *   placed(handle, { was, words, browser }) — was: the browser copy the script moved out of, words: that copy as
- *   this tab last wrote or read it; left({ handle, text, modified }) — a script the person left was written (optional);
- *   keepsWords(handle) — true while the app keeps that left script's words itself: no draft by name (optional) }
+ *   this tab last wrote or read it; left({ handle, text, modified }) — a script the person left was written (optional) }
  */
-export function createSaving({ script, editor, files, browser, drafts: store, clock, on }) {
+const BY_NAME = { of: (handle, name) => name, adopt: (handle) => handle.name };
+export const draftKey = (key) => `draft:${key}`; // where a script's draft is kept, by the script's own key
+export function createSaving({ script, editor, files, browser, drafts: store, keys = BY_NAME, clock, on }) {
   let queue = SaveQueue.emptyQueue();
   let timer = 0;
   let opened = 0; // counts open(): a Save as that lands after another script opened must leave that script alone
@@ -272,16 +276,21 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
   // The name is the file's own, read as the hold is asked for: a save that waited may be for a script that took
   // another name since (its title changed), and the other tabs know the file by the name it has now.
   const held = (browser, handle, fn) => (browser && files.held ? files.held(handle.name, fn) : fn());
-  // The name a waiting request's draft goes by: its file's name now; the script's own for a request without a file.
-  const nameOf = (req) => req.handle?.name ?? req.name;
-  const key = (name) => `draft:${name}`;
+  // The key a waiting request's draft goes by: its file's own (a file's id; a script in the browser by its name now);
+  // the script's name for a request without a file.
+  const keyOf = (req) => keys.of(req.handle, req.handle?.name ?? req.name);
+  const key = draftKey;
   const drafts = {
     get: (name) => store.get(key(name)),
     set: (name, draft) => store.set(key(name), draft),
     del: (name) => store.del(key(name)),
+    // Gives false when the draft could not be written under `to` (storage full): then it stays under `from`.
     move(from, to) {
       const draft = store.get(key(from));
-      if (draft != null) { store.set(key(to), draft); store.del(key(from)); }
+      if (draft == null) return true;
+      if (store.set(key(to), draft) === false) return false;
+      store.del(key(from));
+      return true;
     },
   };
 
@@ -300,15 +309,11 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     handle: script.handle, name: script.name, text: editor.text(), browser: script.inBrowser,
     savedText: script.savedText, force, auto,
   });
-  // A script the person left could not be written: its draft is stamped now, so reopening it offers "Unsaved changes from …".
-  function keepDraft(name, text) {
-    const draft = drafts.get(name);
-    drafts.set(name, { text, at: clock.now(), asks: draft?.asks ?? [], ...(draft?.broll ? { broll: draft.broll } : {}) });
-  }
-  // The same for a script the person left, unless the app keeps its words itself (a script kept aside, TOOLS-358:
-  // another script of that name may hold the draft).
-  function keepLeftDraft(handle, name, text) {
-    if (!on.keepsWords?.(handle)) keepDraft(name, text);
+  // A script the person left could not be written: its draft (under its own key) is stamped now, so reopening it
+  // offers "Unsaved changes from …".
+  function keepDraft(k, text) {
+    const draft = drafts.get(k);
+    drafts.set(k, { text, at: clock.now(), asks: draft?.asks ?? [], ...(draft?.broll ? { broll: draft.broll } : {}) });
   }
   // The changed-on-disk check: the file holds other words than this tab last wrote into it or read from it
   // (`savedText`). Gives { at: the file's time, to show }, else null. The file's time decides nothing.
@@ -328,8 +333,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
           }
         }
       } catch { /* kept as a draft below */ }
-      // `noDraft`: the caller keeps these words itself (a script kept aside: another script may hold its name).
-      if (!snap.noDraft) keepLeftDraft(snap.handle, nameOf(snap), snap.text);
+      keepDraft(keyOf(snap), snap.text);
       return null;
     });
   }
@@ -393,7 +397,7 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         if (handle === script.handle) script.saveError = e?.message || "Could not save.";
       }
     });
-    if (!written && handle !== script.handle) keepLeftDraft(handle, handle.name, text);
+    if (!written && handle !== script.handle) keepDraft(keyOf({ handle }), text);
     if (written && handle !== script.handle) wroteLeft(written);
     queue = SaveQueue.settleQueue(queue, written);
     return drain(false);
@@ -447,6 +451,9 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
     if (!editor.ready() || script.saving) return;
     const text = editor.text(), mine = opened;
     const was = script.inBrowser ? script.handle : null;
+    // This script's own key, as it is before any wait: if the person leaves it meanwhile, the app keeps its draft
+    // under that key.
+    const own = keys.of(script.handle, script.name);
     // Where files can't be saved, a script in the browser stays there and a copy downloads.
     if (was && !files.pickSave) return files.download(text, script.name);
     script.saveError = "";
@@ -458,22 +465,32 @@ export function createSaving({ script, editor, files, browser, drafts: store, cl
         script.saving = true;
         on.status();
         const modified = await files.write(handle, text);
+        const to = await keys.adopt(handle); // the file's own key, once it is kept (TOOLS-361)
         if (mine === opened) {
           const words = script.savedText; // the browser copy as this tab last wrote or read it
           script.fileModified = modified;
-          if (handle.name !== script.name) {
-            drafts.del(script.name);
-            // The file's name takes this script's B-roll link and list, or none. A script leaving the browser frees
-            // its name there, so its old keys are cleared; a file on disk or the demo keeps its own.
-            on.renamed(script.name, handle.name, { clear: !!was });
-            script.name = handle.name;
+          // The file's own key (also for a file of the same name in another folder) takes this script's B-roll link
+          // and list, or none. A script leaving the browser frees its name there, so its old keys are cleared; a file
+          // on disk or the demo keeps its own.
+          const from = keys.of(script.handle, script.name);
+          if (to !== from) {
+            drafts.del(from);
+            // A file picked again keeps its key (TOOLS-361): the draft kept for what it held before goes, so none of
+            // that script's asks or words come back. Its own key only, never a name another script may go by.
+            if (to !== handle.name) drafts.del(to);
+            on.renamed(from, to, { clear: !!was });
           }
+          script.name = handle.name;
           Object.assign(script, { handle, inBrowser: false, blank: "", needsPermission: false, conflict: false, savedText: text, savedAt: clock.now() });
           // The script moved to its file: the copy in the browser goes.
           on.placed(handle, was ? { was, words } : { was });
         } else {
           // Another script opened while it was written: the file holds this text and is listed; the script open now
-          // keeps its own file, name, draft and B-roll keys, and the browser copy stays.
+          // keeps its own file, name, draft and B-roll keys, and the browser copy stays. The draft kept for what the
+          // picked file held before goes, unless that file is the script open now, or this script's own file (Save as
+          // onto itself): the draft under its key is the one kept as the person left it, with its asks, marks and
+          // "Check" flags, for the words just written.
+          if (to !== handle.name && to !== own && to !== keys.of(script.handle, script.name)) drafts.del(to);
           on.placed(handle, {});
         }
       } else {

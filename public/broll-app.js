@@ -8,7 +8,7 @@ import { startPress, HOLD_MS } from "./press.js";
 
 // Bump with any change to the host createBroll takes or the interface it returns: app.js checks it, so a tab opened
 // before a release that loads this file after it never mixes the two.
-export const SEAM = 2;
+export const SEAM = 3;
 
 /**
  * createBroll(host) → the B-roll part, frozen. `host` is what it may use of the app (app.js brollHost): its state,
@@ -20,7 +20,7 @@ export function createBroll(host) {
     isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
     emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
     refreshBar, brollChanged, schedulePersist, hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
-    getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle,
+    getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle, scriptKey,
   } = host;
   // The list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
   const broll = {
@@ -619,7 +619,7 @@ export function createBroll(host) {
       // The demo list and lists without a file handle are kept in this browser (see keepList).
       const next = await lighterList(Broll.setSketch(broll.text, id, svg));
       still();
-      await keepList(next, state.name); // the token says it is still open, so its name now is its own
+      await keepList(next, scriptKey()); // the token says it is still open, so its key now is its own
       if (token !== broll.token) return;
       broll.text = next;
       broll.sketches = Broll.parseBroll(next).sketches;
@@ -644,8 +644,8 @@ export function createBroll(host) {
   // a script in the browser) are kept in this browser per script. Since step K they live in IndexedDB, which has room
   // for pictures (the app's listKey and readKept). They go through the same queue as the B-roll links (keyed), so a
   // rename and a write never cross. Discarding script changes leaves them alone.
-  const getKept = (name = state.name) => keyed(() => readKept(name));
-  async function keepList(text, name = state.name) {
+  const getKept = (name = scriptKey()) => keyed(() => readKept(name));
+  async function keepList(text, name = scriptKey()) {
     try { await keyed(() => idbPut(listKey(name), text)); }
     catch { throw new Error("This browser could not keep the B-roll list."); }
   }
@@ -666,9 +666,9 @@ export function createBroll(host) {
       }
       const next = await lighterList(mutate(broll.text));
       // Checked again after making pictures lighter (it takes a while): the token says this list is still open (and
-      // still kept in the browser), so the open script's name now is its own (a rename queued its move before this write).
+      // still kept in the browser), so the open script's key now is its own (a rename queued its move before this write).
       if (token !== broll.token || broll.link !== link) throw new Error("The B-roll list changed.");
-      await keepList(next, state.name);
+      await keepList(next, scriptKey());
       return next;
     });
     brollWrites = run.catch(() => {});

@@ -53,12 +53,15 @@ const STUBS = `(() => {
   };
 })();`;
 
-async function openTab(width, height, extra = "") {
-  const { browserContextId } = await send("Target.createBrowserContext");
+// A tab in a fresh profile, or a second tab in the profile of another (`context`: that tab's `page.context`).
+async function openTab(width, height, extra = "", context = null) {
+  const { browserContextId } = context ? { browserContextId: context } : await send("Target.createBrowserContext");
   const { targetId } = await send("Target.createTarget", { url: "about:blank", browserContextId });
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   const page = {
+    context: browserContextId,
     close: () => send("Target.disposeBrowserContext", { browserContextId }),
+    closeTab: () => send("Target.closeTarget", { targetId }), // this tab only: the profile and its other tabs stay
     send: (method, params) => send(method, params, sessionId),
     async eval(expression) {
       const r = await page.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
@@ -173,7 +176,8 @@ async function start(width, height, extra = "") {
 }
 // An ask ("Shorter") on the paragraph that starts with `words` in the open script, taken by the agent.
 // `part`: [from, to] of the paragraph's text to ask on (default all of it).
-async function askShorter(page, mcp, words, part = null) {
+// `take`: false leaves it waiting (the agent does not pick it up).
+async function askShorter(page, mcp, words, part = null, take = true) {
   const asksBefore = await page.eval(`document.querySelectorAll("#script .ask").length`);
   await page.eval(`getSelection().removeAllRanges(); document.activeElement?.blur(); true`);
   await page.until(`document.querySelector("#editBar").hidden`, "the edit bar from before has gone");
@@ -184,6 +188,7 @@ async function askShorter(page, mcp, words, part = null) {
   await sleep(80);
   await page.key("Enter", "Enter", 13, "\r");
   await page.until(`document.querySelectorAll("#script .ask").length > ${asksBefore}`, "the ask shows");
+  if (!take) return null;
   const asks = JSON.parse(toolText(await mcp("tools/call", { name: "wait_for_asks", arguments: { waitSeconds: 5 } })) || "{}").asks || [];
   return asks.find((a) => (part ? true : a.quote?.startsWith(words)));
 }
@@ -484,15 +489,16 @@ async function runSameName() {
   check(!rs?.result?.isError, "the shared-words ask is answered in the bread script.md, in the background", toolText(rs));
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "the walk script is saved");
   await sleep(600);
-  // The walk script's own draft: a safety net with a B-roll "Check" flag of its own.
+  // The walk script's own draft (under its own key, TOOLS-361): a safety net with a B-roll "Check" flag of its own.
+  const W = await keyOfDisk(page, "b/script.md");
   const own = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } });
-  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(own)}); true`);
+  await page.eval(`localStorage.setItem(${JSON.stringify(`script-editor:draft:${W}`)}, ${JSON.stringify(own)}); true`);
   // Another program changes the bread file, so the answer can't be written there and must wait somewhere.
   await writeDisk(page, "a/script.md", "# Bread at home\n\nSomeone else wrote this.\n");
   const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: SHORT } });
   check(!r?.result?.isError, "the answer lands in the closed bread script.md", toolText(r));
   await sleep(1000);
-  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === own, "the open walk script.md keeps its own draft and Check flags", await page.eval(`localStorage.getItem("script-editor:draft:script.md")`));
+  check((await draftOf(page, W)) === own, "the open walk script.md keeps its own draft and Check flags", await draftOf(page, W));
   check(!(await readDisk(page, "a/script.md"))?.includes(SHORT), "the bread file changed elsewhere is not written over");
   await page.until(`!document.querySelector("#aiDot").hidden`, "the dot for the bread script.md");
   // Leaving the walk script.md with words just typed, for a third script: the draft by that name stays the walk's.
@@ -502,8 +508,8 @@ async function runSameName() {
   await page.eval(`document.querySelector("#menuNew").click(); true`);
   await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a third script opens");
   await sleep(1000);
-  const walkDraft = await page.eval(`localStorage.getItem("script-editor:draft:script.md")`);
-  check(!!walkDraft && walkDraft.includes("Walk extra.") && !walkDraft.includes("Cover the bowl") && !walkDraft.includes("Good bread"), "after leaving for a third script, the draft by that name is still the walk script's own", walkDraft);
+  const walkDraft = await draftOf(page, W);
+  check(!!walkDraft && walkDraft.includes("Walk extra.") && !walkDraft.includes("Cover the bowl") && !walkDraft.includes("Good bread"), "after leaving for a third script, the walk script's own draft is still its own", walkDraft);
   await openOther(page, "script.md", 1); // the bread script.md (the walk one is the most recent)
   await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes from")`, "the bread script.md offers its own words as Unsaved changes");
   await page.eval(`[...document.querySelectorAll("#banner button")].find((b) => b.textContent === "Restore").click(); true`);
@@ -575,8 +581,9 @@ async function runDeleteSameName() {
   await page.until(`document.querySelector("#script")?.textContent.includes("What if the best part")`, "the file script.md opens");
   await page.until(`document.querySelector("#saveState").dataset.state === ""`, "it is saved");
   await sleep(600);
+  const F = await keyOfDisk(page, "b/script.md");
   const own = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } }); // the open file's own draft
-  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(own)}); true`);
+  await page.eval(`localStorage.setItem(${JSON.stringify(`script-editor:draft:${F}`)}, ${JSON.stringify(own)}); true`);
   await menuOpen(page);
   const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
   await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
@@ -584,7 +591,7 @@ async function runDeleteSameName() {
   await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
   await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
   await sleep(500);
-  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === own, "the open file script.md keeps its own draft", await page.eval(`localStorage.getItem("script-editor:draft:script.md")`));
+  check((await draftOf(page, F)) === own, "the open file script.md keeps its own draft", await draftOf(page, F));
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
@@ -635,11 +642,12 @@ async function runDeleteKeptSameName() {
   await page.eval(`document.querySelector("#menuNew").click(); true`); // a third script: the file script.md goes to the background
   await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a third script opens");
   await sleep(800);
-  // The name's data, as the file script.md would have it: a draft, a B-roll link and a saved B-roll list.
+  // The file script.md's own data (under its own key, TOOLS-361): a draft, a B-roll link and a saved B-roll list.
+  const F = await keyOfDisk(page, "b/script.md");
   const draft = JSON.stringify({ text: null, at: 1, asks: [], broll: { B9: true } });
-  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(draft)}); localStorage.setItem("script-editor:brollList:script.md", ${JSON.stringify(JSON.stringify("kept list"))}); true`);
-  await idbPut(page, "broll:script.md", { name: "b-roll.md" });
-  await idbPut(page, "brollList:script.md", "the B-roll list");
+  await page.eval(`localStorage.setItem(${JSON.stringify(`script-editor:draft:${F}`)}, ${JSON.stringify(draft)}); localStorage.setItem(${JSON.stringify(`script-editor:brollList:${F}`)}, ${JSON.stringify(JSON.stringify("kept list"))}); true`);
+  await idbPut(page, `broll:${F}`, { name: "b-roll.md" });
+  await idbPut(page, `brollList:${F}`, "the B-roll list");
   await menuOpen(page);
   const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
   await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
@@ -647,10 +655,472 @@ async function runDeleteKeptSameName() {
   await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
   await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
   await sleep(800);
-  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === draft, "the kept file script.md keeps its draft");
-  check((await page.eval(`localStorage.getItem("script-editor:brollList:script.md")`)) === JSON.stringify("kept list"), "the kept file script.md keeps its saved B-roll list (local)");
-  check((await idbGet(page, "broll:script.md")) === JSON.stringify({ name: "b-roll.md" }), "the kept file script.md keeps its B-roll link", await idbGet(page, "broll:script.md"));
-  check((await idbGet(page, "brollList:script.md")) === JSON.stringify("the B-roll list"), "the kept file script.md keeps its saved B-roll list", await idbGet(page, "brollList:script.md"));
+  check((await draftOf(page, F)) === draft, "the kept file script.md keeps its draft");
+  check((await page.eval(`localStorage.getItem(${JSON.stringify(`script-editor:brollList:${F}`)})`)) === JSON.stringify("kept list"), "the kept file script.md keeps its saved B-roll list (local)");
+  check((await idbGet(page, `broll:${F}`)) === JSON.stringify({ name: "b-roll.md" }), "the kept file script.md keeps its B-roll link", await idbGet(page, `broll:${F}`));
+  check((await idbGet(page, `brollList:${F}`)) === JSON.stringify("the B-roll list"), "the kept file script.md keeps its saved B-roll list", await idbGet(page, `brollList:${F}`));
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+
+/* ---------- TOOLS-361: each script's own key, not its file name ---------- */
+// The key a file on the "disk" goes by: its id in IndexedDB `fileIds`, found with isSameEntry.
+const keyOfDisk = (page, path) => page.eval(`(async () => { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle(dir)).getFileHandle(name); const list = await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const q = r.result.transaction("handles").objectStore("handles").get("fileIds"); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); }; r.onerror = () => res([]); }); for (const e of list) if (await e.handle.isSameEntry(h)) return "file:" + e.id; return null; })()`);
+const draftOf = (page, key) => page.eval(`localStorage.getItem(${JSON.stringify(`script-editor:draft:${key}`)})`);
+const shotLabels = (page) => page.eval(`[...document.querySelectorAll("#script .shot-frame__jump")].map((b) => b.getAttribute("aria-label"))`);
+const md = (s) => `# ${s.title}\n\n${s.lines.join("\n\n")}\n`;
+const listFor = (rows) => `# B-roll\n\n| # | What to show | Over (A-roll line) | How to make it |\n| --- | --- | --- | --- |\n${rows.map(([id, what, over]) => `| ${id} | ${what} | "${over}" | Photo |`).join("\n")}\n`;
+const BREAD_LIST = listFor([["B1", "Flour and a clock", BREAD.lines[0]], ["B2", "A bowl under a towel", "Then you cover…"]]);
+const PART = [LONG.indexOf("the bowl"), LONG.indexOf(", which")], OVERNIGHT = "the bowl and leave it overnight"; // B2's line keeps its first words
+const WALK_LIST = listFor([["B1", "Shoes by the door", WALK.lines.at(-1)]]);
+async function pickOpen(page, path, words) {
+  await page.eval(`window.__pick = ${JSON.stringify(path)}; true`);
+  if (await page.eval(`!document.querySelector("#layout").hidden`)) {
+    await menuOpen(page);
+    await page.eval(`document.querySelector("#menuOpen").click(); true`);
+  } else {
+    await page.steady("#emptyOpen");
+    await page.click("#emptyOpen");
+  }
+  await page.until(`document.querySelector("#script")?.textContent.includes(${JSON.stringify(words)})`, `${path} opens`);
+}
+// Two files called script.md: each keeps its own draft, B-roll list and "Check" flags, also for the agent's change
+// made while it was in the background and after a reload; what was kept under the name before opens in the first.
+async function runOwnKeys() {
+  console.log("--- two files called script.md keep their own drafts, B-roll and Check flags (1280 px)");
+  const { page, mcp } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  // Kept under the name before TOOLS-361: a B-roll list linked without a file and a draft with a "Check" flag.
+  await idbPut(page, "broll:script.md", { name: "bread-broll.md", text: BREAD_LIST });
+  await page.eval(`localStorage.setItem("script-editor:draft:script.md", ${JSON.stringify(JSON.stringify({ text: null, at: 1, asks: [], broll: { B1: true } }))}); true`);
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the bread script.md shows the B-roll list kept under its name");
+  check((await shotLabels(page)).some((l) => l.includes("B1: Flour and a clock · Check")), "old data still opens: the list and its Check flag", JSON.stringify(await shotLabels(page)));
+  const A = await keyOfDisk(page, "a/script.md");
+  check(/^file:/.test(A || ""), "the bread script.md has a key of its own", A);
+  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === null && (await idbGet(page, "broll:script.md")) === "null", "the name lets go of what it held");
+  // An ask over B2's line, answered while the walk script.md is open; another ask stays waiting.
+  const ask = await askShorter(page, mcp, "Then you cover", PART);
+  await askShorter(page, mcp, "Bread note 3", [14, 33], false);
+  check(!!ask, "the agent takes an ask in the bread script.md; another waits");
+  await pickOpen(page, "b/script.md", "What if the best part");
+  const B = await keyOfDisk(page, "b/script.md");
+  check(!!B && B !== A, "the walk script.md has another key", `${A} ${B}`);
+  await sleep(600);
+  check((await shotLabels(page)).length === 0 && (await page.eval(`!document.querySelector("#script .ask") && document.querySelector("#banner").hidden`)), "the walk script.md shows none of the bread script's list, asks or words");
+  await idbPut(page, `broll:${B}`, { name: "walk-broll.md", text: WALK_LIST }); // a list of its own, read when it opens next
+  const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: OVERNIGHT } });
+  check(!r?.result?.isError, "the answer lands in the bread script.md, in the background", toolText(r));
+  for (let i = 0; i < 100 && !(await readDisk(page, "a/script.md"))?.includes(OVERNIGHT); i++) await sleep(60);
+  check((await readDisk(page, "a/script.md"))?.includes(OVERNIGHT), "the bread file holds the change");
+  check(!(await readDisk(page, "b/script.md"))?.includes(OVERNIGHT), "the walk file does not");
+  await sleep(600);
+  const aDraft = await draftOf(page, A), bDraft = await draftOf(page, B);
+  check(!!aDraft && aDraft.includes(OVERNIGHT) && aDraft.includes('"B2":true') && aDraft.includes('"status":"waiting"'), "the background script keeps its own draft: the marked change, its open ask and the new Check flag", aDraft?.slice(0, 300));
+  check(!bDraft || (!bDraft.includes(OVERNIGHT) && !bDraft.includes("B2")), "the walk script.md's draft holds nothing of the bread script", bDraft?.slice(0, 300));
+  // A reload: the bread script.md is no longer in memory; its marks, asks and flags come back from its own draft.
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the start screen after the reload");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`!!document.querySelector("#script .agent-change")`, "after the reload, the agent's change is still marked");
+  check((await page.eval(`document.querySelector("#script .agent-change").textContent`)).includes("leave it overnight"), "the mark is on the agent's words");
+  await page.until(`!!document.querySelector("#script .ask")`, "the open ask is back");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the bread list shows");
+  const labels = await shotLabels(page);
+  check(labels.some((l) => l.includes("B1:") && l.includes("· Check")) && labels.some((l) => l.includes("B2:") && l.includes("· Check")), "both Check flags are back: the old one and the background answer's", JSON.stringify(labels));
+  await page.eval(`document.querySelector("#script .agent-change").scrollIntoView({ block: "center" }); true`);
+  await page.until(`!!document.querySelector(".rc__undo")`, "Undo on the agent's tag after the reload");
+  await page.shot("ownkeys-1-bread-after-reload");
+  await page.eval(`document.querySelector(".rc__undo").click(); true`);
+  await page.until(`document.querySelector("#script").textContent.includes("the bowl with a plate")`, "Undo after the reload puts the person's words back");
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 1`, "the walk script.md shows its own list");
+  const walk = await shotLabels(page);
+  check(walk.length === 1 && walk[0].includes("Shoes by the door") && !walk[0].includes("Check"), "the walk script.md: its own shot, no Check", JSON.stringify(walk));
+  check(await page.eval(`!document.querySelector("#script .agent-change") && !document.querySelector("#script .ask") && document.querySelector("#banner").hidden`), "the walk script.md: no marks, asks or Unsaved changes of the bread script");
+  await page.shot("ownkeys-2-walk-own-list");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// A reload while the agent still holds an ask in a background script: the ask comes back from the draft the script
+// wrote as it was left, and the agent's answer still lands (review round 2 on TOOLS-361).
+async function runReloadHeld() {
+  console.log("--- a reload while the agent holds an ask in a background script (1280 px)");
+  const { page, mcp } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  const ask = await askShorter(page, mcp, "Then you cover", PART);
+  check(!!ask, "the agent takes an ask in the bread script.md");
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await sleep(600);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the start screen after the reload");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`!!document.querySelector("#script .ask")`, "the ask the agent holds is back in the bread script.md");
+  const r = await mcp("tools/call", { name: "answer_ask", arguments: { askId: ask?.id, kind: "replace", text: OVERNIGHT } });
+  check(!r?.result?.isError, "the agent's answer to it still lands", toolText(r));
+  await page.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(OVERNIGHT)})`, "the answer is in the bread script.md");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// Moving to keys with a full storage (second look round 2 on TOOLS-361): one B-roll list copy fails, so the name keeps
+// its list, link and draft and the move is not marked done; a file opened on that page takes nothing alone (SL-1); the
+// next page tries again and both files get them.
+const FULL_ONCE = `(() => { if (localStorage.getItem("smoke:fullOnce") !== "1") return; const put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function (v, k) { if (typeof k === "string" && k.startsWith("brollList:file:") && localStorage.getItem("smoke:fullOnce") === "1") { localStorage.removeItem("smoke:fullOnce"); throw new DOMException("The storage is full.", "QuotaExceededError"); } return put.call(this, v, k); }; })();`;
+async function runMigrateFull() {
+  console.log("--- moving to keys with a full storage, then again (1280 px)");
+  const { page } = await connect(1280, 800, FULL_ONCE);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md({ ...BREAD, title: "Bread in folder b" })); // two files of that name (SL-1)
+  await sleep(50);
+  const unsaved = `${md(BREAD).trimEnd()}\n\nWords typed before the update.\n`;
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"), hb = await (await disk.getDirectoryHandle("b")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: hb, name: "script.md", at: Date.now() }, { handle: h, name: "script.md", at: Date.now() - 1000 }], "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(unsaved)}, at: Date.now() + 60000, asks: [] })); localStorage.setItem("smoke:fullOnce", "1"); return true; })()`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen") && localStorage.getItem("smoke:fullOnce") === null`, "the update meets a full storage once");
+  await sleep(800);
+  check((await page.eval(`localStorage.getItem("script-editor:draft:script.md")`))?.includes("Words typed before the update"), "the name keeps its draft");
+  check((await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST) && (await idbGet(page, "broll:script.md")) !== "null", "the name keeps its list and link");
+  check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  // The same page, storage working again: the older file opens by its name and takes nothing alone (SL-1).
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the older file shows the list its name has");
+  await sleep(500);
+  check((await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST) && (await idbGet(page, "broll:script.md")) !== "null", "opening one file on the same page takes nothing alone: the name keeps its list and link");
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the next page");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the next page hands the draft over", 6000);
+  // Opened last, the a file is the newest on the list now: it takes the draft; b gets the list too.
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`, "the file opened last offers the words typed before the update");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the file opened last shows the list");
+  await pickOpen(page, "b/script.md", "Bread in folder b");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the other file shows the list too");
+  check(await page.eval(`document.querySelector("#banner").hidden || !document.querySelector("#banner").textContent.startsWith("Unsaved changes")`), "the other file does not get the unsaved words");
+  check((await idbGet(page, "broll:script.md")) === "null" && (await idbGet(page, "brollList:script.md")) === "null", "the name lets go once everything is kept");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// Seeds two files called script.md on the recent list, a list and link kept under the name, and no move done yet.
+const seedTwoOnList = (page) => page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = async (d) => (await disk.getDirectoryHandle(d)).getFileHandle("script.md"); const recent = [{ handle: await h("b"), name: "script.md", at: Date.now() }, { handle: await h("a"), name: "script.md", at: Date.now() - 1000 }]; await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put(recent, "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); return true; })()`);
+// SL-3 (lead's fix round): while smoke:recentFails is set, every read of the recent list fails.
+const RECENT_FAILS = `(() => { if (localStorage.getItem("smoke:recentFails") !== "1") return; const get = IDBObjectStore.prototype.get; IDBObjectStore.prototype.get = function (k) { if (k === "recent") throw new DOMException("The recent list can't be read.", "UnknownError"); return get.call(this, k); }; })();`;
+async function runMigrateList() {
+  console.log("--- moving to keys when the recent list can't be read (1280 px)");
+  const { page } = await connect(1280, 800, RECENT_FAILS);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md({ ...BREAD, title: "Bread in folder b" }));
+  await seedTwoOnList(page);
+  await page.eval(`localStorage.setItem("smoke:recentFails", "1"); true`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "a page whose recent list can't be read");
+  await sleep(1200);
+  check((await idbGet(page, "fileIdsSince")) === "null", "a recent list that can't be read never marks the move done");
+  check((await idbGet(page, "broll:script.md")) !== "null" && (await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST), "the name keeps its list and link");
+  await page.eval(`localStorage.removeItem("smoke:recentFails"); true`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the next page");
+  await page.until(`(async () => { const r = await new Promise((res) => { const o = indexedDB.open("script-editor", 1); o.onsuccess = () => { const q = o.result.transaction("handles").objectStore("handles").get("fileIdsSince"); q.onsuccess = () => res(q.result); }; }); return !!r; })()`, "the next page marks the move done", 6000);
+  await pickOpen(page, "b/script.md", "Bread in folder b");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the newest file shows the list");
+  await pickOpen(page, "a/script.md", "Bread at home");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "the older file shows the list too");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// SL-2 (lead's fix round): a browser copy already moved to a file, still held open by a tab, is not a script in the
+// browser: the move gives the name's draft to the file on the list.
+const HOLD_COPY = `(() => { if (localStorage.getItem("smoke:holdCopy") === "1") navigator.locks.request("script-editor:script:script.md", { mode: "shared" }, () => new Promise(() => {})); })();`;
+async function runMovedCopy() {
+  console.log("--- a moved browser copy held by a tab does not keep the name's draft (1280 px)");
+  const { page } = await connect(1280, 800, HOLD_COPY);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await page.eval(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts", { create: true }); const w = await (await d.getFileHandle("script.md", { create: true })).createWritable(); await w.write("# Moved\\n\\nA copy left behind.\\n"); await w.close(); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:movedCopies", JSON.stringify(["script.md"])); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(`${md(BREAD).trimEnd()}\n\nWords typed before the update.\n`)}, at: Date.now() + 60000, asks: [] })); localStorage.setItem("smoke:holdCopy", "1"); return true; })()`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the page, the moved copy held");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the name's draft is handed to the file", 6000);
+  check((await page.eval(`localStorage.getItem("script-editor:movedCopies")`))?.includes("script.md"), "the copy is still a moved copy (held by a tab)");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`, "the file offers the words typed before the update");
+  await page.eval(`localStorage.removeItem("smoke:holdCopy"); true`);
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// Fable's round (2026-11-19) on the second look's P0: every read in the hand-over fails loudly. While `flag` is set in
+// local storage, reading `key` there fails; __getItem still reads it for the check.
+const LOCAL_FAILS = (flag, key) => `(() => { const get = Storage.prototype.getItem; window.__getItem = (k) => get.call(localStorage, k); if (get.call(localStorage, ${JSON.stringify(flag)}) !== "1") return; Storage.prototype.getItem = function (k) { if (k === ${JSON.stringify(key)}) throw new DOMException("Local storage can't be read.", "SecurityError"); return get.call(this, k); }; })();`;
+const idbHas = (key) => `(async () => { const r = await new Promise((res) => { const o = indexedDB.open("script-editor", 1); o.onsuccess = () => { const q = o.result.transaction("handles").objectStore("handles").get(${JSON.stringify(key)}); q.onsuccess = () => res(q.result); }; }); return !!r; })()`;
+const UNSAVED = `${md(BREAD).trimEnd()}\n\nWords typed before the update.\n`;
+const offersUnsaved = `!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`;
+// One file script.md on the recent list, a draft kept under its name, no move done yet; `flags` are set for the next page.
+const seedOneWithDraft = (page, flags) => page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(UNSAVED)}, at: Date.now() + 60000, asks: [] })); for (const f of ${JSON.stringify(flags)}) localStorage.setItem(f, "1"); return true; })()`);
+async function nextPage(page, label) {
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, label);
+}
+// The P0: a draft that can't be read at the move is never taken for "no draft" (it was counted as handed over, and
+// deleted): the name keeps it, the move is not marked done, and the next page hands it to the file.
+async function runMigrateDraft() {
+  console.log("--- moving to keys when the name's draft can't be read (1280 px)");
+  const { page } = await connect(1280, 800, LOCAL_FAILS("smoke:draftFails", "script-editor:draft:script.md"));
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await seedOneWithDraft(page, ["smoke:draftFails"]);
+  await nextPage(page, "a page whose draft can't be read");
+  await sleep(1200);
+  check((await page.eval(`window.__getItem("script-editor:draft:script.md")`))?.includes("Words typed before the update"), "the name keeps its draft: a read that failed is never \"no draft\"");
+  check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  check((await keyOfDisk(page, "a/script.md")) === null, "the file has no id yet: it goes by its name, where its draft is");
+  await page.eval(`localStorage.removeItem("smoke:draftFails"); true`);
+  await nextPage(page, "the next page");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the next page hands the draft over", 6000);
+  await page.until(idbHas("fileIdsSince"), "and marks the move done", 6000);
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(offersUnsaved, "the file offers the words typed before the update");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The same for the names of the copies left behind (browserHas): a list that can't be read is never "no copy left
+// behind". Here a moved copy is still in the browser's folder; taken for a browser script, it would keep the name's
+// draft for good and the move would be marked done.
+async function runCopiesUnread() {
+  console.log("--- moving to keys when the list of copies left behind can't be read (1280 px)");
+  const { page } = await connect(1280, 800, HOLD_COPY + LOCAL_FAILS("smoke:copiesFail", "script-editor:movedCopies"));
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await page.eval(`(async () => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle("scripts", { create: true }); const w = await (await d.getFileHandle("script.md", { create: true })).createWritable(); await w.write("# Moved\\n\\nA copy left behind.\\n"); await w.close(); localStorage.setItem("script-editor:movedCopies", JSON.stringify(["script.md"])); return true; })()`);
+  await seedOneWithDraft(page, ["smoke:holdCopy", "smoke:copiesFail"]);
+  await nextPage(page, "a page whose list of left copies can't be read");
+  await sleep(1200);
+  check((await page.eval(`window.__getItem("script-editor:draft:script.md")`))?.includes("Words typed before the update"), "the name keeps its draft");
+  check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  await page.eval(`localStorage.removeItem("smoke:copiesFail"); true`);
+  await nextPage(page, "the next page");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the next page hands the draft to the file", 6000);
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(offersUnsaved, "the file offers the words typed before the update");
+  await page.eval(`localStorage.removeItem("smoke:holdCopy"); true`);
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The P1: a key a tab remembers never goes stale. Save as onto a file that has a key keeps that key (it got a new
+// one, and a script of that file open or kept aside went on writing under the old one); a key that fell off the id
+// list is put back when the tab is looked at again, so the next page still finds what was written under it.
+const SAVE_PICK = `window.showSaveFilePicker = async () => { const [dir, name] = window.__savePick.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk", { create: true }); return (await disk.getDirectoryHandle(dir, { create: true })).getFileHandle(name, { create: true }); };`;
+const keysOfDisk = (page, path) => page.eval(`(async () => { const [dir, name] = ${JSON.stringify(path)}.split("/"); const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle(dir)).getFileHandle(name); const list = await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const q = r.result.transaction("handles").objectStore("handles").get("fileIds"); q.onsuccess = () => res(q.result || []); }; }); const out = []; for (const e of list) if (await e.handle.isSameEntry(h)) out.push("file:" + e.id); return out; })()`);
+async function runSameKey() {
+  console.log("--- one file, one key: Save as onto a file that has a key, and a key that fell off the list (1280 px)");
+  const { page } = await connect(1280, 800, SAVE_PICK);
+  await writeDisk(page, "b/script.md", md(WALK));
+  await pickOpen(page, "b/script.md", "What if the best part");
+  const B = await keyOfDisk(page, "b/script.md");
+  check(/^file:/.test(B || ""), "the file has a key of its own", B);
+  // A new script in the browser, then Export → Markdown file (.md) onto b/script.md, through the picker's own handle.
+  await menuOpen(page);
+  await page.eval(`document.querySelector("#menuNew").click(); true`);
+  await page.until(`document.querySelector("#fileName").textContent !== "script.md"`, "a new script");
+  await writeScript(page, { title: "Tea at four", lines: ["Boil the water first."] });
+  await page.eval(`window.__savePick = "b/script.md"; true`);
+  await page.click("#exportBtn");
+  await page.until(`document.querySelector("#exportMenu").matches(":popover-open")`, "the Export menu");
+  await page.click(`[data-export="markdown"]`);
+  for (let i = 0; i < 100 && !(await readDisk(page, "b/script.md"))?.includes("Boil the water first"); i++) await sleep(60);
+  check((await readDisk(page, "b/script.md"))?.includes("Boil the water first"), "the picked file holds the script");
+  await page.until(isOpen("script.md"), "the script is the file now");
+  await sleep(400);
+  const after = await keysOfDisk(page, "b/script.md");
+  check(after.length === 1 && after[0] === B, "Save as onto a file that has a key keeps that key, one entry", `${B} ${JSON.stringify(after)}`);
+  // 200 other files push it off the list (here: its entry is taken out); the tab is looked at again.
+  await page.eval(`new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); t.objectStore("handles").put([], "fileIds"); t.oncomplete = () => res(true); }; })`);
+  check((await keysOfDisk(page, "b/script.md")).length === 0, "the key fell off the list");
+  await page.eval(`window.dispatchEvent(new Event("focus")); true`);
+  for (let i = 0; i < 60 && (await keysOfDisk(page, "b/script.md")).length === 0; i++) await sleep(60);
+  check(JSON.stringify(await keysOfDisk(page, "b/script.md")) === JSON.stringify([B]), "looked at again, the tab puts the key back", JSON.stringify(await keysOfDisk(page, "b/script.md")));
+  await nextPage(page, "the next page");
+  await pickOpen(page, "b/script.md", "Boil the water first");
+  check((await keyOfDisk(page, "b/script.md")) === B, "the next page finds the file under the same key");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The round of 2026-11-20, the second look's P1: a file one tab has in use is never pushed off the id list by the files
+// another tab opens. Each tab holds a Web Lock per id; the tab that writes the list asks which are held.
+const heldFor = (key) => `navigator.locks.query().then((q) => q.held.some((l) => l.name === "script-editor:file-in-use:" + ${JSON.stringify(key)}.slice("file:".length) && l.mode === "shared"))`;
+async function runTwoTabs() {
+  console.log("--- two tabs: a file open in one is never pushed off the id list by the other (1280 px)");
+  const { page } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  const A = await keyOfDisk(page, "a/script.md");
+  check(/^file:/.test(A || ""), "the file open in the first tab has a key of its own", A);
+  check(await page.eval(heldFor(A || "")), "the first tab holds a lock for its id");
+  // A second tab of the same browser. 199 other files were opened since (here: put on the list in front of it), so
+  // the list is full with the first tab's file at its end; then the second tab opens one more.
+  const other = await openTab(1280, 800, "", page.context);
+  await other.send("Page.navigate", { url: `${BASE}/` });
+  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the second tab");
+  check(await other.eval(heldFor(A || "")), "the second tab sees that lock");
+  await other.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const fill = await disk.getDirectoryHandle("fill", { create: true }); const added = []; for (let i = 0; i < 199; i++) added.push({ handle: await fill.getFileHandle("f" + i + ".md", { create: true }), id: "fill" + i }); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"), s = t.objectStore("handles"), q = s.get("fileIds"); q.onsuccess = () => s.put([...added, ...q.result], "fileIds"); t.oncomplete = res; }; }); return true; })()`);
+  const ids = async () => JSON.parse(await other.eval(`new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const q = r.result.transaction("handles").objectStore("handles").get("fileIds"); q.onsuccess = () => res(JSON.stringify((q.result || []).map((e) => e.id))); }; })`));
+  const before = await ids();
+  check(before.length === 200 && `file:${before.at(-1)}` === A, "the list is full, the first tab's file at its end", `${before.length} ${before.at(-1)}`);
+  await writeDisk(other, "b/other.md", md(WALK));
+  await pickOpen(other, "b/other.md", "What if the best part");
+  for (let i = 0; i < 60 && !(await keyOfDisk(other, "b/other.md")); i++) await sleep(60);
+  const B = await keyOfDisk(other, "b/other.md"), after = await ids();
+  check(/^file:/.test(B || "") && `file:${after[0]}` === B, "the second tab's file has its key, at the front", `${B} ${after[0]}`);
+  check(after.length === 200, "the list stays within its size", after.length);
+  check((await keyOfDisk(other, "a/script.md")) === A, "the file open in the first tab is still on the list", JSON.stringify(after.slice(0, 3)));
+  check(`file:${after[1]}` === A, "a file in use counts as opened most recently: right behind the one just opened", after[1]);
+  check(!after.includes("fill198"), "the list let go of the file not opened for longest instead");
+  // The first tab reloads: its next page finds what it kept under that key.
+  await nextPage(page, "the first tab's next page");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  check((await keyOfDisk(page, "a/script.md")) === A, "the first tab's next page finds the file under the same key");
+  // The first tab closes: its lock goes with it, so the list may let go of the file again one day.
+  await page.closeTab();
+  for (let i = 0; i < 60 && (await other.eval(heldFor(A || ""))); i++) await sleep(60);
+  check(!(await other.eval(heldFor(A || ""))), "the first tab closed: its lock is gone");
+  const errs = await other.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await other.close();
+}
+// The round of 2026-11-20, the second look's P0: while the move waits for its list and link copies, another tab keeps
+// words under the file's key (played here inside the write of the first copy). They are never written over: the
+// hand-over stops, the name keeps everything and the move is not marked done; the next page decides again, and the
+// file offers the words written later.
+const TYPED = `${md(BREAD).trimEnd()}\n\nTyped in the other tab meanwhile.\n`;
+const OTHER_TAB_ONCE = `(() => { if (localStorage.getItem("smoke:otherTab") !== "1") return; const put = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function (v, k) { if (typeof k === "string" && k.startsWith("brollList:file:") && localStorage.getItem("smoke:otherTab") === "1") { localStorage.removeItem("smoke:otherTab"); localStorage.setItem("script-editor:draft:" + k.slice("brollList:".length), JSON.stringify({ text: ${JSON.stringify(TYPED)}, at: Date.now() + 120000, asks: [] })); } return put.call(this, v, k); }; })();`;
+async function runHandRace() {
+  console.log("--- moving to keys while another tab keeps words under the file's key (1280 px)");
+  const { page } = await connect(1280, 800, OTHER_TAB_ONCE);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  // A move that could not finish before: the file has its id, and its name still has a draft, a list and a link.
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.put([{ handle: h, id: "had1" }], "fileIds"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(UNSAVED)}, at: Date.now() + 60000, asks: [] })); localStorage.setItem("smoke:otherTab", "1"); return true; })()`);
+  await nextPage(page, "a page whose move meets words from another tab");
+  await page.until(`localStorage.getItem("smoke:otherTab") === null`, "the other tab wrote while the copies were made", 6000);
+  await sleep(1200);
+  check((await draftOf(page, "file:had1"))?.includes("Typed in the other tab meanwhile"), "the words the other tab kept under the file's key are not written over");
+  check((await draftOf(page, "script.md"))?.includes("Words typed before the update"), "the name keeps its draft");
+  check((await idbGet(page, "broll:script.md")) !== "null" && (await idbGet(page, "brollList:script.md")) === JSON.stringify(BREAD_LIST), "and its list and link");
+  check((await idbGet(page, "fileIdsSince")) === "null", "the move is not marked done");
+  await nextPage(page, "the next page");
+  await page.until(idbHas("fileIdsSince"), "the next page finishes the move", 6000);
+  check((await draftOf(page, "file:had1"))?.includes("Typed in the other tab meanwhile"), "the words written later stay under the file's key");
+  check((await draftOf(page, "script.md")) === null, "the name's older draft goes");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(offersUnsaved, "the file offers the words the other tab kept");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 2`, "and shows the list its name had");
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The same P0 where the tabs can tell each other: a draft is never written under the key of a file another tab has in
+// use (that tab may keep words there at any moment). The first tab has the file open while the second tab's page
+// tries the move again: it stops; once the first tab has gone, the next page hands the words over.
+async function runHandInUse() {
+  console.log("--- moving to keys while another tab has the file open (1280 px)");
+  const { page } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  const A = await keyOfDisk(page, "a/script.md");
+  check(/^file:/.test(A || ""), "the file open in the first tab has a key of its own", A);
+  // A move that could not finish before: the file has its id, and its name still has a draft, a list and a link.
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = await (await disk.getDirectoryHandle("a")).getFileHandle("script.md"); await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put([{ handle: h, name: "script.md", at: Date.now() }], "recent"); s.delete("fileIdsSince"); s.put({ name: "bread-broll.md", draft: true }, "broll:script.md"); s.put(${JSON.stringify(BREAD_LIST)}, "brollList:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(UNSAVED)}, at: Date.now() + 60000, asks: [] })); return true; })()`);
+  const other = await openTab(1280, 800, "", page.context);
+  await other.send("Page.navigate", { url: `${BASE}/` });
+  await other.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the second tab");
+  await sleep(1200);
+  check((await draftOf(other, A)) === null, "no draft is written under the key of a file the first tab has in use");
+  check((await draftOf(other, "script.md"))?.includes("Words typed before the update"), "the name keeps its draft");
+  check((await idbGet(other, "broll:script.md")) !== "null" && (await idbGet(other, "brollList:script.md")) === JSON.stringify(BREAD_LIST), "and its list and link");
+  check((await idbGet(other, "fileIdsSince")) === "null", "the move is not marked done");
+  await page.closeTab();
+  for (let i = 0; i < 60 && (await other.eval(heldFor(A || ""))); i++) await sleep(60);
+  await nextPage(other, "the second tab's next page, the first tab gone");
+  await other.until(idbHas("fileIdsSince"), "the next page finishes the move", 6000);
+  check((await draftOf(other, A))?.includes("Words typed before the update"), "the file has the words its name kept");
+  check((await draftOf(other, "script.md")) === null, "and the name let go of them");
+  await pickOpen(other, "a/script.md", "Good bread needs");
+  await other.until(offersUnsaved, "the file offers the words typed before the update");
+  check((await keyOfDisk(other, "a/script.md")) === A, "under the same key");
+  const errs = await other.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await other.close();
+}
+// A browser script.md's own keys go by its name: a file script.md seen for the first time takes none of them, and once
+// the browser script is deleted (a file script.md on the list) they go, so the next new file script.md starts clean
+// (review round 1 on TOOLS-361).
+async function runDeleteThenNew() {
+  console.log("--- a browser script.md's keys stay its own, and go with it (1280 px)");
+  const { page } = await connect(1280, 800);
+  await page.steady("#emptyNew");
+  await page.click("#emptyNew");
+  await page.until(`!document.querySelector("#layout").hidden`, "a new script");
+  await page.send("Input.insertText", { text: "Script" });
+  await page.until(`document.querySelector("#fileName").textContent === "script.md"`, "the browser script is called script.md", 8000);
+  await page.until(`document.querySelector("#saveState").dataset.state === ""`, "it is saved");
+  // The browser script's own B-roll list and an unsaved draft, under its name.
+  await idbPut(page, "broll:script.md", { name: "browser-broll.md", text: WALK_LIST });
+  await page.eval(`localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: "# Script\\n\\nBrowser words.\\n", at: Date.now() + 60000, asks: [] })); true`);
+  await writeDisk(page, "b/script.md", md(WALK));
+  await writeDisk(page, "c/script.md", md(WALK));
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await sleep(800);
+  check((await shotLabels(page)).length === 0 && (await page.eval(`document.querySelector("#banner").hidden`)), "a file script.md seen for the first time takes none of the browser script's list or words", JSON.stringify(await shotLabels(page)));
+  check((await idbGet(page, "broll:script.md")) !== "null", "the browser script keeps its list");
+  await menuOpen(page);
+  const del = `[...document.querySelectorAll("#scriptList .scripts__row")].find((li) => li.querySelector(".scripts__name")?.textContent === "script.md" && li.querySelector(".scripts__tag"))`;
+  await page.eval(`(${del}).querySelector(".scripts__remove").click(); true`);
+  await page.until(`!!(${del})?.querySelector(".scripts__delete")`, "Delete asks once more");
+  await page.eval(`(${del}).querySelector(".scripts__delete").click(); true`);
+  await page.until(`!(${del})`, "the browser script.md is gone from the list", 8000);
+  await sleep(500);
+  check((await idbGet(page, "broll:script.md")) === "null" && (await page.eval(`localStorage.getItem("script-editor:draft:script.md")`)) === null, "its keys go with it, though a file script.md is on the list");
+  await page.key("Escape", "Escape", 27);
+  await pickOpen(page, "c/script.md", "What if the best part");
+  await sleep(800);
+  check((await shotLabels(page)).length === 0 && (await page.eval(`document.querySelector("#banner").hidden`)), "the next new file script.md starts clean: no list, no Unsaved changes", JSON.stringify(await shotLabels(page)));
+  const errs = await page.errors();
+  check(!errs.length, "no page error or CSP violation", errs.join(" | "));
+  await page.close();
+}
+// The files on the recent list when this version first runs take what was kept under their name: each gets the B-roll
+// list, the newest the draft ("Unsaved changes"), and the name lets go.
+async function runMigrate() {
+  console.log("--- moving to keys: the files on the list take what their name held (1280 px)");
+  const { page } = await connect(1280, 800);
+  await writeDisk(page, "a/script.md", md(BREAD));
+  await writeDisk(page, "b/script.md", md(WALK));
+  await sleep(50);
+  const unsaved = `${md(WALK).trimEnd()}\n\nWords typed before the update.\n`;
+  await page.eval(`(async () => { const disk = await (await navigator.storage.getDirectory()).getDirectoryHandle("disk"); const h = async (d) => (await disk.getDirectoryHandle(d)).getFileHandle("script.md"); const recent = [{ handle: await h("b"), name: "script.md", at: Date.now() }, { handle: await h("a"), name: "script.md", at: Date.now() - 1000 }]; await new Promise((res) => { const r = indexedDB.open("script-editor", 1); r.onsuccess = () => { const t = r.result.transaction("handles", "readwrite"); const s = t.objectStore("handles"); s.put(recent, "recent"); s.delete("fileIds"); s.delete("fileIdsSince"); s.put({ name: "shared-broll.md", text: ${JSON.stringify(listFor([["B1", "Flour and a clock", BREAD.lines[0]], ["B2", "Shoes by the door", WALK.lines.at(-1)]]))} }, "broll:script.md"); t.oncomplete = res; }; }); localStorage.setItem("script-editor:draft:script.md", JSON.stringify({ text: ${JSON.stringify(unsaved)}, at: Date.now() + 5000, asks: [] })); return true; })()`);
+  await page.send("Page.reload", {});
+  await sleep(300);
+  await page.until(`document.readyState === "complete" && !!document.querySelector("#emptyOpen")`, "the start screen after the update");
+  await page.until(`localStorage.getItem("script-editor:draft:script.md") === null`, "the name's draft is handed to a file", 6000);
+  await pickOpen(page, "b/script.md", "What if the best part");
+  await page.until(`!document.querySelector("#banner").hidden && document.querySelector("#banner").textContent.startsWith("Unsaved changes")`, "the newest script.md offers the words typed before the update");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 1`, "the newest script.md shows the list its name had");
+  await pickOpen(page, "a/script.md", "Good bread needs");
+  await page.until(`document.querySelectorAll("#script .shot-frame__jump").length === 1`, "the older script.md shows the list its name had too");
+  check(await page.eval(`document.querySelector("#banner").hidden || !document.querySelector("#banner").textContent.startsWith("Unsaved changes")`), "the older script.md does not get the newest one's unsaved words");
+  check((await idbGet(page, "broll:script.md")) === "null", "the name lets go of the list link");
   const errs = await page.errors();
   check(!errs.length, "no page error or CSP violation", errs.join(" | "));
   await page.close();
@@ -729,7 +1199,10 @@ async function runOpenCancelled() {
   await fb.page.close();
 }
 
-// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel) runs one part.
+// SMOKE_ONLY=slash (or desktop, phone, edges, focus, samename, removed, board, deletekept, boardcaret, opencancel,
+// ownkeys, migrate, deletefirst, reloadheld, migratefull, migratelist, movedcopy, migratedraft, copiesread, samekey,
+// twotabs, handrace, handinuse)
+// runs one part.
 const only = process.env.SMOKE_ONLY || "";
 try {
   if (!only || only === "desktop") await run({ width: 1280, height: 800, label: "desktop", undoBy: "tag" });
@@ -744,6 +1217,19 @@ try {
   if (!only || only === "deletekept") await runDeleteKeptSameName();
   if (!only || only === "boardcaret") await runBoardCaret();
   if (!only || only === "opencancel") await runOpenCancelled();
+  if (!only || only === "ownkeys") await runOwnKeys();
+  if (!only || only === "migrate") await runMigrate();
+  if (!only || only === "deletefirst") await runDeleteThenNew();
+  if (!only || only === "reloadheld") await runReloadHeld();
+  if (!only || only === "migratefull") await runMigrateFull();
+  if (!only || only === "migratelist") await runMigrateList();
+  if (!only || only === "movedcopy") await runMovedCopy();
+  if (!only || only === "migratedraft") await runMigrateDraft();
+  if (!only || only === "copiesread") await runCopiesUnread();
+  if (!only || only === "samekey") await runSameKey();
+  if (!only || only === "twotabs") await runTwoTabs();
+  if (!only || only === "handrace") await runHandRace();
+  if (!only || only === "handinuse") await runHandInUse();
 } catch (e) {
   check(false, "the check ran to the end", e.stack || e.message);
 }

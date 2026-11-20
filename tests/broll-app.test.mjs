@@ -94,6 +94,7 @@ function stage({ guest = false } = {}) {
     readContent: () => "", offsetIn: () => 0, agentBy: () => ({ id: "agent:test", name: "Test" }), agent: { token: "t", ws: null },
     getLinkKey: async () => null, setLinkKey: async () => {}, keyed: (fn) => fn(), listKey: (n) => `brollList:${n}`,
     readKept: async () => null, delKept: async () => {}, idbPut: async () => {}, permitted: async () => true, writeHandle: async () => {},
+    scriptKey: () => "demo.md",
     canPick: false,
   };
   return { host, state, calls };

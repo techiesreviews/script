@@ -16,15 +16,16 @@ function folder() {
     hold(name) { let open; gates.set(name, new Promise((r) => { open = r; })); return () => { gates.delete(name); open(); }; },
     outside(name, text) { disk.set(name, { text, lastModified: ++tick }); },
     port: {
+      // A handle with a `path` is a file in a folder: two files may share a name (TOOLS-361).
       async write(handle, text) {
         if (handle.fail) throw new Error("The disk is full.");
         log.push([handle.name, text]);
-        await gates.get(handle.name);
+        await gates.get(handle.path ?? handle.name);
         if (handle.fail) throw new Error("The disk is full.");
-        disk.set(handle.name, { text, lastModified: ++tick });
+        disk.set(handle.path ?? handle.name, { text, lastModified: ++tick });
         return tick;
       },
-      async file(handle) { const f = disk.get(handle.name); return { lastModified: f.lastModified, text: async () => f.text }; },
+      async file(handle) { const f = disk.get(handle.path ?? handle.name); return { lastModified: f.lastModified, text: async () => f.text }; },
       async permitted(handle, ask) { (handle.asked ??= []).push(ask); return handle.allow !== false; },
       pickSave: null,
       download(text, name) { log.push(["download", name, text]); },
@@ -200,23 +201,157 @@ test("saving: a script the person left that cannot be written keeps its text as 
   assert.equal(s.script.saveError, "", "A's problem does not show on B");
 });
 
-test("saving: a left script the app keeps aside (on.keepsWords) never falls back to a draft by name, running or queued (review on PR #79)", async () => {
-  const s = setup();
-  const A = s.script.handle;
-  s.ports.on.keepsWords = (handle) => handle === A;
-  const release = s.files.hold("a.md");
+// TOOLS-361: drafts go by each script's own key (keyOf), so two files called script.md never share one.
+function keyedSetup() {
+  const A = { name: "script.md", path: "a/script.md" }, B = { name: "script.md", path: "b/script.md" };
+  const s = setup({ handle: null });
+  s.files.outside("a/script.md", "# A\n\nOne.\n");
+  s.files.outside("b/script.md", "# B\n\nTwo.\n");
+  const ids = new Map([[A, "file:a"], [B, "file:b"]]);
+  s.ports.keys = { of: (handle, name) => ids.get(handle) ?? name, adopt: (handle) => { ids.set(handle, `file:${handle.path}`); return ids.get(handle); } };
+  s.saving = createSaving(s.ports);
+  const open = (h, t) => { s.ed.doc = { id: Math.random() }; s.ed.text = t; s.saving.open({ handle: h, name: h.name, savedText: t, modified: s.files.disk.get(h.path).lastModified }); };
+  return { s, A, B, open };
+}
+test("saving: Save as to another file of the same name gives it this script's keys under its own key; the old key's draft goes", async () => {
+  const { s, A, open } = keyedSetup();
+  open(A, "# A\n\nOne.\n");
+  s.store.set("draft:file:a", { text: null, at: 1, asks: [{ id: "k" }] });
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "c/script.md" });
+  await s.saving.saveAs();
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), [["renamed", "file:a", "file:c/script.md", { clear: false }]]);
+  assert.equal(s.store.has("draft:file:a"), false);
+  assert.equal(s.files.disk.get("c/script.md").text, "# A\n\nOne.\n");
+});
+test("saving: Save as onto a file that has its key already keeps that key; the draft kept for what the file held before goes", async () => {
+  const { s, A, open } = keyedSetup();
+  s.ports.keys.adopt = () => "file:b"; // the same file, the same key, whatever the handle (script-keys.js adopt)
+  s.saving = createSaving(s.ports);
+  open(A, "# A\n\nOne.\n");
+  s.store.set("draft:file:b", { text: "# B\n\nOld words.\n", at: 1, asks: [{ id: "old" }] });
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "b/script.md" }); // the picker's own handle for b
+  await s.saving.saveAs();
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), [["renamed", "file:a", "file:b", { clear: false }]]);
+  assert.equal(s.store.has("draft:file:b"), false, "no asks or words of the script the file held before come back");
+  assert.equal(s.files.disk.get("b/script.md").text, "# A\n\nOne.\n");
+  // Another script opened while the file was written: the file's old draft goes all the same; the open script's stays.
+  const t = keyedSetup();
+  t.s.ports.keys.adopt = () => "file:b";
+  t.s.saving = createSaving(t.s.ports);
+  t.open(t.A, "# A\n\nOne.\n");
+  t.s.store.set("draft:file:b", { text: null, at: 1, asks: [{ id: "old" }] });
+  t.s.store.set("draft:file:a", { text: null, at: 1, asks: [{ id: "mine" }] });
+  const release = t.s.files.hold("b/script.md");
+  t.s.files.port.pickSave = async () => ({ name: "script.md", path: "b/script.md" });
+  const run = t.s.saving.saveAs();
+  await settle();
+  t.open(t.A, "# A\n\nOne.\n"); // opened again meanwhile
+  release();
+  await run;
+  assert.equal(t.s.store.has("draft:file:b"), false);
+  assert.deepEqual(t.s.store.get("draft:file:a"), { text: null, at: 1, asks: [{ id: "mine" }] });
+});
+// Second look on the release (PR #89, P1): the draft kept for what the picked file held before goes, but not when the
+// picked file is the script's own: its draft was kept as the person left it while the key was still on its way.
+// `adopt` waits here until the test lets it answer.
+function pausedAdopt(s, key) {
+  let answer, asked = false;
+  const kept = new Promise((r) => { answer = () => r(key); });
+  s.ports.keys.adopt = () => { asked = true; return kept; };
+  s.saving = createSaving(s.ports);
+  return { answer, asked: () => asked };
+}
+test("saving: Save as onto the script's own file, left before its key is kept: the draft kept for it as it was left stays", async () => {
+  const { s, A, B, open } = keyedSetup();
+  const adopt = pausedAdopt(s, "file:a");
+  open(A, "# A\n\nOne.\n");
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "a/script.md" }); // the picker's own handle for a
+  const run = s.saving.saveAs();
+  await until(adopt.asked); // the file is written; its key is on its way
+  // The person opens another script: the app keeps the one they leave, with its asks, marks and "Check" flags.
+  const left = { text: null, at: 1, asks: [{ id: "mine" }], broll: { B1: "check" } };
+  s.store.set("draft:file:a", left);
+  s.store.set("draft:file:b", { text: null, at: 1, asks: [{ id: "theirs" }] });
+  open(B, "# B\n\nTwo.\n");
+  adopt.answer();
+  await run;
+  assert.deepEqual(s.store.get("draft:file:a"), left, "the script that was left keeps its draft");
+  assert.deepEqual(s.store.get("draft:file:b"), { text: null, at: 1, asks: [{ id: "theirs" }] }, "and so does the script open now");
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), [], "no keys move");
+  assert.equal(s.script.handle, B, "the script open now keeps its file");
+  assert.equal(s.files.disk.get("a/script.md").text, "# A\n\nOne.\n");
+});
+test("saving: Save as onto another file, left before its key is kept: only the draft kept for what that file held before goes", async () => {
+  const { s, A, B, open } = keyedSetup();
+  const adopt = pausedAdopt(s, "file:c");
+  s.files.outside("c/script.md", "# C\n\nOld.\n");
+  open(A, "# A\n\nOne.\n");
+  s.store.set("draft:file:c", { text: "# C\n\nOld words.\n", at: 1, asks: [{ id: "old" }] });
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "c/script.md" });
+  const run = s.saving.saveAs();
+  await until(adopt.asked);
+  s.store.set("draft:file:a", { text: null, at: 1, asks: [{ id: "mine" }] }); // kept as the person leaves it
+  s.store.set("draft:file:b", { text: null, at: 1, asks: [{ id: "theirs" }] });
+  open(B, "# B\n\nTwo.\n");
+  adopt.answer();
+  await run;
+  assert.equal(s.store.has("draft:file:c"), false, "no asks or words of what the picked file held before come back");
+  assert.deepEqual(s.store.get("draft:file:a"), { text: null, at: 1, asks: [{ id: "mine" }] });
+  assert.deepEqual(s.store.get("draft:file:b"), { text: null, at: 1, asks: [{ id: "theirs" }] });
+  assert.equal(s.script.handle, B);
+  assert.equal(s.script.name, "script.md");
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), []);
+});
+test("saving: Save as of a browser script, left before the file's key is kept: its own draft and its browser copy stay (R7-17)", async () => {
+  const { s, B, open } = keyedSetup();
+  const adopt = pausedAdopt(s, "file:c");
+  s.files.outside("script.md", "# Mine\n\nIn the browser.\n");
+  s.saving.open({ handle: { name: "script.md" }, name: "script.md", browser: true, savedText: "# Mine\n\nIn the browser.\n", modified: 1 });
+  s.ed.text = "# Mine\n\nIn the browser.\n";
+  s.store.set("draft:file:c", { text: "# C\n\nOld words.\n", at: 1, asks: [{ id: "old" }] });
+  s.files.port.pickSave = async () => ({ name: "script.md", path: "c/script.md" });
+  const run = s.saving.saveAs();
+  await until(adopt.asked);
+  s.store.set("draft:script.md", { text: null, at: 1, asks: [{ id: "mine" }] }); // kept under its name as the person leaves it
+  open(B, "# B\n\nTwo.\n");
+  adopt.answer();
+  await run;
+  assert.deepEqual(s.store.get("draft:script.md"), { text: null, at: 1, asks: [{ id: "mine" }] }, "the browser script's own draft stays");
+  assert.equal(s.store.has("draft:file:c"), false, "the draft kept for what the picked file held before goes");
+  assert.deepEqual(s.events.filter((e) => e[0] === "renamed"), []);
+  assert.deepEqual(s.events.filter((e) => e[0] === "placed"), [["placed", "script.md", {}]], "no `was`: the browser copy stays");
+  assert.equal(s.script.handle, B);
+});
+test("saving: a left script's failed saves keep its draft under its own key, running or queued; another file of that name keeps its own", async () => {
+  const { s, A, B, open } = keyedSetup();
+  open(A, "# A\n\nOne.\n");
+  const release = s.files.hold("a/script.md");
   s.ed.text = "# A\n\nOne. First.\n";
   s.saving.save(); // runs and waits
   await settle();
   s.ed.text = "# A\n\nOne. Second.\n";
   s.saving.flush(); // leaving A: waits behind the running save
-  s.files.outside("b.md", "# B\n");
-  s.open({ name: "b.md" }, "# B\n");
-  s.store.set("draft:a.md", { text: "another a.md's words", at: 1, asks: [] }); // another script called a.md
+  open(B, "# B\n\nTwo.\n");
+  s.store.set("draft:file:b", { text: null, at: 1, asks: [], broll: { B9: true } }); // B's own draft
   A.fail = true; // both writes of A fail
+  s.time.t = 66_000;
   release();
   await until(() => !s.script.saving);
-  assert.deepEqual(s.store.get("draft:a.md"), { text: "another a.md's words", at: 1, asks: [] });
+  assert.equal(s.store.get("draft:file:a").text, "# A\n\nOne. Second.\n");
+  assert.equal(s.store.get("draft:file:a").at, 66_000);
+  assert.deepEqual(s.store.get("draft:file:b"), { text: null, at: 1, asks: [], broll: { B9: true } });
+  assert.equal(s.store.has("draft:script.md"), false, "nothing under the shared name");
+});
+test("saving: saveLeft that meets a file changed elsewhere keeps the words in the draft under that file's own key", async () => {
+  const { s, A, B, open } = keyedSetup();
+  open(B, "# B\n\nTwo.\n");
+  s.store.set("draft:file:a", { text: null, at: 1, asks: [{ id: "k" }], broll: { B3: true } }); // A's asks and flags
+  s.files.outside("a/script.md", "# A\n\nChanged elsewhere.\n");
+  s.time.t = 70_000;
+  const written = await s.saving.saveLeft({ handle: A, name: "script.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n" });
+  assert.equal(written, null);
+  assert.deepEqual(s.store.get("draft:file:a"), { text: "# A\n\nOne, shorter.\n", at: 70_000, asks: [{ id: "k" }], broll: { B3: true } });
+  assert.equal(s.store.has("draft:script.md"), false);
 });
 
 // TOOLS-358: the agent's answer lands in a script the person left; it goes to that script's own file.
@@ -390,18 +525,6 @@ test("saving: saveLeft never writes over a file changed on disk: its words wait 
   assert.equal(s.files.disk.get("a.md").text, "# A\n\nChanged elsewhere.\n");
   assert.equal(s.store.get("draft:a.md").text, "# A\n\nOne, shorter.\n");
   assert.equal(s.store.get("draft:a.md").at, 88_000);
-});
-
-test("saving: saveLeft with noDraft keeps no draft under the name when the file can't be written (release review on PR #78)", async () => {
-  const s = setup();
-  const A = s.script.handle;
-  s.files.outside("b.md", "# B\n");
-  s.open({ name: "b.md" }, "# B\n");
-  s.store.set("draft:a.md", { text: null, at: 1, asks: [], broll: { B9: true } }); // another a.md's own draft
-  s.files.outside("a.md", "# A\n\nChanged elsewhere.\n");
-  const written = await s.saving.saveLeft({ handle: A, name: "a.md", text: "# A\n\nOne, shorter.\n", browser: false, savedText: "# A\n\nOne.\n", noDraft: true });
-  assert.equal(written, null);
-  assert.deepEqual(s.store.get("draft:a.md"), { text: null, at: 1, asks: [], broll: { B9: true } });
 });
 
 test("saving: a file changed on disk is not written over; Save mine writes this version", async () => {
@@ -707,6 +830,13 @@ test("saving: drafts are kept by script name, and move with a rename", () => {
   assert.deepEqual(saving.drafts.get("b.md"), { text: "t", at: 5, asks: [] });
   saving.drafts.del("b.md");
   assert.equal(store.size, 0);
+});
+test("saving: a draft that can't be written under its new key stays under the old one (second look on TOOLS-361)", () => {
+  const s = setup();
+  s.saving.drafts.set("script.md", { text: "unsaved", at: 5, asks: [] });
+  s.ports.drafts.set = () => false; // local storage is full
+  assert.equal(s.saving.drafts.move("script.md", "file:a"), false);
+  assert.deepEqual(s.store.get("draft:script.md"), { text: "unsaved", at: 5, asks: [] });
 });
 
 test("saving: a browser copy left behind is deleted by a later listing; two listings at once never delete a script that took the freed name", async () => {
