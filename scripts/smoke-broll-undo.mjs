@@ -140,7 +140,7 @@ try {
   console.log(`PROOF before Undo: over=${JSON.stringify(moved.over)}, typing preserved=${await page.eval(`window.__scriptEditor.markdown() === ${JSON.stringify(typed)}`)}`);
   await page.eval(`document.querySelector(".shot-frame__jump").focus()`);
   for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, modifiers: 2 });
-  await sleep(350);
+  await page.until(over(original.over), "Undo restores the shot's original paragraph");
   const after = await page.eval(`({ over: window.__scriptEditor.broll()[0].over, markdown: window.__scriptEditor.markdown() })`);
   console.log(`PROOF after Undo: over=${JSON.stringify(after.over)}, sentinel preserved=${after.markdown.includes("UNDO-SENTINEL-A")}`);
   assert.equal(after.markdown, typed, "Undo after moving B-roll preserves unrelated typing");

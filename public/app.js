@@ -891,7 +891,7 @@ function historyStep(undoing) {
     while (s && staleMove(s)) s = from.pop();
     if (!s) return;
     if (!s.brollMove) return restore(s, to);
-    const back = { brollMove: s.brollMove, moveRedo: !s.moveRedo }, at = from.length;
+    const back = { brollMove: s.brollMove, moveRedo: !s.moveRedo }, below = from.at(-1);
     to.push(back); // at once, so a change made while the list saves comes after it
     state.lastStep = null;
     return s.brollMove[s.moveRedo ? "redo" : "undo"]().then((ok) => {
@@ -900,9 +900,10 @@ function historyStep(undoing) {
       if (i >= 0) to.splice(i, 1);
       // The shot was changed since, as its turn found out: skipped like any stale move, on to the step before it.
       if (staleMove(s)) return step();
-      // Not saved: the step keeps its place and can be tried again.
+      // Not saved: the step keeps its place, right above the one it sat on (the bottom, when a full history has
+      // dropped that one meanwhile), and can be tried again.
       historyAge++;
-      from.splice(Math.min(at, from.length), 0, s);
+      from.splice(from.indexOf(below) + 1, 0, s);
     });
   };
   if (historyBusy) return void queueBrollHistory(step);
