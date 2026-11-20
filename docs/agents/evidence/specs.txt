@@ -65,6 +65,7 @@
 ✔ B-roll move history: a drag whose paragraph is gone when its turn comes never happened
 ✔ B-roll move history: a drag onto the place a waiting Undo restores moves nothing and leaves no step
 ✔ B-roll move history: an Undo waiting behind a drag that moves nothing is not spent on older typing
+✔ B-roll move history: words typed into the target paragraph while a move or its Undo saves keep the shot there, with Check
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found

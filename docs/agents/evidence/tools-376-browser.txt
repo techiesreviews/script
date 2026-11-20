@@ -241,3 +241,14 @@ RESULT: fail unit 17/18 (1 files) (the waiting-Undo regression, before the fix)
 RESULT: ok unit 32/32 (3 files)
 RESULT: ok specs (565/565 tests passed)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Second GPT look (one P1 race, one test gap):
+Words typed into the target paragraph while the list itself is being written left the shot on no paragraph: fixed.
+This window is a few milliseconds and exists for every write of the list (the list is matched again by its quotes
+once written); for a move and its Undo or Redo the shot now stays on the paragraphs it was put on and gets "Check".
+The fixture can now hold the writer after the change was chosen; the regression failed first ("the moved shot
+stays on the paragraph it was dropped on").
+RESULT: fail unit 18/19 (1 files) (the slow-writer regression, before the fix)
+RESULT: ok unit 33/33 (3 files)
+RESULT: ok specs (566/566 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
