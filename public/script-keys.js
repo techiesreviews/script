@@ -125,8 +125,9 @@ export function createHandOver({ idb, local, key, browserHas, keeps = () => fals
 }
 
 /**
- * createInUse(locks) → { hold(id), ids() }: which file ids the tabs of this browser have in use, so that a full id
- * list never lets go of one of them (createScriptKeys). A page holds a shared Web Lock for each id it has looked up,
+ * createInUse(locks) → { hold(id), ids(), elsewhere(id) }: which file ids the tabs of this browser have in use, so
+ * that a full id list never lets go of one of them (createScriptKeys) and the hand-over writes no draft under the key
+ * of a file another tab has in use (createHandOver). A page holds a shared Web Lock for each id it has looked up,
  * until it goes away (a reload, a close, a crash: the browser gives the lock back), and every page can ask which ids
  * are held. Nobody asks for these locks alone, so a request never waits for another tab.
  * - locks: navigator.locks (`request`, `query`). One tab's stand-in (saving.js tabLocks) has no `query`: it knows the
