@@ -24,18 +24,20 @@ function movement() {
   };
   adopt();
   broll.shots[0].check = true;
-  let move, queue = Promise.resolve(), writes = 0, hold = null, broken = false;
+  let move, queue = Promise.resolve(), writes = 0, hold = null, broken = false, slow = null;
   const shotById = (id) => broll.shots.find((shot) => shot.id === id);
   const context = { state, broll, Doc, Broll, shotById, covered: (shot) => (shot.blockIds || []).filter((id) => Doc.blockById(state.doc, id)),
     Changes, Date, UNDO_LIMIT: 300, TYPING_GROUP_MS: 1000, together: null,
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
     followAnchors() {}, reanchorAll() {}, renderAll() {}, hideBar() {}, changed() {}, emit() {},
     changeList: (mutate) => {
-      const gate = hold, fails = broken; hold = null; broken = false;
+      const gate = hold, fails = broken, saving = slow; hold = null; broken = false; slow = null;
       const run = queue.then(async () => {
         if (gate) await gate;
         if (fails) throw new Error("Not saved.");
-        text = mutate(text); writes++; adopt();
+        const next = mutate(text);
+        if (saving) await saving; // the writer itself takes a while, after the change was chosen
+        text = next; writes++; adopt();
         return text;
       });
       queue = run.catch(() => {});
@@ -58,6 +60,7 @@ function movement() {
     },
     rewrite: (index, words) => { context.checkpoint("rewrite", paras[index].id); Doc.setContent(state.doc, paras[index].id, words); },
     failNextWrite: () => { broken = true; },
+    holdNextSave: () => { let release; slow = new Promise((resolve) => { release = resolve; }); return release; },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
     moveShot: (index = 1) => context.moveShot("B1", Broll.wholeParas(state.doc, [paras[index].id])),
     replace: (mutate) => { text = mutate(text); adopt(); },
@@ -332,4 +335,24 @@ test("B-roll move history: an Undo waiting behind a drag that moves nothing is n
   assert.match(Doc.serialize(m.state.doc), / OLD/);
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
   assert.equal(m.state.undo.length, 1, "the typing keeps its Undo");
+});
+
+test("B-roll move history: words typed into the target paragraph while a move or its Undo saves keep the shot there, with Check", async () => {
+  const m = movement();
+  m.broll.shots[0].check = false;
+  let release = m.holdNextSave();
+  const moved = m.moveShot(1); await settle();
+  m.rewrite(1, "Rewritten middle paragraph while the move saves.");
+  release(); await moved; await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id], "the moved shot stays on the paragraph it was dropped on");
+  assert.equal(m.broll.shots[0].check, true, "its words changed during the save");
+  m.broll.shots[0].check = false;
+  release = m.holdNextSave();
+  m.undo(); await settle(); // the rewrite
+  m.undo(); await settle(); // the move, whose save is held
+  m.rewrite(0, "Rewritten first paragraph while the Undo saves.");
+  release(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the shot stays on the paragraph Undo returned it to");
+  assert.equal(m.broll.shots[0].check, true);
+  assert.match(Doc.serialize(m.state.doc), /Rewritten first paragraph/);
 });
