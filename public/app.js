@@ -2345,24 +2345,25 @@ async function idbFill(k, v) {
 // The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count; the demo's
 // unlinked { none: true } does).
 async function idbLinkedNames() {
-  try {
-    const db = await idb();
-    return await new Promise((res) => {
-      const out = [];
-      const q = db.transaction("handles").objectStore("handles").openCursor();
-      q.onsuccess = () => {
-        const c = q.result;
-        if (!c) return res(out);
-        // A B-roll link, or a B-roll list kept in the browser (step K).
-        if (typeof c.key === "string" && c.value != null) {
-          if (c.key.startsWith("broll:")) out.push(c.key.slice(6));
-          else if (c.key.startsWith("brollList:")) out.push(c.key.slice(10));
-        }
-        c.continue();
-      };
-      q.onerror = () => res(out);
-    });
-  } catch { return []; }
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const out = [], t = db.transaction("handles");
+    const q = t.objectStore("handles").openCursor();
+    q.onsuccess = () => {
+      const c = q.result;
+      if (!c) return;
+      // A B-roll link, or a B-roll list kept in the browser (step K).
+      if (typeof c.key === "string" && c.value != null) {
+        if (c.key.startsWith("broll:")) out.push(c.key.slice(6));
+        else if (c.key.startsWith("brollList:")) out.push(c.key.slice(10));
+      }
+      c.continue();
+    };
+    // Naming needs every reservation. An incomplete read must never free the names it missed (TOOLS-436).
+    q.onerror = () => rej(q.error || new Error("B-roll names could not be checked"));
+    t.onerror = t.onabort = () => rej(t.error || new Error("B-roll names could not be checked"));
+    t.oncomplete = () => res(out);
+  });
 }
 async function idbSet(k, v) {
   try {
@@ -2954,15 +2955,17 @@ async function newScript() {
   const hint = Doc.insertBlock(doc, t.id, "para", "").id;
   const text = Doc.serialize(doc);
   // Saved in the browser at once (step J); where it can't be, it waits for the first save as before.
-  let made = null;
+  let made = null, name = "untitled-script.md";
   if (browserSaving) {
-    try { made = await createBrowserScript(Doc.scriptFileName("", doc, await nameTaken()), text); } catch { made = null; }
+    // Unknown B-roll reservations stop the open; even an unsaved fallback would use that name's old list.
+    try { name = Doc.scriptFileName("", doc, await nameTaken()); } catch { return; }
+    try { made = await createBrowserScript(name, text); } catch { made = null; }
   }
   if (made) {
     loadText(text, { name: made.handle.name, handle: made.handle, modified: made.modified, browser: true });
     state.blank = text;
     remember(made.handle, true).catch(() => {});
-  } else loadText("", { name: "untitled-script.md", fresh: true });
+  } else loadText("", { name, fresh: true });
   state.doc = doc;
   state.hint = hint;
   state.savedText = text;
