@@ -38,4 +38,4 @@ The read-only report is `.scratch/tools-414-architecture-ideas.md` in the worktr
 
 ## Done
 
-Feature list: no change (internal indirection and comments only; editor controls, words, state and behaviour are unchanged).
+Feature list: no change (internal indirection and comments only; editor controls, words, state and behaviour are unchanged)
