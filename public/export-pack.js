@@ -1,14 +1,11 @@
-// Export all and Save to video folder (TOOLS-311): the zip maker and the video-folder writer, loaded the first time
-// the Export menu opens, so the page's first load carries neither. The app reads everything from the script first
-// (what is on screen when the person clicked), then hands it here.
+// Loaded when Export first opens. The app captures the script before waiting for this module.
 import { makeZip } from "./zip.js";
 import { videoFolder, scriptDay, writeFolder, withPrompterLink } from "./video-folder.js";
 
 // The interface version; the app checks it (a tab from before a release that gets a newer pack counts it as not loaded).
 export const SEAM = 1;
 
-/** Export all: the files ([{ name, text }]) as one zip, as bytes. */
-export const zipAll = (files) => makeZip(files);
+export { makeZip as zipAll };
 
 /**
  * saveFolder({ dir, doc, scriptText, title, broll, modified, dirty }) → the save's receipt ({ date, words, shots,
