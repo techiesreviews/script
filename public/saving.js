@@ -1,4 +1,4 @@
-// Every save carries its own handle and text across script switches. Only the open script receives status changes.
+// Every save carries its own handle and text across script switches (TOOLS-308). Only the open script receives status changes.
 // Conflict checks compare savedText fingerprints, never file times: another tab may write before the time is read.
 // fileModified is display metadata (the draft's day and prompter link).
 import * as SaveQueue from "./save-queue.js";
@@ -237,6 +237,8 @@ export function createLeftCopies({ store, dir, locks = tabLocks(), write = write
 /**
  * createSaving({ script, editor, files, browser, drafts, clock, on })
  * The caller keeps the open script's draft before it calls open() for another script.
+ * - script: the open record; saving owns handle, name, inBrowser, blank, savedText, savedAt, fileModified, saving,
+ *   autoSaving, saveError, needsPermission and conflict. No DOM; files and the clock are supplied below.
  * - editor: { ready(), doc(), text(), dirty(), paused() } — a script is open and the person may save it; its document
  *   object; its text as it would be saved; changed since the last save; a "/" command is being typed.
  * - files: { write(handle, text) → modified, file(handle) → { lastModified, text() }, permitted(handle, ask),

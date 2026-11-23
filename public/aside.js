@@ -1,4 +1,4 @@
-// Scripts kept aside retain their document, asks and undo steps while the agent works elsewhere.
+// Scripts kept aside retain their document, asks and undo steps while the agent works elsewhere (TOOLS-358).
 // This module changes those records only; the app owns their files and display.
 import * as Doc from "./doc.js";
 import * as Changes from "./changes.js";

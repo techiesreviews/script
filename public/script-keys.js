@@ -1,4 +1,4 @@
-// Drafts and B-roll use file:<id> for disk files, matched by isSameEntry across handles and tabs.
+// Drafts and B-roll use file:<id> for disk files, matched by isSameEntry across handles and tabs (TOOLS-361).
 // Browser scripts and scripts without a file use their names. Active file ids survive list eviction.
 // Migration copies the old name's values, persists file ids, then clears the name. Failed reads or writes leave
 // the old values available for a retry. Storage, file comparison and locks are injected.
