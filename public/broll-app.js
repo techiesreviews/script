@@ -1,4 +1,4 @@
-// Loaded on first B-roll use; startup must not import this module or broll.js.
+// Loaded on first B-roll use; startup must not import this module or broll.js (TOOLS-306).
 // The app supplies dependencies through host and uses the frozen interface returned by createBroll.
 import * as Doc from "./doc.js";
 import * as Broll from "./broll.js";
@@ -27,6 +27,7 @@ export function createBroll(host) {
     marked: {}, // step K2: pictures put in at once, per shot { prev, pic, askId }, with Undo until the list changes
   };
 
+  /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
   const KIND_ICON = { broll: "film", motion: "motion", screen: "screen" };
   const KIND_NAME = Broll.KIND_NAME;
   const shotById = (id) => broll.shots.find((s) => s.id === id) || null;
@@ -332,6 +333,7 @@ export function createBroll(host) {
     renderBroll();
   }
 
+  /* ---------- Storyboard: every frame in script order ---------- */
   const FILTERS = [
     ["all", "All", () => true],
     ["broll", "B-roll", (s) => s.kind === "broll"],
@@ -424,6 +426,7 @@ export function createBroll(host) {
     if (!state.guest) openShotCard({ mode: "edit", id: jump.dataset.b, anchor: shotFrameAnchor(jump.dataset.b) });
   });
 
+  /* ---------- Sketch asks: the agent draws the missing frames, the person keeps or undoes each ---------- */
   function requestSketches() {
     if (!state.doc || broll.status !== "ok") return null;
     const missing = broll.shots.filter((s) => !broll.sketches[s.id]);
@@ -633,6 +636,7 @@ export function createBroll(host) {
     return md;
   }
 
+  /* ---------- Add, change and remove a shot (step C3): the shot card ---------- */
   // Lists without a file (the demo, a list opened without a handle, a new list whose picker was cancelled, the list of
   // a script in the browser) are kept in this browser per script. Since step K they live in IndexedDB, which has room
   // for pictures (the app's listKey and readKept). They go through the same queue as the B-roll links (keyed), so a
@@ -857,6 +861,7 @@ export function createBroll(host) {
   }, true);
   const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
 
+  /* ---------- Move a shot to other paragraphs (steps L, L2): drag it ---------- */
   // The whole shot in the margin, its picture or line drawing and its tag, can be dragged at once: a mouse or a pen after
   // a few pixels, a finger after a hold (a quick swipe still scrolls, a tap still opens the card). While dragging, its
   // frame jumps to where it will sit beside the spoken paragraph under the pointer (or the nearest one); the drop puts
@@ -1053,6 +1058,7 @@ export function createBroll(host) {
     mv.dropped = true;
   }, true);
 
+  /* ---------- B-roll suggestions from the agent (step C4): Keep or Undo per change ---------- */
   function receiveBroll(ask, answer, by) {
     ask.answer = answer;
     ask.answeredBy = validBy(by);
@@ -1291,6 +1297,7 @@ export function createBroll(host) {
     renderTocDots();
   }
 
+  /* ---------- Pictures from the agent as sketches (step K, Lex 2026-10-29) ---------- */
   // upload_image gives a one-time address; the agent sends the file there, the Worker passes it through the relay in
   // parts, and the tab shrinks it and keeps it here, in memory only, until sketch_shot or answer_broll uses its id:
   // a call that uses it frees its place at once (step K2); the picture then lives in the shot or the suggestion.
@@ -1407,6 +1414,7 @@ export function createBroll(host) {
     return { args: { ...args, changes }, used };
   }
 
+  /* ---------- B-roll and sketches the person asked for in the agent's own chat (step I, Lex 2026-10-29) ---------- */
   // They come in as an ask of the agent's own (own: true), already answered, so they show and are kept or undone
   // exactly like the answer to "Plan B-roll" or "Ask for sketches".
   function ownAsk(action, instruction) {
@@ -1459,6 +1467,7 @@ export function createBroll(host) {
       : "The B-roll list can't be read. Ask the person to link it again in the storyboard.";
   }
 
+  /* ---------- What the app asks of the B-roll part ---------- */
   // The B-roll list and the storyboard, as the single exports and "Export all" give them.
   function brollExports() {
     const shots = Broll.scriptOrder(state.doc, broll.shots), title = Doc.titleOf(state.doc) || baseName();

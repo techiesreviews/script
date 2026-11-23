@@ -14,9 +14,8 @@ Remove redundant indirection and narrated comments while preserving editor behav
 ## Changes
 
 - Call `Cues.marksRange` directly instead of forwarding through `marksMoved`.
-- Export `makeZip` as `zipAll` directly, preserving the export pack's existing interface.
 - Use `draftKey` directly instead of a second local name.
-- Shorten repeated file summaries and remove narrated comments and section dividers in recently changed modules. Keep failure, ordering, cross-tab and lazy-loading constraints documented.
+- Shorten repeated file summaries and remove narrated comments in recently changed modules. Keep ownership, failure, ordering, cross-tab and lazy-loading constraints documented, with the existing section dividers and ticket references.
 - Keep every catch, fallback, lock, queue, validation and test assertion unchanged. There is no new behaviour or bug fix, so no new test or failing-test claim.
 
 ## Architecture ideas
@@ -33,6 +32,7 @@ The read-only report is `.scratch/tools-414-architecture-ideas.md` in the worktr
 
 - Baseline: `kit specs`, 603 tests passed before editing.
 - `kit unit --affected`: 153 tests passed across five files.
+- Compared the export pack against `origin/dev`: identical export names and seam version, with byte-identical ZIP output for empty and UTF-8 multi-file input. The `zipAll` wrapper stays because it limits the forwarded arguments.
 - Full `kit specs` and independent reviews run before landing; their evidence is recorded with the PR.
 - No browser check or `kit ux`: the cleanup adds no visible change. No feature-list edit is needed.
 
