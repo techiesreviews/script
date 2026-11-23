@@ -41,6 +41,10 @@ Feature list: updated with the existing notices used on failed naming. Before/af
 
 `kit ux --ticket docs/build/tools-436-broll-names.md` could not run: `RESULT: fail ux ENOENT` for the missing `docs/agents/features.md`. The project has its human feature list at `docs/features.md`, but no kit UX feature map or shots command. No passing automated UX review is claimed. The kit's documented missing-map policy marks the PR UX check skipped; browser evidence above supplies the requested notice checks.
 
+### Follow-ups
+
+- Validation gaps (gap, second look): Add a Ctrl/Cmd+S test where `browser.name` rejects. Check that no file is created, the script stays unsaved, “Not saved” appears, saving finishes, and a healthy retry succeeds. Current tests stop at the naming boundary.
+
 ## Review findings
 
 - R1-1 (P3): fixed. Added source links and clarified that the card has two acceptance items.
