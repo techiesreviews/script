@@ -16,11 +16,13 @@ const row = (name) => ({ handle: handle(name), name, at: 1 });
 
 function fixture(entries = []) {
   const stored = new Map(entries), fail = {}, dropped = [], asides = [];
+  let opens = 0;
   const indexedDB = {
     open() {
+      const nth = ++opens;
       const request = {};
       queueMicrotask(() => {
-        if (fail.open) { request.error = new Error("open refused"); request.onerror(); return; }
+        if (fail.open === true || fail.open === nth) { request.error = new Error("open refused"); request.onerror(); return; }
         request.result = {
           transaction() {
             const transaction = {};
@@ -62,12 +64,13 @@ function fixture(entries = []) {
 }
 
 test("recent history: failed writes report failure, retain rows and kept scripts, and allow the next update", async () => {
-  for (const outcome of ["error", "abort", "throw", "open"]) {
+  for (const outcome of ["error", "abort", "throw", "open", "write-open"]) {
     const old = row("a.md"), next = row("b.md"), f = fixture([["recent", [old]]]);
     f.asides.push({ handle: old.handle, doc: "retained background state" });
     f.context.oldHandle = old.handle;
     f.run("lastHandle = oldHandle");
     if (outcome === "open") f.fail.open = true;
+    else if (outcome === "write-open") f.fail.open = 2;
     else f.fail.write = outcome;
     const result = await Promise.race([
       f.update(() => [next]).then(() => "fulfilled", () => "rejected"),
@@ -144,7 +147,7 @@ test("optional storage writes report success or failure and settle even when onl
   }
 });
 
-test("recent history: a failed removal keeps the browser file and its background state available for retry", async () => {
+test("optional history failure never blocks an explicit browser-script deletion", async () => {
   const old = { ...row("browser.md"), browser: true };
   const f = fixture([["recent", [{ name: old.name, at: 1, browser: true }]]]);
   const kept = { handle: old.handle, doc: "retained words and asks", writes: Promise.resolve() };
@@ -158,14 +161,27 @@ test("recent history: a failed removal keeps the browser file and its background
   f.context.entry = old;
   f.run(`const deleting = [];\n${functionSource("deleteBrowserScript")}`);
   f.fail.read = "recent";
-  await assert.rejects(f.run("deleteBrowserScript(entry)"), /read refused/);
-  assert.equal(kept.gone, undefined, "its agent can still work in the retained script");
-  assert.deepEqual(f.dropped, []);
-  assert.equal(deleted, false);
-  assert.equal(keysDropped, false, "its recovery draft and B-roll stay put");
-  assert.equal(f.run("deleting.length"), 0, "a retry is not blocked");
-  delete f.fail.read;
   await f.run("deleteBrowserScript(entry)");
+  assert.equal(kept.gone, true);
+  assert.deepEqual(f.dropped, [old.name]);
   assert.equal(deleted, true);
   assert.equal(keysDropped, true);
+  assert.equal(f.run("deleting.length"), 0);
+});
+
+test("optional history failure never blocks cleanup of the browser copy after Save as", async () => {
+  const f = fixture([["recent", [row("browser.md")]]]);
+  const moved = [];
+  f.context.holdOpen = async () => {};
+  f.context.copies = { afterMove: (name, words) => moved.push([name, words]) };
+  f.context.file = handle("disk.md");
+  f.context.was = handle("browser.md");
+  const start = source.indexOf("    placed(handle");
+  const end = source.indexOf("\n    },", start);
+  f.run(`function ${source.slice(start, end).trimStart()}\n}`);
+  f.fail.write = "error";
+  f.run('placed(file, { was, words: "the saved words" })');
+  await f.run("recentQueue");
+  await new Promise(setImmediate);
+  assert.deepEqual(moved, [["browser.md", "the saved words"]]);
 });
