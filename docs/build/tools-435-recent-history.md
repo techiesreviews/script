@@ -45,7 +45,7 @@ Done when 3: met — All eight focused regressions and the complete 639-test sui
 
 ## Done
 
-Feature list: no change (storage bookkeeping and failure propagation only; no new control, notice, copy, layout or presentation policy).
+Feature list: no change (storage bookkeeping and failure propagation only; no new control, notice, copy, layout or presentation policy)
 
 UX and screenshots: not applicable; there is no visible notice or new interface. Existing fallback presentation remains unchanged.
 
