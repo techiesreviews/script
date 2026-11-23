@@ -2319,7 +2319,7 @@ async function idbRead(k) {
   // Nothing stored gives undefined; a link or list removed on purpose is a stored null.
   return new Promise((res, rej) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error || new Error("IndexedDB read failed")); });
 }
-// Like idbSet, but a failed write is an error (a B-roll list kept in the browser must not vanish silently).
+// A failed write is an error (a B-roll list kept in the browser must not vanish silently).
 async function idbPut(k, v) {
   const db = await idb();
   await new Promise((res, rej) => {
@@ -2823,7 +2823,7 @@ const saving = createSaving({
       remember(handle, browser).catch(() => {});
       // A script that moved to a file lets go of its browser copy's name first, so the cleanup can take it.
       const freed = holdOpen();
-      if (was) Promise.all([freed, forget(was)]).then(() => copies.afterMove(was.name, words)).catch(() => {}); // a copy that can't be looked at now stays a browser script
+      if (was) Promise.all([freed, forget(was).catch(() => {})]).then(() => copies.afterMove(was.name, words)).catch(() => {}); // Optional history must not block the browser copy's existing cleanup policy.
     },
   },
 });
@@ -3220,11 +3220,11 @@ async function deleteBrowserScript(r) {
   deleting.push(r.handle); // it can't be opened while it goes
   try {
     const kept = await keptFor(r.handle);
-    await forget(r.handle);
     if (kept) { kept.gone = true; dropKept(kept.handle); await kept.writes; }
     // A save of it still on its way (the one made when it was left, or one waiting behind another) ends first, so it
     // can't bring a draft back under its name after the delete.
     await saving.idle();
+    await forget(r.handle).catch(() => {}); // Explicit deletion still works when optional history is unavailable.
     try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
     // A browser script's keys go by its name: they go only when no other script that goes by that name is known, open,
     // kept aside or on the list (files on the computer have their own, TOOLS-361). When in doubt, they stay.
@@ -3320,7 +3320,7 @@ async function renderScriptList() {
       x.addEventListener("click", async () => {
         if (!("confirm" in x.dataset)) { x.dataset.confirm = ""; x.className = "scripts__delete"; x.textContent = "Delete"; return; }
         x.disabled = true;
-        try { await deleteBrowserScript(r); } catch { x.disabled = false; return; }
+        await deleteBrowserScript(r);
         renderScriptList();
       });
       x.addEventListener("blur", () => { if (x.isConnected && !x.disabled) { delete x.dataset.confirm; x.className = "icon-btn scripts__remove"; x.innerHTML = icon("x"); } });
