@@ -20,8 +20,8 @@ function fixture() {
     ["broll:cleared.md", null],
     ["brollList:cleared.md", null],
   ]);
-  const fail = {}, loaded = [];
-  const state = { doc: Doc.parse("# Current\n\nKeep my words.\n"), name: "current.md", inBrowser: true, handle: { name: "current.md" } };
+  const fail = {}, loaded = [], notices = [], renamed = [], created = [];
+  const state = { doc: Doc.parse("# Orphan\n\nKeep my words.\n"), name: "current.md", inBrowser: true, handle: { name: "current.md", move() {} } };
   const indexedDB = {
     open() {
       const request = {};
@@ -56,13 +56,15 @@ function fixture() {
   };
   const context = vm.createContext({
     indexedDB, Doc, state, browserSaving: true,
-    recentScripts: async () => [], copies: { names: () => [] }, SAMPLE: { name: "demo.md" },
+    recentScripts: async () => [], copies: { names: () => [], rename: (...args) => renamed.push(args) }, SAMPLE: { name: "demo.md" },
     LS: "script:", localStorage: { length: 0 }, saving: { drafts: { get: () => null } },
-    createBrowserScript: async () => { throw new Error("file creation refused"); },
+    createBrowserScript: async (...args) => { created.push(args); throw new Error("file creation refused"); },
+    askingToOpen: null, together: null, busyChoice: () => "", isDirty: () => false, scriptProblem: () => "",
+    openProblem: (name) => notices.push(name),
     loadText: (...args) => loaded.push(args), renderTop() {}, renderAll() {}, renderDerived() {}, selectTitle() {},
   });
-  vm.runInContext(`let brollKeys = Promise.resolve();\n${["idb", "idbLinkedNames", "keyed", "nameTaken", "newScript"].map(functionSource).join("\n")}`, context);
-  return { fail, stored, state, loaded, run: (code) => vm.runInContext(code, context) };
+  vm.runInContext(`let brollKeys = Promise.resolve();\n${["idb", "idbLinkedNames", "keyed", "nameTaken", "newScript", "followTitle", "openScript"].map(functionSource).join("\n")}`, context);
+  return { fail, stored, state, loaded, notices, renamed, created, run: (code) => vm.runInContext(code, context) };
 }
 
 test("B-roll names: failed discovery never approves a new or renamed script name; the queue recovers", async () => {
@@ -74,6 +76,12 @@ test("B-roll names: failed discovery never approves a new or renamed script name
       new Promise((resolve) => setTimeout(() => resolve("pending"), 100)),
     ]);
     assert.equal(result, "rejected", `${outcome}: unknown reservations must stop naming`);
+    await assert.rejects(f.run("followTitle(state.handle)"));
+    await assert.rejects(f.run("openScript({ markdown: '# Orphan\\n' })"));
+    assert.deepEqual(f.renamed, [], "no file rename before reservations are known");
+    assert.deepEqual(f.created, [], "no agent-created file before reservations are known");
+    assert.deepEqual(f.loaded, [], "no agent fallback opens under an unchecked name");
+    assert.equal(f.state.name, "current.md");
     delete f.fail.at;
     const taken = await f.run("nameTaken('current.md')");
     assert.equal(Doc.scriptFileName("", Doc.parse("# Orphan\n"), taken), "orphan-2.md");
@@ -94,6 +102,7 @@ test("New script: an unread reservation leaves the current script alone instead 
   assert.deepEqual(f.loaded, [], "no fallback opens under an unchecked name");
   assert.equal(f.state.doc, doc);
   assert.equal(f.state.name, "current.md");
+  assert.deepEqual(f.notices, ["a new script"], "the existing failed-open notice reports the failure");
   assert.equal(f.stored.get("brollList:untitled-script.md"), "# Someone else's shots\n");
 });
 
