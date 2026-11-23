@@ -52,3 +52,11 @@ UX and screenshots: not applicable; there is no visible notice or new interface.
 Agent Kit doctor passed all 13 checks. This project has no `docs/agents/runner.md`; `docs/agents/kitchen-extras.md` documents that omission and supplies its workflow.
 
 Lead: close TOOLS-435 (Done, with a dated note naming the PR and its merge SHA).
+
+### Follow-ups
+
+- Validation gaps (gap): R1-8 still open: The author declined it, and their reasoning holds up. In `followTitle`, the `updateRecent` call that can now reject is the last statement (`public/app.js:3199`). `saving.js:382` catches that rejection, so the saved words, the new name and the moved keys all stay. The only visible effect is that the…
+- Standards (P3): f166d60:public/app.js:2826 — P3 style: The new comment replaced the old one, "a copy that can't be looked at now stays a browser script". The old comment explained the outer `.catch(() => {})` on `copies.afterMove`, and nothing explains it now. The new comment is also worded unlike the code around it ("existing cleanup policy"). Fix: keep both reasons, for example: `// history is optional: a failed forget doesn't stop the cleanup; a copy that can't be looked at now stays a browser script`.
+- Validation gaps (gap): Browser rename when the history write fails (R1-8, optional). In `tests/recent-history.test.mjs`, load `followTitle` with stubs for `state`, `nameTaken`, `copies.rename`, `moveKeys`, `holdOpen` and `renderTop`. Set `f.fail.write = "error"`, then check three things: the returned promise rejects with "Recent history could not be kept"; `state.name` is the new name; `f.stored.get("recent")` still holds the old browser row. Together with the existing `saving.js:382` catch, this shows the rename stays harmless.
+- Validation gaps (gap): Explicit deletion when the history write fails. The deletion test only sets `f.fail.read = "recent"`, so `forget` fails at the read and never reaches the write. Add a second pass of the same test with `f.fail.write = "error"`, asserting the same four outcomes: `kept.gone`, `deleted`, `keysDropped` and `deleting.length === 0`.
+
