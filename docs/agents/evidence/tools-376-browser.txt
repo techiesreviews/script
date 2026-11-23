@@ -275,3 +275,14 @@ RESULT: fail unit 20/21 (1 files) (the Check regression, before the fix)
 RESULT: ok unit 36/36 (3 files)
 RESULT: ok specs (569/569 tests passed)
 RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+
+Landing rebase, 2026-11-23 (fleet-lead)
+Rebased all 29 commits onto origin/dev 0eb5489, including cleanup PR #92.
+The host merge keeps dev's scriptKey ownership dependency and adds the approved checkpointBrollMove and queueBrollHistory dependencies. App and B-roll module both use seam version 4, above dev's version 3. Generated specs evidence was regenerated after resolving the conflicts. No new script or B-roll content was loaded into a connected editor.
+RESULT: ok doctor 13/13 checks passed
+RESULT: ok unit 36/36 (3 files)
+RESULT: ok specs (631/631 tests passed)
+RESULT: ok se01-browser 4/4 desktop/phone light/dark cases
+The existing local smoke script used throwaway scripts through a static server at 127.0.0.1:4199 and an isolated Chrome profile on debugging port 9367. At 1440px and 390px, light and dark, real drags, typing, Undo, Redo and reload preserved shot position and current script words; a recorded rewrite between two moves undid and redid in order. Browser contexts, Chrome, server and temporary profile were closed or removed afterwards. Screenshots remain in .scratch/se01-shots; command output is .scratch/kit-jobs/land4-script-browser/log.
+kit ux was attempted: RESULT: fail ux ENOENT (no docs/agents/features.md). No automated UX verdict, release or deployment is claimed.
+Lex accepted only the previously recorded rare-case SL-1 P2 (one Undo waiting in a different script is cancelled when the original save fails; no text is lost). This worker applies no waiver; if the landing gate still blocks it, the finding goes back to the lead.
