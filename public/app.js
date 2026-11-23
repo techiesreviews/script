@@ -866,7 +866,7 @@ function restore(snap, from, to) {
   // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
   for (const b of state.doc.blocks) {
     const old = Doc.blockById(was, b.id), a = old && Doc.contentOf(old), z = Doc.contentOf(b);
-    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, marksMoved(a, z));
+    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, Cues.marksRange(a, z));
   }
   state.lastStep = null;
   if (closed) emit(closed.status, closed);
@@ -933,7 +933,6 @@ function followAnchors(id, content, at, { insideGoes = false } = {}) {
     if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m, () => { m.state = "gone"; });
   }
 }
-const marksMoved = (from, to) => Cues.marksRange(from, to);
 // The agent's marked changes (step F) follow every edit from the script as it was when they last followed
 // (changeBase); an edit inside one ends its mark. `ops`: the room's operations, when they are known.
 let changeBase = null;
@@ -1108,7 +1107,7 @@ function mergeInto(prevId, id) {
   moveAsks(id, prevId, 0, offset);
   const m = Doc.mergeWithPrevious(state.doc, id);
   if (settled) {
-    followAnchors(prevId, settled.content, marksMoved(joined, settled.content));
+    followAnchors(prevId, settled.content, Cues.marksRange(joined, settled.content));
     Doc.setContent(state.doc, prevId, settled.content);
   }
   reanchorBlock(prevId);
@@ -1368,7 +1367,7 @@ function changeMarkup(s, kind, make) {
   const res = make(old);
   if (!Changes.canToggleCue(state.asks, b.id, b.type, res)) return;
   checkpoint(kind, b.id);
-  followAnchors(b.id, res.content, res.ops ? Cues.opsRange(old, res.ops) : marksMoved(old, res.content));
+  followAnchors(b.id, res.content, res.ops ? Cues.opsRange(old, res.ops) : Cues.marksRange(old, res.content));
   const r = Doc.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
@@ -1485,7 +1484,7 @@ function applyLink() {
 function landAgentCues(plan, mode, by) {
   together?.local();
   const before = Doc.cloneDoc(state.doc);
-  for (const seg of plan.segments) followAnchors(seg.id, seg.content, marksMoved(Doc.contentOf(byId(seg.id)), seg.content));
+  for (const seg of plan.segments) followAnchors(seg.id, seg.content, Cues.marksRange(Doc.contentOf(byId(seg.id)), seg.content));
   const parts = Changes.landCues(state.doc, plan, mode, by, Date.now());
   if (!parts.length) return 0;
   checkpoint("agent", parts[0].blockId, before);
