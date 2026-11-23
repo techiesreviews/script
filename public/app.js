@@ -2958,7 +2958,7 @@ async function newScript() {
   let made = null, name = "untitled-script.md";
   if (browserSaving) {
     // Unknown B-roll reservations stop the open; even an unsaved fallback would use that name's old list.
-    try { name = Doc.scriptFileName("", doc, await nameTaken()); } catch { return; }
+    try { name = Doc.scriptFileName("", doc, await nameTaken()); } catch { openProblem("a new script"); return; }
     try { made = await createBrowserScript(name, text); } catch { made = null; }
   }
   if (made) {
