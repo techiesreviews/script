@@ -2366,9 +2366,9 @@ async function idbLinkedNames() {
 }
 async function idbSet(k, v) {
   try {
-    const db = await idb();
-    await new Promise((res) => { const t = db.transaction("handles", "readwrite"); t.objectStore("handles").put(v, k); t.oncomplete = res; t.onerror = res; });
-  } catch { /* storage off: reopen is not offered */ }
+    await idbPut(k, v);
+    return true;
+  } catch { return false; } // Optional storage stays usable; callers can check whether it was kept.
 }
 
 function persistDraft() {
@@ -2409,7 +2409,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.doc = kept ? kept.doc : Doc.parse(text);
   saving.open({ handle, name, browser, savedText: kept ? kept.savedText : fresh ? Doc.serialize(state.doc) : text, modified, fresh });
   const freed = holdOpen();
-  if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle); dropKeys(unused.name); } }).catch(() => {});
+  if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle).catch(() => {}); dropKeys(unused.name); } }).catch(() => {});
   state.undo = kept ? kept.undo : [];
   state.redo = kept ? kept.redo : [];
   state.lastStep = null;
@@ -2738,7 +2738,7 @@ async function openOne(handle, was) {
     // From its file after all: its own words that could not be written come along as its draft ("Unsaved changes").
     const own = kept && !asIs ? keptDraft(kept) : null;
     loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place, draft: own });
-    remember(handle, browser);
+    remember(handle, browser).catch(() => {}); // History is optional; opening the file still succeeds.
     if (kept) { kept.opening.resolve(true); delete kept.opening; }
     return true;
   } catch {
@@ -2820,7 +2820,7 @@ const saving = createSaving({
     },
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, words, browser = false }) {
-      remember(handle, browser);
+      remember(handle, browser).catch(() => {});
       // A script that moved to a file lets go of its browser copy's name first, so the cleanup can take it.
       const freed = holdOpen();
       if (was) Promise.all([freed, forget(was)]).then(() => copies.afterMove(was.name, words)).catch(() => {}); // a copy that can't be looked at now stays a browser script
@@ -2961,7 +2961,7 @@ async function newScript() {
   if (made) {
     loadText(text, { name: made.handle.name, handle: made.handle, modified: made.modified, browser: true });
     state.blank = text;
-    remember(made.handle, true);
+    remember(made.handle, true).catch(() => {});
   } else loadText("", { name: "untitled-script.md", fresh: true });
   state.doc = doc;
   state.hint = hint;
@@ -2998,7 +2998,7 @@ $("#emptyReopen").addEventListener("click", async () => {
   if (!(await openHandle(lastHandle))) {
     // The file was moved or deleted: stop offering it.
     $("#emptyReopen").hidden = true;
-    forget(lastHandle);
+    forget(lastHandle).catch(() => {});
   }
 });
 
@@ -3011,9 +3011,11 @@ async function sameFile(a, b) {
   if (a === b) return true;
   try { return await a.isSameEntry(b); } catch { return false; }
 }
-async function recentScripts() {
-  const stored = await idbGet("recent");
-  const last = Array.isArray(stored) ? null : await idbGet("last"); // before the list, only the last file was kept
+async function recentScripts({ strict = false } = {}) {
+  // Display can degrade to the browser inventory; updates must never replace history they could not read.
+  const read = strict ? idbRead : idbGet;
+  const stored = await read("recent");
+  const last = Array.isArray(stored) ? null : await read("last"); // before the list, only the last file was kept
   const list = Array.isArray(stored) ? stored : last?.name ? [{ handle: last, name: last.name, at: 0 }] : [];
   // Scripts in the browser are kept by name (their handles are found again), and every one of them is listed,
   // also those that fell off the list: they have no other way back.
@@ -3036,10 +3038,10 @@ async function without(list, handle) {
 }
 let recentQueue = Promise.resolve();
 function updateRecent(change) {
-  recentQueue = recentQueue.then(async () => {
-    const old = await recentScripts();
+  const operation = recentQueue.then(async () => {
+    const old = await recentScripts({ strict: true });
     const list = await change(old);
-    await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r)));
+    if (!(await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r))))) throw new Error("Recent history could not be kept");
     lastHandle = list[0]?.handle ?? null;
     // A kept file that fell off the list just now has no row to lead to it: it leaves memory, and its dot with it
     // (TOOLS-358). One that was never on a list read here (storage off) stays.
@@ -3048,8 +3050,9 @@ function updateRecent(change) {
       k.removed = true;
       dropKept(k.handle);
     }
-  }).catch(() => {});
-  return recentQueue;
+  });
+  recentQueue = operation.catch(() => {}); // A failed turn must not block the next one.
+  return operation;
 }
 const remember = (handle, browser = false) => updateRecent(async (list) => [{ handle, name: handle.name, at: Date.now(), ...(browser ? { browser: true } : {}) }, ...(await without(list, handle))].slice(0, RECENT_MAX));
 const forget = (handle) => updateRecent((list) => without(list, handle));
@@ -3217,11 +3220,11 @@ async function deleteBrowserScript(r) {
   deleting.push(r.handle); // it can't be opened while it goes
   try {
     const kept = await keptFor(r.handle);
+    await forget(r.handle);
     if (kept) { kept.gone = true; dropKept(kept.handle); await kept.writes; }
     // A save of it still on its way (the one made when it was left, or one waiting behind another) ends first, so it
     // can't bring a draft back under its name after the delete.
     await saving.idle();
-    await forget(r.handle);
     try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
     // A browser script's keys go by its name: they go only when no other script that goes by that name is known, open,
     // kept aside or on the list (files on the computer have their own, TOOLS-361). When in doubt, they stay.
@@ -3317,7 +3320,7 @@ async function renderScriptList() {
       x.addEventListener("click", async () => {
         if (!("confirm" in x.dataset)) { x.dataset.confirm = ""; x.className = "scripts__delete"; x.textContent = "Delete"; return; }
         x.disabled = true;
-        await deleteBrowserScript(r);
+        try { await deleteBrowserScript(r); } catch { x.disabled = false; return; }
         renderScriptList();
       });
       x.addEventListener("blur", () => { if (x.isConnected && !x.disabled) { delete x.dataset.confirm; x.className = "icon-btn scripts__remove"; x.innerHTML = icon("x"); } });
@@ -3326,7 +3329,7 @@ async function renderScriptList() {
       const x = h("button", "icon-btn scripts__remove", { type: "button", "aria-label": `Remove ${r.name} from the list` });
       x.innerHTML = icon("x");
       x.addEventListener("click", async () => {
-        await forget(r.handle);
+        try { await forget(r.handle); } catch { return; }
         const kept = await keptFor(r.handle); // no row leads to it any more: its dot goes too
         if (kept) { kept.removed = true; dropKept(kept.handle); }
         renderScriptList();
@@ -4097,7 +4100,7 @@ async function openScript(args, by) {
     if (browserSaving) { try { made = await createBrowserScript(name, args.markdown); } catch { made = null; } }
     if (made) {
       loadText(args.markdown, { name, handle: made.handle, modified: made.modified, browser: true });
-      remember(made.handle, true);
+      remember(made.handle, true).catch(() => {});
       return { result: `Opened as ${name}, saved in the person's browser. They can save it as a file on their computer (Export → Markdown file).` };
     }
     loadText(args.markdown, { name });
