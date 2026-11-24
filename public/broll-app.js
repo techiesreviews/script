@@ -888,12 +888,12 @@ export function createBroll(host) {
     const token = broll.token;
     let origin, before, over, checked, words, invalid = false;
     const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
-    // Where the shot is when a step's turn comes: beside the paragraphs it shows on, whose words may have changed since
-    // its quote was written. When it shows on none, or the list was changed outside this page: where its quote matches.
+    // Where the shot is when a step's turn comes: keep its paragraph ids, including deleted ones a text Undo can restore.
+    // Their words may have changed since its quote was written. With no ids, or a changed list: where its quote matches.
     const placeNow = (md) => {
       const saved = Broll.parseBroll(md).shots.find((shot) => shot.id === id), shown = shotById(id);
       if (!saved || !shown) return null;
-      const ids = saved.over === shown.over ? covered(shown) : [];
+      const ids = saved.over === shown.over ? (shown.blockIds || []) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
     // A written list is matched to the script again by its quotes, and takes a moment to write. Words typed into the
@@ -913,14 +913,10 @@ export function createBroll(host) {
     // Undo and Redo run in their turn too (the app's queueBrollHistory), so the script and the list are as the step
     // before left them: the shot goes back only from the place this move left it, onto paragraphs that are still spoken.
     const restoreMove = async (redo) => {
-      let ids;
+      const ids = redo ? destination : origin, from = redo ? origin : destination;
       try {
         await changeList((md) => {
           const now = placeNow(md), spoken = Broll.spokenBlocks(state.doc);
-          // The source may have been deleted before the move saved, then restored by its own Undo.
-          if (!origin.length) origin = Broll.matchOver(spoken, before);
-          ids = redo ? destination : origin;
-          const from = redo ? origin : destination;
           if (now?.ids.join() !== from.join() || gone(ids, spoken)) {
             invalid = true; // The shot was changed since: this step will never fit again, so history skips it.
             throw new Error("The shot changed.");

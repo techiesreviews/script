@@ -119,34 +119,44 @@ test("B-roll move history: a shot changed while an Undo saves is left alone, and
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-test("B-roll move history: deleting the source while a drag waits preserves separate Undos and Redos", async () => {
-  const m = movement();
-  m.type(" UNDO-SENTINEL");
-  const release = m.holdNextWrite();
-  const saved = m.moveShot(1);
-  await settle();
-  m.deletePara(0);
-  release(); await saved;
-  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
-  assert.equal(Doc.blockById(m.state.doc, m.paras[0].id), undefined);
+for (const source of ["original", "rewritten", "two paragraphs"]) {
+  test(`B-roll move history: deleting the ${source} source while a drag waits preserves separate Undos and Redos`, async () => {
+    const m = movement();
+    m.type(" UNDO-SENTINEL");
+    if (source === "rewritten") m.rewrite(0, "Completely rewritten source before the drag.");
+    const origin = source === "two paragraphs" ? [m.paras[0].id, m.paras[1].id] : [m.paras[0].id];
+    if (source === "two paragraphs") m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, origin)) }));
+    const deleted = source === "two paragraphs" ? 1 : 0, target = source === "two paragraphs" ? 2 : 1;
+    const quote = Broll.parseBroll(m.text).shots[0].over;
+    const release = m.holdNextWrite();
+    const saved = m.moveShot(target);
+    await settle();
+    m.deletePara(deleted);
+    release(); await saved;
+    assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[target].id]);
+    assert.equal(Doc.blockById(m.state.doc, m.paras[deleted].id), undefined);
 
-  m.undo(); await settle();
-  assert.ok(Doc.blockById(m.state.doc, m.paras[0].id), "the first Undo restores only the deleted paragraph");
-  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
-  m.undo(); await settle();
-  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the move's Undo must not remove older typing");
-  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the second Undo returns the shot to the restored source");
-  assert.equal(m.broll.shots[0].check, true, "Undo restores the source's Check flag");
-  assert.equal(m.state.undo.length, 1, "older typing keeps its own Undo");
+    m.undo(); await settle();
+    assert.ok(Doc.blockById(m.state.doc, m.paras[deleted].id), "the first Undo restores only the deleted paragraph");
+    assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[target].id]);
+    m.undo(); await settle();
+    assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the move's Undo must not remove older typing");
+    assert.deepEqual(m.broll.shots[0].blockIds, origin, "the second Undo returns the shot to the entire restored source");
+    assert.deepEqual(Broll.matchOver(Broll.spokenBlocks(m.state.doc), Broll.parseBroll(m.text).shots[0].over), origin, "the saved quote covers the entire restored source");
+    if (source === "rewritten") assert.match(Doc.serialize(m.state.doc), /Completely rewritten source before the drag/);
+    else assert.equal(Broll.parseBroll(m.text).shots[0].over, quote, "Undo preserves the original matching quote");
+    assert.equal(m.broll.shots[0].check, true, "Undo restores the source's Check flag");
+    assert.equal(m.state.undo.length, source === "rewritten" ? 2 : 1, "older typing and any earlier rewrite keep their own Undo");
 
-  m.redo(); await settle();
-  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id], "the first Redo moves only the shot");
-  assert.ok(Doc.blockById(m.state.doc, m.paras[0].id));
-  m.redo(); await settle();
-  assert.equal(Doc.blockById(m.state.doc, m.paras[0].id), undefined, "the second Redo deletes the source again");
-  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
-  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/);
-});
+    m.redo(); await settle();
+    assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[target].id], "the first Redo moves only the shot");
+    assert.ok(Doc.blockById(m.state.doc, m.paras[deleted].id));
+    m.redo(); await settle();
+    assert.equal(Doc.blockById(m.state.doc, m.paras[deleted].id), undefined, "the second Redo deletes the source again");
+    assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[target].id]);
+    assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/);
+  });
+}
 
 test("B-roll move history: two fast Undos wait for the second save and restore both moves in keypress order", async () => {
   const m = movement();
