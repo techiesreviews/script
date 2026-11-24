@@ -158,6 +158,25 @@ for (const source of ["original", "rewritten", "two paragraphs"]) {
   });
 }
 
+test("B-roll move history: a source paragraph deleted before the drag stays a separate earlier step", async () => {
+  const m = movement();
+  const origin = [m.paras[0].id, m.paras[1].id];
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, origin)) }));
+  m.deletePara(1);
+  await m.moveShot(2);
+  m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "Undo returns to only the source still present at the drop");
+  assert.equal(Doc.blockById(m.state.doc, m.paras[1].id), undefined, "the move's Undo does not undo the earlier deletion");
+  assert.equal(m.state.redo.length, 1);
+  m.undo(); await settle();
+  assert.ok(Doc.blockById(m.state.doc, m.paras[1].id));
+  m.redo(); await settle();
+  assert.equal(Doc.blockById(m.state.doc, m.paras[1].id), undefined);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  m.redo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+});
+
 test("B-roll move history: two fast Undos wait for the second save and restore both moves in keypress order", async () => {
   const m = movement();
   const words = Doc.serialize(m.state.doc);
