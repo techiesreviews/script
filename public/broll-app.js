@@ -888,8 +888,8 @@ export function createBroll(host) {
     const token = broll.token;
     let origin, before, over, checked, words, invalid = false;
     const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
-    // Where the shot is when a step's turn comes: keep source ids deleted after the drop, whose text Undo is above this
-    // move. Their words may have changed since its quote was written. With no ids, or a changed list: match its quote.
+    // Where the shot is when a step's turn comes: keep source ids from the drop or an earlier queued move, even if text
+    // Undo must restore them. Their words may have changed since its quote was written. With no ids: match its quote.
     const placeNow = (md) => {
       const saved = Broll.parseBroll(md).shots.find((shot) => shot.id === id), shown = shotById(id);
       if (!saved || !shown) return null;
@@ -902,7 +902,7 @@ export function createBroll(host) {
     const land = (ids, check) => {
       const shot = token === broll.token && shotById(id);
       if (!shot) return;
-      const lost = covered(shot).join() !== ids.join() && !gone(ids, Broll.spokenBlocks(state.doc));
+      const lost = covered(shot).join() !== ids.join();
       if (lost) Object.assign(shot, { blockIds: ids, sig: Broll.coverText(state.doc, ids) });
       const flag = check || lost || (covered(shot).join() === ids.join() && Broll.coverText(state.doc, ids) !== words);
       if (!lost && shot.check === flag) return;
@@ -946,8 +946,9 @@ export function createBroll(host) {
       if (token !== broll.token) throw new Error("The B-roll list changed.");
       const shown = shotById(id);
       if (!shown) throw new Error("The shot changed.");
-      // An earlier queued Undo may have returned the shot to a different source before this list read starts.
-      for (const pid of covered(shown)) source.add(pid);
+      // A changed quote means an earlier queued step moved the shot. Keep that step's ids even if deleted as it saved.
+      const ids = shown.over === s.over ? covered(shown) : (shown.blockIds || []);
+      for (const pid of ids) source.add(pid);
       await changeList((md) => {
         const now = placeNow(md);
         if (!now) throw new Error("The shot changed.");
