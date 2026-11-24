@@ -883,17 +883,17 @@ export function createBroll(host) {
   async function moveShot(id, sel) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
-    const destination = sel.map((part) => part.id);
+    const source = covered(s), destination = sel.map((part) => part.id);
     if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
     const token = broll.token;
     let origin, before, over, checked, words, invalid = false;
     const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
-    // Where the shot is when a step's turn comes: keep its paragraph ids, including deleted ones a text Undo can restore.
-    // Their words may have changed since its quote was written. With no ids, or a changed list: where its quote matches.
+    // Where the shot is when a step's turn comes: keep source ids deleted after the drop, whose text Undo is above this
+    // move. Their words may have changed since its quote was written. With no ids, or a changed list: match its quote.
     const placeNow = (md) => {
       const saved = Broll.parseBroll(md).shots.find((shot) => shot.id === id), shown = shotById(id);
       if (!saved || !shown) return null;
-      const ids = saved.over === shown.over ? (shown.blockIds || []) : [];
+      const ids = saved.over === shown.over ? (shown.blockIds || []).filter((pid) => source.includes(pid) || Doc.blockById(state.doc, pid)) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
     // A written list is matched to the script again by its quotes, and takes a moment to write. Words typed into the
