@@ -883,7 +883,7 @@ export function createBroll(host) {
   async function moveShot(id, sel) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
-    const source = covered(s), destination = sel.map((part) => part.id);
+    const source = new Set(covered(s)), destination = sel.map((part) => part.id);
     if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
     const token = broll.token;
     let origin, before, over, checked, words, invalid = false;
@@ -893,7 +893,7 @@ export function createBroll(host) {
     const placeNow = (md) => {
       const saved = Broll.parseBroll(md).shots.find((shot) => shot.id === id), shown = shotById(id);
       if (!saved || !shown) return null;
-      const ids = saved.over === shown.over ? (shown.blockIds || []).filter((pid) => source.includes(pid) || Doc.blockById(state.doc, pid)) : [];
+      const ids = saved.over === shown.over ? (shown.blockIds || []).filter((pid) => source.has(pid) || Doc.blockById(state.doc, pid)) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
     // A written list is matched to the script again by its quotes, and takes a moment to write. Words typed into the
@@ -944,6 +944,10 @@ export function createBroll(host) {
     // quote is of the words its paragraphs have by then (typing goes on while it waits).
     const write = queueBrollHistory(async () => {
       if (token !== broll.token) throw new Error("The B-roll list changed.");
+      const shown = shotById(id);
+      if (!shown) throw new Error("The shot changed.");
+      // An earlier queued Undo may have returned the shot to a different source before this list read starts.
+      for (const pid of covered(shown)) source.add(pid);
       await changeList((md) => {
         const now = placeNow(md);
         if (!now) throw new Error("The shot changed.");

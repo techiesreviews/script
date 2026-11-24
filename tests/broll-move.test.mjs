@@ -177,6 +177,34 @@ test("B-roll move history: a source paragraph deleted before the drag stays a se
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
 });
 
+test("B-roll move history: deleting the source restored by a queued Undo preserves the next drag's history", async () => {
+  const m = movement();
+  m.type(" UNDO-SENTINEL");
+  await m.moveShot(1);
+  const releaseUndo = m.holdNextSave();
+  m.undo(); await settle();
+  const saved = m.moveShot(2);
+  const releaseMove = m.holdNextWrite();
+  releaseUndo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the earlier Undo restores the next drag's real source");
+  m.deletePara(0);
+  releaseMove(); await saved;
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+
+  m.undo(); await settle();
+  assert.ok(Doc.blockById(m.state.doc, m.paras[0].id));
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id], "the first Undo restores only the source paragraph");
+  m.undo(); await settle();
+  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the second Undo must preserve older typing");
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the second Undo returns the shot to the source left by the queued Undo");
+  m.redo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+  assert.ok(Doc.blockById(m.state.doc, m.paras[0].id), "the first Redo moves only the shot");
+  m.redo(); await settle();
+  assert.equal(Doc.blockById(m.state.doc, m.paras[0].id), undefined, "the second Redo deletes the source");
+  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/);
+});
+
 test("B-roll move history: two fast Undos wait for the second save and restore both moves in keypress order", async () => {
   const m = movement();
   const words = Doc.serialize(m.state.doc);
