@@ -883,17 +883,18 @@ export function createBroll(host) {
   async function moveShot(id, sel) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
-    const source = new Set(covered(s)), destination = sel.map((part) => part.id);
+    const destination = sel.map((part) => part.id);
+    const source = { over: s.over, ids: covered(s) }, atDrop = new Set(Broll.spokenBlocks(state.doc).map((b) => b.id));
     if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
     const token = broll.token;
     let origin, before, over, checked, words, invalid = false;
     const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
-    // Where the shot is when a step's turn comes: keep source ids from the drop or an earlier queued move, even if text
-    // Undo must restore them. Their words may have changed since its quote was written. With no ids: match its quote.
+    // Where the shot is when a step's turn comes: beside the paragraphs it shows on, whose words may have changed since
+    // its quote was written. When it shows on none, or the list was changed outside this page: where its quote matches.
     const placeNow = (md) => {
       const saved = Broll.parseBroll(md).shots.find((shot) => shot.id === id), shown = shotById(id);
       if (!saved || !shown) return null;
-      const ids = saved.over === shown.over ? (shown.blockIds || []).filter((pid) => source.has(pid) || Doc.blockById(state.doc, pid)) : [];
+      const ids = saved.over === shown.over ? covered(shown) : [];
       return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
     };
     // A written list is matched to the script again by its quotes, and takes a moment to write. Words typed into the
@@ -902,6 +903,7 @@ export function createBroll(host) {
     const land = (ids, check) => {
       const shot = token === broll.token && shotById(id);
       if (!shot) return;
+      // Keep ids deleted during the write too: a queued move still needs the source this step left it.
       const lost = covered(shot).join() !== ids.join();
       if (lost) Object.assign(shot, { blockIds: ids, sig: Broll.coverText(state.doc, ids) });
       const flag = check || lost || (covered(shot).join() === ids.join() && Broll.coverText(state.doc, ids) !== words);
@@ -946,14 +948,16 @@ export function createBroll(host) {
       if (token !== broll.token) throw new Error("The B-roll list changed.");
       const shown = shotById(id);
       if (!shown) throw new Error("The shot changed.");
-      // A changed quote means an earlier queued step moved the shot. Keep that step's ids even if deleted as it saved.
-      const ids = shown.over === s.over ? covered(shown) : (shown.blockIds || []);
-      for (const pid of ids) source.add(pid);
+      // Remember the source before a list read can rematch it. An earlier queued step may have moved it; paragraphs
+      // deleted before this drag stay out, while ones deleted since the drop keep their separate text Undo above it.
+      const from = { over: shown.over, ids: shown.over === source.over ? source.ids
+        : (shown.blockIds || []).filter((pid) => atDrop.has(pid) || Doc.blockById(state.doc, pid)) };
       await changeList((md) => {
         const now = placeNow(md);
         if (!now) throw new Error("The shot changed.");
         if (gone(destination, Broll.spokenBlocks(state.doc))) throw new Error("The script changed.");
-        ({ over: before, ids: origin, check: checked } = now);
+        ({ over: before, check: checked } = now);
+        origin = now.over === from.over ? from.ids : now.ids;
         if (origin.join() === destination.join()) return md; // the step before put the shot here already
         over = Broll.overFor(state.doc, Broll.wholeParas(state.doc, destination));
         words = Broll.coverText(state.doc, destination);
