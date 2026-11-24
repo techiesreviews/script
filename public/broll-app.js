@@ -913,10 +913,14 @@ export function createBroll(host) {
     // Undo and Redo run in their turn too (the app's queueBrollHistory), so the script and the list are as the step
     // before left them: the shot goes back only from the place this move left it, onto paragraphs that are still spoken.
     const restoreMove = async (redo) => {
-      const ids = redo ? destination : origin, from = redo ? origin : destination;
+      let ids;
       try {
         await changeList((md) => {
           const now = placeNow(md), spoken = Broll.spokenBlocks(state.doc);
+          // The source may have been deleted before the move saved, then restored by its own Undo.
+          if (!origin.length) origin = Broll.matchOver(spoken, before);
+          ids = redo ? destination : origin;
+          const from = redo ? origin : destination;
           if (now?.ids.join() !== from.join() || gone(ids, spoken)) {
             invalid = true; // The shot was changed since: this step will never fit again, so history skips it.
             throw new Error("The shot changed.");
