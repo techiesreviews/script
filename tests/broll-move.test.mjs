@@ -60,6 +60,7 @@ function movement() {
     },
     rewrite: (index, words) => { context.checkpoint("rewrite", paras[index].id); Doc.setContent(state.doc, paras[index].id, words); },
     deletePara: (index) => { context.checkpoint("delete"); state.doc.blocks.splice(state.doc.blocks.findIndex((b) => b.id === paras[index].id), 1); },
+    describeShot: () => context.changeList((text) => Broll.updateShot(text, "B1", { what: "Changed shot description" })),
     failNextWrite: () => { broken = true; },
     holdNextSave: () => { let release; slow = new Promise((resolve) => { release = resolve; }); return release; },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
@@ -209,6 +210,54 @@ for (const early of [false, true]) {
     assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/);
   });
 }
+
+test("B-roll move history: an earlier description save cannot erase a drag's deleted source", async () => {
+  const m = movement();
+  m.type(" UNDO-SENTINEL");
+  const release = m.holdNextSave();
+  const described = m.describeShot(); await settle();
+  const moved = m.moveShot(1);
+  m.deletePara(0);
+  release(); await described; await moved;
+  m.undo(); await settle();
+  assert.ok(Doc.blockById(m.state.doc, m.paras[0].id));
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
+  m.undo(); await settle();
+  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the move's Undo preserves older typing after the earlier save rematches the shot");
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  assert.equal(Broll.parseBroll(m.text).shots[0].what, "Changed shot description");
+  m.redo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
+  assert.ok(Doc.blockById(m.state.doc, m.paras[0].id));
+  m.redo(); await settle();
+  assert.equal(Doc.blockById(m.state.doc, m.paras[0].id), undefined);
+  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/);
+});
+
+test("B-roll move history: a queued Undo does not pull an earlier deletion into the next drag's source", async () => {
+  const m = movement();
+  m.type(" UNDO-SENTINEL");
+  const target = m.insertPara();
+  const origin = [m.paras[0].id, m.paras[1].id];
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, origin)) }));
+  await m.moveShot(2);
+  const release = m.holdNextSave();
+  m.undo(); await settle();
+  m.deletePara(1);
+  const moved = m.moveShot(target);
+  release(); await moved;
+  m.undo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "the move's Undo returns to the source that existed at the drop");
+  assert.equal(Doc.blockById(m.state.doc, m.paras[1].id), undefined, "the earlier deletion is a separate Undo");
+  m.undo(); await settle();
+  assert.ok(Doc.blockById(m.state.doc, m.paras[1].id));
+  m.redo(); await settle();
+  assert.equal(Doc.blockById(m.state.doc, m.paras[1].id), undefined);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id]);
+  m.redo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[target].id]);
+  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/);
+});
 
 test("B-roll move history: two fast Undos wait for the second save and restore both moves in keypress order", async () => {
   const m = movement();
