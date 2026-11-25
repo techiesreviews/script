@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 18 files, 513148 bytes; on first use: broll-app.js + broll.js, 154110 bytes
+ℹ startup: 18 files, 513148 bytes; on first use: broll-app.js + broll.js, 154315 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -65,6 +65,7 @@
 ✔ B-roll move history: Undo preserves an original hand-written quote that still matches
 ✔ B-roll move history: text Undo during held move Undo preserves both inverses and all Redos
 ✔ B-roll move history: dragging during a held Undo returns to the restored origin
+✔ B-roll move history: dragging during a held Undo returns to the restored origin when two paragraphs say the same
 ✔ B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph
 ✔ B-roll move history: a recorded rewrite between two moves undoes and redoes step by step
 ✔ B-roll move history: a failed Undo save stops the Undo waiting behind it, and both positions stay reachable
@@ -650,9 +651,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 650
+ℹ tests 651
 ℹ suites 0
-ℹ pass 650
+ℹ pass 651
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
