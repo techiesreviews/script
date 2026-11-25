@@ -106,6 +106,26 @@ test("B-roll move: opening another script while a move's Undo saves stops the Un
   assert.equal(left.length, 1, "the script left behind keeps its typing step");
 });
 
+test("B-roll move: a failed move save in one script does not stop an Undo waiting in another script", async () => {
+  const h = history();
+  let fail;
+  const save = h.queueBrollHistory(() => new Promise((_, reject) => { fail = reject; }));
+  const cancel = h.checkpointBrollMove({ valid: () => true, undo: async () => true, redo: async () => true });
+  save.catch(cancel);
+  const scriptA = h.state.undo;
+  // Open script B while A's move still saves (as opening another script does), type there, then press Undo.
+  h.state.undo = []; h.state.redo = [];
+  h.state.doc = Doc.parse("# Other\n\nOther words.\n");
+  const opened = h.words();
+  h.type(" UNDO-SENTINEL-B");
+  h.undo(); // Waits its turn behind A's save.
+  fail(new Error("Not saved.")); await settle();
+  assert.equal(h.words(), opened, "B's Undo still takes back B's typing");
+  assert.equal(h.state.undo.length, 0);
+  assert.equal(h.state.redo.length, 1);
+  assert.equal(scriptA.length, 0, "A's move that never happened leaves no step in A");
+});
+
 test("B-roll move: an Undo pressed while the move's first save fails undoes nothing, and a changed list invalidates old moves", async () => {
   const h = history();
   h.type(" UNDO-SENTINEL-A");

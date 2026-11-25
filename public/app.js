@@ -850,7 +850,7 @@ async function openPrompter() {
 function checkpoint(kind, id, before = null) {
   // In a shared script, undo follows each person's own changes instead (see together/room.js).
   if (together?.active) return;
-  historyAge++;
+  ageHistory(state.undo);
   const now = Date.now(), last = state.lastStep;
   if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
   state.undo.push({ doc: before || Doc.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
@@ -862,31 +862,37 @@ function checkpoint(kind, id, before = null) {
 function checkpointBrollMove(move) {
   if (together?.active) return () => {};
   const stack = state.undo, step = { brollMove: move, moveRedo: false };
-  historyAge++;
+  ageHistory(stack);
   stack.push(step);
   if (stack.length > UNDO_LIMIT) stack.shift();
   state.redo = [];
   state.lastStep = null;
   // A move whose first save failed, or moved nothing, never happened. Nothing has undone it yet (history waits its
   // turn behind that save), and an Undo waiting for it stops there instead of taking the step before.
-  return () => { const i = stack.indexOf(step); if (i >= 0) { stack.splice(i, 1); historyAge++; } };
+  return () => { const i = stack.indexOf(step); if (i >= 0) { stack.splice(i, 1); ageHistory(stack); } };
 }
 // Saving a moved shot takes a moment, so history takes turns: a move's save, and any Undo or Redo asked for while one
 // is under way, each wait for the one before and then meet the script and the list as that one left them. A save that
-// fails, or a new change (the person's or the agent's), ages the history: steps still waiting were asked of a state
-// that never came, so they stop there and every word and position stays reachable.
-let historyTurn = Promise.resolve(), historyBusy = 0, historyAge = 0;
+// fails, or a new change (the person's or the agent's), ages that script's history: steps still waiting there were
+// asked of a state that never came, so they stop there and every word and position stays reachable. Each script ages
+// on its own (by its Undo list, which stays the same while it is open or kept aside), so a failure in one script never
+// stops a step waiting in another.
+let historyTurn = Promise.resolve(), historyBusy = 0;
+const historyAges = new WeakMap();
+const historyAgeOf = (undo) => historyAges.get(undo) || 0;
+const ageHistory = (undo) => historyAges.set(undo, historyAgeOf(undo) + 1);
 function queueBrollHistory(run) {
+  const undo = state.undo; // the script that asked for this turn
   const turn = historyBusy++ ? historyTurn.then(run) : new Promise((resolve) => resolve(run()));
-  historyTurn = turn.catch(() => { historyAge++; }).then(() => { historyBusy--; });
+  historyTurn = turn.catch(() => { ageHistory(undo); }).then(() => { historyBusy--; });
   return turn;
 }
 const staleMove = (snap) => snap.brollMove && !snap.brollMove.valid();
 function historyStep(undoing) {
   const stack = () => (undoing ? state.undo : state.redo);
-  const from = stack(), to = undoing ? state.redo : state.undo, age = historyAge;
+  const undo = state.undo, from = stack(), to = undoing ? state.redo : state.undo, age = historyAgeOf(undo);
   const step = () => {
-    if (age !== historyAge || from !== stack()) return; // aged meanwhile, or another script is open now
+    if (age !== historyAgeOf(undo) || from !== stack()) return; // aged meanwhile, or another script is open now
     let s = from.pop();
     while (s && staleMove(s)) s = from.pop();
     if (!s) return;
@@ -902,7 +908,7 @@ function historyStep(undoing) {
       if (staleMove(s)) return step();
       // Not saved: the step keeps its place, right above the one it sat on (the bottom, when a full history has
       // dropped that one meanwhile), and can be tried again.
-      historyAge++;
+      ageHistory(undo);
       from.splice(from.indexOf(below) + 1, 0, s);
     });
   };
