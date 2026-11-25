@@ -436,6 +436,15 @@ test("B-roll move history: a shot whose first paragraph was taken out and put ba
   assert.deepEqual(at(), [m.paras[added].id], "and its Undo returns it to the added paragraph");
 });
 
+test("B-roll list: another list opened for the script places its shots by their quotes, not where the old list's showed", async () => {
+  const { m, at } = repeated();
+  await m.moveShot(2);
+  assert.deepEqual(at("B1"), [m.paras[2].id]);
+  m.broll.token++; // as linking another list does; its B1 has the same quote
+  m.replace((text) => text);
+  assert.deepEqual(at("B1"), [m.paras[1].id], "the other list's shot shows on the first paragraph that says its quote");
+});
+
 test("B-roll list: a range whose end is written later takes it in at the next save of another shot", async () => {
   const { m, at } = repeated();
   m.replace((text) => Broll.updateShot(text, "B1", { over: '"First spoken paragraph." through "Written later."' }));
