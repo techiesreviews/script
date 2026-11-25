@@ -950,7 +950,9 @@ export function createBroll(host) {
       if (!shown) throw new Error("The shot changed.");
       // Remember the source before a list read can rematch it. An earlier queued step may have moved it; paragraphs
       // deleted before this drag stay out, while ones deleted since the drop keep their separate text Undo above it.
-      const from = { over: shown.over, ids: shown.over === source.over ? source.ids
+      // Moved: another quote, or a paragraph the drop did not find it on (two paragraphs can say the same).
+      const stayed = shown.over === source.over && (shown.blockIds || []).every((pid) => source.ids.includes(pid));
+      const from = { over: shown.over, ids: stayed ? source.ids
         : (shown.blockIds || []).filter((pid) => atDrop.has(pid) || Doc.blockById(state.doc, pid)) };
       await changeList((md) => {
         const now = placeNow(md);

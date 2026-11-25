@@ -337,6 +337,24 @@ test("B-roll move history: dragging during a held Undo returns to the restored o
   assert.equal(m.broll.shots[0].check, true, "Undo restores the Check flag from the preceding inverse");
 });
 
+test("B-roll move history: dragging during a held Undo returns to the restored origin when two paragraphs say the same", async () => {
+  const m = movement();
+  m.rewrite(0, Doc.contentOf(Doc.blockById(m.state.doc, m.paras[1].id)));
+  await m.moveShot(1);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
+  const release = m.holdNextWrite();
+  m.undo(); await settle();
+  const quote = m.broll.shots[0].over;
+  const next = m.moveShot(2);
+  release(); await next; await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+  m.undo(); await settle();
+  assert.equal(m.broll.shots[0].over, quote, "the Undo before the drag moved the shot without changing its quote");
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[0].id], "Undo returns the shot to the paragraph the earlier Undo restored it to");
+  m.redo(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
+});
+
 
 test("B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph", async () => {
   const m = movement();
