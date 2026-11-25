@@ -2345,10 +2345,14 @@ async function idbFill(k, v) {
 // The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count; the demo's
 // unlinked { none: true } does).
 async function idbLinkedNames() {
-  // Storage the browser blocks never opens: no link or list can be read under any name there, so none is reserved, as
-  // without browser saving (TOOLS-460). A read that starts and then fails still refuses (below).
+  // Storage the browser blocks as a whole (local storage refuses too) never opens: no link or list can be read under
+  // any name there, so none is reserved, as without browser saving (TOOLS-460). Any other failed open may come back
+  // with its lists, and a read that starts and then fails, still refuses.
   let db;
-  try { db = await idb(); } catch { return []; }
+  try { db = await idb(); } catch (e) {
+    try { void localStorage.length; } catch { return []; }
+    throw e;
+  }
   return new Promise((res, rej) => {
     const out = [], t = db.transaction("handles");
     const q = t.objectStore("handles").openCursor();
@@ -2961,7 +2965,7 @@ async function newScript() {
   let made = null, name = "untitled-script.md";
   if (browserSaving) {
     // Unknown B-roll reservations stop the open; even an unsaved fallback would use that name's old list. Storage the
-    // browser blocks has none to know (idbLinkedNames).
+    // browser blocks as a whole keeps none, so there the check finds none (idbLinkedNames).
     try { name = Doc.scriptFileName("", doc, await nameTaken()); } catch { openProblem("a new script"); return; }
     try { made = await createBrowserScript(name, text); } catch { made = null; }
   }
