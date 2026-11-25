@@ -15,15 +15,12 @@ function movement() {
   const state = { doc: Doc.parse("# Throwaway\n\nFirst spoken paragraph.\n\nSecond spoken paragraph.\n\nThird spoken paragraph.\n"), undo: [], redo: [], asks: [], lastStep: null };
   const paras = Broll.spokenBlocks(state.doc);
   let text = Broll.addShot(Broll.newList("Throwaway"), { id: "B1", kind: "broll", what: "Throwaway shot", how: "Keep this detail", over: Broll.overFor(state.doc, Broll.wholeParas(state.doc, [paras[0].id])) });
-  const broll = { token: 1, shots: [] };
-  // As the app adopts a written list: every shot is matched to the script again and keeps its Check flag.
+  const broll = { token: 1, shots: [], flags: {}, status: "ok" };
+  // The app's own adoptBroll takes a written list in: the shots are matched to the script and keep their Check flags.
   const adopt = () => {
-    const flagged = new Set(broll.shots.filter((shot) => shot.check).map((shot) => shot.id));
-    broll.shots = Broll.parseBroll(text).shots; Broll.matchShots(state.doc, broll.shots);
-    for (const shot of broll.shots) shot.check = flagged.has(shot.id);
+    broll.flags = Object.fromEntries(broll.shots.filter((shot) => shot.check).map((shot) => [shot.id, true]));
+    context.adoptBroll(text);
   };
-  adopt();
-  broll.shots[0].check = true;
   let move, queue = Promise.resolve(), writes = 0, hold = null, broken = false, slow = null;
   const shotById = (id) => broll.shots.find((shot) => shot.id === id);
   const context = { state, broll, Doc, Broll, shotById, covered: (shot) => (shot.blockIds || []).filter((id) => Doc.blockById(state.doc, id)),
@@ -43,11 +40,16 @@ function movement() {
       queue = run.catch(() => {});
       return run;
     },
-    syncFlags() {}, renderBroll() {}, openShotCard() {}, shotFrameAnchor() {}, failShotCard() {},
+    syncFlags() {}, renderBroll() {}, dropGoneSuggestions() {}, openShotCard() {}, shotFrameAnchor() {}, failShotCard() {},
   };
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const history = app.slice(app.indexOf("function checkpoint("), app.indexOf("/* ---------- Ask anchors follow edits"));
-  runInNewContext(`${history}\n${source.slice(start, end)}\nthis.moveShot = moveShot;`, context);
+  const matchStart = source.indexOf("  function adoptBroll("), matchEnd = source.indexOf("  // A covered line changed", matchStart);
+  assert.ok(matchStart >= 0 && matchEnd > matchStart, "adoptBroll's and rematchBroll's source boundaries exist");
+  const matching = source.slice(matchStart, matchEnd);
+  runInNewContext(`${history}\n${matching}\n${source.slice(start, end)}\nObject.assign(this, { moveShot, adoptBroll, rematchBroll });`, context);
+  adopt();
+  broll.shots[0].check = true;
   const checkpoint = context.checkpointBrollMove;
   context.checkpointBrollMove = (entry) => { move = entry; return checkpoint(entry); };
   return { broll, get text() { return text; }, get writes() { return writes; }, get move() { return move; },
@@ -60,7 +62,9 @@ function movement() {
     },
     rewrite: (index, words) => { context.checkpoint("rewrite", paras[index].id); Doc.setContent(state.doc, paras[index].id, words); },
     deletePara: (index) => { context.checkpoint("delete"); state.doc.blocks.splice(state.doc.blocks.findIndex((b) => b.id === paras[index].id), 1); },
-    describeShot: () => context.changeList((text) => Broll.updateShot(text, "B1", { what: "Changed shot description" })),
+    describeShot: (id = "B1") => context.changeList((text) => Broll.updateShot(text, id, { what: "Changed shot description" })),
+    // As the app does a moment after the script changed: shots that show on no paragraph are matched again.
+    rematch: () => context.rematchBroll(false),
     failNextWrite: () => { broken = true; },
     holdNextSave: () => { let release; slow = new Promise((resolve) => { release = resolve; }); return release; },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
@@ -362,6 +366,64 @@ test("B-roll move: moving a shot onto a paragraph that says the same as an earli
   await m.moveShot(2);
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id], "the shot stays on the paragraph it was dropped on");
   assert.equal(m.broll.shots[0].check, false, "no words changed, so moving the shot checks it");
+});
+
+// The third paragraph says the same as the second, older typing sits in a paragraph of its own, and a second shot
+// shows on the second paragraph. B1, the first shot, is still on the first paragraph.
+function repeated() {
+  const m = movement();
+  m.type(" UNDO-SENTINEL", m.insertPara());
+  m.rewrite(2, Doc.contentOf(Doc.blockById(m.state.doc, m.paras[1].id)));
+  const over = Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[1].id]));
+  m.replace((text) => Broll.addShot(text, { id: "B2", kind: "broll", what: "Second shot", how: "As it is", over }));
+  return { m, at: (id) => m.broll.shots.find((shot) => shot.id === id).blockIds };
+}
+
+test("B-roll move history: a shot moved onto a repeated paragraph stays there when another shot is saved, and its Undo returns it", async () => {
+  const { m, at } = repeated();
+  await m.moveShot(2);
+  assert.deepEqual(at("B1"), [m.paras[2].id]);
+  await m.describeShot("B2");
+  assert.deepEqual(at("B1"), [m.paras[2].id], "saving another shot leaves the moved shot on the paragraph it was dropped on");
+  assert.deepEqual(at("B2"), [m.paras[1].id], "the saved shot stays on the earlier paragraph");
+  assert.equal(m.broll.shots[0].check, false, "the other shot's save adds no Check");
+  const steps = m.state.undo.length;
+  m.undo(); await settle();
+  assert.deepEqual(at("B1"), [m.paras[0].id], "Undo returns the shot to where it came from");
+  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the move's Undo keeps earlier typing");
+  assert.equal(m.state.undo.length, steps - 1, "only the move was undone");
+  m.redo(); await settle();
+  assert.deepEqual(at("B1"), [m.paras[2].id], "Redo puts the shot back on the later paragraph");
+  await m.describeShot("B2");
+  assert.deepEqual(at("B1"), [m.paras[2].id], "and it stays there after the next save too");
+});
+
+test("B-roll move history: a shot whose repeated paragraph was deleted and brought back still undoes its move", async () => {
+  const { m, at } = repeated();
+  await m.moveShot(2);
+  m.deletePara(2); m.rematch();
+  assert.deepEqual(at("B1"), [m.paras[1].id], "with its paragraph gone, the shot shows on the one that says the same");
+  m.undo(); await settle(); m.rematch();
+  assert.ok(Doc.blockById(m.state.doc, m.paras[2].id), "the first Undo brings the paragraph back");
+  const steps = m.state.undo.length;
+  m.undo(); await settle();
+  assert.deepEqual(at("B1"), [m.paras[0].id], "the second Undo returns the shot to where it came from");
+  assert.match(Doc.serialize(m.state.doc), /UNDO-SENTINEL/, "the move's Undo keeps earlier typing");
+  assert.equal(m.state.undo.length, steps - 1, "only the move was undone");
+  m.redo(); await settle();
+  assert.deepEqual(at("B1"), [m.paras[2].id], "Redo puts the shot back on the later paragraph");
+});
+
+test("B-roll move history: a shot placed again by other words of a repeated paragraph is not taken back by its old move", async () => {
+  const { m, at } = repeated();
+  await m.moveShot(2);
+  m.replace((text) => Broll.updateShot(text, "B1", { over: '"Second spoken"' }));
+  assert.deepEqual(at("B1"), [m.paras[1].id], "the new quote finds the first paragraph that says it");
+  const edited = m.text, writes = m.writes;
+  m.undo(); await settle();
+  assert.equal(m.text, edited, "the old move's Undo does not overwrite the new place");
+  assert.equal(m.writes, writes);
+  assert.equal(m.move.valid(), false);
 });
 
 test("B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph", async () => {

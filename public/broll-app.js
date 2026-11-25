@@ -100,7 +100,8 @@ export function createBroll(host) {
   }
   function adoptBroll(text) {
     const { shots, sketches } = Broll.parseBroll(text);
-    if (state.doc) Broll.matchShots(state.doc, shots);
+    // A shot whose quote is as it was stays where it shows (one moved onto a paragraph that repeats an earlier one).
+    if (state.doc) Broll.matchShots(state.doc, shots, broll.shots);
     for (const s of shots) s.check = !!broll.flags[s.id];
     Object.assign(broll, { text, shots, sketches, status: "ok", err: "" });
     if (broll.lit && !shotById(broll.lit)) broll.lit = null;
@@ -915,21 +916,27 @@ export function createBroll(host) {
     };
     // Undo and Redo run in their turn too (the app's queueBrollHistory), so the script and the list are as the step
     // before left them: the shot goes back only from the place this move left it, onto paragraphs that are still spoken.
+    // That place can show as other paragraphs that say the same: when its own were deleted the shot went to those, and
+    // it stays there when Undo brings its own back. With the quote this move left, the list is the same either way, so
+    // the step still fits.
     const restoreMove = async (redo) => {
-      const ids = redo ? destination : origin, from = redo ? origin : destination;
+      const ids = redo ? destination : origin, from = redo ? origin : destination, left = redo ? before : over;
       try {
+        let keep;
         await changeList((md) => {
           const now = placeNow(md), spoken = Broll.spokenBlocks(state.doc);
-          if (now?.ids.join() !== from.join() || gone(ids, spoken)) {
+          const there = now && (now.ids.join() === from.join() || (now.over === left && Broll.fitsOver(spoken, from, left)));
+          if (!there || gone(ids, spoken)) {
             invalid = true; // The shot was changed since: this step will never fit again, so history skips it.
             throw new Error("The shot changed.");
           }
           // Keep the exact quote while it matches; a stale one follows the same paragraphs' current words.
           const quote = redo ? over : before;
-          const keep = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+          keep = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
           words = Broll.coverText(state.doc, ids);
           return Broll.updateShot(md, id, { over: keep });
         });
+        if (redo) over = keep; else before = keep; // the quote the list has now, for the step after this one
         if (token !== broll.token) return false;
         land(ids, redo ? false : checked);
         return true;
