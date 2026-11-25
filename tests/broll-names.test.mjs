@@ -63,6 +63,7 @@ function fixture({ blocked = false } = {}) {
     askingToOpen: null, together: null, busyChoice: () => "", isDirty: () => false, scriptProblem: () => "",
     openProblem: (name) => notices.push(name),
     loadText: (...args) => loaded.push(args), renderTop() {}, renderAll() {}, renderDerived() {}, selectTitle() {},
+    moveKeys: async () => {}, updateRecent: async () => {}, holdOpen() {}, renderSaveState() {}, persistDraft() {},
   };
   if (blocked) Object.defineProperty(sandbox, "localStorage", { get() { throw new Error("storage blocked"); } });
   const context = vm.createContext(sandbox);
@@ -130,4 +131,15 @@ test("New script: storage the browser blocks opens an unsaved script, as without
   assert.equal(f.loaded.length, 1, "a script opens");
   assert.equal(f.loaded[0][1].name, "untitled-script.md");
   assert.equal(f.loaded[0][1].fresh, true);
+});
+
+test("B-roll names: storage the browser blocks stops neither a rename nor the agent's new script", async () => {
+  const f = fixture({ blocked: true });
+  f.fail.at = "open";
+  await f.run("followTitle(state.handle)");
+  assert.deepEqual(f.renamed.map((args) => args[1]), ["orphan.md"], "the script takes its title's name");
+  assert.equal(f.state.name, "orphan.md");
+  const answer = await f.run("openScript({ markdown: '# From the agent\\n' })");
+  assert.equal(answer.error, undefined);
+  assert.deepEqual(f.loaded.map((args) => args[1].name), ["from-the-agent.md"], "the agent's script opens under its own name");
 });
