@@ -67,8 +67,8 @@ function fixture() {
   return { fail, stored, state, loaded, notices, renamed, created, run: (code) => vm.runInContext(code, context) };
 }
 
-test("B-roll names: failed discovery never approves a new or renamed script name; the queue recovers", async () => {
-  for (const outcome of ["open", "cursor", "transaction", "abort", "late-abort"]) {
+test("B-roll names: a read that starts and fails never approves a new or renamed script name; the queue recovers", async () => {
+  for (const outcome of ["cursor", "transaction", "abort", "late-abort"]) {
     const f = fixture(), before = [...f.stored];
     f.fail.at = outcome;
     const result = await Promise.race([
@@ -97,7 +97,7 @@ test("B-roll names: failed discovery never approves a new or renamed script name
 test("New script: an unread reservation leaves the current script alone instead of opening a colliding fallback", async () => {
   const f = fixture(), doc = f.state.doc;
   f.stored.set("brollList:untitled-script.md", "# Someone else's shots\n");
-  f.fail.at = "open";
+  f.fail.at = "cursor";
   await f.run("newScript()");
   assert.deepEqual(f.loaded, [], "no fallback opens under an unchecked name");
   assert.equal(f.state.doc, doc);
@@ -111,5 +111,17 @@ test("New script: a file-creation failure still falls back to an unsaved script,
   f.stored.set("brollList:untitled-script.md", "# Someone else's shots\n");
   await f.run("newScript()");
   assert.equal(f.loaded[0][1].name, "untitled-script-2.md");
+  assert.equal(f.loaded[0][1].fresh, true);
+});
+
+// A browser that blocks site storage can't open the database at all (TOOLS-460): no list can be read under any name
+// there, so New script opens an unsaved script as it does where the browser has no saving.
+test("New script: storage the browser blocks opens an unsaved script, as without browser saving", async () => {
+  const f = fixture();
+  f.fail.at = "open";
+  await f.run("newScript()");
+  assert.deepEqual(f.notices, [], "no failed-open notice");
+  assert.equal(f.loaded.length, 1, "a script opens");
+  assert.equal(f.loaded[0][1].name, "untitled-script.md");
   assert.equal(f.loaded[0][1].fresh, true);
 });
