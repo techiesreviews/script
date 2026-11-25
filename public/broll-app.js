@@ -899,14 +899,15 @@ export function createBroll(host) {
     };
     // A written list is matched to the script again by its quotes, and takes a moment to write. Words typed into the
     // shot's paragraphs meanwhile (`words`: what they said when the quote was chosen) give it "Check"; when they leave
-    // the fresh quote matching nothing, the shot stays on the paragraphs it was put on. `check`: its flag otherwise.
+    // the fresh quote matching nothing, or matching an earlier paragraph that says the same, the shot stays on the
+    // paragraphs it was put on. `check`: its flag otherwise. Only changed words (a deleted paragraph among them) add it.
     const land = (ids, check) => {
       const shot = token === broll.token && shotById(id);
       if (!shot) return;
       // Keep ids deleted during the write too: a queued move still needs the source this step left it.
       const lost = covered(shot).join() !== ids.join();
       if (lost) Object.assign(shot, { blockIds: ids, sig: Broll.coverText(state.doc, ids) });
-      const flag = check || lost || (covered(shot).join() === ids.join() && Broll.coverText(state.doc, ids) !== words);
+      const flag = check || Broll.coverText(state.doc, ids) !== words;
       if (!lost && shot.check === flag) return;
       shot.check = flag;
       syncFlags();

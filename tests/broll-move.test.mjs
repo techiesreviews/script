@@ -355,6 +355,14 @@ test("B-roll move history: dragging during a held Undo returns to the restored o
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id]);
 });
 
+test("B-roll move: moving a shot onto a paragraph that says the same as an earlier one clears Check and stays there", async () => {
+  const m = movement();
+  m.rewrite(2, Doc.contentOf(Doc.blockById(m.state.doc, m.paras[1].id)));
+  assert.equal(m.broll.shots[0].check, true);
+  await m.moveShot(2);
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id], "the shot stays on the paragraph it was dropped on");
+  assert.equal(m.broll.shots[0].check, false, "no words changed, so moving the shot checks it");
+});
 
 test("B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph", async () => {
   const m = movement();
