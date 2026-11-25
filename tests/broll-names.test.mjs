@@ -12,7 +12,8 @@ function functionSource(name) {
   return source.slice(start, source.indexOf("\n}", start) + 2);
 }
 
-function fixture() {
+// `blocked`: the browser blocks the site's storage as a whole, so local storage refuses too (TOOLS-460).
+function fixture({ blocked = false } = {}) {
   const stored = new Map([
     ["broll:first.md", { name: "first-shots.md" }],
     ["broll:Orphan.md", { name: "orphan-shots.md" }],
@@ -54,7 +55,7 @@ function fixture() {
       return request;
     },
   };
-  const context = vm.createContext({
+  const sandbox = {
     indexedDB, Doc, state, browserSaving: true,
     recentScripts: async () => [], copies: { names: () => [], rename: (...args) => renamed.push(args) }, SAMPLE: { name: "demo.md" },
     LS: "script:", localStorage: { length: 0 }, saving: { drafts: { get: () => null } },
@@ -62,13 +63,15 @@ function fixture() {
     askingToOpen: null, together: null, busyChoice: () => "", isDirty: () => false, scriptProblem: () => "",
     openProblem: (name) => notices.push(name),
     loadText: (...args) => loaded.push(args), renderTop() {}, renderAll() {}, renderDerived() {}, selectTitle() {},
-  });
+  };
+  if (blocked) Object.defineProperty(sandbox, "localStorage", { get() { throw new Error("storage blocked"); } });
+  const context = vm.createContext(sandbox);
   vm.runInContext(`let brollKeys = Promise.resolve();\n${["idb", "idbLinkedNames", "keyed", "nameTaken", "newScript", "followTitle", "openScript"].map(functionSource).join("\n")}`, context);
   return { fail, stored, state, loaded, notices, renamed, created, run: (code) => vm.runInContext(code, context) };
 }
 
-test("B-roll names: a read that starts and fails never approves a new or renamed script name; the queue recovers", async () => {
-  for (const outcome of ["cursor", "transaction", "abort", "late-abort"]) {
+test("B-roll names: a failed read, or an open that fails while site storage still works, never approves a new or renamed script name; the queue recovers", async () => {
+  for (const outcome of ["open", "cursor", "transaction", "abort", "late-abort"]) {
     const f = fixture(), before = [...f.stored];
     f.fail.at = outcome;
     const result = await Promise.race([
@@ -95,15 +98,18 @@ test("B-roll names: a read that starts and fails never approves a new or renamed
 });
 
 test("New script: an unread reservation leaves the current script alone instead of opening a colliding fallback", async () => {
-  const f = fixture(), doc = f.state.doc;
-  f.stored.set("brollList:untitled-script.md", "# Someone else's shots\n");
-  f.fail.at = "cursor";
-  await f.run("newScript()");
-  assert.deepEqual(f.loaded, [], "no fallback opens under an unchecked name");
-  assert.equal(f.state.doc, doc);
-  assert.equal(f.state.name, "current.md");
-  assert.deepEqual(f.notices, ["a new script"], "the existing failed-open notice reports the failure");
-  assert.equal(f.stored.get("brollList:untitled-script.md"), "# Someone else's shots\n");
+  // A read that breaks partway, and an open that fails while site storage still works (it may come back with the list).
+  for (const outcome of ["cursor", "open"]) {
+    const f = fixture(), doc = f.state.doc;
+    f.stored.set("brollList:untitled-script.md", "# Someone else's shots\n");
+    f.fail.at = outcome;
+    await f.run("newScript()");
+    assert.deepEqual(f.loaded, [], `${outcome}: no fallback opens under an unchecked name`);
+    assert.equal(f.state.doc, doc);
+    assert.equal(f.state.name, "current.md");
+    assert.deepEqual(f.notices, ["a new script"], `${outcome}: the existing failed-open notice reports the failure`);
+    assert.equal(f.stored.get("brollList:untitled-script.md"), "# Someone else's shots\n");
+  }
 });
 
 test("New script: a file-creation failure still falls back to an unsaved script, using its checked name", async () => {
@@ -117,7 +123,7 @@ test("New script: a file-creation failure still falls back to an unsaved script,
 // A browser that blocks site storage can't open the database at all (TOOLS-460): no list can be read under any name
 // there, so New script opens an unsaved script as it does where the browser has no saving.
 test("New script: storage the browser blocks opens an unsaved script, as without browser saving", async () => {
-  const f = fixture();
+  const f = fixture({ blocked: true });
   f.fail.at = "open";
   await f.run("newScript()");
   assert.deepEqual(f.notices, [], "no failed-open notice");
