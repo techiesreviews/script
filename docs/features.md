@@ -40,7 +40,7 @@ The feature list of script.techies.tools, moved here from `AGENTS.md` in step N 
 - From two open pictures on, one bar with "Keep all" and "Undo all" sits in its own row at the top of the script and the storyboard, so it can never cover text; a Keep all can't be undone, like a single Keep (step Q).
 - Pictures are cut to the storyboard frame and kept small (640 × 345, WebP, about 60 KB; step K3); line drawings stay for agents without an image tool.
 - Big pictures in a list made elsewhere, or kept before step K3, are made lighter the same way whenever the list is saved (step K4).
-- A shot moves to another paragraph by dragging it, its picture or its tag, straight away (a finger holds it first); while dragging it snaps beside the paragraph it will land on (steps L, L2). It stays on that paragraph, and the move still clears its "Check" mark, even when an earlier paragraph says exactly the same words (TOOLS-462).
+- A shot moves to another paragraph by dragging it, its picture or its tag, straight away (a finger holds it first); while dragging it snaps beside the paragraph it will land on (steps L, L2). It stays on that paragraph, and the move still clears its "Check" mark, even when an earlier paragraph says exactly the same words (TOOLS-462). It stays there too when another shot is saved afterwards, and its Undo still returns it without touching older typing (TOOLS-469). The list file keeps only the quote, so after the page is loaded again, and for guests, such a shot shows beside the first paragraph that says those words.
 
 ## Working together
 
