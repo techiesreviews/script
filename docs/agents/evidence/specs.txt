@@ -70,6 +70,7 @@
 ✔ B-roll move: moving a shot onto a paragraph that says the same as an earlier one clears Check and stays there
 ✔ B-roll move history: a shot moved onto a repeated paragraph stays there when another shot is saved, and its Undo returns it
 ✔ B-roll move history: a shot whose repeated paragraph was deleted and brought back still undoes its move
+✔ B-roll move history: a shot whose first paragraph was taken out and put back by Undo and Redo still redoes its move
 ✔ B-roll move history: a shot placed again by other words of a repeated paragraph is not taken back by its old move
 ✔ B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph
 ✔ B-roll move history: a recorded rewrite between two moves undoes and redoes step by step
@@ -659,9 +660,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 659
+ℹ tests 660
 ℹ suites 0
-ℹ pass 659
+ℹ pass 660
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

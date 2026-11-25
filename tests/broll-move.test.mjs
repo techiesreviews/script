@@ -55,10 +55,12 @@ function movement() {
   return { broll, get text() { return text; }, get writes() { return writes; }, get move() { return move; },
     state, paras, undo: () => context.undo(), redo: () => context.redo(),
     type: (text, index = 2) => { context.checkpoint("type", paras[index].id); Doc.setContent(state.doc, paras[index].id, Doc.contentOf(Doc.blockById(state.doc, paras[index].id)) + text); },
-    insertPara: () => {
+    // At the end, or before the paragraph `before`.
+    insertPara: (before) => {
       context.checkpoint("insert");
       const block = Doc.parse("Temporary inserted paragraph.\n").blocks.find((b) => b.type === "para");
-      state.doc.blocks.push(block); paras.push({ id: block.id }); return paras.length - 1;
+      const at = before == null ? state.doc.blocks.length : state.doc.blocks.findIndex((b) => b.id === paras[before].id);
+      state.doc.blocks.splice(at, 0, block); paras.push({ id: block.id }); return paras.length - 1;
     },
     rewrite: (index, words) => { context.checkpoint("rewrite", paras[index].id); Doc.setContent(state.doc, paras[index].id, words); },
     deletePara: (index) => { context.checkpoint("delete"); state.doc.blocks.splice(state.doc.blocks.findIndex((b) => b.id === paras[index].id), 1); },
@@ -412,6 +414,26 @@ test("B-roll move history: a shot whose repeated paragraph was deleted and broug
   assert.equal(m.state.undo.length, steps - 1, "only the move was undone");
   m.redo(); await settle();
   assert.deepEqual(at("B1"), [m.paras[2].id], "Redo puts the shot back on the later paragraph");
+});
+
+test("B-roll move history: a shot whose first paragraph was taken out and put back by Undo and Redo still redoes its move", async () => {
+  const m = movement(), at = () => m.broll.shots[0].blockIds;
+  m.rewrite(2, "Temporary inserted paragraph.");
+  const added = m.insertPara(2); // says the same as the third paragraph, right before it
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[added].id])) }));
+  assert.deepEqual(at(), [m.paras[added].id]);
+  await m.moveShot(1);
+  m.undo(); await settle();
+  assert.deepEqual(at(), [m.paras[added].id], "Undo returns the shot to the added paragraph");
+  m.undo(); await settle(); m.rematch();
+  assert.deepEqual(at(), [m.paras[2].id], "with the added paragraph undone, the shot shows on the one that says the same");
+  m.redo(); await settle(); m.rematch();
+  assert.ok(Doc.blockById(m.state.doc, m.paras[added].id), "Redo brings the added paragraph back");
+  m.redo(); await settle();
+  assert.deepEqual(at(), [m.paras[1].id], "the second Redo moves the shot again");
+  assert.equal(m.state.redo.length, 0);
+  m.undo(); await settle();
+  assert.deepEqual(at(), [m.paras[added].id], "and its Undo returns it to the added paragraph");
 });
 
 test("B-roll move history: a shot placed again by other words of a repeated paragraph is not taken back by its old move", async () => {
