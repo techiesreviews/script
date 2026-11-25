@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 18 files, 513148 bytes; on first use: broll-app.js + broll.js, 154315 bytes
+ℹ startup: 18 files, 514135 bytes; on first use: broll-app.js + broll.js, 155877 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -46,6 +46,7 @@
 ✔ B-roll move: a failed Undo keeps the step available and preserves script history
 ✔ B-roll move: typing while a move's Undo saves stops the Undo waiting behind it
 ✔ B-roll move: opening another script while a move's Undo saves stops the Undo waiting behind it
+✔ B-roll move: a failed move save in one script does not stop an Undo waiting in another script
 ✔ B-roll move: an Undo pressed while the move's first save fails undoes nothing, and a changed list invalidates old moves
 ✔ B-roll move: a failed Undo goes back above the step it sat on, even when a full history dropped older steps meanwhile
 ✔ B-roll move: deleting the shot invalidates its history instead of blocking older typing Undo
@@ -66,6 +67,10 @@
 ✔ B-roll move history: text Undo during held move Undo preserves both inverses and all Redos
 ✔ B-roll move history: dragging during a held Undo returns to the restored origin
 ✔ B-roll move history: dragging during a held Undo returns to the restored origin when two paragraphs say the same
+✔ B-roll move: moving a shot onto a paragraph that says the same as an earlier one clears Check and stays there
+✔ B-roll move history: a shot moved onto a repeated paragraph stays there when another shot is saved, and its Undo returns it
+✔ B-roll move history: a shot whose repeated paragraph was deleted and brought back still undoes its move
+✔ B-roll move history: a shot placed again by other words of a repeated paragraph is not taken back by its old move
 ✔ B-roll move history: surviving targets use current words after text Undo removes an intermediate paragraph
 ✔ B-roll move history: a recorded rewrite between two moves undoes and redoes step by step
 ✔ B-roll move history: a failed Undo save stops the Undo waiting behind it, and both positions stay reachable
@@ -78,9 +83,11 @@
 ✔ B-roll move history: words typed into the target paragraph while a move or its Undo saves keep the shot there, with Check
 ✔ B-roll move history: words typed into the target paragraph while a Redo saves keep the shot there, with Check
 ✔ B-roll move history: words added to the target paragraph while a move, its Undo or its Redo saves give the shot Check
-✔ B-roll names: failed discovery never approves a new or renamed script name; the queue recovers
+✔ B-roll names: a failed read, or an open that fails while site storage still works, never approves a new or renamed script name; the queue recovers
 ✔ New script: an unread reservation leaves the current script alone instead of opening a colliding fallback
 ✔ New script: a file-creation failure still falls back to an unsaved script, using its checked name
+✔ New script: storage the browser blocks opens an unsaved script, as without browser saving
+✔ B-roll names: storage the browser blocks stops neither a rename nor the agent's new script
 ✔ parses the demo list: 10 shots, 3 motion plates, 2 screen recordings, 10 sketches
 ✔ every demo shot is found on the demo script's lines, the range covers three lines
 ✔ a real list's shape: … inside quotes, through ranges, screen table, motion detection, not found
@@ -90,6 +97,7 @@
 ✔ the Sketches section: replace a sketch, add one, create the section, keep the line endings
 ✔ sketch asks: checkSketch limits, and answer_ask refuses them
 ✔ a finished shot does not reopen, and shot ids fit sketch fences
+✔ matching again: a shot stays on the paragraphs it shows on while its unchanged quote fits them, and only then
 ✔ B-roll export round trip: script order, a Kind column, the Sketches section, parsed back the same
 ✔ B-roll export keeps pipes, kinds the How text would not give, unmatched shots last, and no empty Sketches
 ✔ storyboard export: one self-contained page, every shot in order, sketches sanitised, no scripts
@@ -377,7 +385,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 18 files, 513148 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
+ℹ startup: 18 files, 514135 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -651,9 +659,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 651
+ℹ tests 659
 ℹ suites 0
-ℹ pass 651
+ℹ pass 659
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
