@@ -231,6 +231,10 @@ test("matching again: a shot stays on the paragraphs it shows on while its uncha
   assert.deepEqual(at('"Same words."', [{ id: "B1", over: '"Same words."', blockIds: ["gone"] }]), [first], "so is a deleted paragraph");
   const range = '"One here." through "Middle."';
   assert.deepEqual(at(range, [{ id: "B1", over: range, blockIds: [one, middle] }]), [one, first, middle], "a range takes in a paragraph added inside it");
+  const open = '"One here." through "Not written yet."';
+  assert.deepEqual(at(open), [one], "a range whose end is not in the script shows on its first paragraph");
+  const ended = parse("# T\n\nOne here.\n\nSame words.\n\nNot written yet.\n"), [start, , end] = spokenBlocks(ended).map((b) => b.id);
+  assert.deepEqual(matchShots(ended, fresh(open), [{ id: "B1", over: open, blockIds: [start] }])[0].blockIds.at(-1), end, "and takes in the rest once its end is written");
   assert.equal(fitsOver(spokenBlocks(doc), [one, first, middle], range), true);
   assert.equal(fitsOver(spokenBlocks(doc), [one, first], range), false);
   assert.equal(fitsOver(spokenBlocks(doc), [], '"Same words."'), false);

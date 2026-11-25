@@ -436,6 +436,15 @@ test("B-roll move history: a shot whose first paragraph was taken out and put ba
   assert.deepEqual(at(), [m.paras[added].id], "and its Undo returns it to the added paragraph");
 });
 
+test("B-roll list: a range whose end is written later takes it in at the next save of another shot", async () => {
+  const { m, at } = repeated();
+  m.replace((text) => Broll.updateShot(text, "B1", { over: '"First spoken paragraph." through "Written later."' }));
+  assert.deepEqual(at("B1"), [m.paras[0].id], "without its end the range shows on its first paragraph");
+  m.rewrite(2, "Written later.");
+  await m.describeShot("B2");
+  assert.deepEqual(at("B1"), [m.paras[0].id, m.paras[1].id, m.paras[2].id]);
+});
+
 test("B-roll move history: a shot placed again by other words of a repeated paragraph is not taken back by its old move", async () => {
   const { m, at } = repeated();
   await m.moveShot(2);
