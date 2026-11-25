@@ -1,14 +1,12 @@
-// The B-roll part of the editor (TOOLS-306): the list linked to a script and everything that shows or changes it, the
-// frames beside the lines, the storyboard, the shot card, dragging a shot to other lines, the agent's suggestions,
-// sketches and pictures. app.js loads it with import() the first time a script needs it, so opening a script without
-// B-roll downloads none of this (nor broll.js), and talks to it only through what createBroll returns.
+// Loaded on first B-roll use; startup must not import this module or broll.js (TOOLS-306).
+// The app supplies dependencies through host and uses the frozen interface returned by createBroll.
 import * as Doc from "./doc.js";
 import * as Broll from "./broll.js";
 import { startPress, HOLD_MS } from "./press.js";
 
 // Bump with any change to the host createBroll takes or the interface it returns: app.js checks it, so a tab opened
 // before a release that loads this file after it never mixes the two.
-export const SEAM = 3;
+export const SEAM = 4;
 
 /**
  * createBroll(host) → the B-roll part, frozen. `host` is what it may use of the app (app.js brollHost): its state,
@@ -19,7 +17,7 @@ export function createBroll(host) {
     state, ui, scriptEl, $, $$, h, icon, esc, me, reduced, FILE_TYPES, SAMPLE, SAMPLE_BROLL, canPick, agent,
     isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
     emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
-    refreshBar, brollChanged, schedulePersist, hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
+    refreshBar, brollChanged, checkpointBrollMove, queueBrollHistory, schedulePersist, hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
     getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle, scriptKey,
   } = host;
   // The list linked to this script (see broll.js). Shots keep the block ids they cover while the file is open.
@@ -65,7 +63,6 @@ export function createBroll(host) {
     broll.status = "loading";
     let link = await getLinkKey();
     if (token !== broll.token) return;
-    // The demo script links its own made-up list.
     if (!link && state.name === SAMPLE.name) link = { demo: true, name: SAMPLE_BROLL.name };
     if (!link || link.none) { broll.status = "none"; dropGoneSuggestions(); return renderBroll(); }
     broll.link = link;
@@ -103,9 +100,11 @@ export function createBroll(host) {
   }
   function adoptBroll(text) {
     const { shots, sketches } = Broll.parseBroll(text);
-    if (state.doc) Broll.matchShots(state.doc, shots);
+    // A shot whose quote is as it was stays where it shows (one moved onto a paragraph that repeats an earlier one).
+    // Only within the list those shots came from (`shown`: its token): another list's start from their quotes.
+    if (state.doc) Broll.matchShots(state.doc, shots, broll.shown === broll.token ? broll.shots : []);
     for (const s of shots) s.check = !!broll.flags[s.id];
-    Object.assign(broll, { text, shots, sketches, status: "ok", err: "" });
+    Object.assign(broll, { text, shots, sketches, status: "ok", err: "", shown: broll.token });
     if (broll.lit && !shotById(broll.lit)) broll.lit = null;
     dropGoneSuggestions();
     renderBroll();
@@ -886,18 +885,106 @@ export function createBroll(host) {
   async function moveShot(id, sel) {
     const s = shotById(id);
     if (!s || !state.doc || state.guest) return;
-    const over = Broll.moveOver(state.doc, covered(s), sel);
-    if (!over) return; // onto the lines it covers already
+    const destination = sel.map((part) => part.id);
+    const source = { over: s.over, ids: covered(s) }, atDrop = new Set(Broll.spokenBlocks(state.doc).map((b) => b.id));
+    if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
     const token = broll.token;
-    try { await changeList((md) => Broll.updateShot(md, id, { over })); }
+    let origin, before, over, checked, words, invalid = false;
+    const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
+    // Where the shot is when a step's turn comes: beside the paragraphs it shows on, whose words may have changed since
+    // its quote was written. When it shows on none, or the list was changed outside this page: where its quote matches.
+    const placeNow = (md) => {
+      const saved = Broll.parseBroll(md).shots.find((shot) => shot.id === id), shown = shotById(id);
+      if (!saved || !shown) return null;
+      const ids = saved.over === shown.over ? covered(shown) : [];
+      return { over: saved.over, ids: ids.length ? ids : Broll.matchOver(Broll.spokenBlocks(state.doc), saved.over), check: !!shown.check };
+    };
+    // A written list is matched to the script again by its quotes, and takes a moment to write. Words typed into the
+    // shot's paragraphs meanwhile (`words`: what they said when the quote was chosen) give it "Check"; when they leave
+    // the fresh quote matching nothing, or matching an earlier paragraph that says the same, the shot stays on the
+    // paragraphs it was put on. `check`: its flag otherwise. Only changed words (a deleted paragraph among them) add it.
+    const land = (ids, check) => {
+      const shot = token === broll.token && shotById(id);
+      if (!shot) return;
+      // Keep ids deleted during the write too: a queued move still needs the source this step left it.
+      const lost = covered(shot).join() !== ids.join();
+      if (lost) Object.assign(shot, { blockIds: ids, sig: Broll.coverText(state.doc, ids) });
+      const flag = check || Broll.coverText(state.doc, ids) !== words;
+      if (!lost && shot.check === flag) return;
+      shot.check = flag;
+      syncFlags();
+      renderBroll();
+    };
+    // Undo and Redo run in their turn too (the app's queueBrollHistory), so the script and the list are as the step
+    // before left them: the shot goes back only from the place this move left it, onto paragraphs that are still spoken.
+    // That place can show as other paragraphs that say the same: when its own were deleted the shot went to those, and
+    // it stays there when Undo brings its own back. With the quote this move left, the list is the same either way, so
+    // the step still fits.
+    const restoreMove = async (redo) => {
+      const ids = redo ? destination : origin, from = redo ? origin : destination, left = redo ? before : over;
+      try {
+        let keep;
+        await changeList((md) => {
+          const now = placeNow(md), spoken = Broll.spokenBlocks(state.doc);
+          const there = now && (now.ids.join() === from.join() || (now.over === left && Broll.fitsOver(spoken, from, left)));
+          if (!there || gone(ids, spoken)) {
+            invalid = true; // The shot was changed since: this step will never fit again, so history skips it.
+            throw new Error("The shot changed.");
+          }
+          // Keep the exact quote while it matches; a stale one follows the same paragraphs' current words.
+          const quote = redo ? over : before;
+          keep = Broll.matchOver(spoken, quote).join() === ids.join() ? quote : Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+          words = Broll.coverText(state.doc, ids);
+          return Broll.updateShot(md, id, { over: keep });
+        });
+        if (redo) over = keep; else before = keep; // the quote the list has now, for the step after this one
+        if (token !== broll.token) return false;
+        land(ids, redo ? false : checked);
+        return true;
+      } catch (err) {
+        if (!invalid && token === broll.token && shotById(id)) {
+          openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
+          failShotCard(err);
+        }
+        return false;
+      }
+    };
+    // Registered before the save starts, so an Undo pressed at once waits for this move instead of undoing typing.
+    const cancel = checkpointBrollMove({ valid: () => !invalid && token === broll.token && !!shotById(id), undo: () => restoreMove(false), redo: () => restoreMove(true) });
+    // In its turn, after any Undo or Redo still saving: the move starts from where that step leaves the shot, and its
+    // quote is of the words its paragraphs have by then (typing goes on while it waits).
+    const write = queueBrollHistory(async () => {
+      if (token !== broll.token) throw new Error("The B-roll list changed.");
+      const shown = shotById(id);
+      if (!shown) throw new Error("The shot changed.");
+      // Remember the source before a list read can rematch it. An earlier queued step may have moved it; paragraphs
+      // deleted before this drag stay out, while ones deleted since the drop keep their separate text Undo above it.
+      // Moved: another quote, or a paragraph the drop did not find it on (two paragraphs can say the same).
+      const stayed = shown.over === source.over && (shown.blockIds || []).every((pid) => source.ids.includes(pid));
+      const from = { over: shown.over, ids: stayed ? source.ids
+        : (shown.blockIds || []).filter((pid) => atDrop.has(pid) || Doc.blockById(state.doc, pid)) };
+      await changeList((md) => {
+        const now = placeNow(md);
+        if (!now) throw new Error("The shot changed.");
+        if (gone(destination, Broll.spokenBlocks(state.doc))) throw new Error("The script changed.");
+        ({ over: before, check: checked } = now);
+        origin = now.over === from.over ? from.ids : now.ids;
+        if (origin.join() === destination.join()) return md; // the step before put the shot here already
+        over = Broll.overFor(state.doc, Broll.wholeParas(state.doc, destination));
+        words = Broll.coverText(state.doc, destination);
+        return Broll.updateShot(md, id, { over });
+      });
+      if (over == null) return void cancel(); // nothing moved: nothing to undo
+      land(destination, false);
+    });
+    try { await write; }
     catch (err) {
+      cancel();
       // "Not saved" in the card, where its other changes show it; the shot stays where it was.
       if (token !== broll.token || !shotById(id)) return;
       openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
       return failShotCard(err);
     }
-    const now = token === broll.token && shotById(id);
-    if (now?.check) { now.check = false; syncFlags(); renderBroll(); }
   }
   // The paragraph a drag at (x, y) snaps to: the one under it, or the nearest spoken one above or below (a heading, a gap,
   // a note, the frames in the margin, the space below the script's end). None over the title, the front matter or beside

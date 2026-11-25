@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse, contentOf, blockById, setContent, cloneDoc, checkAnswer, ACTIONS } from "../public/doc.js";
 import {
-  parseBroll, parseOver, matchShots, matchOver, spokenBlocks, touchShots, scriptOrder, forAgent,
+  parseBroll, parseOver, matchShots, matchOver, fitsOver, spokenBlocks, touchShots, scriptOrder, forAgent,
   sanitizeSvg, setSketch, checkSketch, normalize, SKETCH_MAX, exportBroll, exportStoryboard, boardHeadState,
   addShot, updateShot, removeShot, nextShotId, overFor, newList, moveTo, wholeParas, moveOver, snapPara, edgeSpeed, EDGE, stackPushes,
   quoteSelection, checkBrollAnswer, applyBrollChange, changesToKeep, settleBroll, brollAskAllowed,
@@ -218,8 +218,30 @@ test("a finished shot does not reopen, and shot ids fit sketch fences", () => {
   assert.ok(!/\s/.test(id) && id.length <= 20, id);
 });
 
+test("matching again: a shot stays on the paragraphs it shows on while its unchanged quote fits them, and only then", () => {
+  const doc = parse("# T\n\nOne here.\n\nSame words.\n\nMiddle.\n\nSame words.\n\nLast one.\n");
+  const [one, first, middle, later, last] = spokenBlocks(doc).map((b) => b.id);
+  const fresh = (over) => [{ id: "B1", over }];
+  const at = (over, shown) => matchShots(doc, fresh(over), shown)[0].blockIds;
+  assert.deepEqual(at('"Same words."'), [first], "a quote alone finds the first paragraph that says it");
+  assert.deepEqual(at('"Same words."', [{ id: "B1", over: '"Same words."', blockIds: [later] }]), [later], "shown on the later one: it stays");
+  assert.deepEqual(at('"Same words."', [{ id: "B2", over: '"Same words."', blockIds: [later] }]), [first], "another shot's place is not taken");
+  assert.deepEqual(at('"Same"', [{ id: "B1", over: '"Same words."', blockIds: [later] }]), [first], "a changed quote is matched afresh");
+  assert.deepEqual(at('"Same words."', [{ id: "B1", over: '"Same words."', blockIds: [last] }]), [first], "paragraphs the quote does not fit are left");
+  assert.deepEqual(at('"Same words."', [{ id: "B1", over: '"Same words."', blockIds: ["gone"] }]), [first], "so is a deleted paragraph");
+  const range = '"One here." through "Middle."';
+  assert.deepEqual(at(range, [{ id: "B1", over: range, blockIds: [one, middle] }]), [one, first, middle], "a range takes in a paragraph added inside it");
+  const open = '"One here." through "Not written yet."';
+  assert.deepEqual(at(open), [one], "a range whose end is not in the script shows on its first paragraph");
+  const ended = parse("# T\n\nOne here.\n\nSame words.\n\nNot written yet.\n"), [start, , end] = spokenBlocks(ended).map((b) => b.id);
+  assert.deepEqual(matchShots(ended, fresh(open), [{ id: "B1", over: open, blockIds: [start] }])[0].blockIds.at(-1), end, "and takes in the rest once its end is written");
+  assert.equal(fitsOver(spokenBlocks(doc), [one, first, middle], range), true);
+  assert.equal(fitsOver(spokenBlocks(doc), [one, first], range), false);
+  assert.equal(fitsOver(spokenBlocks(doc), [], '"Same words."'), false);
+});
+
 /* ---------- Export: the B-roll list and the storyboard ---------- */
-const shape = (shots) => shots.map(({ id, what, over, how, kind }) => ({ id, what, over, how, kind }));
+const shape =(shots) => shots.map(({ id, what, over, how, kind }) => ({ id, what, over, how, kind }));
 
 test("B-roll export round trip: script order, a Kind column, the Sketches section, parsed back the same", () => {
   const doc = parse(SCRIPT);

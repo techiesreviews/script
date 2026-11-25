@@ -1,6 +1,4 @@
-// Export all and Save to video folder (TOOLS-311): the zip maker and the video-folder writer, loaded the first time
-// the Export menu opens, so the page's first load carries neither. The app reads everything from the script first
-// (what is on screen when the person clicked), then hands it here.
+// Loaded when Export first opens. The app captures the script before waiting for this module (TOOLS-311).
 import { makeZip } from "./zip.js";
 import { videoFolder, scriptDay, writeFolder, withPrompterLink } from "./video-folder.js";
 

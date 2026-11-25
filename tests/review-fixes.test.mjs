@@ -58,7 +58,7 @@ test("left-behind copies: app.js gives them the browser's Web Locks (a stand-in 
   const body = (name) => app.slice(app.indexOf(name), app.indexOf("\n}\n", app.indexOf(name)));
   assert.match(body("function loadText("), /saving\.open\([^\n]*\n\s*const freed = holdOpen\(\);/, "a script that opens is held (or the last one let go) at once");
   assert.match(body("async function followTitle("), /state\.name = name; holdOpen\(\); renderTop\(\);/, "a renamed script is held under its new name");
-  assert.match(app, /placed\(handle, \{ was = null, words, browser = false \}\) \{[^}]*const freed = holdOpen\(\);[^}]*Promise\.all\(\[freed, forget\(was\)\]\)\.then\(\(\) => copies\.afterMove\(was\.name, words\)\)/s, "a moved script is let go before its copy is cleaned, with the copy's words as this tab knew them");
+  assert.match(app, /placed\(handle, \{ was = null, words, browser = false \}\) \{\s*remember\(handle, browser\)\.catch\(\(\) => \{\}\);[^}]*const freed = holdOpen\(\);[^}]*Promise\.all\(\[freed, forget\(was\)\.catch\(\(\) => \{\}\)\]\)\.then\(\(\) => copies\.afterMove\(was\.name, words\)\)/s, "a moved script is let go before its copy is cleaned, with the copy's words as this tab knew them");
   assert.match(body("function loadText("), /if \(unused\) freed\.then\(\(\) => copies\.discard\(unused\.name, unused\.words\)\)/, "a new script left as it came is let go before it is discarded, with the words it came with");
   assert.match(app, /held: \(name, fn\) => copies\.saving\(name, fn\),/, "every save holds its script's name");
 });

@@ -1,21 +1,7 @@
-// Each script's own key for what is kept beside it (TOOLS-361): its safety-net draft, its B-roll link and a B-roll list
-// kept in the browser, and with the draft its "Check" flags. Before, all of these went by file name, and Save to video
-// folder calls every script script.md, so two scripts could share them.
-// - A file on the computer gets an id of its own the first time it opens here, kept with its handle in IndexedDB
-//   (`fileIds`: [{ handle, id }], the file opened most recently first): its key is `file:<id>`. The same file opened
-//   again (the switcher hands over a fresh handle) is found by `isSameEntry` and keeps its key; another file of the
-//   same name gets another. The stored list decides, at every open: one file has one key, in every tab and through
-//   every handle (Save as onto a file keeps the key it had). The list holds 200 files and lets go of those not opened
-//   for longest, never of one a tab has in use: each tab holds a Web Lock per id it has looked up (`createInUse`), so
-//   the tabs know each other's. A key a tab still writes under that fell off the list all the same (a browser without
-//   Web Locks) is put back.
-// - A script in the browser goes by its name: names there are unique, and a rename moves its keys (app.js moveKeys).
-// - A script without a file (the demo, a file opened where files can't be saved) goes by its name, as before.
-// Keys kept by name before this change stay readable: the files on the recent list take them once (`migrate`), and a
-// file seen for the first time later takes what is still under its name (`createHandOver`, see legacyPlan). A
-// hand-over copies first, then the files' ids are kept, and only then the name lets go; every read in it fails
-// loudly. Any doubt means nothing is deleted and nothing is marked done: the old keys stay as they were.
-// No DOM: storage, the file comparison, the lock and the id maker are passed in.
+// Drafts and B-roll use file:<id> for disk files, matched by isSameEntry across handles and tabs (TOOLS-361).
+// Browser scripts and scripts without a file use their names. Active file ids survive list eviction.
+// Migration copies the old name's values, persists file ids, then clears the name. Failed reads or writes leave
+// the old values available for a retry. Storage, file comparison and locks are injected.
 
 export const IDS_KEY = "fileIds";
 export const MIGRATED_KEY = "fileIdsSince"; // when the keys kept by name were handed to the files on the list

@@ -1,15 +1,10 @@
-// Scripts kept aside (TOOLS-358, Lex 2026-11-19): while the person writes one script, their agent works on others.
-// A script the person leaves while the agent still works on an ask in it stays here, with its document, asks and undo
-// steps, so the agent's answer lands in it (as in the open script, step F: lightly marked, Undo on the agent's name
-// tag) and goes to its own file, while nothing moves in the script that is open. The file-name menu shows "AI working",
-// then "AI done" with an orange dot until the person has seen the change. Pure: no DOM, no files. Imported by the app
-// and the tests.
+// Scripts kept aside retain their document, asks and undo steps while the agent works elsewhere (TOOLS-358).
+// This module changes those records only; the app owns their files and display.
 import * as Doc from "./doc.js";
 import * as Changes from "./changes.js";
 
 /** Asks a script kept aside answers itself: on selected words, not B-roll. A whole-script job waits for its script. */
 export const takesAnswer = (a) => !!a && a.scope === "selection" && a.action !== "broll";
-// The agent works on such an ask (it is waiting or taken).
 export const isWorking = (a) => takesAnswer(a) && (a.status === "waiting" || a.status === "taken");
 const isBrollAnswer = (a) => a.status === "answered" && a.answer?.kind === "broll";
 

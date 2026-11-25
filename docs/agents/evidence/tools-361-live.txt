@@ -1,0 +1,218 @@
+# TOOLS-361 live check, 2026-11-20: node scripts/smoke-several-scripts.mjs https://script.techies.tools (headless Chrome 158, fresh profiles, made-up scripts only). Worker version 15cfec61-273a-439d-8027-136c20b77c4b, main df2f58e. Full run: 184 ok, 5 FAIL. All five are the check's own set-up line "timed out: the agent is connected" (its 8 s wait for the agent to link up on the live site), in the parts slash (390 px), deletesame, deletefirst, twotabs and handrace; every check of the editor itself passed, also in those parts. Run again one part at a time: deletesame 2 ok, deletefirst 5 ok, twotabs 12 ok, handrace 7 ok, handinuse 9 ok, each 0 FAIL; slash three times: 22 ok with that same one line failing in runs 1 and 3, 22 ok and 0 FAIL in run 2. The full run follows.
+--- desktop (1280 px)
+ok the agent gets B's ask (the open script's: no file name with it)
+ok B's row: spinner and "AI working", no dot
+ok the open script's row: no note, no dot
+ok no dot on the file name while the AI works
+ok answer_ask in B is accepted while A is open
+ok nothing moved in A: same scroll, caret and text
+ok the person keeps typing in A
+ok B's file has the change, not the old sentence
+ok A's file never gets B's change
+ok the file name's dot is bigger than the 7 px not-saved dot and sits higher, at the corner
+ok B's row: "AI done" and the orange dot, no number
+ok the open script never gets a dot
+ok B opens at the change, on screen
+ok the dot goes once the change is seen
+ok the agent's words are gone after Undo on the agent's tag
+ok A comes back at its scroll place with its caret
+ok no page error or CSP violation
+--- phone (390 px)
+ok the agent gets B's ask (the open script's: no file name with it)
+ok B's row: spinner and "AI working", no dot
+ok the open script's row: no note, no dot
+ok no dot on the file name while the AI works
+ok answer_ask in B is accepted while A is open
+ok nothing moved in A: same scroll, caret and text
+ok the person keeps typing in A
+ok B's file has the change, not the old sentence
+ok A's file never gets B's change
+ok the file name's dot is bigger than the 7 px not-saved dot and sits higher, at the corner
+ok B's row: "AI done" and the orange dot, no number
+ok the open script never gets a dot
+ok B opens at the change, on screen
+ok the dot goes once the change is seen
+ok the agent's words are gone after Ctrl+Z (one step)
+ok A comes back at its scroll place with its caret
+ok no page error or CSP violation
+--- reload and a file changed elsewhere (1280 px)
+ok the answer lands in B
+ok the agent gets a second ask in B
+ok the second answer is taken while B's file was changed elsewhere
+ok B's file changed elsewhere is not written over
+ok B shows what its file holds now
+ok a third answer lands in B
+ok the dot goes with the deleted script
+ok no draft comes back under the deleted script's name
+ok the deleted script's file is gone
+ok the agent gets no ask of the deleted script
+ok no page error or CSP violation
+--- a half-typed / command when switching (1280 px)
+ok an answer lands while the menu is open
+ok an answer lands before the command while the menu is open
+ok with the file-name menu open, /on is not saved into B's file
+ok an answer lands in B while A is still opening
+ok leaving B through the menu does not save /on into B's file
+ok the answer lands in B
+ok the agent's answer does not bring /on into B's file
+ok B's draft has no /on
+ok B opens with the line as it was before the command
+ok Ctrl+Z takes the agent's change out and never brings any part of the command back
+ok no page error or CSP violation
+--- a half-typed / command when switching (390 px)
+FAIL timed out: the agent is connected
+ok an answer lands while the menu is open
+ok an answer lands before the command while the menu is open
+ok with the file-name menu open, /on is not saved into B's file
+ok an answer lands in B while A is still opening
+ok leaving B through the menu does not save /on into B's file
+ok the answer lands in B
+ok the agent's answer does not bring /on into B's file
+ok B's draft has no /on
+ok B opens with the line as it was before the command
+ok Ctrl+Z takes the agent's change out and never brings any part of the command back
+ok no page error or CSP violation
+--- the menu open while an answer lands (1280 px)
+ok the first answer lands in B
+ok keyboard focus stays on B's row while it changes
+ok the second answer lands in B during the press
+ok the agent opens A while the menu is open
+ok the menu marks A as the open script, not B
+ok no page error or CSP violation
+--- two scripts called script.md (1280 px)
+ok the agent takes an ask in the bread script.md
+ok the bread script.md leaves no copy under the shared name as it goes to the background
+ok the walk script.md takes none of the bread script's asks or words
+ok the shared-words ask is answered in the bread script.md, in the background
+ok the answer lands in the closed bread script.md
+ok the open walk script.md keeps its own draft and Check flags
+ok the bread file changed elsewhere is not written over
+ok after leaving for a third script, the walk script's own draft is still its own
+ok Restore brings no words of the walk script
+ok the walk script.md gets none of the bread script's words
+ok no page error or CSP violation
+--- a background script.md taken off the list mid-save (1280 px)
+ok the agent takes an ask in the bread script.md
+ok the removed bread script's failed save writes none of its words under the shared name
+ok no page error or CSP violation
+--- deleting a browser script.md while a file script.md is open (1280 px)
+FAIL timed out: the agent is connected
+ok the open file script.md keeps its own draft
+ok no page error or CSP violation
+--- AI done, opened from the Storyboard (1280 px)
+ok the answer lands in B
+ok no page error or CSP violation
+--- deleting a browser script.md while a file script.md is kept aside (1280 px)
+ok the agent takes an ask in the file script.md
+ok the kept file script.md keeps its draft
+ok the kept file script.md keeps its saved B-roll list (local)
+ok the kept file script.md keeps its B-roll link
+ok the kept file script.md keeps its saved B-roll list
+ok no page error or CSP violation
+--- the caret of a script left from the Storyboard (1280 px)
+ok A's caret comes back where it was
+ok no page error or CSP violation
+--- a / command, then Open a script… cancelled (1280 px)
+ok B is still open
+ok no page error or CSP violation
+--- the same where the browser has no file picker (1280 px)
+ok with no file picker, picking a file still leaves the / command out of B
+ok no page error or CSP violation (no file picker)
+--- two files called script.md keep their own drafts, B-roll and Check flags (1280 px)
+ok old data still opens: the list and its Check flag
+ok the bread script.md has a key of its own
+ok the name lets go of what it held
+ok the agent takes an ask in the bread script.md; another waits
+ok the walk script.md has another key
+ok the walk script.md shows none of the bread script's list, asks or words
+ok the answer lands in the bread script.md, in the background
+ok the bread file holds the change
+ok the walk file does not
+ok the background script keeps its own draft: the marked change, its open ask and the new Check flag
+ok the walk script.md's draft holds nothing of the bread script
+ok the mark is on the agent's words
+ok both Check flags are back: the old one and the background answer's
+ok the walk script.md: its own shot, no Check
+ok the walk script.md: no marks, asks or Unsaved changes of the bread script
+ok no page error or CSP violation
+--- moving to keys: the files on the list take what their name held (1280 px)
+ok the older script.md does not get the newest one's unsaved words
+ok the name lets go of the list link
+ok no page error or CSP violation
+--- a browser script.md's keys stay its own, and go with it (1280 px)
+FAIL timed out: the agent is connected
+ok a file script.md seen for the first time takes none of the browser script's list or words
+ok the browser script keeps its list
+ok its keys go with it, though a file script.md is on the list
+ok the next new file script.md starts clean: no list, no Unsaved changes
+ok no page error or CSP violation
+--- a reload while the agent holds an ask in a background script (1280 px)
+ok the agent takes an ask in the bread script.md
+ok the agent's answer to it still lands
+ok no page error or CSP violation
+--- moving to keys with a full storage, then again (1280 px)
+ok the name keeps its draft
+ok the name keeps its list and link
+ok the move is not marked done
+ok opening one file on the same page takes nothing alone: the name keeps its list and link
+ok the other file does not get the unsaved words
+ok the name lets go once everything is kept
+ok no page error or CSP violation
+--- moving to keys when the recent list can't be read (1280 px)
+ok a recent list that can't be read never marks the move done
+ok the name keeps its list and link
+ok no page error or CSP violation
+--- a moved browser copy held by a tab does not keep the name's draft (1280 px)
+ok the copy is still a moved copy (held by a tab)
+ok no page error or CSP violation
+--- moving to keys when the name's draft can't be read (1280 px)
+ok the name keeps its draft: a read that failed is never "no draft"
+ok the move is not marked done
+ok the file has no id yet: it goes by its name, where its draft is
+ok no page error or CSP violation
+--- moving to keys when the list of copies left behind can't be read (1280 px)
+ok the name keeps its draft
+ok the move is not marked done
+ok no page error or CSP violation
+--- one file, one key: Save as onto a file that has a key, and a key that fell off the list (1280 px)
+ok the file has a key of its own
+ok the picked file holds the script
+ok Save as onto a file that has a key keeps that key, one entry
+ok the key fell off the list
+ok looked at again, the tab puts the key back
+ok the next page finds the file under the same key
+ok no page error or CSP violation
+--- two tabs: a file open in one is never pushed off the id list by the other (1280 px)
+FAIL timed out: the agent is connected
+ok the file open in the first tab has a key of its own
+ok the first tab holds a lock for its id
+ok the second tab sees that lock
+ok the list is full, the first tab's file at its end
+ok the second tab's file has its key, at the front
+ok the list stays within its size
+ok the file open in the first tab is still on the list
+ok a file in use counts as opened most recently: right behind the one just opened
+ok the list let go of the file not opened for longest instead
+ok the first tab's next page finds the file under the same key
+ok the first tab closed: its lock is gone
+ok no page error or CSP violation
+--- moving to keys while another tab keeps words under the file's key (1280 px)
+FAIL timed out: the agent is connected
+ok the words the other tab kept under the file's key are not written over
+ok the name keeps its draft
+ok and its list and link
+ok the move is not marked done
+ok the words written later stay under the file's key
+ok the name's older draft goes
+ok no page error or CSP violation
+--- moving to keys while another tab has the file open (1280 px)
+ok the file open in the first tab has a key of its own
+ok no draft is written under the key of a file the first tab has in use
+ok the name keeps its draft
+ok and its list and link
+ok the move is not marked done
+ok the file has the words its name kept
+ok and the name let go of them
+ok under the same key
+ok no page error or CSP violation
+RESULT: fail several-scripts 5 failed

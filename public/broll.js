@@ -195,10 +195,24 @@ export function matchOver(list, over) {
   return list.slice(a, (z < 0 ? a : z) + 1).map((b) => b.id);
 }
 
-export function matchShots(doc, shots) {
+/** Whether an Over fits these spoken blocks: matched among them alone, as they follow each other now, it covers them
+ *  all. A paragraph added inside a range, or one gone from it, makes it not fit; so does a range whose end is not
+ *  among them (it shows on its first paragraph until its end is written). */
+export function fitsOver(list, blockIds, over) {
+  const at = list.findIndex((b) => b.id === blockIds?.[0]);
+  if (at < 0) return false;
+  const own = list.slice(at, at + blockIds.length), { to } = parseOver(over);
+  return matchOver(own, over).join() === blockIds.join() && (!to || findBlock(own, to, 0, false) >= 0);
+}
+
+/** Matches each shot to the script by its Over. `shown`: the shots as they show now. A quote can't tell two paragraphs
+ *  that say the same apart and finds the first, so a shot whose Over is as it was stays on the paragraphs it shows on
+ *  while the quote still fits them. */
+export function matchShots(doc, shots, shown = []) {
   const list = spokenBlocks(doc);
   for (const s of shots) {
-    s.blockIds = matchOver(list, s.over);
+    const was = shown.find((p) => p.id === s.id && p.over === s.over);
+    s.blockIds = was && fitsOver(list, was.blockIds, s.over) ? was.blockIds : matchOver(list, s.over);
     s.sig = coverText(doc, s.blockIds);
   }
   return shots;

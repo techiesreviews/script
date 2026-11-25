@@ -850,6 +850,7 @@ async function openPrompter() {
 function checkpoint(kind, id, before = null) {
   // In a shared script, undo follows each person's own changes instead (see together/room.js).
   if (together?.active) return;
+  ageHistory(state.undo);
   const now = Date.now(), last = state.lastStep;
   if (kind === "type" && last?.kind === "type" && last.id === id && now - last.at < TYPING_GROUP_MS) { last.at = now; return; }
   state.undo.push({ doc: before || Doc.cloneDoc(state.doc), caret: state.preCaret || getCaret() });
@@ -857,7 +858,66 @@ function checkpoint(kind, id, before = null) {
   state.redo = [];
   state.lastStep = { kind, id, at: now };
 }
-function restore(snap, from, to) {
+// A move shares the script's chronological history, but never carries a copy of its words.
+function checkpointBrollMove(move) {
+  if (together?.active) return () => {};
+  const stack = state.undo, step = { brollMove: move, moveRedo: false };
+  ageHistory(stack);
+  stack.push(step);
+  if (stack.length > UNDO_LIMIT) stack.shift();
+  state.redo = [];
+  state.lastStep = null;
+  // A move whose first save failed, or moved nothing, never happened. Nothing has undone it yet (history waits its
+  // turn behind that save), and an Undo waiting for it stops there instead of taking the step before.
+  return () => { const i = stack.indexOf(step); if (i >= 0) { stack.splice(i, 1); ageHistory(stack); } };
+}
+// Saving a moved shot takes a moment, so history takes turns: a move's save, and any Undo or Redo asked for while one
+// is under way, each wait for the one before and then meet the script and the list as that one left them. A save that
+// fails, or a new change (the person's or the agent's), ages that script's history: steps still waiting there were
+// asked of a state that never came, so they stop there and every word and position stays reachable. Each script ages
+// on its own (by its Undo list, which stays the same while it is open or kept aside), so a failure in one script never
+// stops a step waiting in another.
+let historyTurn = Promise.resolve(), historyBusy = 0;
+const historyAges = new WeakMap();
+const historyAgeOf = (undo) => historyAges.get(undo) || 0;
+const ageHistory = (undo) => historyAges.set(undo, historyAgeOf(undo) + 1);
+function queueBrollHistory(run) {
+  const undo = state.undo; // the script that asked for this turn
+  const turn = historyBusy++ ? historyTurn.then(run) : new Promise((resolve) => resolve(run()));
+  historyTurn = turn.catch(() => { ageHistory(undo); }).then(() => { historyBusy--; });
+  return turn;
+}
+const staleMove = (snap) => snap.brollMove && !snap.brollMove.valid();
+function historyStep(undoing) {
+  const stack = () => (undoing ? state.undo : state.redo);
+  const undo = state.undo, from = stack(), to = undoing ? state.redo : state.undo, age = historyAgeOf(undo);
+  const step = () => {
+    if (age !== historyAgeOf(undo) || from !== stack()) return; // aged meanwhile, or another script is open now
+    let s = from.pop();
+    while (s && staleMove(s)) s = from.pop();
+    if (!s) return;
+    if (!s.brollMove) return restore(s, to);
+    const back = { brollMove: s.brollMove, moveRedo: !s.moveRedo }, below = from.at(-1);
+    to.push(back); // at once, so a change made while the list saves comes after it
+    state.lastStep = null;
+    return s.brollMove[s.moveRedo ? "redo" : "undo"]().then((ok) => {
+      if (ok) return;
+      const i = to.indexOf(back);
+      if (i >= 0) to.splice(i, 1);
+      // The shot was changed since, as its turn found out: skipped like any stale move, on to the step before it.
+      if (staleMove(s)) return step();
+      // Not saved: the step keeps its place, right above the one it sat on (the bottom, when a full history has
+      // dropped that one meanwhile), and can be tried again.
+      ageHistory(undo);
+      from.splice(from.indexOf(below) + 1, 0, s);
+    });
+  };
+  if (historyBusy) return void queueBrollHistory(step);
+  // Nothing is saving: a step in the script's words happens at once, as it always did; a move's save opens a turn.
+  const saving = step();
+  if (saving) queueBrollHistory(() => saving);
+}
+function restore(snap, to) {
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
   const { back, closed } = Changes.landStep(state.asks, snap.land);
   to.push({ doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
@@ -866,7 +926,7 @@ function restore(snap, from, to) {
   // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
   for (const b of state.doc.blocks) {
     const old = Doc.blockById(was, b.id), a = old && Doc.contentOf(old), z = Doc.contentOf(b);
-    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, marksMoved(a, z));
+    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, Cues.marksRange(a, z));
   }
   state.lastStep = null;
   if (closed) emit(closed.status, closed);
@@ -877,13 +937,11 @@ function restore(snap, from, to) {
 }
 function undo() {
   if (together?.active) { hideBar(); return void together.undo(); }
-  const s = state.undo.pop();
-  if (s) restore(s, state.undo, state.redo);
+  historyStep(true);
 }
 function redo() {
   if (together?.active) return;
-  const s = state.redo.pop();
-  if (s) restore(s, state.redo, state.undo);
+  historyStep(false);
 }
 
 /* ---------- Ask anchors follow edits ---------- */
@@ -933,7 +991,6 @@ function followAnchors(id, content, at, { insideGoes = false } = {}) {
     if (a.scope === "script" && a.status === "answered") for (const m of a.answer?.marks || []) if (m.state === "open" && m.blockId === id) move(m, () => { m.state = "gone"; });
   }
 }
-const marksMoved = (from, to) => Cues.marksRange(from, to);
 // The agent's marked changes (step F) follow every edit from the script as it was when they last followed
 // (changeBase); an edit inside one ends its mark. `ops`: the room's operations, when they are known.
 let changeBase = null;
@@ -1108,7 +1165,7 @@ function mergeInto(prevId, id) {
   moveAsks(id, prevId, 0, offset);
   const m = Doc.mergeWithPrevious(state.doc, id);
   if (settled) {
-    followAnchors(prevId, settled.content, marksMoved(joined, settled.content));
+    followAnchors(prevId, settled.content, Cues.marksRange(joined, settled.content));
     Doc.setContent(state.doc, prevId, settled.content);
   }
   reanchorBlock(prevId);
@@ -1368,7 +1425,7 @@ function changeMarkup(s, kind, make) {
   const res = make(old);
   if (!Changes.canToggleCue(state.asks, b.id, b.type, res)) return;
   checkpoint(kind, b.id);
-  followAnchors(b.id, res.content, res.ops ? Cues.opsRange(old, res.ops) : marksMoved(old, res.content));
+  followAnchors(b.id, res.content, res.ops ? Cues.opsRange(old, res.ops) : Cues.marksRange(old, res.content));
   const r = Doc.setContent(state.doc, b.id, res.content);
   followPieces(b.id, r);
   // The bar's words have new marks now: said before the redraw, so it doesn't look for the old ones.
@@ -1485,7 +1542,7 @@ function applyLink() {
 function landAgentCues(plan, mode, by) {
   together?.local();
   const before = Doc.cloneDoc(state.doc);
-  for (const seg of plan.segments) followAnchors(seg.id, seg.content, marksMoved(Doc.contentOf(byId(seg.id)), seg.content));
+  for (const seg of plan.segments) followAnchors(seg.id, seg.content, Cues.marksRange(Doc.contentOf(byId(seg.id)), seg.content));
   const parts = Changes.landCues(state.doc, plan, mode, by, Date.now());
   if (!parts.length) return 0;
   checkpoint("agent", parts[0].blockId, before);
@@ -2268,7 +2325,7 @@ async function idbRead(k) {
   // Nothing stored gives undefined; a link or list removed on purpose is a stored null.
   return new Promise((res, rej) => { const q = db.transaction("handles").objectStore("handles").get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error || new Error("IndexedDB read failed")); });
 }
-// Like idbSet, but a failed write is an error (a B-roll list kept in the browser must not vanish silently).
+// A failed write is an error (a B-roll list kept in the browser must not vanish silently).
 async function idbPut(k, v) {
   const db = await idb();
   await new Promise((res, rej) => {
@@ -2294,30 +2351,38 @@ async function idbFill(k, v) {
 // The names that still have a B-roll link stored (a cleared link is stored as null and doesn't count; the demo's
 // unlinked { none: true } does).
 async function idbLinkedNames() {
-  try {
-    const db = await idb();
-    return await new Promise((res) => {
-      const out = [];
-      const q = db.transaction("handles").objectStore("handles").openCursor();
-      q.onsuccess = () => {
-        const c = q.result;
-        if (!c) return res(out);
-        // A B-roll link, or a B-roll list kept in the browser (step K).
-        if (typeof c.key === "string" && c.value != null) {
-          if (c.key.startsWith("broll:")) out.push(c.key.slice(6));
-          else if (c.key.startsWith("brollList:")) out.push(c.key.slice(10));
-        }
-        c.continue();
-      };
-      q.onerror = () => res(out);
-    });
-  } catch { return []; }
+  // Storage the browser blocks as a whole (local storage refuses too) never opens: no link or list can be read under
+  // any name there, so none is reserved, as without browser saving (TOOLS-460). Any other failed open may come back
+  // with its lists, and a read that starts and then fails, still refuses.
+  let db;
+  try { db = await idb(); } catch (e) {
+    try { void localStorage.length; } catch { return []; }
+    throw e;
+  }
+  return new Promise((res, rej) => {
+    const out = [], t = db.transaction("handles");
+    const q = t.objectStore("handles").openCursor();
+    q.onsuccess = () => {
+      const c = q.result;
+      if (!c) return;
+      // A B-roll link, or a B-roll list kept in the browser (step K).
+      if (typeof c.key === "string" && c.value != null) {
+        if (c.key.startsWith("broll:")) out.push(c.key.slice(6));
+        else if (c.key.startsWith("brollList:")) out.push(c.key.slice(10));
+      }
+      c.continue();
+    };
+    // Naming needs every reservation. An incomplete read must never free the names it missed (TOOLS-436).
+    q.onerror = () => rej(q.error || new Error("B-roll names could not be checked"));
+    t.onerror = t.onabort = () => rej(t.error || new Error("B-roll names could not be checked"));
+    t.oncomplete = () => res(out);
+  });
 }
 async function idbSet(k, v) {
   try {
-    const db = await idb();
-    await new Promise((res) => { const t = db.transaction("handles", "readwrite"); t.objectStore("handles").put(v, k); t.oncomplete = res; t.onerror = res; });
-  } catch { /* storage off: reopen is not offered */ }
+    await idbPut(k, v);
+    return true;
+  } catch { return false; } // Optional storage stays usable; callers can check whether it was kept.
 }
 
 function persistDraft() {
@@ -2358,7 +2423,7 @@ function loadText(text, { name, handle = null, modified = 0, fresh = false, brow
   state.doc = kept ? kept.doc : Doc.parse(text);
   saving.open({ handle, name, browser, savedText: kept ? kept.savedText : fresh ? Doc.serialize(state.doc) : text, modified, fresh });
   const freed = holdOpen();
-  if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle); dropKeys(unused.name); } }).catch(() => {});
+  if (unused) freed.then(() => copies.discard(unused.name, unused.words)).then((gone) => { if (gone) { forget(unused.handle).catch(() => {}); dropKeys(unused.name); } }).catch(() => {});
   state.undo = kept ? kept.undo : [];
   state.redo = kept ? kept.redo : [];
   state.lastStep = null;
@@ -2687,7 +2752,7 @@ async function openOne(handle, was) {
     // From its file after all: its own words that could not be written come along as its draft ("Unsaved changes").
     const own = kept && !asIs ? keptDraft(kept) : null;
     loadText(text, { name: handle.name, handle, modified: asIs ? Math.max(file.lastModified, kept.fileModified || 0) : file.lastModified, browser, kept: asIs ? kept : null, place, draft: own });
-    remember(handle, browser);
+    remember(handle, browser).catch(() => {}); // History is optional; opening the file still succeeds.
     if (kept) { kept.opening.resolve(true); delete kept.opening; }
     return true;
   } catch {
@@ -2769,10 +2834,10 @@ const saving = createSaving({
     },
     renamed: (from, to, { clear }) => moveKeys(from, to, { clear, link: brollLink() }),
     placed(handle, { was = null, words, browser = false }) {
-      remember(handle, browser);
+      remember(handle, browser).catch(() => {});
       // A script that moved to a file lets go of its browser copy's name first, so the cleanup can take it.
       const freed = holdOpen();
-      if (was) Promise.all([freed, forget(was)]).then(() => copies.afterMove(was.name, words)).catch(() => {}); // a copy that can't be looked at now stays a browser script
+      if (was) Promise.all([freed, forget(was).catch(() => {})]).then(() => copies.afterMove(was.name, words)).catch(() => {}); // Optional history must not block the browser copy's existing cleanup policy.
     },
   },
 });
@@ -2903,15 +2968,18 @@ async function newScript() {
   const hint = Doc.insertBlock(doc, t.id, "para", "").id;
   const text = Doc.serialize(doc);
   // Saved in the browser at once (step J); where it can't be, it waits for the first save as before.
-  let made = null;
+  let made = null, name = "untitled-script.md";
   if (browserSaving) {
-    try { made = await createBrowserScript(Doc.scriptFileName("", doc, await nameTaken()), text); } catch { made = null; }
+    // Unknown B-roll reservations stop the open; even an unsaved fallback would use that name's old list. Storage the
+    // browser blocks as a whole keeps none, so there the check finds none (idbLinkedNames).
+    try { name = Doc.scriptFileName("", doc, await nameTaken()); } catch { openProblem("a new script"); return; }
+    try { made = await createBrowserScript(name, text); } catch { made = null; }
   }
   if (made) {
     loadText(text, { name: made.handle.name, handle: made.handle, modified: made.modified, browser: true });
     state.blank = text;
-    remember(made.handle, true);
-  } else loadText("", { name: "untitled-script.md", fresh: true });
+    remember(made.handle, true).catch(() => {});
+  } else loadText("", { name, fresh: true });
   state.doc = doc;
   state.hint = hint;
   state.savedText = text;
@@ -2947,7 +3015,7 @@ $("#emptyReopen").addEventListener("click", async () => {
   if (!(await openHandle(lastHandle))) {
     // The file was moved or deleted: stop offering it.
     $("#emptyReopen").hidden = true;
-    forget(lastHandle);
+    forget(lastHandle).catch(() => {});
   }
 });
 
@@ -2960,9 +3028,11 @@ async function sameFile(a, b) {
   if (a === b) return true;
   try { return await a.isSameEntry(b); } catch { return false; }
 }
-async function recentScripts() {
-  const stored = await idbGet("recent");
-  const last = Array.isArray(stored) ? null : await idbGet("last"); // before the list, only the last file was kept
+async function recentScripts({ strict = false } = {}) {
+  // Display can degrade to the browser inventory; updates must never replace history they could not read.
+  const read = strict ? idbRead : idbGet;
+  const stored = await read("recent");
+  const last = Array.isArray(stored) ? null : await read("last"); // before the list, only the last file was kept
   const list = Array.isArray(stored) ? stored : last?.name ? [{ handle: last, name: last.name, at: 0 }] : [];
   // Scripts in the browser are kept by name (their handles are found again), and every one of them is listed,
   // also those that fell off the list: they have no other way back.
@@ -2985,10 +3055,10 @@ async function without(list, handle) {
 }
 let recentQueue = Promise.resolve();
 function updateRecent(change) {
-  recentQueue = recentQueue.then(async () => {
-    const old = await recentScripts();
+  const operation = recentQueue.then(async () => {
+    const old = await recentScripts({ strict: true });
     const list = await change(old);
-    await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r)));
+    if (!(await idbSet("recent", list.map((r) => (r.browser ? { name: r.name, at: r.at, browser: true } : r))))) throw new Error("Recent history could not be kept");
     lastHandle = list[0]?.handle ?? null;
     // A kept file that fell off the list just now has no row to lead to it: it leaves memory, and its dot with it
     // (TOOLS-358). One that was never on a list read here (storage off) stays.
@@ -2997,8 +3067,9 @@ function updateRecent(change) {
       k.removed = true;
       dropKept(k.handle);
     }
-  }).catch(() => {});
-  return recentQueue;
+  });
+  recentQueue = operation.catch(() => {}); // A failed turn must not block the next one.
+  return operation;
 }
 const remember = (handle, browser = false) => updateRecent(async (list) => [{ handle, name: handle.name, at: Date.now(), ...(browser ? { browser: true } : {}) }, ...(await without(list, handle))].slice(0, RECENT_MAX));
 const forget = (handle) => updateRecent((list) => without(list, handle));
@@ -3170,7 +3241,7 @@ async function deleteBrowserScript(r) {
     // A save of it still on its way (the one made when it was left, or one waiting behind another) ends first, so it
     // can't bring a draft back under its name after the delete.
     await saving.idle();
-    await forget(r.handle);
+    await forget(r.handle).catch(() => {}); // Explicit deletion still works when optional history is unavailable.
     try { await (await scriptsDir()).removeEntry(r.handle.name); } catch { /* gone already */ }
     // A browser script's keys go by its name: they go only when no other script that goes by that name is known, open,
     // kept aside or on the list (files on the computer have their own, TOOLS-361). When in doubt, they stay.
@@ -3275,7 +3346,7 @@ async function renderScriptList() {
       const x = h("button", "icon-btn scripts__remove", { type: "button", "aria-label": `Remove ${r.name} from the list` });
       x.innerHTML = icon("x");
       x.addEventListener("click", async () => {
-        await forget(r.handle);
+        try { await forget(r.handle); } catch { return; }
         const kept = await keptFor(r.handle); // no row leads to it any more: its dot goes too
         if (kept) { kept.removed = true; dropKept(kept.handle); }
         renderScriptList();
@@ -3367,7 +3438,7 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // when a script has a linked list or B-roll asks, when the Storyboard opens, or when the agent sends B-roll; opening a
 // script without any of that downloads none of it. Until it is here, the app answers for it below: no list.
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
-const BROLL_SEAM = 3;
+const BROLL_SEAM = 4;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
 // is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
@@ -3405,7 +3476,7 @@ const brollHost = () => ({
   state, ui, scriptEl, $, $$, h, icon, esc, me, reduced, FILE_TYPES, SAMPLE, SAMPLE_BROLL, canPick, agent,
   isOpen, isBrollAnswer, byId, wrapOf, baseName, readContent, offsetIn, scriptView, personInput,
   emit, changed, closeAsk, validBy, offerAsks, renderBlock, getCaret, renderTocDots, renderAgent, agentBy,
-  refreshBar, brollChanged, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
+  refreshBar, brollChanged, checkpointBrollMove, queueBrollHistory, schedulePersist: () => { clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 400); },
   hideBar, closeCard, editorJump, placeOverText, positionSlash, setView,
   getLinkKey, setLinkKey, keyed, listKey, readKept, delKept, idbPut, permitted, writeHandle, scriptKey,
 });
@@ -4046,7 +4117,7 @@ async function openScript(args, by) {
     if (browserSaving) { try { made = await createBrowserScript(name, args.markdown); } catch { made = null; } }
     if (made) {
       loadText(args.markdown, { name, handle: made.handle, modified: made.modified, browser: true });
-      remember(made.handle, true);
+      remember(made.handle, true).catch(() => {});
       return { result: `Opened as ${name}, saved in the person's browser. They can save it as a file on their computer (Export → Markdown file).` };
     }
     loadText(args.markdown, { name });

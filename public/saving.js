@@ -1,16 +1,6 @@
-// Saving the open script: auto-save, Ctrl/Cmd+S, the changed-on-disk check, saves that wait while another one runs,
-// drafts kept by each script's own key (TOOLS-361: `keys`), and saving into the browser or to a new file. No DOM: the file system, local storage and
-// the clock are passed in, so the tests run it with a folder in memory (tests/saving.test.mjs).
-//
-// `script` is the open script's record (app.js reads it to draw the top bar). This module writes its save fields:
-// handle, name, inBrowser, blank, savedText, savedAt, fileModified, saving, autoSaving, saveError, needsPermission,
-// conflict. Every save carries its own handle, name and text, so a write lands in the file it was made for even after
-// the person opened another script; its result changes `script` only while that script is still the open one.
-//
-// What a tab knows of a file is the words it last wrote into it or read from it (`savedText`). Whether a file is
-// unchanged is decided by those words (their fingerprint) and never by the file's time: a time is read after the
-// write, and by then it may be another tab's. `fileModified` is for what the person sees only (the day of a draft, the
-// prompter link).
+// Every save carries its own handle and text across script switches (TOOLS-308). Only the open script receives status changes.
+// Conflict checks compare savedText fingerprints, never file times: another tab may write before the time is read.
+// fileModified is display metadata (the draft's day and prompter link).
 import * as SaveQueue from "./save-queue.js";
 
 // About 1.5 s after the last change, to the opened file only. Ctrl/Cmd+S and page hide save at once.
@@ -247,6 +237,8 @@ export function createLeftCopies({ store, dir, locks = tabLocks(), write = write
 /**
  * createSaving({ script, editor, files, browser, drafts, clock, on })
  * The caller keeps the open script's draft before it calls open() for another script.
+ * - script: the open record; saving owns handle, name, inBrowser, blank, savedText, savedAt, fileModified, saving,
+ *   autoSaving, saveError, needsPermission and conflict. No DOM; files and the clock are supplied below.
  * - editor: { ready(), doc(), text(), dirty(), paused() } — a script is open and the person may save it; its document
  *   object; its text as it would be saved; changed since the last save; a "/" command is being typed.
  * - files: { write(handle, text) → modified, file(handle) → { lastModified, text() }, permitted(handle, ask),
@@ -279,17 +271,16 @@ export function createSaving({ script, editor, files, browser, drafts: store, ke
   // The key a waiting request's draft goes by: its file's own (a file's id; a script in the browser by its name now);
   // the script's name for a request without a file.
   const keyOf = (req) => keys.of(req.handle, req.handle?.name ?? req.name);
-  const key = draftKey;
   const drafts = {
-    get: (name) => store.get(key(name)),
-    set: (name, draft) => store.set(key(name), draft),
-    del: (name) => store.del(key(name)),
+    get: (name) => store.get(draftKey(name)),
+    set: (name, draft) => store.set(draftKey(name), draft),
+    del: (name) => store.del(draftKey(name)),
     // Gives false when the draft could not be written under `to` (storage full): then it stays under `from`.
     move(from, to) {
-      const draft = store.get(key(from));
+      const draft = store.get(draftKey(from));
       if (draft == null) return true;
-      if (store.set(key(to), draft) === false) return false;
-      store.del(key(from));
+      if (store.set(draftKey(to), draft) === false) return false;
+      store.del(draftKey(from));
       return true;
     },
   };
