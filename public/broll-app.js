@@ -101,9 +101,10 @@ export function createBroll(host) {
   function adoptBroll(text) {
     const { shots, sketches } = Broll.parseBroll(text);
     // A shot whose quote is as it was stays where it shows (one moved onto a paragraph that repeats an earlier one).
-    if (state.doc) Broll.matchShots(state.doc, shots, broll.shots);
+    // Only within the list those shots came from (`shown`: its token): another list's start from their quotes.
+    if (state.doc) Broll.matchShots(state.doc, shots, broll.shown === broll.token ? broll.shots : []);
     for (const s of shots) s.check = !!broll.flags[s.id];
-    Object.assign(broll, { text, shots, sketches, status: "ok", err: "" });
+    Object.assign(broll, { text, shots, sketches, status: "ok", err: "", shown: broll.token });
     if (broll.lit && !shotById(broll.lit)) broll.lit = null;
     dropGoneSuggestions();
     renderBroll();
