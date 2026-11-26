@@ -46,3 +46,21 @@ PROOF 390px from the title: met — folded notes left out, copy "1 · Hook (0:00
 PROOF 390px picture paste: met — words unchanged, the span still selected
 PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
 RESULT: ok tools-470-browser 18/18 checks at 1280 and 390 px
+
+Review round 1 (2026-11-26): checks 10 to 14 added on 04ff798 and run there before the fixes, each step on its own.
+Red (code before the fixes):
+RESULT: fail tools-470-browser a drag into the gap below its paragraph is no span
+RESULT: fail tools-470-browser a spelling fix does not replace the span
+RESULT: fail tools-470-browser timed out: one Undo takes back only the later typing
+RESULT: fail tools-470-browser timed out: Ctrl+Backspace deletes the span
+Check 14 (cut and Enter) guards what already worked; its first two failures were the check itself (cut is caught by
+the editor, so the check now records what it puts on the clipboard; Enter keeps the space before the break).
+After the fixes, the whole run (the check after 10 first clears the browser's own selection, since a press inside it
+drags that text away; the middle click's own Linux paste is checked to only add text, and Undo takes it back):
+PROOF 1280px gap below: met — a drag 12 px past the paragraph stays the paragraph's own selection
+PROOF 1280px right and middle click: met — a spelling fix and a middle click never replace the span
+PROOF 1280px cancelled composition: met — later typing is its own Undo step
+PROOF 1280px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves it
+PROOF 1280px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo
+(the same five at 390 px, with the first nine of each width as above)
+RESULT: ok tools-470-browser 28/28 checks at 1280 and 390 px

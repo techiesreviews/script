@@ -131,3 +131,34 @@ test("a shared edit in a block the span touches, or one that adds or joins block
   assert.equal(Span.spanTouched(doc, span, [{ type: "split", blockId: doc.blocks[6].id, at: 2, newId: "x" }]), true, "blocks added or joined");
   assert.equal(Span.spanTouched(doc, null, [text(2)]), false);
 });
+
+test("a drag whose far end has no words of the next block (the gap after its paragraph) is no span", () => {
+  const doc = Doc.parse(SCRIPT);
+  const down = Span.spanOf(doc, at(doc, 2, 6), at(doc, 3, 0));
+  assert.equal(Span.spanFarEmpty(doc, down, at(doc, 3, 0)), true, "down into the gap: the start of the next block");
+  const up = Span.spanOf(doc, at(doc, 3, 4), at(doc, 2, 15));
+  assert.equal(Span.spanFarEmpty(doc, up, at(doc, 2, 15)), true, "up into the gap: the end of the block before");
+  assert.equal(Span.spanFarEmpty(doc, down, at(doc, 2, 6)), false, "the press end may be anywhere");
+  assert.equal(Span.spanFarEmpty(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 3, 1)), at(doc, 3, 1)), false, "one letter of the next block");
+  assert.equal(Span.spanFarEmpty(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, 0)), at(doc, 4, 0)), false, "a whole block between");
+});
+
+test("marks are settled only when the joined block is a paragraph, as one-block edits do", () => {
+  const doc = Doc.parse("# T\n\n- a **b** c\n\nNext words.\n");
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 7), at(doc, 2, 5)), "");
+  assert.equal(Doc.contentOf(r.doc.blocks[1]), "- a **bwords.", "a list line keeps its literal marks");
+});
+
+test("Enter over a span: shots on the last block go with its words to the new block", () => {
+  const doc = Doc.parse(SCRIPT);
+  const [, , p1, p2, p3] = ids(doc);
+  const shots = [{ id: "B1", blockIds: [p2] }, { id: "B2", blockIds: [p3] }];
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, 6)), "", { split: true });
+  assert.deepEqual(Span.followShots(r.doc, shots, r), [
+    { id: "B1", blockIds: [p1], moved: true },
+    { id: "B2", blockIds: [r.caret.id], moved: true },
+  ]);
+  // Pasted text with a blank line makes a new block too; the last block's words end up there.
+  const pasted = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, 6)), "one\n\ntwo ");
+  assert.deepEqual(Span.followShots(pasted.doc, shots, pasted)[1], { id: "B2", blockIds: [pasted.caret.id], moved: true });
+});

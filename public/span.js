@@ -38,6 +38,15 @@ export function spanParts(doc, span) {
   }));
 }
 
+/** True when a drag's span covers two blocks and holds no words of the block its far end (`focus`) is in: the pointer
+ *  only went into the gap past its paragraph, and the selection would look like one paragraph's. */
+export function spanFarEmpty(doc, span, focus) {
+  const parts = spanParts(doc, span);
+  if (parts.length !== 2) return false;
+  const far = parts.find((p) => p.block.id === focus?.id);
+  return !!far && far.start === far.end;
+}
+
 /** True when shared edits from another tab reach the span: words changed in a block it touches, or blocks added,
  *  joined or moved. Its offsets would then point at other words, so it ends. */
 export function spanTouched(doc, span, ops) {
@@ -75,25 +84,29 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
   const head = Doc.contentOf(first.block), tail = Doc.contentOf(last.block);
   const type = first.start === 0 ? last.block.type : first.block.type;
   const heading = type === "heading";
+  // Only a paragraph settles its bold and links; elsewhere (lists, code, reminders, titles) marks are literal text.
+  const settles = type === "para";
   let put = String(text ?? "").replace(/\r\n?/g, "\n");
   if (heading) put = fold(put);
 
   // The deletion, as if the two ends had been one text with a line break between them.
   const old = `${head}\n${tail}`, left = head.slice(0, first.start), right = tail.slice(last.end);
   let content = left + right, caret = left.length;
-  const fix = Links.keepHidden(old, content, Links.textLinks(old), caret);
-  if (fix) ({ content, caret } = fix);
-  const settled = Cues.settleMarks(old, content, caret, { deleted: fix?.gone });
-  if (settled) {
-    if (Changes.settlingChangesKind(old, settled.content)) return null;
-    ({ content, caret } = settled);
+  if (settles) {
+    const fix = Links.keepHidden(old, content, Links.textLinks(old), caret);
+    if (fix) ({ content, caret } = fix);
+    const settled = Cues.settleMarks(old, content, caret, { deleted: fix?.gone });
+    if (settled) {
+      if (Changes.settlingChangesKind(old, settled.content)) return null;
+      ({ content, caret } = settled);
+    }
   }
   const kept = caret;
 
   // What is put in, at the join.
   if (put) {
     const typed = content.slice(0, caret) + put + content.slice(caret);
-    const s = Cues.settleMarks(content, typed, caret + put.length);
+    const s = settles ? Cues.settleMarks(content, typed, caret + put.length) : null;
     if (s && Changes.settlingChangesKind(typed, s.content)) return null;
     ({ content, caret } = s || { content: typed, caret: caret + put.length });
   }
@@ -106,7 +119,7 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
   // Enter: the line breaks at the caret, settled so no lone marks are left in either part.
   let breakAt = null;
   if (split) {
-    if (!heading && type !== "title") {
+    if (settles) {
       const s = Cues.settleMarks(content, `${content.slice(0, caret)}\n${content.slice(caret)}`, caret + 1);
       if (s?.content[s.caret - 1] === "\n") {
         const at = s.caret - 1, l = s.content.slice(0, at), r = s.content.slice(at + 1);
@@ -151,11 +164,15 @@ export function followShots(doc, shots, result) {
   const join = order.get(result.id) ?? -1;
   const target = spoken.includes(result.id) ? result.id
     : spoken.find((id) => order.get(id) > join) ?? spoken.filter((id) => order.get(id) < join).at(-1) ?? null;
+  // Enter, or pasted text with blank lines, put the last block's words that were left in the block at the caret: its
+  // shots go with them.
+  const lastGone = result.removed.at(-1), caretId = result.caret?.id;
+  const tailTo = caretId && caretId !== result.id && spoken.includes(caretId) ? caretId : target;
   const out = [];
   for (const shot of shots || []) {
     const was = shot.blockIds || [];
     if (!was.some((id) => gone.has(id))) continue;
-    const blockIds = [...new Set(was.map((id) => (gone.has(id) ? target : id)).filter((id) => id && order.has(id)))];
+    const blockIds = [...new Set(was.map((id) => (id === lastGone ? tailTo : gone.has(id) ? target : id)).filter((id) => id && order.has(id)))];
     out.push({ id: shot.id, blockIds, moved: gone.has(was[0]) });
   }
   return out;

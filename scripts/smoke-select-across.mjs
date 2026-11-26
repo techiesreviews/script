@@ -222,7 +222,97 @@ for (const width of [1280, 390]) {
     assert.ok((await spanState(page)).on, "the span is selected again");
     results.push(`${width}px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back`);
 
-    // 10. A click ends the span; the editor goes on as before.
+    // 10. A drag that slips a little past its paragraph, into the gap before the next one, stays inside its paragraph.
+    await page.key("Escape", "Escape", 27);
+    {
+      const a = await page.eval(pointJs(P1, "Why", true));
+      const below = await page.eval(`(() => { const el = [...document.querySelectorAll("#script .block")].find((e) => e.textContent.includes(${JSON.stringify(P1)})); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom + 12 }; })()`);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...a, buttons: 0 });
+      await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= 8; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (below.x - a.x) * i / 8, y: a.y + (below.y - a.y) * i / 8, button: "left", buttons: 1 }); await sleep(25); }
+      await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...below, button: "left", buttons: 0, clickCount: 1 });
+      await sleep(80);
+    }
+    assert.ok(!(await spanState(page)).on, "a drag into the gap below its paragraph is no span");
+    assert.ok(await page.eval(`getSelection().toString().startsWith("Why does it sound")`), "the browser's own selection in the paragraph stays");
+    results.push(`${width}px gap below: met — a drag 12 px past the paragraph stays the paragraph's own selection`);
+    // A press inside the browser's own selection would drag that text away instead of starting a new selection.
+    await page.eval(`getSelection().collapseToStart()`);
+
+    // 11. Right and middle click: a spelling fix from the right-click menu ends the span and changes only its word;
+    // a middle click (a paste of the primary selection on Linux) ends the span first.
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    assert.ok((await spanState(page)).on, "the drag before the right-click drew the span");
+    const inSpan = await page.eval(pointJs(P2, "Long"));
+    for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...inSpan, button: "right", buttons: type === "mousePressed" ? 2 : 0, clickCount: 1 });
+    assert.ok((await spanState(page)).on, "a right-click inside the span keeps it (the menu's Copy)");
+    await page.eval(`document.activeElement.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertReplacementText", data: "Fixed", bubbles: true, cancelable: true }))`);
+    await sleep(100);
+    assert.equal(await md(page), original, "a spelling fix does not replace the span");
+    assert.ok(!(await spanState(page)).on, "a spelling fix ends the span");
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, ...inSpan, button: "middle", buttons: type === "mousePressed" ? 4 : 0, clickCount: 1 });
+    assert.ok(!(await spanState(page)).on, "a middle click ends the span");
+    // On Linux the middle click then pastes the browser's own selection where it was pressed, as it does anywhere; the
+    // span's words all stay.
+    {
+      // Only something put in: once the common start and end are set aside, nothing of the script is left over.
+      const now = await md(page);
+      let a = 0;
+      while (a < original.length && now[a] === original[a]) a++;
+      let z = 0;
+      while (z < original.length - a && now[now.length - 1 - z] === original[original.length - 1 - z]) z++;
+      assert.equal(original.length - a - z, 0, `a middle click never takes the span's words: ${JSON.stringify(now.slice(a - 40, now.length - z + 40))}`);
+    }
+    if ((await md(page)) !== original) await undo(page);
+    await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo takes back the middle click's paste");
+    results.push(`${width}px right and middle click: met — a spelling fix and a middle click never replace the span`);
+
+    // 12. A composition cancelled with nothing typed: the span's delete is its own step, later typing another.
+    await page.key("Escape", "Escape", 27);
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    await page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Dead", code: "Quote", windowsVirtualKeyCode: 222 });
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. Today:")`, "the dead key deleted the span");
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Dead", code: "Quote", windowsVirtualKeyCode: 222 });
+    await page.key("x", "KeyX", 88, { commands: [] });
+    await page.send("Input.insertText", { text: "x" });
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. xToday:")`, "typing after the cancelled composition");
+    await undo(page);
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. Today:")`, "one Undo takes back only the later typing");
+    await undo(page);
+    await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "the next Undo puts the span back");
+    results.push(`${width}px cancelled composition: met — later typing is its own Undo step`);
+
+    // 13. Ctrl+Backspace deletes the span; Ctrl+B (bold) does nothing to it.
+    await page.key("Escape", "Escape", 27);
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    await page.key("b", "KeyB", 66, { modifiers: 2 });
+    assert.equal(await md(page), original, "Ctrl+B leaves the span's words");
+    await page.key("Backspace", "Backspace", 8, { modifiers: 2 });
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. Today:")`, "Ctrl+Backspace deletes the span");
+    await undo(page);
+    await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo after Ctrl+Backspace");
+    results.push(`${width}px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves it`);
+
+    // 14. Cut and Enter (coverage asked for in review): cut copies and deletes; Enter splits at the join.
+    await page.key("Escape", "Escape", 27);
+    // The editor's cut handler stops the event, so what it puts on the clipboard is recorded as it writes it.
+    await page.eval(`window.__cut = null; window.addEventListener("cut", (e) => { const dt = e.clipboardData, set = dt.setData.bind(dt); dt.setData = (type, value) => { window.__cut = value; set(type, value); }; }, { capture: true, once: true })`);
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    await page.key("x", "KeyX", 88, { modifiers: 2, commands: ["cut"] });
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. Today:")`, "cut deletes the span");
+    assert.equal(await page.eval(`window.__cut`), COPIED, "cut gives the same words as copy");
+    await undo(page);
+    await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo after cut");
+    await page.key("Escape", "Escape", 27);
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    await page.key("Enter", "Enter", 13);
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. \\n\\nToday:")`, "Enter splits at the join");
+    await undo(page);
+    await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo after Enter");
+    results.push(`${width}px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo`);
+
+    // 15. A click ends the span; the editor goes on as before.
     await page.click("#script .block[data-type=para]");
     assert.ok(!(await spanState(page)).on, "a click clears the span");
     assert.deepEqual(page.log, [], "no browser errors");
@@ -238,7 +328,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/18 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/28 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);

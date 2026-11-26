@@ -1330,7 +1330,12 @@ scriptEl.addEventListener("input", (e) => {
   if (el) syncFromDom(el);
   state.preCaret = null;
 });
-scriptEl.addEventListener("compositionend", (e) => { const el = blockOf(e.target); if (el) syncFromDom(el); });
+scriptEl.addEventListener("compositionend", (e) => {
+  const el = blockOf(e.target);
+  if (el) syncFromDom(el);
+  // Composed text over a span joined the span's Undo step (see the span keys below); what is typed next is its own.
+  if (state.lastStep?.composing) state.lastStep = null;
+});
 scriptEl.addEventListener("paste", (e) => {
   const el = blockOf(e.target);
   if (!el) return;
@@ -1393,7 +1398,9 @@ function spotAt(x, y) {
 function spanExtend(x, y) {
   const focus = spotAt(x, y);
   if (!focus || !state.doc) return;
-  const next = spanAt(spanDrag.anchor, focus);
+  let next = spanAt(spanDrag.anchor, focus);
+  // In the gap just past the paragraph, no words of the next block are reached yet: the browser's selection stays.
+  if (next && Span.spanFarEmpty(state.doc, next, focus)) next = null;
   if (next || span) setSpan(next);
 }
 // Near the top bar or the window's end, the page scrolls on while the mouse is held, so a drag reaches the whole script.
@@ -1409,9 +1416,14 @@ function spanAutoScroll() {
   // motion-exception: the page follows the held mouse past the window's edge, one frame at a time, only while dragging
   spanScroll = requestAnimationFrame(spanAutoScroll);
 }
-// Any press clears it; a mouse press in a block's text may start the next one.
+// Any press clears it, except a right-click on its own words; a mouse press in a block's text may start the next one.
 document.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0) return;
+  if (e.button !== 0) {
+    const el = span && e.button === 2 && blockOf(e.target);
+    if (span && !(el && Span.spanParts(state.doc, span).some((p) => p.block.id === el.dataset.id))) setSpan(null);
+    spanDrag = null;
+    return;
+  }
   if (span) setSpan(null);
   spanDrag = null;
   if (e.pointerType !== "mouse" || e.shiftKey || !canHighlight() || !state.doc || state.pendingDraft || state.locked) return;
@@ -1482,14 +1494,17 @@ function spanCaret(end) {
 }
 // Keys while it is drawn: caught before the block's own handling.
 scriptEl.addEventListener("keydown", (e) => {
+  const composing = e.isComposing || e.keyCode === 229 || e.key === "Process" || e.key === "Dead";
+  // A plain key after a composition that never finished: what is typed now is a step of its own.
+  if (!composing && state.lastStep?.composing) state.lastStep = null;
   if (!span) return;
   const stop = () => { e.preventDefault(); e.stopPropagation(); };
   // Composed text (accents, Chinese or Japanese input) is typed into the joined block once the span is gone. The
-  // typing that follows joins the span's Undo step, so one Undo takes back both; composing may take a while.
-  if (e.isComposing || e.keyCode === 229 || e.key === "Process" || e.key === "Dead") {
+  // composed text joins the span's Undo step, so one Undo takes back both; composing may take a while.
+  if (composing) {
     const caret = applySpan("");
     if (!caret) setSpan(null);
-    else if (!together?.active) state.lastStep = { kind: "type", id: caret.id, at: Date.now() + COMPOSE_GROUP_MS };
+    else if (!together?.active) state.lastStep = { kind: "type", id: caret.id, at: Date.now() + COMPOSE_GROUP_MS, composing: true };
     return;
   }
   const mod = e.metaKey || e.ctrlKey, k = e.key;
@@ -1497,8 +1512,8 @@ scriptEl.addEventListener("keydown", (e) => {
   if (mod && !e.altKey) {
     const l = k.toLowerCase();
     if (l === "z" || l === "y" || l === "a") return void setSpan(null); // Undo, Redo and select all go on as always
-    if (l === "c" || l === "x" || l === "v" || l === "s") return; // the clipboard events below; saving
-    return stop();
+    if (l === "b" || l === "i" || l === "u" || l === "k") return stop(); // bold and links are for one paragraph
+    if (k.length === 1) return; // copy, cut, paste (the events below), saving and the browser's own keys
   }
   if (k === "Backspace" || k === "Delete") { stop(); applySpan(""); return; }
   if (k === "Enter") {
@@ -1514,10 +1529,12 @@ scriptEl.addEventListener("beforeinput", (e) => {
   if (!span) return;
   const t = e.inputType;
   if (t === "insertCompositionText") return; // started by a key the handler above already turned into a deletion
+  // A spelling fix picked from the right-click menu is for the word it was offered on, not the span.
+  if (t === "insertReplacementText") return void setSpan(null);
   e.preventDefault();
   e.stopPropagation();
   if (t === "historyUndo" || t === "historyRedo") { setSpan(null); t === "historyUndo" ? undo() : redo(); }
-  else if (t === "insertText" || t === "insertReplacementText") applySpan(e.data ?? e.dataTransfer?.getData("text/plain") ?? "");
+  else if (t === "insertText") applySpan(e.data ?? e.dataTransfer?.getData("text/plain") ?? "");
   else if (t === "insertParagraph") spanType() === "raw" ? applySpan("\n") : applySpan("", { split: true });
   else if (t === "insertLineBreak") spanType() === "heading" ? applySpan("", { split: true }) : applySpan("\n");
   else if (t.startsWith("delete")) applySpan("");
