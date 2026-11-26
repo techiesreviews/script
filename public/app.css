@@ -709,7 +709,7 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
   .shot-frame[data-drag] .shot-frame__jump { cursor: grab; }
   :root[data-dragging], :root[data-dragging] :is(*, .shot-frame[data-drag] .shot-frame__jump) { cursor: grabbing; }
   .shot-frame__jump:hover .frame__img { box-shadow: inset 0 0 0 1px var(--line-strong); }
-  .shot-frame[data-lit] .shot-frame__jump:hover .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
+  .shot-frame:is([data-lit], [data-moved]) .shot-frame__jump:hover .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
   .shot-frame__jump:hover .broll-tag { color: var(--text); border-color: var(--faint); }
 }
 /* A thin rule beside every covered line; it runs on to the next covered line. */

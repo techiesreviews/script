@@ -50,8 +50,15 @@ After the review (round 4):
 
 ## Limits
 
-- In a shared script Undo is each person's own (the room's), so the span step there has no shots or span to put back; a guest's span edit moves no shots (the host's list is the host's).
+- Shared scripts keep the one-paragraph selection for now (Lex, 2026-11-26, TOOLS-477): while a room is on (`together.active`, host and guests) no drag starts a span, and a span drawn before the room started ends at the next key, copy, cut, paste or redraw. The room's Undo is each person's own and records only one-block changes (typing in one block, one split, one join), so one Undo could not take back an edit across paragraphs. Batch Undo in rooms is TOOLS-478.
 - Touch screens and browsers without the Highlight API keep the old one-paragraph selection.
+
+## TOOLS-477 (after the merge, 2026-11-26)
+
+- Shared scripts: the span is off in a room (above, `spanShared` in `public/app.js`).
+- Enter over a span that ends at the end of a last word that is a link (`Second [two](https://example.com)`): the hidden address is not words left, so the paragraph's shots stay at the join (`wordsAfter` in `public/span.js` counts only the spoken letters and digits of a paragraph).
+- A moved shot keeps its orange frame under the mouse (`app.css`, the hover rule covers `[data-moved]` as it did `[data-lit]`).
+- Tests first: a `span.test.mjs` case (the linked last word) failed first (`rest` was true), then passed. Two browser checks failed first: the moved shot under the mouse showed the thin grey frame (`oklch(0.84 0 none) 0px 0px 0px 1px inset`), and in a shared script the host's drag drew a span over three paragraphs; both pass after the fix, 36/36 at 1280 and 390 px (`docs/agents/evidence/tools-470-browser.txt`). Headless Chrome reports no mouse unless started with the `--blink-settings` flags named at the top of `scripts/smoke-select-across.mjs`; the mouse-over check refuses to run without them.
 
 ## Tests first
 

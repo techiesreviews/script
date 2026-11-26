@@ -1350,6 +1350,9 @@ scriptEl.addEventListener("paste", (e) => {
 // its words; cut, delete, typing, Enter and paste replace it in one Undo step; shots on the paragraphs it takes out go
 // to the joined one.
 const canHighlight = () => !!window.CSS?.highlights && typeof Highlight === "function";
+// In a shared script the selection stays inside one paragraph, as before (Lex, 2026-11-26, TOOLS-477): the room's
+// Undo is each person's own and records only one-block changes, so an edit across paragraphs could not be taken back.
+const spanShared = () => !!together?.active;
 let spanDrag = null, spanPoint = null, spanScroll = 0;
 const COMPOSE_GROUP_MS = 60000;
 // The notes folded away at the top are never part of it, even from a drag that starts on the title.
@@ -1365,14 +1368,14 @@ function setSpan(next) {
 }
 // The span, if the blocks it covers are as they were.
 function liveSpan() {
-  if (span && (!state.doc || spanSees(span) !== spanSaw)) setSpan(null);
+  if (span && (!state.doc || spanShared() || spanSees(span) !== spanSaw)) setSpan(null);
   return span;
 }
 // Drawn again after every render (the blocks' text nodes are new) and kept to the script as it is now.
 function paintSpan() {
   if (!canHighlight()) return;
   if (span && state.doc) {
-    const now = spanSees(span) === spanSaw && spanAt(span.from, span.to);
+    const now = !spanShared() && spanSees(span) === spanSaw && spanAt(span.from, span.to);
     if (!now) { span = spanSaw = null; scriptEl.removeAttribute("data-span"); }
     else if (now !== span) { span = now; spanSaw = spanSees(now); }
   }
@@ -1436,7 +1439,7 @@ document.addEventListener("pointerdown", (e) => {
   }
   if (span) setSpan(null);
   spanDrag = null;
-  if (e.pointerType !== "mouse" || e.shiftKey || !canHighlight() || !state.doc || state.pendingDraft || state.locked) return;
+  if (e.pointerType !== "mouse" || e.shiftKey || !canHighlight() || spanShared() || !state.doc || state.pendingDraft || state.locked) return;
   const el = blockOf(e.target);
   if (!el || el.closest("details:not([open])")) return;
   const anchor = spotAt(e.clientX, e.clientY);

@@ -186,4 +186,14 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   const marks = Span.replaceSpan(bold, Span.spanOf(bold, at(bold, 2, 6), at(bold, 3, len - 2)), "", { split: true });
   assert.equal(marks.rest, false, "no words of the last block are left");
   assert.deepEqual(Span.followShots(marks.doc, [{ id: "B2", blockIds: [b2] }], marks), [{ id: "B2", blockIds: [b1], moved: true }]);
+  // A last block that ends in a link, selected up to the end of its words: the hidden address is not words left.
+  const link = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond [two](https://example.com)\n");
+  const [, , l1, l2] = ids(link), words = Doc.contentOf(Doc.blockById(link, l2)).indexOf("](");
+  const linked = Span.replaceSpan(link, Span.spanOf(link, at(link, 2, 6), at(link, 3, words)), "", { split: true });
+  assert.equal(linked.rest, false, "no words of the last block are left");
+  assert.deepEqual(Span.followShots(linked.doc, [{ id: "B2", blockIds: [l2] }], linked), [{ id: "B2", blockIds: [l1], moved: true }]);
+  // Words after the link are still words left.
+  const after = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond [two](https://example.com) three\n");
+  const at2 = Doc.contentOf(after.blocks[3]).indexOf("](");
+  assert.equal(Span.replaceSpan(after, Span.spanOf(after, at(after, 2, 6), at(after, 3, at2)), "", { split: true }).rest, true);
 });

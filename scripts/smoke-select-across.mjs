@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // TOOLS-470: select across paragraphs with the mouse. Start a local Worker (wrangler dev) and a headless Chrome through
 // kit bg, then run: node scripts/smoke-select-across.mjs http://127.0.0.1:<port> <Chrome debugging port>.
+// Headless Chrome reports no mouse unless told: start it with
+// --blink-settings=primaryPointerType=4,primaryHoverType=2,availablePointerTypes=4,availableHoverTypes=2
+// so the hover styles apply (the mouse-over check refuses to run without them).
 // Each case has a private browser context, disposed afterwards. It opens only the demo script and its own made-up
 // B-roll list; it never connects an agent or opens a person's scripts.
 // Checked with real input: a mouse drag from one paragraph into another (Input.dispatchMouseEvent with buttons: 1 while
@@ -368,7 +371,25 @@ for (const width of [1280, 390]) {
       results.push(`${width}px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it`);
     }
 
-    // 17. A click ends the span; the editor goes on as before.
+    // 17. A moved shot keeps its orange frame while the mouse is over it (TOOLS-477).
+    {
+      assert.ok(await page.eval(`matchMedia("(hover: hover) and (pointer: fine)").matches`), "Chrome reports a mouse (see the flags at the top)");
+      await drag(page, [P1, "Why"], [P3, "Today:"]);
+      await page.key("Delete", "Delete", 46);
+      await page.until(`!!document.querySelector(".shot-frame[data-moved]")`, "a moved shot");
+      const box = await page.eval(`(() => { const el = document.querySelector(".shot-frame[data-moved] .shot-frame__jump"); el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...box, buttons: 0 });
+      await page.until(`document.querySelector(".shot-frame[data-moved] .shot-frame__jump").matches(":hover")`, "the mouse over the moved shot");
+      const frame = await page.eval(`getComputedStyle(document.querySelector(".shot-frame[data-moved] .frame__img")).boxShadow`);
+      const accent = await page.eval(`(() => { const d = document.createElement("i"); d.style.color = "var(--accent)"; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; })()`);
+      assert.ok(frame.includes(accent) && /\b2px\b/.test(frame), `the moved shot keeps its orange frame on mouse-over: ${frame}`);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1, buttons: 0 });
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo after the hover check");
+      results.push(`${width}px moved shot on mouse-over: met — the orange frame stays (${frame})`);
+    }
+
+    // 18. A click ends the span; the editor goes on as before.
     await page.click("#script .block[data-type=para]");
     assert.ok(!(await spanState(page)).on, "a click clears the span");
     assert.deepEqual(page.log, [], "no browser errors");
@@ -376,6 +397,39 @@ for (const width of [1280, 390]) {
     await drag(page, [P1, "Why"], [P3, "Today:"]);
     const png = await page.send("Page.captureScreenshot", { format: "png" });
     await writeFile(`.scratch/tools-470-shots/${width}.png`, Buffer.from(png.data, "base64"));
+    await page.click("#script .block[data-type=para]");
+
+    // 19. In a shared script the selection stays inside one paragraph, as before (Lex, 2026-11-26, TOOLS-477): one
+    // Undo there could not take back an edit across paragraphs. Host and guest alike.
+    {
+      await page.eval(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__link = t; } } }); true`);
+      await page.click("#shareBtn");
+      await page.until(`!!window.__link`, "the share link");
+      const guest = await openPage(width, 1000);
+      try {
+        await guest.send("Page.navigate", { url: await page.eval(`window.__link`) });
+        await guest.until(`!document.querySelector("#joinForm").hidden`, "the Join form");
+        await guest.eval(`document.querySelector("#joinName").value = "Guest"; true`);
+        await guest.click("#joinForm button");
+        await guest.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(P3)})`, "the guest's script", 12000);
+        // The host's Delete takes only the words it selected in the first paragraph ("Why …"), so the guest starts at
+        // another word of it.
+        for (const [who, tab, word] of [["host", page, "Why"], ["guest", guest, "deadline"]]) {
+          await tab.send("Page.bringToFront");
+          await drag(tab, [P1, word], [P3, "Today:"]);
+          const s = await spanState(tab);
+          assert.ok(!s.on && s.ranges === 0, `${who}: no selection across paragraphs in a shared script: ${JSON.stringify(s)}`);
+          await tab.key("Delete", "Delete", 46);
+          await sleep(200);
+          const text = await md(tab);
+          assert.ok(text.includes(P2) && text.includes(P3), `${who}: Delete leaves the other paragraphs`);
+          assert.deepEqual(tab.log, [], `${who}: no browser errors`);
+        }
+        results.push(`${width}px shared script: met — host and guest drags stay inside one paragraph; Delete leaves the other paragraphs`);
+      } finally {
+        await guest.close();
+      }
+    }
   } catch (error) {
     console.log(`DIAGNOSTIC ${width}px: ${JSON.stringify(await spanState(page).catch(() => null))} log=${JSON.stringify(page.log)}`);
     throw error;
@@ -384,7 +438,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/32 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/36 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
