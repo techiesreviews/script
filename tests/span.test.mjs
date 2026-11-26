@@ -332,3 +332,135 @@ test("Enter over a span: a list item that ends in a link, joined into a paragrap
   assert.equal(item.rest, false, "no words of the list item are left");
   assert.deepEqual(Span.followShots(item.doc, [{ id: "B3", blockIds: [i2] }], item), [{ id: "B3", blockIds: [i1], moved: true }]);
 });
+
+// TOOLS-484: asks and "Sounds like me" marks on words the span leaves go with those words by their offsets
+// (replaceSpan's `follow`), never by a search for their quote: a repeated word has more than one copy.
+const followed = (r, side, start, end) => {
+  const to = r.follow(side, start, end);
+  return to && { ...to, reads: Doc.contentOf(Doc.blockById(r.doc, to.id)).slice(to.start, to.end) };
+};
+
+test("follow: an ask on a repeated word before the span stays on that copy when the delete takes the bold marks", () => {
+  const doc = Doc.parse("# T\n\n**go go go live**\n\nOther paragraph.\n");
+  const [, a] = ids(doc);
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 11), at(doc, 2, 6)), "");
+  assert.equal(Doc.contentOf(Doc.blockById(r.doc, a)), "go go go paragraph.");
+  assert.deepEqual(followed(r, "first", 2, 4), { id: a, start: 0, end: 2, quote: "go", reads: "go" }, "the first \"go\"");
+  assert.deepEqual(followed(r, "first", 5, 7), { id: a, start: 3, end: 5, quote: "go", reads: "go" }, "the second \"go\"");
+  assert.deepEqual(followed(r, "first", 8, 10), { id: a, start: 6, end: 8, quote: "go", reads: "go" }, "the third \"go\"");
+  assert.deepEqual(followed(r, "last", 6, 15), { id: a, start: 9, end: 18, quote: "paragraph", reads: "paragraph" });
+  // Words the span took, or cut, have no place.
+  assert.equal(r.follow("first", 8, 15), null, "cut by the span's start");
+  assert.equal(r.follow("first", 11, 15), null, "inside the span");
+  assert.equal(r.follow("last", 0, 5), null, "inside the span, in the last block");
+  assert.equal(r.follow("last", 4, 9), null, "cut by the span's end");
+});
+
+test("follow: an ask on a repeated word after the span stays on that copy when the delete takes the bold marks before it", () => {
+  const doc = Doc.parse("# T\n\nIntro words\n\n**live go** go go end\n");
+  const [, a] = ids(doc);
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 6), at(doc, 2, 7)), "");
+  assert.equal(Doc.contentOf(Doc.blockById(r.doc, a)), "Intro go go go end");
+  assert.deepEqual(followed(r, "last", 7, 9), { id: a, start: 6, end: 8, quote: "go", reads: "go" }, "the first \"go\"");
+  assert.deepEqual(followed(r, "last", 12, 14), { id: a, start: 9, end: 11, quote: "go", reads: "go" }, "the second \"go\"");
+  assert.deepEqual(followed(r, "last", 15, 17), { id: a, start: 12, end: 14, quote: "go", reads: "go" }, "the third \"go\"");
+  assert.deepEqual(followed(r, "first", 0, 5), { id: a, start: 0, end: 5, quote: "Intro", reads: "Intro" });
+});
+
+test("follow: bold words that stay bold keep their marks in the quote; typed text goes between the two sides", () => {
+  const doc = Doc.parse("# T\n\nSay **go go** now and then\n\nOther go **go go** end\n");
+  const [, a] = ids(doc);
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 17), at(doc, 2, 6)), " XY ");
+  assert.equal(Doc.contentOf(Doc.blockById(r.doc, a)), "Say **go go** now XY go **go go** end");
+  assert.deepEqual(followed(r, "first", 9, 11), { id: a, start: 9, end: 11, quote: "go", reads: "go" }, "the second \"go\" before the span");
+  assert.deepEqual(followed(r, "first", 4, 13), { id: a, start: 4, end: 13, quote: "**go go**", reads: "**go go**" }, "bold words before the span, marks and all");
+  assert.deepEqual(followed(r, "first", 14, 17), { id: a, start: 14, end: 17, quote: "now", reads: "now" }, "words that end where the span starts stay before what is typed");
+  assert.deepEqual(followed(r, "last", 6, 8), { id: a, start: 21, end: 23, quote: "go", reads: "go" }, "words that start where the span ends go after what is typed");
+  assert.deepEqual(followed(r, "last", 9, 18), { id: a, start: 24, end: 33, quote: "**go go**", reads: "**go go**" }, "bold words after the span, marks and all");
+  assert.deepEqual(followed(r, "last", 14, 16), { id: a, start: 29, end: 31, quote: "go", reads: "go" }, "the last \"go\" after the span");
+});
+
+test("follow: Enter over the span takes the last block's words to the new block; the first block's stay", () => {
+  const doc = Doc.parse("# T\n\n**go go go live**\n\nOther **go go** end\n");
+  const [, a] = ids(doc);
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 11), at(doc, 2, 6)), "", { split: true });
+  assert.deepEqual(contents(r.doc).slice(1), ["para:go go go ", "para:**go go** end"]);
+  assert.notEqual(r.caret.id, a);
+  assert.deepEqual(followed(r, "first", 5, 7), { id: a, start: 3, end: 5, quote: "go", reads: "go" });
+  assert.deepEqual(followed(r, "last", 11, 13), { id: r.caret.id, start: 5, end: 7, quote: "go", reads: "go" });
+  assert.deepEqual(followed(r, "last", 16, 19), { id: r.caret.id, start: 10, end: 13, quote: "end", reads: "end" });
+});
+
+test("follow: pasted text with a blank line makes paragraphs; each side's words are found in the block they went to", () => {
+  const doc = Doc.parse(SCRIPT);
+  const [, , a] = ids(doc);
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 3, 7)), "X\n\nY");
+  assert.deepEqual(contents(r.doc).slice(2, 4), ["para:First X", "para:Ypara two."]);
+  assert.deepEqual(followed(r, "first", 0, 5), { id: a, start: 0, end: 5, quote: "First", reads: "First" });
+  assert.deepEqual(followed(r, "last", 7, 11), { id: r.doc.blocks[3].id, start: 1, end: 5, quote: "para", reads: "para" });
+  assert.deepEqual(followed(r, "last", 12, 15), { id: r.doc.blocks[3].id, start: 6, end: 9, quote: "two", reads: "two" });
+});
+
+test("follow: a paragraph joined into a section title keeps its words on one line; words across a line break have no place", () => {
+  const doc = Doc.parse("# T\n\n## 1 · Hook\n\nOne go go\ntwo go go three.\n");
+  const [, h] = ids(doc);
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 4), at(doc, 2, 4)), "");
+  assert.deepEqual(contents(r.doc).slice(1), ["heading:1 · go go two go go three."]);
+  assert.deepEqual(followed(r, "first", 0, 1), { id: h, start: 0, end: 1, quote: "1", reads: "1" });
+  assert.deepEqual(followed(r, "last", 7, 9), { id: h, start: 7, end: 9, quote: "go", reads: "go" }, "the second \"go\" of the first line");
+  assert.deepEqual(followed(r, "last", 14, 16), { id: h, start: 14, end: 16, quote: "go", reads: "go" }, "the first \"go\" of the second line");
+  assert.deepEqual(followed(r, "last", 17, 19), { id: h, start: 17, end: 19, quote: "go", reads: "go" }, "the second \"go\" of the second line");
+  assert.equal(r.follow("last", 7, 13), null, "\"go\\ntwo\" reads \"go two\" now");
+});
+
+test("follow: every word outside the span keeps the words around it, wherever the span is and whatever replaces it", (t) => {
+  const plain = (s) => s.replaceAll("**", "");
+  const firsts = ["**go go go live**", "go **go** go live now", "Say go, go and go", "**go** go **go** end"];
+  const lasts = ["Other paragraph.", "**live go** go go end", "Other **go go** go", "go go **go** go", "Other go go end."];
+  const edits = [["", {}], ["X", {}], [" ", {}], ["", { split: true }], ["A\n\nB", {}]];
+  const inMark = (s, i) => (s[i - 1] === "*" && s[i] === "*") && (s.slice(0, i).match(/\*+$/)[0].length % 2 === 1);
+  let placed = 0, gone = 0;
+  for (const head of firsts) for (const tail of lasts) {
+    const doc = Doc.parse(`# T\n\n${head}\n\n${tail}\n`);
+    const [, a] = ids(doc);
+    for (let from = 0; from <= head.length; from++) for (let to = 0; to <= tail.length; to++) {
+      if (inMark(head, from) || inMark(tail, to)) continue;
+      for (const [put, how] of edits) {
+        const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, from), at(doc, 2, to)), put, how);
+        if (!r) continue; // refused: nothing changes
+        const where = `"${head}" from ${from} to ${to} of "${tail}", ${JSON.stringify(put)}${how.split ? " Enter" : ""}`;
+        for (const [side, text] of [["first", head], ["last", tail]]) {
+          for (const m of text.matchAll(/[A-Za-z]+/g)) {
+            const start = m.index, end = start + m[0].length;
+            if (side === "first" ? end > from : start < to) { assert.equal(r.follow(side, start, end), null, `${where}: "${m[0]}" at ${start} of the ${side} is not outside the span`); continue; }
+            const now = r.follow(side, start, end);
+            if (!now) { gone++; assert.ok(/\*/.test(head + tail), `${where}: with no bold anywhere, "${m[0]}" at ${start} of the ${side} has a place`); continue; }
+            placed++;
+            const content = Doc.contentOf(Doc.blockById(r.doc, now.id));
+            assert.equal(now.quote, m[0], `${where}: the quote of "${m[0]}" at ${start} of the ${side}`);
+            assert.equal(content.slice(now.start, now.end), m[0], `${where}: "${m[0]}" at ${start} of the ${side} reads there`);
+            // The same copy: what was before it in its paragraph still is (first block), or what was after it (last).
+            if (side === "first") {
+              assert.equal(now.id, a, `${where}: "${m[0]}" at ${start} stays in the first block`);
+              assert.equal(plain(content.slice(0, now.start)), plain(head.slice(0, start)), `${where}: the words before "${m[0]}" at ${start} of the first`);
+            } else assert.equal(plain(content.slice(now.end)), plain(tail.slice(end)), `${where}: the words after "${m[0]}" at ${start} of the last`);
+          }
+        }
+      }
+    }
+  }
+  t.diagnostic(`${placed} words placed, ${gone} gone`);
+  assert.ok(placed > 20000 && gone < placed / 20, `most words have a place: ${placed} placed, ${gone} gone`);
+});
+
+test("follow: a link cut by the span keeps the words that are left; an ask before it stays on its own copy", () => {
+  const doc = Doc.parse("# T\n\nRead it, read [it and more](https://example.com) now\n\nOther it end\n");
+  const [, a] = ids(doc);
+  const cut = "Read it, read [it".length;
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, cut), at(doc, 2, 6)), "");
+  const joined = Doc.contentOf(Doc.blockById(r.doc, a));
+  assert.equal(joined, "Read it, read [it](https://example.com)it end");
+  assert.deepEqual(followed(r, "first", 5, 7), { id: a, start: 5, end: 7, quote: "it", reads: "it" }, "the first \"it\"");
+  assert.deepEqual(followed(r, "first", 15, 17), { id: a, start: 15, end: 17, quote: "it", reads: "it" }, "the link's \"it\"");
+  assert.deepEqual(followed(r, "last", 6, 8), { id: a, start: joined.lastIndexOf("it end"), end: joined.lastIndexOf("it end") + 2, quote: "it", reads: "it" }, "the last block's \"it\"");
+});

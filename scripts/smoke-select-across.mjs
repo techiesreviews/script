@@ -723,6 +723,142 @@ for (const width of [1280, 390]) {
       results.push(`${width}px composed text over the span with an ask after it (fix round 3): met — "${typed}" over the span moved the ask on the second "keep" to 20–24; Undo, Redo and Undo kept it open on that "keep" each time`);
     }
 
+    // 16h–16j. Asks on a repeated word (TOOLS-484). The delete takes bold marks, so every copy of the word shifts: an ask
+    // or a "Sounds like me" mark goes with its own copy by its offsets, never to the nearest copy found by a search.
+    {
+      const blockIndex = (start) => page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(start)}))`);
+      const line = (start) => page.eval(`window.__scriptEditor.markdown().split("\\n").find((l) => l.startsWith(${JSON.stringify(start)}))`);
+      const write = async (from, text) => {
+        const id = await page.eval(`window.__scriptEditor.ask(${await blockIndex(from)}, 0, ${(await line(from)).length}, "simpler")`);
+        assert.ok(id && await page.eval(`window.__scriptEditor.answer(${JSON.stringify(id)}, { kind: "replace", text: ${JSON.stringify(text)} })`), `the agent writes "${text}"`);
+        await page.until(`window.__scriptEditor.markdown().includes(${JSON.stringify(`\n${text}\n`)})`, `"${text}" in the script`);
+        await page.key("Escape", "Escape", 27);
+      };
+      const askOn = async (start, from, to, label) => {
+        const id = await page.eval(`window.__scriptEditor.ask(${await blockIndex(start)}, ${from}, ${to}, "simpler")`);
+        assert.ok(id, `an ask on ${label}`);
+        await page.key("Escape", "Escape", 27);
+        return id;
+      };
+      // Where an ask (or the first mark of a "Sounds like me" check) is: its block's first letters (without the asks'
+      // chips, which sit in the text), its words, its offsets.
+      const where = (id) => page.eval(`(() => {
+        const a = window.__scriptEditor.asks().find((x) => x.id === ${JSON.stringify(id)}), x = a.scope === "script" ? a.answer.marks[0] : a;
+        const el = [...document.querySelectorAll("#script .block")].find((e) => e.dataset.id === x.blockId)?.cloneNode(true);
+        for (const skip of el?.querySelectorAll("[data-skip]") || []) skip.remove();
+        return { is: a.scope === "script" ? x.state : a.status, in: el?.textContent.slice(0, 4) || "", words: x.quote, at: [x.start, x.end] };
+      })()`);
+      const all = async (ids) => Object.fromEntries(await Promise.all(Object.entries(ids).map(async ([name, id]) => [name, await where(id)])));
+      // A drag from just before `from` (a word of the block that holds `a`) to just before `to` (a word of the block that
+      // holds `b`). `a` and `b` are words that no ask's chip sits in. A chip drawn a moment after its ask moves the
+      // words after it, so the drag waits until both points stay where they are.
+      const select = async ([a, from], [b, to]) => {
+        const points = () => page.eval(`JSON.stringify([${pointJs(a, from, true)}, ${pointJs(b, to)}])`);
+        for (let seen = await points(), i = 0; i < 30; i++) {
+          await sleep(120);
+          const again = await points();
+          if (again === seen) break;
+          seen = again;
+        }
+        await drag(page, [a, from], [b, to]);
+        assert.ok((await spanState(page)).on, `the span is drawn from "${from}" to "${to}"`);
+      };
+      const redo = () => page.key("y", "KeyY", 89, { modifiers: 2 });
+      const back = async (label) => {
+        await page.key("Escape", "Escape", 27);
+        for (let i = 0; i < 10 && (await md(page)) !== original; i++) { await undo(page); await sleep(150); }
+        assert.equal(await md(page), original, `Undo takes the agent's paragraphs back (${label})`);
+      };
+
+      // 16h. "**go go go live**" and "Other paragraph.", an ask and a "Sounds like me" mark on the first "go", the span
+      // from "live" through "Other ": the joined paragraph reads "go go go paragraph.", and both are on its first "go"
+      // through Delete, Undo, Redo and Undo.
+      await write(P2, "Other paragraph.");
+      await write(P1, "**go go go live**");
+      const ids = { ask: await askOn("**go", 2, 4, "the first \"go\"") };
+      ids.mark = await page.eval(`window.__scriptEditor.voiceCheck()`);
+      assert.ok(ids.mark && await page.eval(`window.__scriptEditor.answer(${JSON.stringify(ids.mark)}, { kind: "marks", marks: [{ quote: "go", why: "test" }] })`), "a Sounds like me mark on the first \"go\"");
+      ids.after = await askOn("Other", 6, 15, "\"paragraph\", after the span");
+      const first = { is: "waiting", in: "**go", words: "go", at: [2, 4] };
+      const before = { ask: first, mark: { ...first, is: "open" }, after: { is: "waiting", in: "Othe", words: "paragraph", at: [6, 15] } };
+      let now = await all(ids);
+      assert.deepEqual(now, before, `the ask and the mark are on the first "go": ${JSON.stringify(now)}`);
+      const withAsks = await md(page);
+      const gone = `!window.__scriptEditor.markdown().includes("Other")`;
+      await select(["go go live", "live"], ["Other ", "paragraph"]);
+      await page.key("Delete", "Delete", 46);
+      await page.until(gone, "the span went");
+      const deleted = await md(page);
+      assert.equal(await line("go go go"), "go go go paragraph.", `the joined paragraph lost its bold marks: ${JSON.stringify(deleted.replace(withAsks.slice(0, withAsks.indexOf("**go go go live**")), "").slice(0, 60))}`);
+      const onFirst = { is: "waiting", in: "go g", words: "go", at: [0, 2] };
+      const joined = { ask: onFirst, mark: { ...onFirst, is: "open" }, after: { is: "waiting", in: "go g", words: "paragraph", at: [9, 18] } };
+      now = await all(ids);
+      assert.deepEqual(now, joined, `after Delete the ask and the mark are on the first "go" (0–2), not the second (3–5): ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withAsks)}`, "Undo puts the words back");
+      now = await all(ids);
+      assert.deepEqual(now, before, `after Undo both are on the first "go" of "**go go go live**": ${JSON.stringify(now)}`);
+      await redo();
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(deleted)}`, "Redo deletes the span again");
+      now = await all(ids);
+      assert.deepEqual(now, joined, `after Redo both are on the first "go" of the joined paragraph: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withAsks)}`, "Undo again puts the words back");
+      now = await all(ids);
+      assert.deepEqual(now, before, `after the second Undo both are on the first "go" again: ${JSON.stringify(now)}`);
+      results.push(`${width}px ask on a repeated word before the span (TOOLS-484): met — "**go go go live**" + "Other paragraph.", an ask and a Sounds like me mark on the first "go", the span from "live" through "Other " deleted: both were on the first "go" of "go go go paragraph." (0–2), back on it after Undo (2–4), on it after Redo and after Undo again; the ask on "paragraph" followed too`);
+
+      // 16i. Undo through a span step that is not the latest one: after the same delete "Now " is typed at the join, then
+      // Undo twice. The first takes the typed text, the second the delete: the text and all three are as before it.
+      await select(["go go live", "live"], ["Other ", "paragraph"]);
+      await page.key("Delete", "Delete", 46);
+      await page.until(gone, "the span went (typed after)");
+      for (const ch of "Now ") await page.send("Input.insertText", { text: ch });
+      await page.until(`window.__scriptEditor.markdown().includes("\\ngo go go Now paragraph.\\n")`, "\"Now \" typed at the join");
+      now = await all(ids);
+      assert.deepEqual(now, { ...joined, after: { ...joined.after, at: [13, 22] } }, `the typed text leaves the first "go" alone and shifts "paragraph": ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(deleted)}`, "the first Undo takes the typed text");
+      now = await all(ids);
+      assert.deepEqual(now, joined, `after the first Undo all three are where the delete left them: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withAsks)}`, "the second Undo takes the delete");
+      now = await all(ids);
+      assert.deepEqual(now, before, `after the second Undo the text and all three are as before the delete: ${JSON.stringify(now)}`);
+      results.push(`${width}px Undo through a span delete that is not the latest step (TOOLS-484): met — after the delete "Now " was typed at the join; the first Undo took the typed text, the second put "**go go go live**" and "Other paragraph." back with the ask and the mark on the first "go" and the ask on "paragraph", all open`);
+      await back("a repeated word before the span");
+
+      // 16j. The same after the span: "Intro words" and "**live go** go go end", an ask on the second "go", the span from
+      // "words" through "**live ". The delete takes the bold marks in front of the ask, so a plain shift is two off.
+      await write(P2, "**live go** go go end");
+      await write(P1, "Intro words");
+      const later = await askOn("**live", 12, 14, "the second \"go\" after the span");
+      const there = { is: "waiting", in: "**li", words: "go", at: [12, 14] };
+      now = await where(later);
+      assert.deepEqual(now, there, `the ask is on the second "go": ${JSON.stringify(now)}`);
+      const withLater = await md(page);
+      await select(["Intro words", "words"], ["live go", "go"]);
+      await page.key("Delete", "Delete", 46);
+      await page.until(`!window.__scriptEditor.markdown().includes("live")`, "the span went (after it)");
+      assert.equal(await line("Intro "), "Intro go go go end", "the joined paragraph lost the bold marks");
+      const second = { is: "waiting", in: "Intr", words: "go", at: [9, 11] };
+      now = await where(later);
+      assert.deepEqual(now, second, `after Delete the ask is on the second "go" (9–11), not the third (12–14): ${JSON.stringify(now)}`);
+      const cut = await md(page);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withLater)}`, "Undo puts the words back (after it)");
+      now = await where(later);
+      assert.deepEqual(now, there, `after Undo the ask is on the second "go" of its paragraph: ${JSON.stringify(now)}`);
+      await redo();
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(cut)}`, "Redo deletes the span again (after it)");
+      now = await where(later);
+      assert.deepEqual(now, second, `after Redo the ask is on the second "go" of the joined paragraph: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withLater)}`, "Undo again (after it)");
+      results.push(`${width}px ask on a repeated word after the span (TOOLS-484): met — "Intro words" + "**live go** go go end", an ask on the second "go", the span from "words" through "**live " deleted: the ask was on the second "go" of "Intro go go go end" (9–11), back on it after Undo (12–14), on it again after Redo`);
+      await back("a repeated word after the span");
+    }
+
     // 17. A moved shot keeps its orange frame while the mouse is over it (TOOLS-477).
     {
       assert.ok(await page.eval(`matchMedia("(hover: hover) and (pointer: fine)").matches`), "Chrome reports a mouse (see the flags at the top)");
@@ -830,7 +966,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/58 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/64 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);

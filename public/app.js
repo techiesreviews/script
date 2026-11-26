@@ -1502,19 +1502,32 @@ function applySpan(text, { split = false } = {}) {
   // Never in a shared script (spanShared): the step is this tab's own Undo.
   const step = state.undo.at(-1);
   if (step) Object.assign(step, { span: was, otherSpan: null });
-  // Open asks and "Sounds like me" marks: those the span covered go, those after it in its last block follow their words
-  // to where they now are, the rest stay.
-  for (const a of state.asks) {
-    if (a.scope === "selection" && a.blockId === first && isOpen(a) && !isBrollAnswer(a) && a.end > was.from.offset) closeAsk(a, "cancelled");
-    if (a.scope === "script" && a.status === "answered") for (const m of a.answer.marks) if (m.state === "open" && m.blockId === first && m.end > was.from.offset) m.state = "gone";
+  // Open asks and "Sounds like me" marks in the span's first and last block go with their words, by their offsets
+  // (replaceSpan's `follow`): before the span in its first block, after it in its last. They are never searched for by
+  // their quote, so one on a repeated word stays on its own copy when bold or link marks before it go (TOOLS-484). Those
+  // the span covered or cut go.
+  const placed = Doc.placeAsks(state.asks, (x, ask) => {
+    const side = x.blockId === first ? "first" : x.blockId === last ? "last" : null;
+    if (!side) return undefined;
+    const to = r.follow(side, x.start, x.end);
+    if (to) return { blockId: to.id, start: to.start, end: to.end, quote: to.quote };
+    // A "Suggest B-roll" answer is never closed by an edit: without a place for its words it moves as it always did.
+    if (!isBrollAnswer(ask)) return null;
+    const shift = r.caret.offset - was.to.offset;
+    return side === "last" && x.start >= was.to.offset ? { blockId: r.caret.id, start: x.start + shift, end: x.end + shift, quote: x.quote } : undefined;
+  });
+  for (const { ask, mark } of placed.gone) {
+    if (mark < 0) closeAsk(ask, "cancelled");
+    else ask.answer.marks[mark].state = "gone";
   }
+  for (const { ask, mark } of placed.gone) if (mark >= 0) settleVoice(ask);
   // The Undo step takes these moves back before asks are found again, so they stay open on their words (TOOLS-483).
-  const moves = moveAsks(last, r.caret.id, was.to.offset, r.caret.offset - was.to.offset);
-  if (step && moves.length) step.askMoves = moves;
+  if (step && placed.moves.length) step.askMoves = placed.moves;
   const shots = Span.followShots(r.doc, brollApi?.shots() || [], r);
   state.doc = r.doc;
   boldTyping = linksBefore = null;
-  for (const id of new Set([first, r.caret.id, ...r.removed])) reanchorBlock(id);
+  // Asks in the paragraphs between are gone with them.
+  for (const id of r.removed) reanchorBlock(id);
   setSpan(null);
   renderAll(r.caret);
   const back = shots.length ? brollApi?.followSpan(shots) : null;
@@ -4840,7 +4853,8 @@ window.__scriptEditor = {
     const b = state.doc?.blocks[blockIndex];
     if (!b) return null;
     const content = Doc.contentOf(b);
-    barSel = { id: b.id, start, end, quote: content.slice(start, end) };
+    // As the edit bar does: where the words start without bold marks, so the ask is on this copy of them.
+    barSel = { id: b.id, start, end, quote: content.slice(start, end), plainAt: plainOffset(content, start) };
     return makeAsk(action, typed)?.id ?? null;
   },
 };
