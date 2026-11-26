@@ -1403,6 +1403,7 @@ function spanAutoScroll() {
   if (!over) return;
   scrollBy(0, Math.sign(over) * Math.min(28, 2 + Math.ceil(Math.abs(over) / 3)));
   spanExtend(x, y);
+  // motion-exception: the page follows the held mouse past the window's edge, one frame at a time, only while dragging
   spanScroll = requestAnimationFrame(spanAutoScroll);
 }
 // Any press clears it; a mouse press in a block's text may start the next one.
