@@ -1554,9 +1554,9 @@ scriptEl.addEventListener("beforeinput", (e) => {
   else if (t === "insertLineBreak") spanType() === "heading" ? applySpan("", { split: true }) : applySpan("\n");
   else if (t.startsWith("delete")) applySpan("");
 }, { capture: true });
-// Copy, cut and paste are the span's only from inside the script: typed into a field (the shot card, opened while a span
-// is drawn) they are the field's.
-const spanClip = (e) => scriptEl.contains(e.target) && liveSpan();
+// Copy, cut and paste are the span's only from inside the script, or with nothing focused (the shot card just closed);
+// in a field (the shot card, opened while a span is drawn) they are the field's.
+const spanClip = (e) => (scriptEl.contains(e.target) || e.target === document.body) && liveSpan();
 document.addEventListener("copy", (e) => {
   if (!spanClip(e) || !e.clipboardData) return;
   e.preventDefault();
