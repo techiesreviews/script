@@ -905,8 +905,7 @@ export function createBroll(host) {
       if (want.expect === undefined || s.over === want.expect) { plan[id] = want; continue; }
       if (!(s.blockIds || []).some((b) => !Doc.blockById(state.doc, b))) continue;
       const at = want.blockIds.filter((b) => Doc.blockById(state.doc, b));
-      const fits = at.length && Broll.fitsOver(Broll.spokenBlocks(state.doc), at, s.over);
-      plan[id] = { blockIds: at, expect: s.over, over: fits || !at.length ? s.over : Broll.overFor(state.doc, Broll.wholeParas(state.doc, at)) };
+      plan[id] = { blockIds: at, expect: s.over, over: overOn(at, s.over) };
     }
     const ids = Object.keys(plan);
     const was = { token, moved: [...broll.moved], shots: Object.fromEntries(ids.map((id) => {
@@ -961,15 +960,22 @@ export function createBroll(host) {
     }
     return was;
   }
+  // The Over for a shot that shows on the paragraphs `ids` now: its own (`over`) when that still fits them, else one
+  // that quotes them. Never one that matches no words (a paragraph left empty): read again, it would take the shot off
+  // the script and its place would be lost, so it keeps its own.
+  function overOn(ids, over) {
+    const list = Broll.spokenBlocks(state.doc);
+    if (!ids.length || Broll.fitsOver(list, ids, over)) return over;
+    const quote = Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+    return Broll.matchOver(list, quote).length ? quote : over;
+  }
   // `moves`: span.js followShots ([{ id, blockIds, moved }]).
   function followSpan(moves) {
     if (broll.status !== "ok" || !state.doc || state.guest || !moves?.length) return null;
-    const list = Broll.spokenBlocks(state.doc), shots = {};
+    const shots = {};
     for (const m of moves) {
       const s = shotById(m.id);
-      if (!s) continue;
-      const fits = m.blockIds.length && Broll.fitsOver(list, m.blockIds, s.over);
-      shots[m.id] = { blockIds: m.blockIds, expect: s.over, over: fits || !m.blockIds.length ? s.over : Broll.overFor(state.doc, Broll.wholeParas(state.doc, m.blockIds)) };
+      if (s) shots[m.id] = { blockIds: m.blockIds, expect: s.over, over: overOn(m.blockIds, s.over) };
     }
     return placeShots({ token: broll.token, shots, moved: moves.filter((m) => m.moved && shots[m.id]).map((m) => m.id) });
   }
