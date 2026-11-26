@@ -341,6 +341,7 @@ export function createBroll(host) {
     broll.lit = null;
     broll.saving = {};
     broll.problem = {};
+    broll.moved = new Set(); // another list places every shot again: that ends "Moved here"
     setLinkKey(link);
     await readBroll(token, true);
     if (token === broll.token) { syncFlags(); renderBroll(); }
@@ -352,7 +353,7 @@ export function createBroll(host) {
     delKept();
     const ask = sketchAsk();
     if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
-    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
+    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {}, moved: new Set() });
     dropGoneSuggestions();
     syncFlags();
     renderBroll();
