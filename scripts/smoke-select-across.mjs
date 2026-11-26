@@ -156,12 +156,24 @@ for (const width of [1280, 390]) {
       const after = await spanState(page);
       assert.ok(after.on && after.ranges === 3, `a ${button} press on the scrollbar keeps the span: ${JSON.stringify(after)}`);
     }
+    // Dragging the scrollbar's thumb scrolls the page and keeps the span too.
+    const thumb = await page.eval(`({ x: innerWidth - 4, y: (scrollY + innerHeight / 2) / document.documentElement.scrollHeight * innerHeight, at: scrollY })`);
+    await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: thumb.x, y: thumb.y, button: "left", buttons: 1, clickCount: 1 });
+    for (let i = 1; i <= 3; i++) {
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: thumb.x, y: thumb.y + 20 * i, button: "left", buttons: 1 });
+      await sleep(25);
+    }
+    await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: thumb.x, y: thumb.y + 60, button: "left", buttons: 0, clickCount: 1 });
+    await sleep(80);
+    const dragged = await page.eval(`scrollY`), afterDrag = await spanState(page);
+    assert.ok(dragged > thumb.at, `dragging the scrollbar scrolled the page: ${thumb.at} → ${dragged}`);
+    assert.ok(afterDrag.on && afterDrag.ranges === 3, `dragging the scrollbar keeps the span: ${JSON.stringify(afterDrag)}`);
     assert.equal(await md(page), original, "a press on the scrollbar changes no words");
     await page.eval(`window.__copied = null`);
     await page.key("c", "KeyC", 67, { modifiers: 2, commands: ["copy"] });
     await page.until(`window.__copied !== null`, "copy event after the scrollbar press");
     assert.equal(await page.eval(`window.__copied`), COPIED, "Ctrl+C after the scrollbar press copies the span");
-    results.push(`${width}px scrollbar press: met — a left and a middle press at innerWidth-4 (on the ${bar.gutter}px scrollbar) kept the span; Ctrl+C still copied it`);
+    results.push(`${width}px scrollbar press: met — a left and a middle press at innerWidth-4 (on the ${bar.gutter}px scrollbar) kept the span, and so did dragging it (the page scrolled ${thumb.at} → ${dragged}); Ctrl+C still copied it`);
 
     // 3. Delete: the ends join; B2 (on the middle paragraph) moves to the join and says so; the text is saved as one.
     await page.key("Delete", "Delete", 46);
@@ -443,6 +455,25 @@ for (const width of [1280, 390]) {
     await writeFile(`.scratch/tools-470-shots/${width}.png`, Buffer.from(png.data, "base64"));
     await page.click("#script .block[data-type=para]");
 
+    // 18b. Linking another B-roll list ends "Moved here" (TOOLS-482): the demo's list again, through the file field.
+    // Undo then puts the words back (that list's shots are left alone), so B2 shows again on its own paragraph.
+    {
+      await drag(page, [P1, "Why"], [P3, "Today:"]);
+      await page.key("Delete", "Delete", 46);
+      await page.until(`!!document.querySelector(".shot-frame[data-moved]")`, "a moved shot before linking a list");
+      const { root } = await page.send("DOM.getDocument");
+      const { nodeId } = await page.send("DOM.querySelector", { nodeId: root.nodeId, selector: "#brollInput" });
+      const list = new URL("../public/samples/demo-good-script-broll.md", import.meta.url).pathname;
+      await page.send("DOM.setFileInputFiles", { nodeId, files: [list] });
+      await page.until(`window.__scriptEditor.broll().find((x) => x.id === "B2")?.over === ${JSON.stringify(b2.over)}`, "the list linked again: B2 back on its Over from the file");
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo puts the words back after the list was linked again");
+      await page.until(`document.querySelectorAll(".shot-frame").length >= 6`, "B2 shows again on its paragraph");
+      await sleep(300);
+      assert.equal(await page.eval(`document.querySelectorAll(".shot-frame[data-moved], .moved-note").length`), 0, "no Moved here after another list is linked");
+      results.push(`${width}px list linked again: met — after a span delete moved B2 ("Moved here"), the demo's list was linked through the file field and Undo put the words back: B2 shows on its paragraph with no "Moved here"`);
+    }
+
     // 19. In a shared script the selection stays inside one paragraph, as before (Lex, 2026-11-26, TOOLS-477): one
     // Undo there could not take back an edit across paragraphs. Host and guest alike.
     {
@@ -494,6 +525,7 @@ for (const width of [1280, 390]) {
       await page.key("Escape", "Escape", 27);
       results.push(`${width}px after sharing: met — once sharing stops, a drag selects across paragraphs again`);
     }
+
   } catch (error) {
     console.log(`DIAGNOSTIC ${width}px: ${JSON.stringify(await spanState(page).catch(() => null))} log=${JSON.stringify(page.log)}`);
     throw error;
@@ -502,7 +534,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/42 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/44 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);

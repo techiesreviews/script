@@ -11,5 +11,7 @@ Card TOOLS-482 (parent TOOLS-470). The second release try of select across parag
 
 ## Checks
 
-- `scripts/smoke-select-across.mjs` step 2b: after a span over three paragraphs, a left and a middle press at `innerWidth - 4` (on the scrollbar) keep it, the words are unchanged, and Ctrl+C still copies it. It failed first on 3e56880 (`a left press on the scrollbar keeps the span: {"on":false,...}`), then passed; the browser run is 42/42 at 1280 and 390 px: `docs/agents/evidence/tools-482-browser.txt`.
-- Not covered by a browser step: "Moved here" after linking another list (the check would need a second list file with a picker), and a drag ending with no selection range (no real input leads there reliably).
+- `scripts/smoke-select-across.mjs` step 2b: after a span over three paragraphs, a left and a middle press at `innerWidth - 4` (on the scrollbar) keep it, dragging the scrollbar's thumb scrolls the page and keeps it, the words are unchanged, and Ctrl+C still copies it. It failed first with `public/app.js` from 3e56880 (`a left press on the scrollbar keeps the span: {"on":false,...}`), then passed.
+- Step 18b (after the first review): a span delete moves B2 ("Moved here"), the demo's list is linked again through the file field, and Undo puts the words back: B2 shows on its paragraph with no "Moved here". It failed first with `public/broll-app.js` from 3e56880, then passed.
+- The browser run is 44/44 at 1280 and 390 px: `docs/agents/evidence/tools-482-browser.txt`.
+- Not covered by a browser step: unlinking the list (the same reset as linking), and a drag ending with no selection range (no real input leads there reliably).

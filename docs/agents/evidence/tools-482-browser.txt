@@ -1,11 +1,14 @@
-# Select across: a press on the page's scrollbar keeps the span (TOOLS-482): headless Chrome 158.0.8127.88, local Worker (wrangler dev), demo script with its B-roll list; 1280 px and 390 px. 2026-11-26T18:05:01Z
-# red run on 3e56880 public/app.js (before the change), with the new step 2b
+# Select across: a press on the page's scrollbar keeps the span; another B-roll list ends "Moved here" (TOOLS-482): headless Chrome 158.0.8127.88, local Worker (wrangler dev), demo script with its B-roll list; 1280 px and 390 px. 2026-11-26T18:12:02Z
+# red run: public/app.js from 3e56880 (before the change), new step 2b
 DIAGNOSTIC 1280px: {"on":false,"ranges":0,"text":"","bar":false} log=[]
 RESULT: fail tools-470-browser a left press on the scrollbar keeps the span: {"on":false,"ranges":0,"text":"","bar":false}
+# red run: public/broll-app.js from 3e56880 (before the change), new step 18b
+DIAGNOSTIC 1280px: {"on":true,"ranges":3,"text":"Why does it sound so stiff on camera? | Most of us write a video like a blog post. Long sentences. Big words. Then we wonder why nobody stays past the first minute. | Hi, I'm Sam, and on this demo channel we make video a little less scary. ","bar":false} log=[]
+RESULT: fail tools-470-browser no Moved here after another list is linked
 # green run on the change
 PROOF 1280px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
 PROOF 1280px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
-PROOF 1280px scrollbar press: met — a left and a middle press at innerWidth-4 (on the 15px scrollbar) kept the span; Ctrl+C still copied it
+PROOF 1280px scrollbar press: met — a left and a middle press at innerWidth-4 (on the 15px scrollbar) kept the span, and so did dragging it (the page scrolled 1006 → 1205); Ctrl+C still copied it
 PROOF 1280px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
 PROOF 1280px undo: met — words and B2's Over back as they were, the span selected again
 PROOF 1280px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
@@ -22,11 +25,12 @@ PROOF 1280px copy, cut and paste in the shot card: met — the field got them, t
 PROOF 1280px drag near the window's end: met — the page scrolled 2096 px and the selection grew from 13 to 39 blocks; letting go stopped it
 PROOF 1280px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
 PROOF 1280px moved shot on mouse-over: met — the orange frame stays (oklch(0.704 0.1915 37.1) 0px 0px 0px 2px inset)
+PROOF 1280px list linked again: met — after a span delete moved B2 ("Moved here"), the demo's list was linked through the file field and Undo put the words back: B2 shows on its paragraph with no "Moved here"
 PROOF 1280px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs
 PROOF 1280px after sharing: met — once sharing stops, a drag selects across paragraphs again
 PROOF 390px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
 PROOF 390px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
-PROOF 390px scrollbar press: met — a left and a middle press at innerWidth-4 (on the 15px scrollbar) kept the span; Ctrl+C still copied it
+PROOF 390px scrollbar press: met — a left and a middle press at innerWidth-4 (on the 15px scrollbar) kept the span, and so did dragging it (the page scrolled 1912 → 2208); Ctrl+C still copied it
 PROOF 390px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
 PROOF 390px undo: met — words and B2's Over back as they were, the span selected again
 PROOF 390px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
@@ -43,7 +47,8 @@ PROOF 390px copy, cut and paste in the shot card: met — the field got them, th
 PROOF 390px drag near the window's end: met — the page scrolled 2165 px and the selection grew from 7 to 26 blocks; letting go stopped it
 PROOF 390px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
 PROOF 390px moved shot on mouse-over: met — the orange frame stays (oklch(0.704 0.1915 37.1) 0px 0px 0px 2px inset)
+PROOF 390px list linked again: met — after a span delete moved B2 ("Moved here"), the demo's list was linked through the file field and Undo put the words back: B2 shows on its paragraph with no "Moved here"
 PROOF 390px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs
 PROOF 390px after sharing: met — once sharing stops, a drag selects across paragraphs again
-RESULT: ok tools-470-browser 42/40 checks at 1280 and 390 px
+RESULT: ok tools-470-browser 44/44 checks at 1280 and 390 px
 Chrome started with --blink-settings=primaryPointerType=4,primaryHoverType=2,availablePointerTypes=4,availableHoverTypes=2.
