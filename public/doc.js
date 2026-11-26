@@ -577,19 +577,22 @@ export function moveAsks(asks, fromId, toId, fromStart, shift) {
   return moves;
 }
 // Puts the anchors that moves took to another block back where they were, for the asks and marks still open and still
-// in that block (TOOLS-483: an Undo restores the blocks the anchors came from). flipMoves gives the moves for the Redo.
-// Returns the asks and marks it put back: they are where they belong already, so nothing else moves them in that step.
+// in that block (TOOLS-483: an Undo restores the blocks the anchors came from). Returns the anchors it put back (`back`:
+// they are where they belong already, so nothing else moves them in that step) and the moves for the opposite step
+// (`redo`), made from where they were just before: text typed after the move (composed text) shifted them since.
 export function unmoveAsks(asks, moves) {
-  const back = new Set();
+  const back = new Set(), redo = [];
   for (const { askId, mark, from, to } of moves) {
     const a = asks.find((x) => x.id === askId);
     const x = !a ? null : mark < 0 ? (a.scope === "selection" && OPEN_STATUSES.includes(a.status) ? a : null)
       : (a.scope === "script" && a.status === "answered" && a.answer.marks[mark]?.state === "open" ? a.answer.marks[mark] : null);
-    if (x && x.blockId === to.blockId) { Object.assign(x, from); back.add(x); }
+    if (!x || x.blockId !== to.blockId) continue;
+    redo.push({ askId, mark, from: { blockId: x.blockId, start: x.start, end: x.end }, to: from });
+    Object.assign(x, from);
+    back.add(x);
   }
-  return back;
+  return { back, redo };
 }
-export const flipMoves = (moves) => moves.map((m) => ({ ...m, from: m.to, to: m.from }));
 
 // Check an agent's answer_ask arguments against the ask and the script.
 // Returns { answer } ready for receiveAnswer, or { error } with a short reason for the agent.

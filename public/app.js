@@ -929,21 +929,21 @@ function restore(snap, to) {
   // A step across paragraphs (TOOLS-470) also says which selection shows once it is taken (`span`) and where its shots
   // go (`shots`, placed in its turn below); the step it leaves for the other list carries the other side of both.
   const across = snap.span !== undefined || snap.shots ? { span: snap.otherSpan ?? null, otherSpan: snap.span ?? null } : {};
-  // It also says which asks it moved to another block (`askMoves`): they go back before asks are found again, and the
-  // step for the other list moves them once more.
-  const moved = snap.askMoves ? { askMoves: Doc.flipMoves(snap.askMoves) } : {};
-  const step = { doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}), ...across, ...moved };
+  const step = { doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}), ...across };
   to.push(step);
   const was = state.doc;
   state.doc = Doc.cloneDoc(snap.doc);
+  // It also says which asks it moved to another block (`askMoves`): they go back before asks are found again, and the
+  // step for the other list moves them once more, to where they are now.
   const putBack = snap.askMoves ? Doc.unmoveAsks(state.asks, snap.askMoves) : null;
+  if (putBack?.redo.length) step.askMoves = putBack.redo;
   setSpan(null);
   // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word. The
   // ones just put back are skipped: their offsets are for this step's text already (a joined paragraph can read like the
   // old one with only bold added).
   for (const b of state.doc.blocks) {
     const old = Doc.blockById(was, b.id), a = old && Doc.contentOf(old), z = Doc.contentOf(b);
-    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, Cues.marksRange(a, z), { skip: putBack });
+    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, Cues.marksRange(a, z), { skip: putBack?.back });
   }
   state.lastStep = null;
   if (closed) emit(closed.status, closed);
