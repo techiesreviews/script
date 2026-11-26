@@ -203,6 +203,13 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   assert.equal(kept.rest, true, "the Adlam word is left");
   assert.deepEqual(Span.followShots(kept.doc, [{ id: "B2", blockIds: [d2] }], kept), [{ id: "B2", blockIds: [kept.caret.id], moved: true }]);
   assert.notEqual(kept.caret.id, d1);
+  // A reference line cut at its "- ": what is left joins the spoken words, so it is words left and the shot goes with it.
+  const ref = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond paragraph.\n- Reference: https://example.com\n");
+  const [, , r1, r2] = ids(ref), dash = Doc.contentOf(Doc.blockById(ref, r2)).indexOf("- ") + 2;
+  const cutRef = Span.replaceSpan(ref, Span.spanOf(ref, at(ref, 2, 6), at(ref, 3, dash)), "", { split: true });
+  assert.equal(cutRef.rest, true, "the reference's words are left");
+  assert.notEqual(cutRef.caret.id, r1);
+  assert.deepEqual(Span.followShots(cutRef.doc, [{ id: "B2", blockIds: [r2] }], cutRef), [{ id: "B2", blockIds: [cutRef.caret.id], moved: true }]);
   // Joined into a section title, nothing settles the link: its literal "](address)" stays in the text, as words left.
   const title = Span.replaceSpan(link, Span.spanOf(link, at(link, 1, 3), at(link, 3, words)), "", { split: true });
   assert.equal(title.doc.blocks[1].type, "heading");
