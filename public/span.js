@@ -175,15 +175,15 @@ function wordsAfter(content, end, spoken) {
  * Where the B-roll shots go after replaceSpan (`result`): a shot on a removed block goes to the joined block, or to the
  * next spoken paragraph when the joined block is not spoken (a section title, a reminder), else the last one before it;
  * so do the joined block's own shots when it is no longer spoken. A paragraph left with no words (selected from its very
- * start) counts as not spoken: a shot there would have no words to quote; the joined block still counts when something
- * was typed into it (a first key such as a quote mark: the words follow). `doc`: the document after the edit. Returns
+ * start) counts as not spoken: a shot there would have no words to quote. That is so also when the first key typed over
+ * it has no letters (a quote mark, a space) and for composed text (deleted first): its Over could not follow words still
+ * to come, and a later read of the list would take the shot off the script. `doc`: the document after the edit. Returns
  * the shots that changed: [{ id, blockIds, moved }] (moved: its first block went, so it now shows somewhere else).
  */
 export function followShots(doc, shots, result) {
   const gone = new Set(result?.removed || []);
   if (!gone.size) return [];
-  const typedInto = (b) => b.id === result.id && result.typed > 0;
-  const spoken = Doc.spokenBlocks(doc).filter((b) => b.n.trim() || typedInto(b)).map((b) => b.id);
+  const spoken = Doc.spokenBlocks(doc).filter((b) => b.n.trim()).map((b) => b.id);
   const order = new Map(doc.blocks.map((b, i) => [b.id, i]));
   const join = order.get(result.id) ?? -1;
   const target = spoken.includes(result.id) ? result.id

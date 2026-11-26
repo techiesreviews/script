@@ -698,6 +698,21 @@ test("B-roll span: a shot moved onto a paragraph with no words keeps its Over in
   assert.equal(r.writes, redoWrites, "and the Redo writes nothing");
 });
 
+test("B-roll span: a shot sent on from an emptied paragraph keeps the next paragraph through more typing and a later save", async () => {
+  // Whole paragraphs replaced from their very start (Delete, a first key with no letters, composed text): followShots
+  // sends the shot to the next paragraph with words. Its Over then quotes those words, so it stays there.
+  const m = movement();
+  takeOut(m, 0);
+  m.rewrite(1, "");
+  m.followSpan([{ id: "B1", blockIds: [m.paras[2].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  const list = Broll.spokenBlocks(m.state.doc);
+  assert.ok(Broll.fitsOver(list, [m.paras[2].id], Broll.parseBroll(m.text).shots[0].over), "the list's Over quotes the next paragraph");
+  m.rewrite(1, "\"New words typed after the quote mark.");
+  await m.describeShot(); await settle();
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id], "after more typing and a later save the shot is still there");
+});
+
 test("B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote", async () => {
   const m = movement();
   const old = Broll.parseBroll(m.text).shots[0].over;

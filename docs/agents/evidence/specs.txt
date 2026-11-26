@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 19 files, 539354 bytes; on first use: broll-app.js + broll.js, 164137 bytes
+ℹ startup: 19 files, 539396 bytes; on first use: broll-app.js + broll.js, 164137 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -87,6 +87,7 @@
 ✔ B-roll move history: words typed into the target paragraph while a Redo saves keep the shot there, with Check
 ✔ B-roll move history: words added to the target paragraph while a move, its Undo or its Redo saves give the shot Check
 ✔ B-roll span: a shot moved onto a paragraph with no words keeps its Over in the list, never an empty one
+✔ B-roll span: a shot sent on from an emptied paragraph keeps the next paragraph through more typing and a later save
 ✔ B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote
 ✔ B-roll span: a moved shot whose paragraph is changed while its save waits stays there, with Check
 ✔ B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same
@@ -399,7 +400,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 19 files, 539354 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
+ℹ startup: 19 files, 539396 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -615,7 +616,7 @@
 ✔ a drag whose far end has no words of the next block (the gap after its paragraph) is no span
 ✔ marks are settled only when the joined block is a paragraph, as one-block edits do
 ✔ whole paragraphs deleted or cut from their very start: their shots go to the next paragraph with words, never the emptied one
-✔ typing over whole paragraphs from their very start, first key a quote mark: the shots stay at the join, where the new words go
+✔ typing over whole paragraphs from their very start, first key with no letters: the shots go to the next paragraph with words, as for Delete
 ✔ Enter over a span from a paragraph's very start: its shots go with the words to the new block, never the emptied one
 ✔ Enter over a span: shots on the last block go with its words to the new block
 ✔ Enter over a span: pasted text with a blank line makes a new block too; the last block's words end up there
@@ -704,9 +705,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 704
+ℹ tests 705
 ℹ suites 0
-ℹ pass 704
+ℹ pass 705
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

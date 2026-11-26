@@ -176,18 +176,21 @@ test("whole paragraphs deleted or cut from their very start: their shots go to t
   ]);
 });
 
-test("typing over whole paragraphs from their very start, first key a quote mark: the shots stay at the join, where the new words go", () => {
+test("typing over whole paragraphs from their very start, first key with no letters: the shots go to the next paragraph with words, as for Delete", () => {
+  // Kept at the join, a shot would keep the Over of words now gone, which no word typed next can match: a later read of
+  // the list would take it off the script (TOOLS-480 review round 2).
   const doc = Doc.parse(SCRIPT);
-  const [, , p1, p2, p3] = ids(doc);
+  const [, , p1, p2, p3, , p4] = ids(doc);
   const shots = [{ id: "B1", blockIds: [p1] }, { id: "B2", blockIds: [p2] }, { id: "B3", blockIds: [p2, p3] }];
   const end = Doc.contentOf(Doc.blockById(doc, p3)).length;
   for (const key of ["\"", "(", " "]) {
     const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 0), at(doc, 4, end)), key);
     assert.ok(r.typed > 0, `${JSON.stringify(key)} is put in`);
     assert.deepEqual(Span.followShots(r.doc, shots, r), [
-      { id: "B2", blockIds: [p1], moved: true },
-      { id: "B3", blockIds: [p1], moved: true },
-    ], `after ${JSON.stringify(key)} B1 stays where it is and the others join it`);
+      { id: "B1", blockIds: [p4], moved: true },
+      { id: "B2", blockIds: [p4], moved: true },
+      { id: "B3", blockIds: [p4], moved: true },
+    ], `after ${JSON.stringify(key)} all three go to the next paragraph with words`);
   }
 });
 
