@@ -146,6 +146,23 @@ for (const width of [1280, 390]) {
     assert.equal(await page.eval(`window.__copied`), COPIED, "copy gives the words with blank lines between");
     results.push(`${width}px copy: met — ${JSON.stringify(COPIED.slice(0, 50))}… with blank lines, no shot labels`);
 
+    // 2b. A press on the page's scrollbar, with the left or the middle button, keeps the span: Ctrl+C still copies it
+    // (TOOLS-482). A middle press in the text still ends it (step 11: on Linux it pastes there).
+    const bar = await page.eval(`({ x: innerWidth - 4, y: innerHeight / 2, gutter: innerWidth - document.documentElement.clientWidth })`);
+    assert.ok(bar.gutter > 4, `the page shows a scrollbar to press: ${JSON.stringify(bar)}`);
+    for (const [button, buttons] of [["left", 1], ["middle", 4]]) {
+      for (const type of ["mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: bar.x, y: bar.y, button, buttons: type === "mousePressed" ? buttons : 0, clickCount: 1 });
+      await sleep(80);
+      const after = await spanState(page);
+      assert.ok(after.on && after.ranges === 3, `a ${button} press on the scrollbar keeps the span: ${JSON.stringify(after)}`);
+    }
+    assert.equal(await md(page), original, "a press on the scrollbar changes no words");
+    await page.eval(`window.__copied = null`);
+    await page.key("c", "KeyC", 67, { modifiers: 2, commands: ["copy"] });
+    await page.until(`window.__copied !== null`, "copy event after the scrollbar press");
+    assert.equal(await page.eval(`window.__copied`), COPIED, "Ctrl+C after the scrollbar press copies the span");
+    results.push(`${width}px scrollbar press: met — a left and a middle press at innerWidth-4 (on the ${bar.gutter}px scrollbar) kept the span; Ctrl+C still copied it`);
+
     // 3. Delete: the ends join; B2 (on the middle paragraph) moves to the join and says so; the text is saved as one.
     await page.key("Delete", "Delete", 46);
     await page.until(`!window.__scriptEditor.markdown().includes(${JSON.stringify(P2)})`, "the middle paragraph went");
@@ -485,7 +502,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/40 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/42 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);

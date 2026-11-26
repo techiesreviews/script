@@ -1430,8 +1430,10 @@ function spanAutoScroll() {
   // motion-exception: the page follows the held mouse past the window's edge, one frame at a time, only while dragging
   spanScroll = requestAnimationFrame(spanAutoScroll);
 }
-// Any press clears it, except a right-click on its own words; a mouse press in a block's text may start the next one.
+// Any press clears it, except a right-click on its own words and any press on the page's scrollbar (scrollbarHeld);
+// a mouse press in a block's text may start the next one.
 document.addEventListener("pointerdown", (e) => {
+  if (e.target === document.documentElement) return;
   if (e.button !== 0) {
     const el = span && e.button === 2 && blockOf(e.target);
     if (span && !(el && Span.spanParts(state.doc, span).some((p) => p.block.id === el.dataset.id))) setSpan(null);
@@ -1459,7 +1461,8 @@ function spanReleased() {
   cancelAnimationFrame(spanScroll);
   spanScroll = 0;
   // The browser's own selection, still inside the block the drag started in, steps aside: keys come to the span.
-  if (span) getSelection().collapseToStart();
+  const sel = getSelection();
+  if (span && sel.rangeCount) sel.collapseToStart();
 }
 for (const t of ["pointerup", "pointercancel"]) addEventListener(t, spanReleased, { capture: true });
 addEventListener("blur", spanReleased);
