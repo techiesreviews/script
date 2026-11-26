@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 19 files, 548517 bytes; on first use: broll-app.js + broll.js, 164248 bytes
+ℹ startup: 19 files, 549104 bytes; on first use: broll-app.js + broll.js, 164248 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -292,6 +292,7 @@
 ✔ moveAsks: anchors after a Keep keep their quote (replace that changes length, and add)
 ✔ moveAsks: a paste before an anchor shifts it; a split moves it to the new block
 ✔ moveAsks returns its moves; unmoveAsks puts open anchors back and gives the moves for the Redo (TOOLS-483)
+✔ a "# " line in a script that has its title stays plain text: locate counts its "# " as text (TOOLS-484)
 ✔ placeAsks puts open anchors where their words went, with their quote; unmoveAsks takes them back, quote too (TOOLS-484)
 ✔ checkAnswer refuses unknown or finished asks and kinds that do not fit
 ✔ checkAnswer: marks must quote the script word for word, within the limits
@@ -402,7 +403,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 19 files, 548517 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
+ℹ startup: 19 files, 549104 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -640,6 +641,11 @@
 ✔ follow: a paragraph joined into a section title keeps its words on one line; words across a line break have no place
 ✔ follow: every word outside the span keeps the words around it, wherever the span is and whatever replaces it
 ℹ 117425 words placed, 0 gone
+✔ follow: the same in a list item, a section title and a reminder, and when Enter's new paragraph starts as a section title or a list item
+ℹ 73860 words placed, 0 gone
+✔ follow: a span from a paragraph's start into a section title leaves the title without blanks at its start; its words and the caret are where they read
+✔ follow: a line left as "# …" in a script that has its title is plain text; the words after its "# " are where they read
+✔ follow: Enter before "## " makes the rest a section title, and an ask after it goes to its own copy there
 ✔ follow: a link cut by the span keeps the words that are left; an ask before it stays on its own copy
 ✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
 ✔ kit specs: --affected (what kit pr runs) takes an optional --base REF and runs every test; other words are refused
@@ -716,9 +722,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 715
+ℹ tests 720
 ℹ suites 0
-ℹ pass 715
+ℹ pass 720
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
