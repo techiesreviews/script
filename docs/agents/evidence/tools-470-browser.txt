@@ -75,3 +75,7 @@ PROOF 1280px drag near the window's end: met — the page scrolled 2096 px and t
 PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
 PROOF 390px drag near the window's end: met — the page scrolled 2157 px and the selection grew from 7 to 27 blocks; letting go stopped it
 RESULT: ok tools-470-browser 30/30 checks at 1280 and 390 px
+
+Review round 3 (2026-11-26): the fixes are in the B-roll list and the shot rules (unit tests, which failed first); the
+browser run on the fixed code:
+RESULT: ok tools-470-browser 30/30 checks at 1280 and 390 px

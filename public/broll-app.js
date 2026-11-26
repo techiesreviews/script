@@ -886,7 +886,9 @@ export function createBroll(host) {
     if (broll.status !== "ok" || !state.doc || state.guest) return null;
     if (next.token !== undefined && next.token !== broll.token) return null;
     const token = broll.token;
-    const ids = Object.keys(next.shots || {}).filter((id) => shotById(id));
+    // A shot whose Over is no longer the one this step expects was changed since (moved on its own, or by the agent):
+    // it stays where that newer change put it.
+    const ids = Object.keys(next.shots || {}).filter((id) => shotById(id) && (next.shots[id].expect === undefined || shotById(id).over === next.shots[id].expect));
     const was = { token, moved: [...broll.moved], shots: Object.fromEntries(ids.map((id) => {
       const s = shotById(id), want = next.shots[id];
       return [id, { over: want.expect ?? s.over, blockIds: [...(s.blockIds || [])], expect: want.over }];
@@ -908,10 +910,16 @@ export function createBroll(host) {
     renderBroll();
     if (Object.keys(writes).length) {
       // When its turn comes, each shot is written only if the list still holds the Over this step started from:
-      // an Undo or Redo pressed while an earlier save waited then meets the list as that save left it.
+      // an Undo or Redo pressed while an earlier save waited then meets the list as that save left it. A shot the list
+      // says another Over for (changed meanwhile) is shown where the list puts it.
+      const mine = new Map(marks);
       changeList((md) => {
         const saved = new Map(Broll.parseBroll(md).shots.map((s) => [s.id, s.over]));
-        return Object.entries(writes).reduce((text, [id, w]) => (saved.get(id) === w.expect ? Broll.updateShot(text, id, { over: w.over }) : text), md);
+        return Object.entries(writes).reduce((text, [id, w]) => {
+          if (saved.get(id) === w.expect) return Broll.updateShot(text, id, { over: w.over });
+          if (broll.placing.get(id) === mine.get(id)) broll.placing.delete(id);
+          return text;
+        }, md);
       }).finally(() => {
         for (const [id, mark] of marks) if (broll.placing.get(id) === mark) broll.placing.delete(id);
       }).catch((err) => {

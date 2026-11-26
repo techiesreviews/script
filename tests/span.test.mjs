@@ -108,6 +108,19 @@ test("shots on removed blocks follow to the join, or to the next spoken paragrap
   ]);
 });
 
+test("a paragraph selected from its very start into a section title becomes that title: its shots go to the next spoken paragraph", () => {
+  // "## 20 · Next" loses only its "2": still a numbered, spoken part.
+  const doc = Doc.parse(SCRIPT.replace("## 2 · Next", "## 20 · Next"));
+  const [, , p1, p2, p3, , p4] = ids(doc);
+  const shots = [{ id: "B1", blockIds: [p1] }, { id: "B2", blockIds: [p2] }, { id: "B3", blockIds: [p2, p3] }];
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 3, 0), at(doc, 5, 1)), "");
+  assert.equal(Doc.blockById(r.doc, p2).type, "heading", "the joined block is the section title now");
+  assert.deepEqual(Span.followShots(r.doc, shots, r), [
+    { id: "B2", blockIds: [p4], moved: true },
+    { id: "B3", blockIds: [p4], moved: true },
+  ]);
+});
+
 test("lines folded away at the top are never part of a span: from the title it starts after them", () => {
   const doc = Doc.parse("# Title\n\n- Private production notes.\n\n---\n\n## 1 · Hook\n\nFirst para one.\n");
   const hidden = new Set([doc.blocks[1].id, doc.blocks[2].id]);

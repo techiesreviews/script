@@ -734,6 +734,36 @@ test("B-roll span: Undo and Redo while saves wait never move a shot to an earlie
   assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot shows where Redo put it, not on the first paragraph with the same words");
 });
 
+test("B-roll span: a shot moved on its own after a span edit keeps that place when the span edit is undone", async () => {
+  const m = movement();
+  const gone = takeOut(m, 0);
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  await m.moveShot(2);
+  const newer = Broll.parseBroll(m.text).shots[0].over;
+  putBack(m, gone, 1);
+  m.placeShots(undoStep);
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, newer, "the list keeps the newer move");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "and the shot shows there");
+});
+
+test("B-roll span: a shot changed outside the page while the span edit saves shows where the list says after its Undo", async () => {
+  const m = movement();
+  const gone = takeOut(m, 0);
+  const releaseSpan = m.holdNextWrite();
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  // The agent puts the shot on the third paragraph while the span edit's save waits.
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[2].id])) }));
+  const theirs = Broll.parseBroll(m.text).shots[0].over;
+  putBack(m, gone, 1);
+  m.placeShots(undoStep);
+  releaseSpan();
+  for (let i = 0; i < 8; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, theirs, "neither save writes over the agent's change");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot shows where the list says");
+});
+
 test("B-roll span: Undo after another list was opened leaves that list's shot alone", async () => {
   const m = movement();
   takeOut(m, 0);

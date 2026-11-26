@@ -153,9 +153,9 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
 
 /**
  * Where the B-roll shots go after replaceSpan (`result`): a shot on a removed block goes to the joined block, or to the
- * next spoken paragraph when the joined block is not spoken (a section title, a reminder), else the last one before it.
- * `doc`: the document after the edit. Returns the shots that changed: [{ id, blockIds, moved }] (moved: its first block
- * went, so it now shows somewhere else).
+ * next spoken paragraph when the joined block is not spoken (a section title, a reminder), else the last one before it;
+ * so do the joined block's own shots when it is no longer spoken. `doc`: the document after the edit. Returns the shots
+ * that changed: [{ id, blockIds, moved }] (moved: its first block went, so it now shows somewhere else).
  */
 export function followShots(doc, shots, result) {
   const gone = new Set(result?.removed || []);
@@ -169,12 +169,16 @@ export function followShots(doc, shots, result) {
   // shots go with them (when some were left: a new block with no words keeps none).
   const lastGone = result.removed.at(-1), caretId = result.caret?.id;
   const tailTo = result.rest && caretId && caretId !== result.id && spoken.includes(caretId) ? caretId : target;
+  // A first block selected from its very start takes the last block's kind: when that is a section title, its own
+  // shots leave it too.
+  const off = new Set(gone);
+  if (target !== result.id) off.add(result.id);
   const out = [];
   for (const shot of shots || []) {
     const was = shot.blockIds || [];
-    if (!was.some((id) => gone.has(id))) continue;
-    const blockIds = [...new Set(was.map((id) => (id === lastGone ? tailTo : gone.has(id) ? target : id)).filter((id) => id && order.has(id)))];
-    out.push({ id: shot.id, blockIds, moved: gone.has(was[0]) });
+    if (!was.some((id) => off.has(id))) continue;
+    const blockIds = [...new Set(was.map((id) => (id === lastGone ? tailTo : off.has(id) ? target : id)).filter((id) => id && order.has(id)))];
+    out.push({ id: shot.id, blockIds, moved: off.has(was[0]) });
   }
   return out;
 }
