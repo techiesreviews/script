@@ -200,4 +200,14 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   const title = Span.replaceSpan(link, Span.spanOf(link, at(link, 1, 3), at(link, 3, words)), "", { split: true });
   assert.equal(title.doc.blocks[1].type, "heading");
   assert.equal(title.rest, true, "the address is literal text in a section title");
+  // A list item that ends in a link, joined into a paragraph: the paragraph settles the link, so its address is no
+  // words left and the item's shot stays at the join.
+  const list = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\n- see [two](https://example.com)\n");
+  const [, , i1, i2] = ids(list), cut = Doc.contentOf(Doc.blockById(list, i2)).indexOf("](");
+  assert.equal(Doc.blockById(list, i2).type, "raw", "a list is kept as plain text");
+  const item = Span.replaceSpan(list, Span.spanOf(list, at(list, 2, 6), at(list, 3, cut)), "", { split: true });
+  assert.equal(Doc.blockById(item.doc, i1).type, "para");
+  assert.equal(Doc.contentOf(Doc.blockById(item.doc, i1)), "First ");
+  assert.equal(item.rest, false, "no words of the list item are left");
+  assert.deepEqual(Span.followShots(item.doc, [{ id: "B3", blockIds: [i2] }], item), [{ id: "B3", blockIds: [i1], moved: true }]);
 });

@@ -408,6 +408,8 @@ for (const width of [1280, 390]) {
       await drag(page, [P1, "Why"], [P3, "Today:"]);
       assert.ok((await spanState(page)).on, "the span is drawn before sharing");
       await page.eval(`document.querySelector("#shareBtn").click(); true`);
+      const shared = await spanState(page);
+      assert.ok(!shared.on && shared.ranges === 0, `host: the span goes off the screen when Share is pressed: ${JSON.stringify(shared)}`);
       await page.until(`!!window.__link`, "the share link");
       await page.key("Delete", "Delete", 46);
       await sleep(200);

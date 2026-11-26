@@ -4766,7 +4766,8 @@ together = createTogether({
   joinFailed,
   // Undo steps from before sharing would bring back old text over other people's work.
   sharing: () => { state.undo = []; state.redo = []; state.lastStep = null; },
-  renderTop: () => renderTop(),
+  // Also runs inside the Share click: a span drawn before sharing goes off the screen there (paintSpan, spanShared).
+  renderTop: () => { renderTop(); paintSpan(); },
   renderDots: () => { if (state.doc) renderTocDots(); },
   asks: () => state.asks,
   seenAsks: () => Changes.seenAsks(state.asks, passedHere), // the agent's caret: without the marks scrolled past here
