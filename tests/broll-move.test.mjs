@@ -15,7 +15,7 @@ function movement() {
   const state = { doc: Doc.parse("# Throwaway\n\nFirst spoken paragraph.\n\nSecond spoken paragraph.\n\nThird spoken paragraph.\n"), undo: [], redo: [], asks: [], lastStep: null };
   const paras = Broll.spokenBlocks(state.doc);
   let text = Broll.addShot(Broll.newList("Throwaway"), { id: "B1", kind: "broll", what: "Throwaway shot", how: "Keep this detail", over: Broll.overFor(state.doc, Broll.wholeParas(state.doc, [paras[0].id])) });
-  const broll = { token: 1, shots: [], flags: {}, status: "ok" };
+  const broll = { token: 1, shots: [], flags: {}, status: "ok", moved: new Set() };
   // The app's own adoptBroll takes a written list in: the shots are matched to the script and keep their Check flags.
   const adopt = () => {
     broll.flags = Object.fromEntries(broll.shots.filter((shot) => shot.check).map((shot) => [shot.id, true]));
@@ -40,7 +40,9 @@ function movement() {
       queue = run.catch(() => {});
       return run;
     },
-    syncFlags() {}, renderBroll() {}, dropGoneSuggestions() {}, openShotCard() {}, shotFrameAnchor() {}, failShotCard() {},
+    syncFlags() {}, renderBroll() {}, renderBrollMarks() {}, dropGoneSuggestions() {}, openShotCard() {}, shotFrameAnchor() {}, failShotCard() {},
+    // A selection across paragraphs (TOOLS-470) is never drawn here.
+    setSpan() {}, brollApi: null, Span: null,
   };
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const history = app.slice(app.indexOf("function checkpoint("), app.indexOf("/* ---------- Ask anchors follow edits"));
