@@ -1,6 +1,6 @@
 # TOOLS-470: select all the text on the page, not just one paragraph
 
-Lex approved the sketch on 2026-11-26 (`/home/ubulex/Projects/fleet/inbox/script-editor-TOOLS-470-prototype-2026-11-26/`). Land on dev only.
+Lex approved the sketch on 2026-11-26 (`/home/ubulex/Projects/fleet/inbox/script-editor-TOOLS-470-prototype-2026-11-26/`). Cleared for main: Lex's go of 2026-11-26 ("you can publish them directly now").
 
 ## Why the browser could not do it
 
@@ -64,6 +64,12 @@ After the review (round 4):
 - After the second look (GPT): `wordsAfter` reads whole characters, so a letter outside the basic range (Adlam, two code units) left after the span counts as words and its shot goes with it after Enter; the `span.test.mjs` case failed first (`rest` was false), then passed.
 - After the PR's second look (GPT, twice, and the PR's Claude review): the words left are read where they end up, after the caret in the block it is in once the edit is done (Enter or a paste with blank lines puts them in a new block), so what was put in never counts. A reference line (`- Reference: …`, not spoken) cut at its `- ` becomes spoken words; a word that would sit inside a reference's address when joined is a paragraph of its own after Enter or such a paste; a bare address that would follow `- Source: ` when joined is spoken words after Enter. Each `span.test.mjs` case failed first (`rest` was false), then passed; the earlier cases (a linked last word, a section title, a list, Adlam) still pass. A browser check that a drag selects across paragraphs again once sharing stops guards what already worked; the run is 38/38 at 1280 and 390 px.
 
+## TOOLS-480 (release review, 2026-11-26)
+
+- R1-2: whole paragraphs selected from the very start of the first and deleted, cut or split with Enter left that paragraph empty, and `followShots` moved the shots onto it; `followSpan` then wrote `Over ""`, which matches nothing, so the shot fell off the script at the next read. Now a paragraph with no words counts as not spoken in `followShots` (the shots go to the next paragraph with words, or with the words Enter moved), and `overOn` in `public/broll-app.js` (used by `followSpan` and `placeShots`) keeps the shot's own Over when a new quote would match nothing.
+- R1-3: the copy, cut and paste handlers act on the span only when the event comes from inside `#script`; in the shot card (opened by a failed save while a span is drawn) they are the field's.
+- Tests first: two `span.test.mjs` tests (Delete over whole paragraphs from the start; Enter from a paragraph's start) and one `broll-move.test.mjs` test (`followSpan`, then a Redo through `placeShots`, onto a paragraph with no words) failed first, then passed. The browser check "copy, cut and paste in the shot card" failed first (`Ctrl+C in the shot card does not copy the script`), then passed; the run is 40/40 at 1280 and 390 px (`docs/agents/evidence/tools-470-browser.txt`).
+
 ## Tests first
 
 - `tests/span.test.mjs` (11 tests at first) failed first with the module missing, then passed.
@@ -80,4 +86,4 @@ Done when 1: met — a mouse drag from the first paragraph into the third draws 
 
 Done when 2: met — copy gives the words with blank lines between; Delete joins the ends and the shot on the removed paragraph moves to the joined one with "Moved here"; typing replaces the selection; one Undo restores words, shots and the selection.
 
-Done when 3: for the lead — Lex tries it on a test link and says go.
+Done when 3: met — Lex said go on 2026-11-26: "you can publish them directly now" (script editor, Prompter and Video Review, production included).

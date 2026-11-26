@@ -162,6 +162,37 @@ test("marks are settled only when the joined block is a paragraph, as one-block 
   assert.equal(Doc.contentOf(r.doc.blocks[1]), "- a **bwords.", "a list line keeps its literal marks");
 });
 
+test("whole paragraphs deleted or cut from their very start: their shots go to the next paragraph with words, never the emptied one", () => {
+  const doc = Doc.parse(SCRIPT);
+  const [, , p1, p2, p3, , p4] = ids(doc);
+  const shots = [{ id: "B1", blockIds: [p1] }, { id: "B2", blockIds: [p2] }, { id: "B3", blockIds: [p2, p3] }];
+  const end = Doc.contentOf(Doc.blockById(doc, p3)).length;
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 0), at(doc, 4, end)), "");
+  assert.equal(Doc.contentOf(Doc.blockById(r.doc, p1)), "", "the first paragraph is left empty");
+  assert.deepEqual(Span.followShots(r.doc, shots, r), [
+    { id: "B1", blockIds: [p4], moved: true },
+    { id: "B2", blockIds: [p4], moved: true },
+    { id: "B3", blockIds: [p4], moved: true },
+  ]);
+});
+
+test("Enter over a span from a paragraph's very start: its shots go with the words to the new block, never the emptied one", () => {
+  const doc = Doc.parse(SCRIPT);
+  const [, , p1, p2, p3, , p4] = ids(doc);
+  const shots = [{ id: "B1", blockIds: [p1] }, { id: "B2", blockIds: [p2] }, { id: "B3", blockIds: [p3] }];
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 0), at(doc, 4, 6)), "", { split: true });
+  assert.equal(Doc.contentOf(Doc.blockById(r.doc, p1)), "", "the left part keeps the first paragraph's id, empty");
+  assert.deepEqual(Span.followShots(r.doc, shots, r), [
+    { id: "B1", blockIds: [r.caret.id], moved: true },
+    { id: "B2", blockIds: [r.caret.id], moved: true },
+    { id: "B3", blockIds: [r.caret.id], moved: true },
+  ]);
+  // To the very end of the last paragraph: both parts are empty, so the shots go to the next paragraph with words.
+  const end = Doc.contentOf(Doc.blockById(doc, p3)).length;
+  const whole = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 0), at(doc, 4, end)), "", { split: true });
+  assert.deepEqual(Span.followShots(whole.doc, shots, whole).map((s) => s.blockIds), [[p4], [p4], [p4]]);
+});
+
 test("Enter over a span: shots on the last block go with its words to the new block", () => {
   const doc = Doc.parse(SCRIPT);
   const [, , p1, p2, p3] = ids(doc);
@@ -171,45 +202,78 @@ test("Enter over a span: shots on the last block go with its words to the new bl
     { id: "B1", blockIds: [p1], moved: true },
     { id: "B2", blockIds: [r.caret.id], moved: true },
   ]);
-  // Pasted text with a blank line makes a new block too; the last block's words end up there.
+});
+
+// The cases below are the last block's words left or not after Enter (or a paste with blank lines), one per test.
+const twoParas = () => {
+  const doc = Doc.parse(SCRIPT);
+  const [, , p1, p2, p3] = ids(doc);
+  return { doc, p1, p3, shots: [{ id: "B1", blockIds: [p2] }, { id: "B2", blockIds: [p3] }] };
+};
+
+test("Enter over a span: pasted text with a blank line makes a new block too; the last block's words end up there", () => {
+  const { doc, shots } = twoParas();
   const pasted = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, 6)), "one\n\ntwo ");
   assert.deepEqual(Span.followShots(pasted.doc, shots, pasted)[1], { id: "B2", blockIds: [pasted.caret.id], moved: true });
-  // A span to the very end of its last block leaves no words of it: Enter's new block is empty, the shot stays at the join.
+});
+
+test("Enter over a span to the very end of its last block leaves no words of it: the new block is empty, the shot stays at the join", () => {
+  const { doc, p1, p3, shots } = twoParas();
   const end = Doc.contentOf(Doc.blockById(doc, p3)).length;
   const whole = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, end)), "", { split: true });
   assert.deepEqual(Span.followShots(whole.doc, shots, whole)[1], { id: "B2", blockIds: [p1], moved: true });
   const wholePaste = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, end)), "one\n\ntwo");
   assert.deepEqual(Span.followShots(wholePaste.doc, shots, wholePaste)[1], { id: "B2", blockIds: [p1], moved: true }, "pasted words are not the last block's");
-  // A last block that ends in bold, selected up to its closing marks: only the marks are left, no words.
+});
+
+test("Enter over a span: a last block that ends in bold, selected up to its closing marks, leaves only the marks, no words", () => {
   const bold = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond para **two**\n");
   const [, , b1, b2] = ids(bold), len = Doc.contentOf(Doc.blockById(bold, b2)).length;
   const marks = Span.replaceSpan(bold, Span.spanOf(bold, at(bold, 2, 6), at(bold, 3, len - 2)), "", { split: true });
   assert.equal(marks.rest, false, "no words of the last block are left");
   assert.deepEqual(Span.followShots(marks.doc, [{ id: "B2", blockIds: [b2] }], marks), [{ id: "B2", blockIds: [b1], moved: true }]);
-  // A last block that ends in a link, selected up to the end of its words: the hidden address is not words left.
-  const link = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond [two](https://example.com)\n");
-  const [, , l1, l2] = ids(link), words = Doc.contentOf(Doc.blockById(link, l2)).indexOf("](");
+});
+
+// A last block that ends in a link; `words`: where its words end and its address starts.
+const LINKED = "# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond [two](https://example.com)\n";
+const linkedDoc = () => {
+  const link = Doc.parse(LINKED);
+  const [, , l1, l2] = ids(link);
+  return { link, l1, l2, words: Doc.contentOf(Doc.blockById(link, l2)).indexOf("](") };
+};
+
+test("Enter over a span: a last block that ends in a link, selected up to the end of its words, leaves no words (the hidden address is none)", () => {
+  const { link, l1, l2, words } = linkedDoc();
   const linked = Span.replaceSpan(link, Span.spanOf(link, at(link, 2, 6), at(link, 3, words)), "", { split: true });
   assert.equal(linked.rest, false, "no words of the last block are left");
   assert.deepEqual(Span.followShots(linked.doc, [{ id: "B2", blockIds: [l2] }], linked), [{ id: "B2", blockIds: [l1], moved: true }]);
-  // Words after the link are still words left.
+});
+
+test("Enter over a span: words after a link are still words left", () => {
   const after = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond [two](https://example.com) three\n");
   const at2 = Doc.contentOf(after.blocks[3]).indexOf("](");
   assert.equal(Span.replaceSpan(after, Span.spanOf(after, at(after, 2, 6), at(after, 3, at2)), "", { split: true }).rest, true);
-  // Letters outside the basic range (Adlam, two code units each) are words too: the shot goes with them.
+});
+
+test("Enter over a span: letters outside the basic range (Adlam, two code units each) are words too; the shot goes with them", () => {
   const adlam = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond 𞤀𞤣𞤤𞤢𞤥\n");
   const [, , d1, d2] = ids(adlam);
   const kept = Span.replaceSpan(adlam, Span.spanOf(adlam, at(adlam, 2, 6), at(adlam, 3, 7)), "", { split: true });
   assert.equal(kept.rest, true, "the Adlam word is left");
   assert.deepEqual(Span.followShots(kept.doc, [{ id: "B2", blockIds: [d2] }], kept), [{ id: "B2", blockIds: [kept.caret.id], moved: true }]);
   assert.notEqual(kept.caret.id, d1);
-  // A reference line cut at its "- ": what is left joins the spoken words, so it is words left and the shot goes with it.
+});
+
+test("Enter over a span: a reference line cut at its \"- \" leaves spoken words, so the shot goes with them", () => {
   const ref = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond paragraph.\n- Reference: https://example.com\n");
   const [, , r1, r2] = ids(ref), dash = Doc.contentOf(Doc.blockById(ref, r2)).indexOf("- ") + 2;
   const cutRef = Span.replaceSpan(ref, Span.spanOf(ref, at(ref, 2, 6), at(ref, 3, dash)), "", { split: true });
   assert.equal(cutRef.rest, true, "the reference's words are left");
   assert.notEqual(cutRef.caret.id, r1);
   assert.deepEqual(Span.followShots(cutRef.doc, [{ id: "B2", blockIds: [r2] }], cutRef), [{ id: "B2", blockIds: [cutRef.caret.id], moved: true }]);
+});
+
+test("Enter over a span: words that would sit inside a reference's address when joined are a paragraph of their own, with the shot", () => {
   // The words left are read where they end up. Joined, "today." would sit inside the reference's address; after Enter
   // (or a paste with a blank line) it is a paragraph of its own, so the shot goes with it.
   const addr = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para.\n- Reference: https://example.com\n\nSecond ends today.\n");
@@ -221,19 +285,26 @@ test("Enter over a span: shots on the last block go with its words to the new bl
     assert.notEqual(r.caret.id, a1);
     assert.deepEqual(Span.followShots(r.doc, [{ id: "B2", blockIds: [a2] }], r), [{ id: "B2", blockIds: [r.caret.id], moved: true }]);
   }
-  // And the other way: joined, a bare address after "- Source: " is a source line; after Enter it is spoken words.
+});
+
+test("Enter over a span: a bare address that would follow \"- Source: \" when joined is spoken words after Enter", () => {
   const src = Doc.parse("# Title\n\n## 1 · Hook\n\nIntro.\n- Source: x\n\nSee https://example.com\n");
   const [, , s1, s2] = ids(src);
   const srcEnd = Doc.contentOf(Doc.blockById(src, s1)).length - 1;
   const bare = Span.replaceSpan(src, Span.spanOf(src, at(src, 2, srcEnd), at(src, 3, 4)), "", { split: true });
   assert.equal(bare.rest, true, "the address is left as spoken words");
   assert.deepEqual(Span.followShots(bare.doc, [{ id: "B2", blockIds: [s2] }], bare), [{ id: "B2", blockIds: [bare.caret.id], moved: true }]);
-  // Joined into a section title, nothing settles the link: its literal "](address)" stays in the text, as words left.
+});
+
+test("Enter over a span: joined into a section title, nothing settles the link; its literal address is words left", () => {
+  const { link, words } = linkedDoc();
   const title = Span.replaceSpan(link, Span.spanOf(link, at(link, 1, 3), at(link, 3, words)), "", { split: true });
   assert.equal(title.doc.blocks[1].type, "heading");
   assert.equal(title.rest, true, "the address is literal text in a section title");
-  // A list item that ends in a link, joined into a paragraph: the paragraph settles the link, so its address is no
-  // words left and the item's shot stays at the join.
+});
+
+test("Enter over a span: a list item that ends in a link, joined into a paragraph, leaves no words; its shot stays at the join", () => {
+  // The paragraph settles the link, so its address is no words left.
   const list = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\n- see [two](https://example.com)\n");
   const [, , i1, i2] = ids(list), cut = Doc.contentOf(Doc.blockById(list, i2)).indexOf("](");
   assert.equal(Doc.blockById(list, i2).type, "raw", "a list is kept as plain text");
