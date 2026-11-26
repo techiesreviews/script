@@ -465,14 +465,57 @@ for (const width of [1280, 390]) {
       results.push(`${width}px asks after the span: met — an ask on "sounds like you" and a Sounds like me mark stayed open through Delete, Undo, Redo and Undo, each time on its words`);
     }
 
+    // 16f. The same ask and mark with Enter over the span (review round 3): Enter takes them to the new paragraph the
+    // split makes, not to the first one; Undo, Redo and Undo keep them open on their words.
+    {
+      const p3 = await page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(P3)}))`);
+      const content = await page.eval(`window.__scriptEditor.markdown().split("\\n").find((l) => l.startsWith(${JSON.stringify(P3)}))`);
+      const at = content.indexOf("sounds like you");
+      const askId = await page.eval(`window.__scriptEditor.ask(${p3}, ${at}, ${at + "sounds like you".length}, "simpler")`);
+      assert.ok(askId, "an ask on \"sounds like you\" in the third paragraph (Enter)");
+      await page.key("Escape", "Escape", 27);
+      const voiceId = await page.eval(`window.__scriptEditor.voiceCheck()`);
+      assert.ok(voiceId && await page.eval(`window.__scriptEditor.answer(${JSON.stringify(voiceId)}, { kind: "marks", marks: [{ quote: "before you press record", why: "test" }] })`), "a Sounds like me mark on \"before you press record\" (Enter)");
+      const anchors = () => page.eval(`(() => {
+        const asks = window.__scriptEditor.asks(), a = asks.find((x) => x.id === ${JSON.stringify(askId)}), v = asks.find((x) => x.id === ${JSON.stringify(voiceId)});
+        const m = v.answer.marks[0], text = (id) => [...document.querySelectorAll("#script .block")].find((el) => el.dataset.id === id)?.textContent || "";
+        return { ask: a.status, askIn: text(a.blockId).slice(0, 12), askWords: a.quote, mark: m.state, markIn: text(m.blockId).slice(0, 12), markWords: m.quote };
+      })()`);
+      const before = await anchors();
+      assert.deepEqual(before, { ask: "waiting", askIn: "Hi, I'm Sam,", askWords: "sounds like you", mark: "open", markIn: "Hi, I'm Sam,", markWords: "before you press record" }, `both on the third paragraph (Enter): ${JSON.stringify(before)}`);
+      await drag(page, [P1, "Why"], [P3, "Today:"]);
+      assert.ok((await spanState(page)).on, "the span is drawn (Enter)");
+      const withMarks = await md(page);
+      await page.key("Enter", "Enter", 13);
+      await page.until(`!window.__scriptEditor.markdown().includes(${JSON.stringify(P2)})`, "Enter took the span");
+      const split = { ...before, askIn: "Today: how t", markIn: "Today: how t" };
+      let now = await anchors();
+      assert.deepEqual(now, split, `both follow their words to the paragraph the split made: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withMarks)}`, "Undo puts the words back (Enter)");
+      now = await anchors();
+      assert.deepEqual(now, before, `after Undo both are open on the third paragraph (Enter): ${JSON.stringify(now)}`);
+      await page.key("y", "KeyY", 89, { modifiers: 2 });
+      await page.until(`!window.__scriptEditor.markdown().includes(${JSON.stringify(P2)})`, "Redo takes the span again (Enter)");
+      now = await anchors();
+      assert.deepEqual(now, split, `after Redo both are open on the paragraph the split made: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withMarks)}`, "Undo again puts the words back (Enter)");
+      now = await anchors();
+      assert.deepEqual(now, before, `after the second Undo both are open on the third paragraph (Enter): ${JSON.stringify(now)}`);
+      await page.key("Escape", "Escape", 27);
+      results.push(`${width}px asks after the span, Enter (review round 3): met — Enter took the ask and the Sounds like me mark to the new paragraph; Undo, Redo and Undo kept both open, each time on their words`);
+    }
+
     // 16c. The agent changes the first paragraph while the mouse is still held in a drag: the span ends and the drag with
     // it, so moving on or letting go draws nothing from old offsets; held near the window's end, the editor's scrolling
     // stops too (no span is drawn again while it would scroll on).
     {
-      const index = await page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(P1)}))`);
-      const held = async (to, label) => {
-        const askId = await page.eval(`window.__scriptEditor.ask(${index}, 2, 7, "simpler")`);
-        assert.ok(askId, `an ask on "blank" (${label})`);
+      // `on`: the paragraph the agent changes and the word it bolds (the drag's first paragraph, or the middle one).
+      const held = async (to, label, on = { block: P1, at: 2, word: "blank", bolded: "A **blank** page" }) => {
+        const index = await page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(on.block)}))`);
+        const askId = await page.eval(`window.__scriptEditor.ask(${index}, ${on.at}, ${on.at + on.word.length}, "simpler")`);
+        assert.ok(askId, `an ask on "${on.word}" (${label})`);
         await page.key("Escape", "Escape", 27);
         await page.eval(`scrollTo(0, 0)`);
         const a = await page.eval(pointJs("page. A deadline.", "Why", true));
@@ -481,8 +524,8 @@ for (const width of [1280, 390]) {
         await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 });
         for (let i = 1; i <= 8; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (b.x - a.x) * i / 8, y: a.y + (b.y - a.y) * i / 8, button: "left", buttons: 1 }); await sleep(25); }
         assert.ok((await spanState(page)).on, `the span is drawn while the mouse is held (${label})`);
-        assert.ok(await page.eval(`window.__scriptEditor.answer(${JSON.stringify(askId)}, { kind: "replace", text: "**blank**" })`), `the agent's change goes in (${label})`);
-        await page.until(`window.__scriptEditor.markdown().includes("A **blank** page")`, "the agent's bold");
+        assert.ok(await page.eval(`window.__scriptEditor.answer(${JSON.stringify(askId)}, { kind: "replace", text: ${JSON.stringify(`**${on.word}**`)} })`), `the agent's change goes in (${label})`);
+        await page.until(`window.__scriptEditor.markdown().includes(${JSON.stringify(on.bolded)})`, "the agent's bold");
         assert.equal(await page.eval(`window.__scriptEditor.spanBusy()`), false, `the drag and its scrolling stopped with the agent's change (${label})`);
         await sleep(100);
         const y0 = await page.eval(`scrollY`);
@@ -501,8 +544,10 @@ for (const width of [1280, 390]) {
       };
       const plain = await held("Today:", "held drag");
       const scrolling = await held(null, "held near the window's end");
+      const middle = await held("Today:", "the middle paragraph changed", { block: P2, at: 43, word: "Long", bolded: "post. **Long** sentences" });
       await page.eval(`scrollTo(0, 0)`);
       results.push(`${width}px agent's change during a held drag: met — the span ended at once and the drag with its scrolling stopped (spanBusy false); ${plain}; near the window's end ${scrolling}`);
+      results.push(`${width}px agent's change to the middle paragraph during a held drag (review round 3): met — the span ended and the drag stopped (spanBusy false); ${middle}`);
     }
 
     // 16d. The agent changes the paragraph a held drag started in before the drag left it (no span drawn yet): moving on
@@ -714,7 +759,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/52 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/56 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
