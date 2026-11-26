@@ -549,7 +549,8 @@ test("moveAsks returns its moves; unmoveAsks puts open anchors back, and the fli
   ]);
   assert.deepEqual([asks[1].blockId, asks[1].start], ["last", 0], "an anchor before fromStart stays");
   // Undo: the anchors go back to where they were, so they are found in the restored blocks.
-  unmoveAsks(asks, moves);
+  const back = unmoveAsks(asks, moves);
+  assert.deepEqual([...back], [asks[0], asks[2].answer.marks[0]], "it returns the anchors it put back");
   assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end], ["last", 12, 16]);
   assert.deepEqual([asks[2].answer.marks[0].blockId, asks[2].answer.marks[0].start], ["last", 20]);
   assert.deepEqual(asks[2].answer.marks[1], { state: "open", blockId: "other", start: 0, end: 3 }, "a mark that did not move stays");

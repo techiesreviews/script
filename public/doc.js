@@ -578,13 +578,16 @@ export function moveAsks(asks, fromId, toId, fromStart, shift) {
 }
 // Puts the anchors that moves took to another block back where they were, for the asks and marks still open and still
 // in that block (TOOLS-483: an Undo restores the blocks the anchors came from). flipMoves gives the moves for the Redo.
+// Returns the asks and marks it put back: they are where they belong already, so nothing else moves them in that step.
 export function unmoveAsks(asks, moves) {
+  const back = new Set();
   for (const { askId, mark, from, to } of moves) {
     const a = asks.find((x) => x.id === askId);
     const x = !a ? null : mark < 0 ? (a.scope === "selection" && OPEN_STATUSES.includes(a.status) ? a : null)
       : (a.scope === "script" && a.status === "answered" && a.answer.marks[mark]?.state === "open" ? a.answer.marks[mark] : null);
-    if (x && x.blockId === to.blockId) Object.assign(x, from);
+    if (x && x.blockId === to.blockId) { Object.assign(x, from); back.add(x); }
   }
+  return back;
 }
 export const flipMoves = (moves) => moves.map((m) => ({ ...m, from: m.to, to: m.from }));
 

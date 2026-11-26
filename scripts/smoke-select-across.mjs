@@ -535,6 +535,78 @@ for (const width of [1280, 390]) {
       results.push(`${width}px agent's change before the drag left its paragraph: met — moving on into the third paragraph and letting go drew no span; the drag had stopped`);
     }
 
+    // 16e. The joined paragraph reads like the first one with only bold marks added ("zebra quokka wombat" and
+    // "Gone **zebra** quokka wombat", the span from the first paragraph's start through "Gone "): an ask and a "Sounds
+    // like me" mark after the bold stay on their words through Delete, Undo, Redo and Undo, not moved twice (TOOLS-483
+    // review round 2).
+    {
+      const blockIndex = (start) => page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(start)}))`);
+      const line = (start) => page.eval(`window.__scriptEditor.markdown().split("\\n").find((l) => l.startsWith(${JSON.stringify(start)}))`);
+      // The mark is made while "wombat" is only in the second paragraph, so its quote is found there.
+      const write = async (from, text) => {
+        const id = await page.eval(`window.__scriptEditor.ask(${await blockIndex(from)}, 0, ${(await line(from)).length}, "simpler")`);
+        assert.ok(id && await page.eval(`window.__scriptEditor.answer(${JSON.stringify(id)}, { kind: "replace", text: ${JSON.stringify(text)} })`), `the agent writes "${text}"`);
+        await page.until(`window.__scriptEditor.markdown().includes(${JSON.stringify(`\n${text}\n`)})`, `"${text}" in the script`);
+        await page.key("Escape", "Escape", 27);
+      };
+      const B = "Gone **zebra** quokka wombat";
+      await write(P2, B);
+      const askId = await page.eval(`window.__scriptEditor.ask(${await blockIndex("Gone")}, ${B.indexOf("quokka")}, ${B.indexOf("quokka") + 6}, "simpler")`);
+      assert.ok(askId, "an ask on \"quokka\" in the second paragraph");
+      await page.key("Escape", "Escape", 27);
+      const voiceId = await page.eval(`window.__scriptEditor.voiceCheck()`);
+      assert.ok(voiceId && await page.eval(`window.__scriptEditor.answer(${JSON.stringify(voiceId)}, { kind: "marks", marks: [{ quote: "wombat", why: "test" }] })`), "a Sounds like me mark on \"wombat\"");
+      await write(P1, "zebra quokka wombat");
+      const anchors = () => page.eval(`(() => {
+        const asks = window.__scriptEditor.asks(), a = asks.find((x) => x.id === ${JSON.stringify(askId)}), m = asks.find((x) => x.id === ${JSON.stringify(voiceId)}).answer.marks[0];
+        const text = (id) => [...document.querySelectorAll("#script .block")].find((el) => el.dataset.id === id)?.textContent.slice(0, 4) || "";
+        return { ask: a.status, askIn: text(a.blockId), askWords: a.quote, askAt: [a.start, a.end], mark: m.state, markIn: text(m.blockId), markWords: m.quote, markAt: [m.start, m.end] };
+      })()`);
+      const before = await anchors();
+      assert.deepEqual(before, { ask: "waiting", askIn: "Gone", askWords: "quokka", askAt: [15, 21], mark: "open", markIn: "Gone", markWords: "wombat", markAt: [22, 28] }, `both on the second paragraph: ${JSON.stringify(before)}`);
+      const withMarks = await md(page);
+      let now;
+      // The bold marks are hidden, so the drag ends just after the space of "Gone " (before the hidden "**").
+      {
+        const a = await page.eval(pointJs("zebra quokka", "zebra", true));
+        const b = await page.eval(`(() => {
+          const el = [...document.querySelectorAll("#script .block")].find((e) => e.textContent.startsWith("Gone"));
+          const n = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+          const r = document.createRange(); r.setStart(n, 4); r.setEnd(n, 5);
+          const box = r.getClientRects()[0];
+          return { x: box.right - 1, y: box.top + box.height / 2 };
+        })()`);
+        await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...a, buttons: 0 });
+        await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 });
+        for (let i = 1; i <= 10; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (b.x - a.x) * i / 10, y: a.y + (b.y - a.y) * i / 10, button: "left", buttons: 1 }); await sleep(25); }
+        await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...b, button: "left", buttons: 0, clickCount: 1 });
+        await sleep(80);
+      }
+      assert.ok((await spanState(page)).on, "the span is drawn");
+      await page.key("Delete", "Delete", 46);
+      await page.until(`!window.__scriptEditor.markdown().includes("Gone")`, "the span went");
+      assert.ok((await md(page)).includes("\n**zebra** quokka wombat\n"), "the joined paragraph reads \"**zebra** quokka wombat\"");
+      const joined = { ...before, askIn: "**ze", askAt: [10, 16], markIn: "**ze", markAt: [17, 23] };
+      now = await anchors();
+      assert.deepEqual(now, joined, `both follow their words to the joined paragraph: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withMarks)}`, "Undo puts the words back");
+      now = await anchors();
+      assert.deepEqual(now, before, `after Undo both are open on their words in the second paragraph: ${JSON.stringify(now)}`);
+      await page.key("y", "KeyY", 89, { modifiers: 2 });
+      await page.until(`!window.__scriptEditor.markdown().includes("Gone")`, "Redo deletes the span again");
+      now = await anchors();
+      assert.deepEqual(now, joined, `after Redo both are open on their words in the joined paragraph: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withMarks)}`, "Undo again puts the words back");
+      now = await anchors();
+      assert.deepEqual(now, before, `after the second Undo both are open on their words in the second paragraph: ${JSON.stringify(now)}`);
+      await page.key("Escape", "Escape", 27);
+      for (let i = 0; i < 8 && (await md(page)) !== original; i++) { await undo(page); await sleep(150); }
+      assert.equal(await md(page), original, "Undo takes the agent's paragraphs back");
+      results.push(`${width}px asks after a span whose join only adds bold: met — an ask on "quokka" and a Sounds like me mark on "wombat" stayed open through Delete, Undo, Redo and Undo, each time on their words at the same place`);
+    }
+
     // 17. A moved shot keeps its orange frame while the mouse is over it (TOOLS-477).
     {
       assert.ok(await page.eval(`matchMedia("(hover: hover) and (pointer: fine)").matches`), "Chrome reports a mouse (see the flags at the top)");
@@ -642,7 +714,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/50 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/52 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);

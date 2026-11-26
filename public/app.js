@@ -936,12 +936,14 @@ function restore(snap, to) {
   to.push(step);
   const was = state.doc;
   state.doc = Doc.cloneDoc(snap.doc);
-  if (snap.askMoves) Doc.unmoveAsks(state.asks, snap.askMoves);
+  const putBack = snap.askMoves ? Doc.unmoveAsks(state.asks, snap.askMoves) : null;
   setSpan(null);
-  // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
+  // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word. The
+  // ones just put back are skipped: their offsets are for this step's text already (a joined paragraph can read like the
+  // old one with only bold added).
   for (const b of state.doc.blocks) {
     const old = Doc.blockById(was, b.id), a = old && Doc.contentOf(old), z = Doc.contentOf(b);
-    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, Cues.marksRange(a, z));
+    if (old && a !== z && a.replace(/\*/g, "") === z.replace(/\*/g, "")) followAnchors(b.id, z, Cues.marksRange(a, z), { skip: putBack });
   }
   state.lastStep = null;
   if (closed) emit(closed.status, closed);
@@ -996,9 +998,10 @@ const moveAsks = (fromId, toId, fromStart, shift) => Doc.moveAsks(state.asks, fr
 // Bold marks moved in a block: open asks and "Sounds like me" marks there follow by their offsets (`at(start, end)` gives
 // the new range of one, or null when an edit fell inside it), with their quote as it reads now (`content`; null when it
 // stays), so they can't jump into another word by a search. `insideGoes`: one the edit fell inside is cancelled, for the
-// same reason.
-function followAnchors(id, content, at, { insideGoes = false } = {}) {
+// same reason. `skip`: anchors left where they are.
+function followAnchors(id, content, at, { insideGoes = false, skip = null } = {}) {
   const move = (x, gone) => {
+    if (skip?.has(x)) return;
     const r = at(x.start, x.end);
     if (r) Object.assign(x, r, content == null ? {} : { quote: content.slice(r.start, r.end) });
     else if (insideGoes) gone();
