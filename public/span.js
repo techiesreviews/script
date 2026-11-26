@@ -103,9 +103,6 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
     }
   }
   const kept = caret;
-  // Words of the last block left after the join, read in the joined text as it now is (a line cut at its "- " is no
-  // longer a reference; a link cut before its address keeps none).
-  const rest = wordsAfter(content, kept, settles);
 
   // What is put in, at the join.
   if (put) {
@@ -151,6 +148,11 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
       at = { id: made.id, offset: 0 };
     }
   }
+  // Words of the last block left, read where they end up: after the caret, in the block it is in (Enter or a paste with
+  // blank lines puts them in a new one), so what was put in never counts. There a line cut at its "- " is no longer a
+  // reference, and a link cut before its address keeps none.
+  const end = Doc.blockById(next, at.id);
+  const rest = wordsAfter(Doc.contentOf(end), at.offset, end.type === "para");
   return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest };
 }
 

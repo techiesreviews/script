@@ -440,6 +440,15 @@ for (const width of [1280, 390]) {
       } finally {
         await guest.close();
       }
+      // Once sharing stops, the host selects across paragraphs again.
+      await page.send("Page.bringToFront");
+      await page.eval(`document.querySelector("#stopShare").click(); true`);
+      await page.until(`document.querySelector("#stopShare").hidden`, "sharing stopped");
+      await drag(page, [P2, "Most"], [P3, "Today:"]);
+      const back = await spanState(page);
+      assert.ok(back.on && back.ranges === 2,`host: after sharing stops the span is drawn again: ${JSON.stringify(back)}`);
+      await page.key("Escape", "Escape", 27);
+      results.push(`${width}px after sharing: met — once sharing stops, a drag selects across paragraphs again`);
     }
   } catch (error) {
     console.log(`DIAGNOSTIC ${width}px: ${JSON.stringify(await spanState(page).catch(() => null))} log=${JSON.stringify(page.log)}`);
@@ -449,7 +458,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/36 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/38 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
