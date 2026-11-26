@@ -73,10 +73,15 @@ export function spanCopy(doc, span) {
  * at the very start of the first block. A heading keeps its text on one line; blank lines in the text make paragraphs.
  * Bold and links cut by the span are settled as a deletion in one block would be (no lone marks; a link keeps the words
  * that are left). `split`: Enter, a new block starts at the caret.
- * Works on a copy: returns { doc, id, caret: { id, offset }, removed: [ids], left, typed, rest } (left: how much of the
- * first block stays before the join; typed: how long what was put in is, both as it ended up; rest: words of the last
- * block are left after the span), or null when the edit is
+ * Works on a copy: returns { doc, id, caret: { id, offset }, removed: [ids], left, typed, rest, follow } (left: how much
+ * of the first block stays before the join; typed: how long what was put in is, both as it ended up; rest: words of the
+ * last block are left after the span), or null when the edit is
  * refused because settled marks would turn the line into another kind of block (as one-block edits are refused).
+ * `follow(side, start, end)`: where words the span left are now, for an ask on them: `side` "first" (a range of the first
+ * block that ends before the span) or "last" (one of the last block that starts after it), in that block's offsets as
+ * they were. Gives { id, start, end, quote } in the new document, or null when the span or the settling took or cut the
+ * words. Every step of the edit is followed by its offsets (TOOLS-484): the words are never searched for, since a
+ * repeated word has other copies and the marks that go shift each of them.
  */
 export function replaceSpan(doc, span, text = "", { split = false } = {}) {
   const parts = spanParts(doc, span);
@@ -93,15 +98,19 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
   // The deletion, as if the two ends had been one text with a line break between them.
   const old = `${head}\n${tail}`, left = head.slice(0, first.start), right = tail.slice(last.end);
   let content = left + right, caret = left.length;
+  // Each step of the edit, as where a range of the text before it is after it (null: the step took or cut it), for `follow`.
+  const steps = [];
+  let fix = null, settled = null;
   if (settles) {
-    const fix = Links.keepHidden(old, content, Links.textLinks(old), caret);
+    fix = Links.keepHidden(old, content, Links.textLinks(old), caret);
     if (fix) ({ content, caret } = fix);
-    const settled = Cues.settleMarks(old, content, caret, { deleted: fix?.gone });
+    settled = Cues.settleMarks(old, content, caret, { deleted: fix?.gone });
     if (settled) {
       if (Changes.settlingChangesKind(old, settled.content)) return null;
       ({ content, caret } = settled);
     }
   }
+  steps.push(settled ? settled.follow : through(old, fix ? fix.gone.map(([a, b]) => ({ at: a, del: b - a })) : [{ at: left.length, del: old.length - left.length - right.length }]));
   const kept = caret;
 
   // What is put in, at the join.
@@ -109,10 +118,15 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
     const typed = content.slice(0, caret) + put + content.slice(caret);
     const s = settles ? Cues.settleMarks(content, typed, caret + put.length) : null;
     if (s && Changes.settlingChangesKind(typed, s.content)) return null;
+    steps.push(s ? s.follow : through(content, [{ at: caret, ins: put }]));
     ({ content, caret } = s || { content: typed, caret: caret + put.length });
   }
   if (heading && content.includes("\n")) {
-    const before = fold(content.slice(0, caret));
+    const before = fold(content.slice(0, caret)), breaks = [];
+    for (const [from, part] of [[0, content.slice(0, caret)], [caret, content.slice(caret)]]) {
+      for (const m of part.matchAll(/\s*\n\s*/g)) breaks.push({ at: from + m.index, del: m[0].length, ins: " " });
+    }
+    steps.push(through(content, breaks));
     content = before + fold(content.slice(caret));
     caret = before.length;
   }
@@ -125,6 +139,11 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
       if (s?.content[s.caret - 1] === "\n") {
         const at = s.caret - 1, l = s.content.slice(0, at), r = s.content.slice(at + 1);
         if (!(Changes.keepsType(`${l}x`, "para") && Changes.keepsType(r, "para") && Changes.keepsType(l + r, "para"))) return null;
+        // Through the settling, then without the line break it was settled around.
+        steps.push((start, end) => {
+          const to = s.follow(start, end);
+          return to && { start: to.start > at ? to.start - 1 : to.start, end: to.end > at ? to.end - 1 : to.end };
+        });
         content = l + r;
         caret = at;
       }
@@ -139,12 +158,17 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
   if (block.type !== type) { block.type = type; block.text = ""; }
   const r = Doc.setContent(next, block.id, content);
   let at = Doc.locate(r, caret);
+  // Enter's new block: the words from `at` on in block `id` went to block `to`, `lead` of them from its start (a line
+  // that reads as a section title there keeps its "## " outside its text).
+  let entered = null;
   if (breakAt != null) {
     if (heading && at.offset === 0 && content.length) {
       const i = next.blocks.indexOf(block);
       Doc.insertBlock(next, i > 0 ? next.blocks[i - 1].id : null, "para", "");
     } else {
+      const whole = Doc.contentOf(Doc.blockById(next, at.id)).length;
       const made = Doc.splitBlock(next, at.id, at.offset);
+      entered = { id: at.id, at: at.offset, to: made.id, lead: whole - at.offset - Doc.contentOf(made).length };
       at = { id: made.id, offset: 0 };
     }
   }
@@ -153,7 +177,36 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
   // reference, and a link cut before its address keeps none.
   const end = Doc.blockById(next, at.id);
   const rest = wordsAfter(Doc.contentOf(end), at.offset, end.type === "para");
-  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest };
+
+  const follow = (side, start, end) => {
+    if (!(start >= 0 && end > start) || (side === "first" ? end > first.start : side !== "last" || start < last.end)) return null;
+    const shift = side === "first" ? 0 : head.length + 1;
+    let range = { start: start + shift, end: end + shift };
+    for (const step of steps) {
+      range = step(range.start, range.end);
+      if (!range || range.end <= range.start) return null;
+    }
+    // The block the text went to (blank lines put in make paragraphs; a section title keeps its "## " outside its text).
+    const words = content.slice(range.start, range.end);
+    const piece = Doc.locate(r, range.start), pieceEnd = Doc.locate(r, range.end - 1);
+    if (piece.id !== pieceEnd.id) return null;
+    let to = { id: piece.id, start: piece.offset, end: piece.offset + words.length };
+    if (entered && to.id === entered.id && to.start >= entered.at) {
+      to = { id: entered.to, start: to.start - entered.at - entered.lead, end: to.end - entered.at - entered.lead };
+    }
+    // Read where they are: a place that holds other text is no place for them.
+    const now = Doc.blockById(next, to.id);
+    if (to.start < 0 || !now || Doc.contentOf(now).slice(to.start, to.end) !== words) return null;
+    return { ...to, quote: words };
+  };
+  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest, follow };
+}
+
+// Where a range of `text` is after these edits ([{ at, del, ins }], in the text's offsets): Cues.opsRange, or null when
+// one of them falls inside the range (text put in at its very start or end stays outside it).
+function through(text, ops) {
+  const range = Cues.opsRange(text, ops);
+  return (start, end) => (ops.some((o) => (o.del ? o.at < end && o.at + o.del > start : o.at > start && o.at < end)) ? null : range(start, end));
 }
 
 // True when `content` has words after `end`: in a paragraph (`spoken`) only the spoken ones count (no bold marks, no
