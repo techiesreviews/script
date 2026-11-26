@@ -929,10 +929,14 @@ function restore(snap, to) {
   // A step across paragraphs (TOOLS-470) also says which selection shows once it is taken (`span`) and where its shots
   // go (`shots`, placed in its turn below); the step it leaves for the other list carries the other side of both.
   const across = snap.span !== undefined || snap.shots ? { span: snap.otherSpan ?? null, otherSpan: snap.span ?? null } : {};
-  const step = { doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}), ...across };
+  // It also says which asks it moved to another block (`askMoves`): they go back before asks are found again, and the
+  // step for the other list moves them once more.
+  const moved = snap.askMoves ? { askMoves: Doc.flipMoves(snap.askMoves) } : {};
+  const step = { doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}), ...across, ...moved };
   to.push(step);
   const was = state.doc;
   state.doc = Doc.cloneDoc(snap.doc);
+  if (snap.askMoves) Doc.unmoveAsks(state.asks, snap.askMoves);
   setSpan(null);
   // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
   for (const b of state.doc.blocks) {
@@ -1369,7 +1373,7 @@ function setSpan(next) {
 }
 // The span, if the blocks it covers are as they were.
 function liveSpan() {
-  if (span && (!state.doc || spanShared() || spanSees(span) !== spanSaw)) setSpan(null);
+  if (span && (!state.doc || spanShared() || spanSees(span) !== spanSaw)) { setSpan(null); spanDragStop(); }
   return span;
 }
 // Drawn again after every render (the blocks' text nodes are new) and kept to the script as it is now.
@@ -1377,7 +1381,8 @@ function paintSpan() {
   if (!canHighlight()) return;
   if (span && state.doc) {
     const now = !spanShared() && spanSees(span) === spanSaw && spanAt(span.from, span.to);
-    if (!now) { span = spanSaw = null; scriptEl.removeAttribute("data-span"); }
+    // A drag still held stops too, with its scrolling: its next move would draw a span from old offsets (TOOLS-483).
+    if (!now) { span = spanSaw = null; scriptEl.removeAttribute("data-span"); spanDragStop(); }
     else if (now !== span) { span = now; spanSaw = spanSees(now); }
   }
   if (!span || !state.doc) return void CSS.highlights.delete("span-selection");
@@ -1410,6 +1415,9 @@ function spotAt(x, y) {
   return q && el.contains(q[0]) ? { id, offset: offsetIn(el, q[0], q[1]) } : { id, offset: x < r.left ? 0 : readContent(el).length };
 }
 function spanExtend(x, y) {
+  // A change to the block the drag started in (before any span was drawn) stops it the same way.
+  const from = state.doc && byId(spanDrag.anchor.id);
+  if (!from || Doc.contentOf(from) !== spanDrag.text) return void spanDragStop();
   const focus = spotAt(x, y);
   if (!focus || !state.doc) return;
   let next = spanAt(spanDrag.anchor, focus);
@@ -1446,7 +1454,7 @@ document.addEventListener("pointerdown", (e) => {
   const el = blockOf(e.target);
   if (!el || el.closest("details:not([open])")) return;
   const anchor = spotAt(e.clientX, e.clientY);
-  if (anchor) spanDrag = { anchor };
+  if (anchor) spanDrag = { anchor, text: Doc.contentOf(byId(anchor.id)) };
 }, { capture: true });
 addEventListener("pointermove", (e) => {
   if (!spanDrag) return;
@@ -1455,11 +1463,15 @@ addEventListener("pointermove", (e) => {
   spanExtend(e.clientX, e.clientY);
   if (!spanScroll) spanAutoScroll();
 }, { passive: true });
-function spanReleased() {
-  if (!spanDrag) return;
+// A held drag and its scrolling end, as when the mouse is let go.
+function spanDragStop() {
   spanDrag = spanPoint = null;
   cancelAnimationFrame(spanScroll);
   spanScroll = 0;
+}
+function spanReleased() {
+  if (!spanDrag) return;
+  spanDragStop();
   // The browser's own selection, still inside the block the drag started in, steps aside: keys come to the span.
   const sel = getSelection();
   if (span && sel.rangeCount) sel.collapseToStart();
@@ -1493,7 +1505,9 @@ function applySpan(text, { split = false } = {}) {
     if (a.scope === "selection" && a.blockId === first && isOpen(a) && !isBrollAnswer(a) && a.end > was.from.offset) closeAsk(a, "cancelled");
     if (a.scope === "script" && a.status === "answered") for (const m of a.answer.marks) if (m.state === "open" && m.blockId === first && m.end > was.from.offset) m.state = "gone";
   }
-  moveAsks(last, r.caret.id, was.to.offset, r.caret.offset - was.to.offset);
+  // The Undo step takes these moves back before asks are found again, so they stay open on their words (TOOLS-483).
+  const moves = moveAsks(last, r.caret.id, was.to.offset, r.caret.offset - was.to.offset);
+  if (step && moves.length) step.askMoves = moves;
   const shots = Span.followShots(r.doc, brollApi?.shots() || [], r);
   state.doc = r.doc;
   boldTyping = linksBefore = null;
@@ -4615,7 +4629,7 @@ function restoreSelection(sel) {
 // Someone else's change (or an undo on a name tag) is in state.doc: asks follow the text, then the script redraws.
 function afterRoomOps(ops, sel, before = new Map()) {
   // A selection across paragraphs (TOOLS-470) that another tab's edit reached would point at other words: it ends.
-  if (span && Span.spanTouched(state.doc, span, ops)) { setSpan(null); spanDrag = null; }
+  if (span && Span.spanTouched(state.doc, span, ops)) { setSpan(null); spanDragStop(); }
   followMarks(ops);
   const touched = new Set();
   let structure = false;

@@ -559,19 +559,34 @@ export function applyAnswer(content, ask) {
 }
 
 // Anchors that sit at or after `fromStart` in block `fromId` move to `toId`, shifted by `shift`.
-// Used after Keep (the text after the quote moves), paste, split and merge.
+// Used after Keep (the text after the quote moves), paste, split and merge. Returns the moves, for an Undo step that
+// has to take them back (unmoveAsks): `mark` is the index of a "Sounds like me" mark in its answer, -1 for an ask.
 export function moveAsks(asks, fromId, toId, fromStart, shift) {
+  const moves = [];
+  const move = (x, askId, mark) => {
+    const from = { blockId: x.blockId, start: x.start, end: x.end };
+    x.blockId = toId; x.start += shift; x.end += shift;
+    moves.push({ askId, mark, from, to: { blockId: x.blockId, start: x.start, end: x.end } });
+  };
   for (const a of asks) {
-    if (a.scope === "selection" && a.blockId === fromId && OPEN_STATUSES.includes(a.status) && a.start >= fromStart) {
-      a.blockId = toId; a.start += shift; a.end += shift;
-    }
+    if (a.scope === "selection" && a.blockId === fromId && OPEN_STATUSES.includes(a.status) && a.start >= fromStart) move(a, a.id, -1);
     if (a.scope === "script" && a.status === "answered") {
-      for (const m of a.answer.marks) {
-        if (m.state === "open" && m.blockId === fromId && m.start >= fromStart) { m.blockId = toId; m.start += shift; m.end += shift; }
-      }
+      a.answer.marks.forEach((m, i) => { if (m.state === "open" && m.blockId === fromId && m.start >= fromStart) move(m, a.id, i); });
     }
   }
+  return moves;
 }
+// Puts the anchors that moves took to another block back where they were, for the asks and marks still open and still
+// in that block (TOOLS-483: an Undo restores the blocks the anchors came from). flipMoves gives the moves for the Redo.
+export function unmoveAsks(asks, moves) {
+  for (const { askId, mark, from, to } of moves) {
+    const a = asks.find((x) => x.id === askId);
+    const x = !a ? null : mark < 0 ? (a.scope === "selection" && OPEN_STATUSES.includes(a.status) ? a : null)
+      : (a.scope === "script" && a.status === "answered" && a.answer.marks[mark]?.state === "open" ? a.answer.marks[mark] : null);
+    if (x && x.blockId === to.blockId) Object.assign(x, from);
+  }
+}
+export const flipMoves = (moves) => moves.map((m) => ({ ...m, from: m.to, to: m.from }));
 
 // Check an agent's answer_ask arguments against the ask and the script.
 // Returns { answer } ready for receiveAnswer, or { error } with a short reason for the agent.

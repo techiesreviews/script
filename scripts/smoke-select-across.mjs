@@ -427,6 +427,82 @@ for (const width of [1280, 390]) {
       results.push(`${width}px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it`);
     }
 
+    // 16b. An open ask and a "Sounds like me" mark on words after the span, in its last paragraph: Delete takes them to
+    // the joined paragraph, one Undo puts them back on their words, still open; Redo and Undo again do the same (TOOLS-483).
+    {
+      const p3 = await page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(P3)}))`);
+      const content = await page.eval(`window.__scriptEditor.markdown().split("\\n").find((l) => l.startsWith(${JSON.stringify(P3)}))`);
+      const at = content.indexOf("sounds like you");
+      const askId = await page.eval(`window.__scriptEditor.ask(${p3}, ${at}, ${at + "sounds like you".length}, "simpler")`);
+      assert.ok(askId, "an ask on \"sounds like you\" in the third paragraph");
+      await page.key("Escape", "Escape", 27);
+      const voiceId = await page.eval(`window.__scriptEditor.voiceCheck()`);
+      assert.ok(voiceId && await page.eval(`window.__scriptEditor.answer(${JSON.stringify(voiceId)}, { kind: "marks", marks: [{ quote: "before you press record", why: "test" }] })`), "a Sounds like me mark on \"before you press record\"");
+      const anchors = () => page.eval(`(() => {
+        const asks = window.__scriptEditor.asks(), a = asks.find((x) => x.id === ${JSON.stringify(askId)}), v = asks.find((x) => x.id === ${JSON.stringify(voiceId)});
+        const m = v.answer.marks[0], text = (id) => [...document.querySelectorAll("#script .block")].find((el) => el.dataset.id === id)?.textContent || "";
+        return { ask: a.status, askIn: text(a.blockId).slice(0, 12), askWords: a.quote, mark: m.state, markIn: text(m.blockId).slice(0, 12) };
+      })()`);
+      const before = await anchors();
+      assert.deepEqual(before, { ask: "waiting", askIn: "Hi, I'm Sam,", askWords: "sounds like you", mark: "open", markIn: "Hi, I'm Sam," }, "both on the third paragraph");
+      await drag(page, [P1, "Why"], [P3, "Today:"]);
+      assert.ok((await spanState(page)).on, "the span is drawn");
+      const withMarks = await md(page);
+      await page.key("Delete", "Delete", 46);
+      await page.until(`!window.__scriptEditor.markdown().includes(${JSON.stringify(P2)})`, "the span went");
+      const joined = await anchors();
+      assert.deepEqual(joined, { ...before, askIn: "A blank page", markIn: "A blank page" }, "both follow their words to the joined paragraph");
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withMarks)}`, "Undo puts the words back");
+      assert.deepEqual(await anchors(), before, "after Undo the ask is still open and both are back on the third paragraph");
+      await page.key("y", "KeyY", 89, { modifiers: 2 });
+      await page.until(`!window.__scriptEditor.markdown().includes(${JSON.stringify(P2)})`, "Redo deletes the span again");
+      assert.deepEqual(await anchors(), joined, "after Redo both are on the joined paragraph, still open");
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withMarks)}`, "Undo again puts the words back");
+      assert.deepEqual(await anchors(), before, "after the second Undo both are open on the third paragraph");
+      await page.key("Escape", "Escape", 27);
+      results.push(`${width}px asks after the span: met — an ask on "sounds like you" and a Sounds like me mark stayed open through Delete, Undo, Redo and Undo, each time on its words`);
+    }
+
+    // 16c. The agent changes the first paragraph while the mouse is still held in a drag: the span ends and the drag with
+    // it, so moving on or letting go draws nothing from old offsets; held near the window's end, the editor's scrolling
+    // stops too (no span is drawn again while it would scroll on).
+    {
+      const index = await page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(P1)}))`);
+      const held = async (to, label) => {
+        const askId = await page.eval(`window.__scriptEditor.ask(${index}, 2, 7, "simpler")`);
+        assert.ok(askId, `an ask on "blank" (${label})`);
+        await page.key("Escape", "Escape", 27);
+        await page.eval(`scrollTo(0, 0)`);
+        const a = await page.eval(pointJs("page. A deadline.", "Why", true));
+        const b = typeof to === "string" ? await page.eval(pointJs(P3, to)) : await page.eval(`({ x: innerWidth / 2, y: innerHeight - 6 })`);
+        await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...a, buttons: 0 });
+        await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 });
+        for (let i = 1; i <= 8; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (b.x - a.x) * i / 8, y: a.y + (b.y - a.y) * i / 8, button: "left", buttons: 1 }); await sleep(25); }
+        assert.ok((await spanState(page)).on, `the span is drawn while the mouse is held (${label})`);
+        assert.ok(await page.eval(`window.__scriptEditor.answer(${JSON.stringify(askId)}, { kind: "replace", text: "**blank**" })`), `the agent's change goes in (${label})`);
+        await page.until(`window.__scriptEditor.markdown().includes("A **blank** page")`, "the agent's bold");
+        await sleep(100);
+        const y0 = await page.eval(`scrollY`);
+        for (let i = 1; i <= 4; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: b.x - 10 * i, y: b.y - 2 * i, button: "left", buttons: 1 }); await sleep(25); }
+        await sleep(400);
+        const moved = await spanState(page), y1 = await page.eval(`scrollY`);
+        await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: b.x - 40, y: b.y - 8, button: "left", buttons: 0, clickCount: 1 });
+        await sleep(100);
+        const released = await spanState(page);
+        assert.ok(!moved.on && !moved.ranges, `no span comes back while the mouse moves on (${label}): ${JSON.stringify(moved)}`);
+        assert.ok(!released.on && !released.ranges, `no span after letting go (${label}): ${JSON.stringify(released)}`);
+        for (let i = 0; i < 4 && (await md(page)) !== original; i++) { await undo(page); await sleep(150); }
+        assert.equal(await md(page), original, `Undo takes the agent's change back (${label})`);
+        return typeof to === "string" ? "moving on and letting go drew no span" : `held there 0.5 s more (the page went ${y0} → ${y1}, the browser's own scrolling of its selection in the first paragraph) and let go, no span came back`;
+      };
+      const plain = await held("Today:", "held drag");
+      const scrolling = await held(null, "held near the window's end");
+      await page.eval(`scrollTo(0, 0)`);
+      results.push(`${width}px agent's change during a held drag: met — the span ended at once; ${plain}; near the window's end ${scrolling}`);
+    }
+
     // 17. A moved shot keeps its orange frame while the mouse is over it (TOOLS-477).
     {
       assert.ok(await page.eval(`matchMedia("(hover: hover) and (pointer: fine)").matches`), "Chrome reports a mouse (see the flags at the top)");
@@ -534,7 +610,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/44 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/48 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
