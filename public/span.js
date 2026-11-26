@@ -148,7 +148,17 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
       at = { id: made.id, offset: 0 };
     }
   }
-  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest: /[\p{L}\p{N}]/u.test(right) };
+  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest: wordsAfter(last.block, last.end) };
+}
+
+// True when a block has words after `end`: in a paragraph only the spoken ones count (no bold marks, no hidden link
+// address); elsewhere marks are literal text.
+function wordsAfter(block, end) {
+  const content = Doc.contentOf(block), word = /[\p{L}\p{N}]/u;
+  if (block.type !== "para") return word.test(content.slice(end));
+  const { text, map } = Cues.spokenView(content);
+  for (let i = 0; i < text.length; i++) if (map[i] >= end && word.test(text[i])) return true;
+  return false;
 }
 
 /**
