@@ -174,13 +174,14 @@ function wordsAfter(content, end, spoken) {
 /**
  * Where the B-roll shots go after replaceSpan (`result`): a shot on a removed block goes to the joined block, or to the
  * next spoken paragraph when the joined block is not spoken (a section title, a reminder), else the last one before it;
- * so do the joined block's own shots when it is no longer spoken. `doc`: the document after the edit. Returns the shots
- * that changed: [{ id, blockIds, moved }] (moved: its first block went, so it now shows somewhere else).
+ * so do the joined block's own shots when it is no longer spoken. A paragraph left with no words (selected from its very
+ * start) counts as not spoken: a shot there would have no words to quote. `doc`: the document after the edit. Returns
+ * the shots that changed: [{ id, blockIds, moved }] (moved: its first block went, so it now shows somewhere else).
  */
 export function followShots(doc, shots, result) {
   const gone = new Set(result?.removed || []);
   if (!gone.size) return [];
-  const spoken = Doc.spokenBlocks(doc).map((b) => b.id);
+  const spoken = Doc.spokenBlocks(doc).filter((b) => b.n.trim()).map((b) => b.id);
   const order = new Map(doc.blocks.map((b, i) => [b.id, i]));
   const join = order.get(result.id) ?? -1;
   const target = spoken.includes(result.id) ? result.id

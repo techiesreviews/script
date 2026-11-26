@@ -677,6 +677,25 @@ const putBack = (m, block, before) => {
   m.state.doc.blocks.splice(m.state.doc.blocks.findIndex((b) => b.id === m.paras[before].id), 0, block);
 };
 
+test("B-roll span: a shot moved onto a paragraph with no words keeps its Over in the list, never an empty one", async () => {
+  const m = movement();
+  const old = Broll.parseBroll(m.text).shots[0].over;
+  takeOut(m, 0);
+  m.rewrite(1, "");
+  const writes = m.writes;
+  m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, old, "the list keeps the shot's Over");
+  assert.equal(m.writes, writes, "nothing is written");
+  // A Redo whose shot was changed since and whose paragraph is gone again places it the same way.
+  const r = movement();
+  takeOut(r, 0);
+  r.rewrite(1, "");
+  r.placeShots({ token: r.broll.token, shots: { B1: { blockIds: [r.paras[1].id], expect: "\"Older words\"", over: "\"Older words\"" } }, moved: ["B1"] });
+  for (let i = 0; i < 4; i++) await settle();
+  assert.equal(Broll.parseBroll(r.text).shots[0].over, old, "the list keeps the shot's Over after the Redo too");
+});
+
 test("B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote", async () => {
   const m = movement();
   const old = Broll.parseBroll(m.text).shots[0].over;
