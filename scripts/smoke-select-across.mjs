@@ -320,6 +320,28 @@ for (const width of [1280, 390]) {
     await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo after Enter");
     results.push(`${width}px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo`);
 
+    // 14b. Copy, cut and paste while typing in the shot card are the field's, never the span's (release review R1-3).
+    // A failed shot save opens the card from code while a span is drawn: nothing pressed in the script ends the span.
+    await page.key("Escape", "Escape", 27);
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    assert.ok((await spanState(page)).on, "a span is drawn before the shot card opens");
+    await page.eval(`(() => { document.querySelector("#shotCard").hidden = false; const f = document.querySelector("#scWhat"); f.value = "Typed words"; f.focus(); f.select(); return true; })()`);
+    assert.ok((await spanState(page)).on, "the span is still drawn while the shot card's field has the focus");
+    await page.eval(`window.__copied = null; true`);
+    await page.key("c", "KeyC", 67, { modifiers: 2, commands: ["copy"] });
+    await page.until(`window.__copied !== null`, "copy event in the shot card");
+    assert.notEqual(await page.eval(`window.__copied`), COPIED, "Ctrl+C in the shot card does not copy the script");
+    await page.key("x", "KeyX", 88, { modifiers: 2, commands: ["cut"] });
+    await page.until(`document.querySelector("#scWhat").value === ""`, "Ctrl+X cuts the field's words");
+    assert.equal(await md(page), original, "Ctrl+X in the shot card leaves the script");
+    await page.key("v", "KeyV", 86, { modifiers: 2, commands: ["paste"] });
+    await page.until(`document.querySelector("#scWhat").value === "Typed words"`, "Ctrl+V pastes into the field");
+    assert.equal(await md(page), original, "Ctrl+V in the shot card leaves the script");
+    await page.eval(`document.querySelector("#shotCard").hidden = true; document.querySelector("#script [contenteditable]").focus(); true`);
+    await page.key("Escape", "Escape", 27);
+    assert.ok(!(await spanState(page)).on, "Escape in the script ends the span");
+    results.push(`${width}px copy, cut and paste in the shot card: met — the field got them, the script stayed as it was`);
+
     // 15. Held near the window's end, a drag scrolls the page on and the selection grows with it; letting go stops both.
     await page.key("Escape", "Escape", 27);
     {
@@ -458,7 +480,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/38 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/40 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
