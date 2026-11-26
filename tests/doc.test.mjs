@@ -558,13 +558,15 @@ test("moveAsks returns its moves; unmoveAsks puts open anchors back, and the fli
   unmoveAsks(asks, again);
   assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end], ["first", 16, 20]);
   assert.deepEqual([asks[2].answer.marks[0].blockId, asks[2].answer.marks[0].start], ["first", 24]);
-  // A finished ask, one gone from the list, or one moved to another block since, is left as it is.
+  // A finished ask, or a mark moved to another block since, is left as it is; asks no longer in the list are skipped.
   asks[0].status = "kept";
   asks[2].answer.marks[0].blockId = "elsewhere";
-  unmoveAsks(asks.slice(0, 3), moves);
+  unmoveAsks(asks, moves);
   assert.equal(asks[0].blockId, "first");
   assert.equal(asks[2].answer.marks[0].blockId, "elsewhere");
-  unmoveAsks([], moves);
+  const k2 = { ...asks[1] };
+  unmoveAsks([asks[1]], moves);
+  assert.deepEqual(asks[1], k2, "an ask the moves do not name stays");
 });
 
 /* ---------- Tab-side answer checks (answer_ask) ---------- */

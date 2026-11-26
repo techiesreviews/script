@@ -1436,7 +1436,7 @@ function spanAutoScroll() {
   scrollBy(0, Math.sign(over) * Math.min(28, 2 + Math.ceil(Math.abs(over) / 3)));
   spanExtend(x, y);
   // motion-exception: the page follows the held mouse past the window's edge, one frame at a time, only while dragging
-  spanScroll = requestAnimationFrame(spanAutoScroll);
+  if (spanDrag) spanScroll = requestAnimationFrame(spanAutoScroll);
 }
 // Any press clears it, except a right-click on its own words and any press on the page's scrollbar (scrollbarHeld);
 // a mouse press in a block's text may start the next one.
@@ -4818,6 +4818,8 @@ for (const el of [$(".top"), $(".top__end"), $("#viewSwitch")]) topFit.observe(e
 /* ---------- Hooks for tests and step B ---------- */
 const brollHook = (fn) => (brollApi ? fn(brollApi) : needBroll().then(fn));
 window.__scriptEditor = {
+  // A drag across paragraphs still held, or its scrolling, is running (TOOLS-483).
+  spanBusy: () => !!spanDrag || !!spanScroll,
   answer: receiveAnswer,
   take: takeAsk,
   voiceCheck: () => requestVoiceCheck()?.id ?? null,
