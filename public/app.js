@@ -1422,7 +1422,7 @@ function spanExtend(x, y) {
   const from = state.doc && byId(spanDrag.anchor.id);
   if (!from || Doc.contentOf(from) !== spanDrag.text) return void spanDragStop();
   const focus = spotAt(x, y);
-  if (!focus || !state.doc) return;
+  if (!focus) return;
   let next = spanAt(spanDrag.anchor, focus);
   // In the gap just past the paragraph, no words of the next block are reached yet: the browser's selection stays.
   if (next && Span.spanFarEmpty(state.doc, next, focus)) next = null;
