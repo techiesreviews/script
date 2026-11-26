@@ -26,6 +26,7 @@ export function createBroll(host) {
     shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {},
     marked: {}, // step K2: pictures put in at once, per shot { prev, pic, askId }, with Undo until the list changes
     moved: new Set(), // TOOLS-470: shots a cross-paragraph edit moved, "Moved here" until the next change that moves shots
+    placing: new Map(), // TOOLS-470: id → where a waiting save of placeShots put the shot { token, over, blockIds }
   };
 
   /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
@@ -104,6 +105,17 @@ export function createBroll(host) {
     // A shot whose quote is as it was stays where it shows (one moved onto a paragraph that repeats an earlier one).
     // Only within the list those shots came from (`shown`: its token): another list's start from their quotes.
     if (state.doc) Broll.matchShots(state.doc, shots, broll.shown === broll.token ? broll.shots : []);
+    // A shot a selection across paragraphs, or its Undo or Redo, placed (placeShots) stays where that step put it until
+    // the step's save has landed: a save before it leaves the shot as it shows, and its own keeps its paragraph even if
+    // the words changed meanwhile or an earlier paragraph says the same.
+    for (const s of state.doc ? shots : []) {
+      const p = broll.placing.get(s.id), now = shotById(s.id);
+      if (!p || p.token !== broll.token || !now) continue;
+      if (s.over !== p.over) Object.assign(s, { over: now.over, blockIds: now.blockIds, sig: now.sig });
+      else if (p.blockIds.every((id) => Doc.blockById(state.doc, id))) {
+        Object.assign(s, { blockIds: p.blockIds, sig: (now.blockIds || []).join() === p.blockIds.join() ? now.sig : Broll.coverText(state.doc, p.blockIds) });
+      }
+    }
     for (const s of shots) s.check = !!broll.flags[s.id];
     Object.assign(broll, { text, shots, sketches, status: "ok", err: "", shown: broll.token });
     if (broll.lit && !shotById(broll.lit)) broll.lit = null;
@@ -879,10 +891,16 @@ export function createBroll(host) {
       const s = shotById(id), want = next.shots[id];
       return [id, { over: want.expect ?? s.over, blockIds: [...(s.blockIds || [])], expect: want.over }];
     })) };
-    const writes = {};
+    const writes = {}, marks = [];
     for (const id of ids) {
       const s = shotById(id), want = next.shots[id], expect = want.expect ?? s.over;
-      if (want.over !== expect) writes[id] = { over: want.over, expect };
+      if (want.over !== expect) {
+        writes[id] = { over: want.over, expect };
+        // Where this step put the shot, kept until its save has landed (adoptBroll).
+        const mark = { token, over: want.over, blockIds: want.blockIds };
+        broll.placing.set(id, mark);
+        marks.push([id, mark]);
+      }
       // Shown here at once; the list itself is written in its turn behind any save still waiting.
       Object.assign(s, { over: want.over, blockIds: want.blockIds, sig: Broll.coverText(state.doc, want.blockIds) });
     }
@@ -894,6 +912,8 @@ export function createBroll(host) {
       changeList((md) => {
         const saved = new Map(Broll.parseBroll(md).shots.map((s) => [s.id, s.over]));
         return Object.entries(writes).reduce((text, [id, w]) => (saved.get(id) === w.expect ? Broll.updateShot(text, id, { over: w.over }) : text), md);
+      }).finally(() => {
+        for (const [id, mark] of marks) if (broll.placing.get(id) === mark) broll.placing.delete(id);
       }).catch((err) => {
         if (token !== broll.token) return;
         const id = Object.keys(writes).find((x) => shotById(x));

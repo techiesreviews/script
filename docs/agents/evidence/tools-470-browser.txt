@@ -64,3 +64,14 @@ PROOF 1280px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves i
 PROOF 1280px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo
 (the same five at 390 px, with the first nine of each width as above)
 RESULT: ok tools-470-browser 28/28 checks at 1280 and 390 px
+
+Review round 2 (2026-11-26): check 9 now also types after the composition ended (no key pressed) and takes it back
+with its own Undo. Red, with the line that ends the composition's grouping turned off:
+RESULT: fail tools-470-browser timed out: one Undo takes back only the text after the composition
+New check 15 (a drag held near the window's end) guards the page scrolling that already worked; it passed first.
+After both, the whole run:
+PROOF 1280px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 1280px drag near the window's end: met — the page scrolled 2096 px and the selection grew from 13 to 39 blocks; letting go stopped it
+PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 390px drag near the window's end: met — the page scrolled 2157 px and the selection grew from 7 to 27 blocks; letting go stopped it
+RESULT: ok tools-470-browser 30/30 checks at 1280 and 390 px

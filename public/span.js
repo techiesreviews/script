@@ -73,8 +73,9 @@ export function spanCopy(doc, span) {
  * at the very start of the first block. A heading keeps its text on one line; blank lines in the text make paragraphs.
  * Bold and links cut by the span are settled as a deletion in one block would be (no lone marks; a link keeps the words
  * that are left). `split`: Enter, a new block starts at the caret.
- * Works on a copy: returns { doc, id, caret: { id, offset }, removed: [ids], left, typed } (left: how much of the first
- * block stays before the join; typed: how long what was put in is, both as it ended up), or null when the edit is
+ * Works on a copy: returns { doc, id, caret: { id, offset }, removed: [ids], left, typed, rest } (left: how much of the
+ * first block stays before the join; typed: how long what was put in is, both as it ended up; rest: words of the last
+ * block are left after the span), or null when the edit is
  * refused because settled marks would turn the line into another kind of block (as one-block edits are refused).
  */
 export function replaceSpan(doc, span, text = "", { split = false } = {}) {
@@ -147,7 +148,7 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
       at = { id: made.id, offset: 0 };
     }
   }
-  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept };
+  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest: !!right.trim() };
 }
 
 /**
@@ -165,9 +166,9 @@ export function followShots(doc, shots, result) {
   const target = spoken.includes(result.id) ? result.id
     : spoken.find((id) => order.get(id) > join) ?? spoken.filter((id) => order.get(id) < join).at(-1) ?? null;
   // Enter, or pasted text with blank lines, put the last block's words that were left in the block at the caret: its
-  // shots go with them.
+  // shots go with them (when some were left: a new block with no words keeps none).
   const lastGone = result.removed.at(-1), caretId = result.caret?.id;
-  const tailTo = caretId && caretId !== result.id && spoken.includes(caretId) ? caretId : target;
+  const tailTo = result.rest && caretId && caretId !== result.id && spoken.includes(caretId) ? caretId : target;
   const out = [];
   for (const shot of shots || []) {
     const was = shot.blockIds || [];

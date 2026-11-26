@@ -161,4 +161,10 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   // Pasted text with a blank line makes a new block too; the last block's words end up there.
   const pasted = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, 6)), "one\n\ntwo ");
   assert.deepEqual(Span.followShots(pasted.doc, shots, pasted)[1], { id: "B2", blockIds: [pasted.caret.id], moved: true });
+  // A span to the very end of its last block leaves no words of it: Enter's new block is empty, the shot stays at the join.
+  const end = Doc.contentOf(Doc.blockById(doc, p3)).length;
+  const whole = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, end)), "", { split: true });
+  assert.deepEqual(Span.followShots(whole.doc, shots, whole)[1], { id: "B2", blockIds: [p1], moved: true });
+  const wholePaste = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, end)), "one\n\ntwo");
+  assert.deepEqual(Span.followShots(wholePaste.doc, shots, wholePaste)[1], { id: "B2", blockIds: [p1], moved: true }, "pasted words are not the last block's");
 });

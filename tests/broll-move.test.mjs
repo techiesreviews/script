@@ -15,7 +15,7 @@ function movement() {
   const state = { doc: Doc.parse("# Throwaway\n\nFirst spoken paragraph.\n\nSecond spoken paragraph.\n\nThird spoken paragraph.\n"), undo: [], redo: [], asks: [], lastStep: null };
   const paras = Broll.spokenBlocks(state.doc);
   let text = Broll.addShot(Broll.newList("Throwaway"), { id: "B1", kind: "broll", what: "Throwaway shot", how: "Keep this detail", over: Broll.overFor(state.doc, Broll.wholeParas(state.doc, [paras[0].id])) });
-  const broll = { token: 1, shots: [], flags: {}, status: "ok", moved: new Set() };
+  const broll = { token: 1, shots: [], flags: {}, status: "ok", moved: new Set(), placing: new Map() };
   // The app's own adoptBroll takes a written list in: the shots are matched to the script and keep their Check flags.
   const adopt = () => {
     broll.flags = Object.fromEntries(broll.shots.filter((shot) => shot.check).map((shot) => [shot.id, true]));
@@ -695,6 +695,43 @@ test("B-roll span: Undo and Redo pressed while the shot's saves wait leave the l
   releaseUndo();
   for (let i = 0; i < 6; i++) await settle();
   assert.equal(Broll.parseBroll(m.text).shots[0].over, joined, "the last step pressed, Redo, is what the list says");
+});
+
+test("B-roll span: a moved shot whose paragraph is changed while its save waits stays there, with Check", async () => {
+  const m = movement();
+  m.broll.shots[0].check = false;
+  takeOut(m, 0);
+  const release = m.holdNextWrite();
+  m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  // The person changes the words of the paragraph the shot went to before its save lands; it gets "Check".
+  m.rewrite(1, "Other words entirely, typed while the save waited.");
+  Broll.touchShots(m.state.doc, m.broll.shots);
+  release();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[1].id], "the shot stays on the paragraph it was moved to");
+  assert.equal(m.broll.shots[0].check, true, "and keeps its Check");
+});
+
+test("B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same", async () => {
+  const m = movement();
+  m.rewrite(0, "Same words in two places.");
+  m.rewrite(2, "Same words in two places.");
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[1].id])) }));
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
+  const gone = takeOut(m, 1);
+  const releaseSpan = m.holdNextWrite();
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[2].id], moved: true }]);
+  putBack(m, gone, 2);
+  const releaseUndo = m.holdNextWrite();
+  const redoStep = m.placeShots(undoStep);
+  releaseSpan(); await settle(); await settle();
+  takeOut(m, 1);
+  const releaseRedo = m.holdNextWrite();
+  m.placeShots(redoStep);
+  releaseUndo(); await settle(); await settle();
+  releaseRedo();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot shows where Redo put it, not on the first paragraph with the same words");
 });
 
 test("B-roll span: Undo after another list was opened leaves that list's shot alone", async () => {

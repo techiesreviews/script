@@ -26,11 +26,15 @@ After the second look (round 1):
 After the review (round 1):
 
 - A drag that slips into the gap just past its paragraph, before reaching any word of the next one, stays the browser's own selection in that paragraph (`spanFarEmpty`).
-- A right-click on the span's words keeps it (the menu's Copy); any other right or middle press ends it. A spelling fix picked from the menu ends the span and fixes only its word. On Linux a middle click then pastes the browser's own selection where it was pressed, as it does anywhere.
+- A right-click on a block the span covers keeps it (the menu's Copy); any other right or middle press ends it. A spelling fix picked from the menu ends the span and fixes only its word. On Linux a middle click then pastes the browser's own selection where it was pressed, as it does anywhere.
 - The composed text's grouping ends when the composition ends or a plain key comes, so later typing is its own Undo step.
 - With Ctrl or Cmd held, only bold, italic, underline and link keys are held back over a span; Ctrl/Cmd+Backspace and Delete delete it; copy, cut, paste, save and the browser's own keys go on.
 - Bold and links are settled only when the joined block is a paragraph, as one-block edits do; in a list, code or a reminder the marks are plain text.
-- Enter (or a paste with blank lines) over a span: shots on the last block go with its words to the new block.
+- Enter (or a paste with blank lines) over a span: shots on the last block go with its words to the new block, and stay at the join when none of its words are left.
+
+After the review (round 2):
+
+- A shot a span edit, its Undo or its Redo placed stays where that step put it until the step's save has landed (`broll.placing`): an earlier save landing first leaves it as it shows, and its own save keeps its paragraph even if the words changed meanwhile (with "Check") or an earlier paragraph says the same.
 
 ## Limits
 
@@ -43,6 +47,7 @@ After the review (round 1):
 - `scripts/smoke-select-across.mjs` failed first on 629da92 (`a span over three paragraphs is drawn: {"on":false,...}`), then passed 12/12 at 1280 and 390 px: `docs/agents/evidence/tools-470-browser.txt`. One check in it pointed at the wrong element (a shot frame sits beside its block, in the line, not inside it) and was corrected before the green run.
 - Round 1: two `span.test.mjs` tests (folded notes, shared edits) and two `broll-move.test.mjs` tests (Undo and Redo while saves wait; Undo after another list was opened) failed first, then passed. Three browser checks (from the title, a picture paste, composed text) failed on the code before the fixes, then all passed 18/18 at 1280 and 390 px.
 - Review round 1: three `span.test.mjs` tests (the gap past a paragraph, marks only in a paragraph, shots after Enter) and four browser checks (the gap below, a spelling fix, a cancelled composition, Ctrl keys) failed first, then passed; the browser run is 28/28 at 1280 and 390 px.
+- Review round 2: two `broll-move.test.mjs` tests (a moved shot's paragraph changed while its save waits; Undo and Redo with a repeated paragraph) and one `span.test.mjs` case (Enter or a paste over a span to the very end) failed first, then passed. A browser check for text after a finished composition failed with that line turned off, then passed; a check that a drag held near the window's end scrolls on and stops on release guards what already worked. The browser run is 30/30 at 1280 and 390 px.
 
 ## Done
 

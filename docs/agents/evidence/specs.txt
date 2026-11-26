@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 19 files, 535888 bytes; on first use: broll-app.js + broll.js, 159838 bytes
+ℹ startup: 19 files, 536049 bytes; on first use: broll-app.js + broll.js, 161178 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -87,6 +87,8 @@
 ✔ B-roll move history: words typed into the target paragraph while a Redo saves keep the shot there, with Check
 ✔ B-roll move history: words added to the target paragraph while a move, its Undo or its Redo saves give the shot Check
 ✔ B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote
+✔ B-roll span: a moved shot whose paragraph is changed while its save waits stays there, with Check
+✔ B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same
 ✔ B-roll span: Undo after another list was opened leaves that list's shot alone
 ✔ B-roll names: a failed read, or an open that fails while site storage still works, never approves a new or renamed script name; the queue recovers
 ✔ New script: an unread reservation leaves the current script alone instead of opening a colliding fallback
@@ -390,7 +392,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 19 files, 535888 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
+ℹ startup: 19 files, 536049 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -680,9 +682,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 680
+ℹ tests 682
 ℹ suites 0
-ℹ pass 680
+ℹ pass 682
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

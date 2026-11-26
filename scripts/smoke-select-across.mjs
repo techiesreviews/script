@@ -217,6 +217,11 @@ for (const width of [1280, 390]) {
     await page.send("Input.insertText", { text: "é" });
     await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "e", code: "KeyE", windowsVirtualKeyCode: 69 });
     await page.until(`window.__scriptEditor.markdown().includes("out loud. éToday:")`, "composed text replaces the span");
+    // Text that comes after the composition ended, with no key pressed (an input method's next word): a step of its own.
+    await page.send("Input.insertText", { text: "z" });
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. ézToday:")`, "text after the composition");
+    await undo(page);
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. éToday:")`, "one Undo takes back only the text after the composition");
     await undo(page);
     await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "one Undo takes back the composed text and the span's delete");
     assert.ok((await spanState(page)).on, "the span is selected again");
@@ -312,7 +317,31 @@ for (const width of [1280, 390]) {
     await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo after Enter");
     results.push(`${width}px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo`);
 
-    // 15. A click ends the span; the editor goes on as before.
+    // 15. Held near the window's end, a drag scrolls the page on and the selection grows with it; letting go stops both.
+    await page.key("Escape", "Escape", 27);
+    {
+      const a = await page.eval(pointJs(P1, "Why", true));
+      const low = await page.eval(`({ x: innerWidth / 2, y: innerHeight - 6 })`);
+      const top = await page.eval(`scrollY`), before = (await spanState(page)).ranges;
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...a, buttons: 0 });
+      await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= 8; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (low.x - a.x) * i / 8, y: a.y + (low.y - a.y) * i / 8, button: "left", buttons: 1 }); await sleep(25); }
+      const held = (await spanState(page)).ranges;
+      await sleep(1200);
+      const grown = await spanState(page), scrolled = await page.eval(`scrollY`);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...low, button: "left", buttons: 0, clickCount: 1 });
+      const let_go = await page.eval(`scrollY`);
+      await sleep(400);
+      assert.equal(before, 0, "no span before the drag");
+      assert.ok(scrolled > top + 100, `the page scrolled on while the mouse was held near the window's end (${top} → ${scrolled})`);
+      assert.ok(grown.on && grown.ranges > held, `the selection grew with the page (${held} → ${grown.ranges} blocks)`);
+      assert.equal(await page.eval(`scrollY`), let_go, "letting go stops the scrolling");
+      results.push(`${width}px drag near the window's end: met — the page scrolled ${Math.round(scrolled - top)} px and the selection grew from ${held} to ${grown.ranges} blocks; letting go stopped it`);
+      await page.key("Escape", "Escape", 27);
+      await page.eval(`scrollTo(0, 0)`);
+    }
+
+    // 16. A click ends the span; the editor goes on as before.
     await page.click("#script .block[data-type=para]");
     assert.ok(!(await spanState(page)).on, "a click clears the span");
     assert.deepEqual(page.log, [], "no browser errors");
@@ -328,7 +357,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/28 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/30 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
