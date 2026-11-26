@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   ACTIONS, parse, serialize, contentOf, setContent, splitBlock, mergeWithPrevious, removeBlock, insertBlock,
   outline, parseHeading, exportCamera, exportPrompter, sentences, stats, countWords, snapToWords, reanchor,
-  makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, unmoveAsks, flipMoves, locate, checkAnswer,
+  makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, unmoveAsks, locate, checkAnswer,
   prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS, scriptFileName, titleFileName, keepIds, wholeText,
   PARTS, matchParts, slashCommand, shiftHeadings, numberAt, insertPart,
   slashAllowed, cutCommand, withoutCommand, lineToReplace,
@@ -535,7 +535,7 @@ test("moveAsks: a paste before an anchor shifts it; a split moves it to the new 
   assert.equal(marks[0].answer.marks[0].start, 5);
 });
 
-test("moveAsks returns its moves; unmoveAsks puts open anchors back, and the flipped moves redo them (TOOLS-483)", () => {
+test("moveAsks returns its moves; unmoveAsks puts open anchors back and gives the moves for the Redo (TOOLS-483)", () => {
   const asks = [
     { id: "k1", scope: "selection", blockId: "last", status: "waiting", start: 12, end: 16, quote: "keep" },
     { id: "k2", scope: "selection", blockId: "last", status: "waiting", start: 0, end: 4, quote: "Gone" },
@@ -548,21 +548,28 @@ test("moveAsks returns its moves; unmoveAsks puts open anchors back, and the fli
     { askId: "v1", mark: 0, from: { blockId: "last", start: 20, end: 25 }, to: { blockId: "first", start: 24, end: 29 } },
   ]);
   assert.deepEqual([asks[1].blockId, asks[1].start], ["last", 0], "an anchor before fromStart stays");
+  // Text typed in after the move (composed text over the span) shifted the ask 3 places on.
+  Object.assign(asks[0], { start: 19, end: 23 });
   // Undo: the anchors go back to where they were, so they are found in the restored blocks.
-  const back = unmoveAsks(asks, moves);
+  const { back, redo } = unmoveAsks(asks, moves);
   assert.deepEqual([...back], [asks[0], asks[2].answer.marks[0]], "it returns the anchors it put back");
   assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end], ["last", 12, 16]);
   assert.deepEqual([asks[2].answer.marks[0].blockId, asks[2].answer.marks[0].start], ["last", 20]);
   assert.deepEqual(asks[2].answer.marks[1], { state: "open", blockId: "other", start: 0, end: 3 }, "a mark that did not move stays");
-  // Redo: the flipped moves take them to the joined block again.
-  const again = flipMoves(moves);
-  unmoveAsks(asks, again);
-  assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end], ["first", 16, 20]);
+  // Redo: the moves it gave take them to the joined block again, where they were just before the Undo.
+  assert.deepEqual(redo, [
+    { askId: "k1", mark: -1, from: { blockId: "first", start: 19, end: 23 }, to: { blockId: "last", start: 12, end: 16 } },
+    { askId: "v1", mark: 0, from: { blockId: "first", start: 24, end: 29 }, to: { blockId: "last", start: 20, end: 25 } },
+  ]);
+  const again = unmoveAsks(asks, redo);
+  assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end], ["first", 19, 23]);
   assert.deepEqual([asks[2].answer.marks[0].blockId, asks[2].answer.marks[0].start], ["first", 24]);
+  assert.deepEqual(again.redo, moves.map((m, i) => (i === 0 ? { ...m, to: { blockId: "first", start: 19, end: 23 } } : m)), "and the next Undo has its moves");
   // A finished ask, or a mark moved to another block since, is left as it is; asks no longer in the list are skipped.
   asks[0].status = "kept";
   asks[2].answer.marks[0].blockId = "elsewhere";
-  unmoveAsks(asks, moves);
+  const none = unmoveAsks(asks, moves);
+  assert.deepEqual([none.back.size, none.redo.length], [0, 0]);
   assert.equal(asks[0].blockId, "first");
   assert.equal(asks[2].answer.marks[0].blockId, "elsewhere");
   const k2 = { ...asks[1] };

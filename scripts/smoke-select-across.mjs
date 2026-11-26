@@ -652,6 +652,77 @@ for (const width of [1280, 390]) {
       results.push(`${width}px asks after a span whose join only adds bold: met — an ask on "quokka" and a Sounds like me mark on "wombat" stayed open through Delete, Undo, Redo and Undo, each time on their words at the same place`);
     }
 
+    // 16g. Composed text over the span shifts an ask after it (fix round 3, second look): "Lead gone" and "Gone **keep
+    // keep**", an ask on the second "keep", the span from "gone" through "Gone ", then "你好你好你好你好" composed over it
+    // (typed in front of the bold, so the ask follows by its offsets). Undo puts the ask back; Redo puts it where the
+    // composed text left it, on the second "keep", not the first.
+    {
+      const blockIndex = (start) => page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(start)}))`);
+      const line = (start) => page.eval(`window.__scriptEditor.markdown().split("\\n").find((l) => l.startsWith(${JSON.stringify(start)}))`);
+      for (const [from, text] of [[P2, "Gone **keep keep**"], [P1, "Lead gone"]]) {
+        const id = await page.eval(`window.__scriptEditor.ask(${await blockIndex(from)}, 0, ${(await line(from)).length}, "simpler")`);
+        assert.ok(id && await page.eval(`window.__scriptEditor.answer(${JSON.stringify(id)}, { kind: "replace", text: ${JSON.stringify(text)} })`), `the agent writes "${text}"`);
+        await page.until(`window.__scriptEditor.markdown().includes(${JSON.stringify(`\n${text}\n`)})`, `"${text}" in the script`);
+        await page.key("Escape", "Escape", 27);
+      }
+      const askId = await page.eval(`window.__scriptEditor.ask(${await blockIndex("Gone")}, 12, 16, "simpler")`);
+      assert.ok(askId, "an ask on the second \"keep\"");
+      await page.key("Escape", "Escape", 27);
+      const anchor = () => page.eval(`(() => {
+        const a = window.__scriptEditor.asks().find((x) => x.id === ${JSON.stringify(askId)});
+        const text = [...document.querySelectorAll("#script .block")].find((el) => el.dataset.id === a.blockId)?.textContent.slice(0, 4) || "";
+        return { ask: a.status, in: text, words: a.quote, at: [a.start, a.end] };
+      })()`);
+      const before = await anchor();
+      assert.deepEqual(before, { ask: "waiting", in: "Gone", words: "keep", at: [12, 16] }, `the ask is on the second "keep": ${JSON.stringify(before)}`);
+      const withAsk = await md(page);
+      // The bold marks are hidden, so the drag ends just after the space of "Gone " (before the hidden "**").
+      {
+        const a = await page.eval(pointJs("Lead gone", "gone", true));
+        const b = await page.eval(`(() => {
+          const el = [...document.querySelectorAll("#script .block")].find((e) => e.textContent.startsWith("Gone"));
+          const n = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+          const r = document.createRange(); r.setStart(n, 4); r.setEnd(n, 5);
+          const box = r.getClientRects()[0];
+          return { x: box.right - 1, y: box.top + box.height / 2 };
+        })()`);
+        await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...a, buttons: 0 });
+        await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 });
+        for (let i = 1; i <= 10; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (b.x - a.x) * i / 10, y: a.y + (b.y - a.y) * i / 10, button: "left", buttons: 1 }); await sleep(25); }
+        await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...b, button: "left", buttons: 0, clickCount: 1 });
+        await sleep(80);
+      }
+      assert.ok((await spanState(page)).on, "the span is drawn (composed text)");
+      const typed = "你好你好你好你好";
+      await page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Process", code: "KeyN", windowsVirtualKeyCode: 229 });
+      await page.send("Input.imeSetComposition", { text: typed, selectionStart: typed.length, selectionEnd: typed.length });
+      await page.send("Input.insertText", { text: typed });
+      await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "n", code: "KeyN", windowsVirtualKeyCode: 78 });
+      await page.until(`window.__scriptEditor.markdown().includes(${JSON.stringify(typed)})`, "the composed text replaces the span");
+      const joined = await line("Lead ");
+      assert.equal(joined, `Lead **${typed}keep keep**`, `the joined paragraph: ${JSON.stringify(joined)}`);
+      const composed = { ask: "waiting", in: "Lead", words: "keep", at: [20, 24] };
+      let now = await anchor();
+      assert.deepEqual(now, composed, `the ask follows to the second "keep" after the composed text: ${JSON.stringify(now)}`);
+      const withComposed = await md(page);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withAsk)}`, "one Undo takes back the composed text and the span's delete");
+      now = await anchor();
+      assert.deepEqual(now, before, `after Undo the ask is on the second "keep" of its paragraph: ${JSON.stringify(now)}`);
+      await page.key("y", "KeyY", 89, { modifiers: 2 });
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withComposed)}`, "Redo puts the composed text back");
+      now = await anchor();
+      assert.deepEqual(now, composed, `after Redo the ask is on the second "keep" after the composed text: ${JSON.stringify(now)}`);
+      await undo(page);
+      await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withAsk)}`, "Undo again (composed text)");
+      now = await anchor();
+      assert.deepEqual(now, before, `after the second Undo the ask is on the second "keep" of its paragraph: ${JSON.stringify(now)}`);
+      await page.key("Escape", "Escape", 27);
+      for (let i = 0; i < 8 && (await md(page)) !== original; i++) { await undo(page); await sleep(150); }
+      assert.equal(await md(page), original, "Undo takes the agent's paragraphs back (composed text)");
+      results.push(`${width}px composed text over the span with an ask after it (fix round 3): met — "${typed}" over the span moved the ask on the second "keep" to 20–24; Undo, Redo and Undo kept it open on that "keep" each time`);
+    }
+
     // 17. A moved shot keeps its orange frame while the mouse is over it (TOOLS-477).
     {
       assert.ok(await page.eval(`matchMedia("(hover: hover) and (pointer: fine)").matches`), "Chrome reports a mouse (see the flags at the top)");
@@ -759,7 +830,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/56 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/58 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
