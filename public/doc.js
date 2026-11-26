@@ -222,6 +222,8 @@ export function setContent(doc, id, content) {
     void made;
   }
   normalizeTitles(doc);
+  // A script has one title: a "# " line that stays plain text (or became the title) hides what it hides now.
+  for (const p of result.pieces) p.prefix = prefixOf(blockById(doc, p.id)).length;
   result.changed = block.type !== before;
   return result;
 }
