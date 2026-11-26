@@ -210,6 +210,24 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   assert.equal(cutRef.rest, true, "the reference's words are left");
   assert.notEqual(cutRef.caret.id, r1);
   assert.deepEqual(Span.followShots(cutRef.doc, [{ id: "B2", blockIds: [r2] }], cutRef), [{ id: "B2", blockIds: [cutRef.caret.id], moved: true }]);
+  // The words left are read where they end up. Joined, "today." would sit inside the reference's address; after Enter
+  // (or a paste with a blank line) it is a paragraph of its own, so the shot goes with it.
+  const addr = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para.\n- Reference: https://example.com\n\nSecond ends today.\n");
+  const [, , a1, a2] = ids(addr);
+  const from = Doc.contentOf(Doc.blockById(addr, a1)).indexOf("example.com"), to = Doc.contentOf(Doc.blockById(addr, a2)).indexOf("today.");
+  for (const [text, opts] of [["", { split: true }], ["pasted\n\nmore ", {}]]) {
+    const r = Span.replaceSpan(addr, Span.spanOf(addr, at(addr, 2, from), at(addr, 3, to)), text, opts);
+    assert.equal(r.rest, true, `"today." is left (${JSON.stringify(text)})`);
+    assert.notEqual(r.caret.id, a1);
+    assert.deepEqual(Span.followShots(r.doc, [{ id: "B2", blockIds: [a2] }], r), [{ id: "B2", blockIds: [r.caret.id], moved: true }]);
+  }
+  // And the other way: joined, a bare address after "- Source: " is a source line; after Enter it is spoken words.
+  const src = Doc.parse("# Title\n\n## 1 · Hook\n\nIntro.\n- Source: x\n\nSee https://example.com\n");
+  const [, , s1, s2] = ids(src);
+  const srcEnd = Doc.contentOf(Doc.blockById(src, s1)).length - 1;
+  const bare = Span.replaceSpan(src, Span.spanOf(src, at(src, 2, srcEnd), at(src, 3, 4)), "", { split: true });
+  assert.equal(bare.rest, true, "the address is left as spoken words");
+  assert.deepEqual(Span.followShots(bare.doc, [{ id: "B2", blockIds: [s2] }], bare), [{ id: "B2", blockIds: [bare.caret.id], moved: true }]);
   // Joined into a section title, nothing settles the link: its literal "](address)" stays in the text, as words left.
   const title = Span.replaceSpan(link, Span.spanOf(link, at(link, 1, 3), at(link, 3, words)), "", { split: true });
   assert.equal(title.doc.blocks[1].type, "heading");
