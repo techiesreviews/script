@@ -103,6 +103,9 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
     }
   }
   const kept = caret;
+  // Words of the last block left after the join, read in the joined text as it now is (a line cut at its "- " is no
+  // longer a reference; a link cut before its address keeps none).
+  const rest = wordsAfter(content, kept, settles);
 
   // What is put in, at the join.
   if (put) {
@@ -148,11 +151,11 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
       at = { id: made.id, offset: 0 };
     }
   }
-  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest: wordsAfter(tail, last.end, settles) };
+  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest };
 }
 
-// True when `content` has words after `end`: when the joined block is a paragraph (`spoken`) only the spoken ones count
-// (no bold marks, no hidden link address); elsewhere marks are literal text. Read by whole characters, so a letter
+// True when `content` has words after `end`: in a paragraph (`spoken`) only the spoken ones count (no bold marks, no
+// hidden link address, no reference line); elsewhere marks are literal text. Read by whole characters, so a letter
 // outside the basic range (two code units) counts.
 function wordsAfter(content, end, spoken) {
   const word = /[\p{L}\p{N}]/u;
