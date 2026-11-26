@@ -1554,20 +1554,23 @@ scriptEl.addEventListener("beforeinput", (e) => {
   else if (t === "insertLineBreak") spanType() === "heading" ? applySpan("", { split: true }) : applySpan("\n");
   else if (t.startsWith("delete")) applySpan("");
 }, { capture: true });
+// Copy, cut and paste are the span's only from inside the script: typed into a field (the shot card, opened while a span
+// is drawn) they are the field's.
+const spanClip = (e) => scriptEl.contains(e.target) && liveSpan();
 document.addEventListener("copy", (e) => {
-  if (!liveSpan() || !e.clipboardData) return;
+  if (!spanClip(e) || !e.clipboardData) return;
   e.preventDefault();
   e.clipboardData.setData("text/plain", Span.spanCopy(state.doc, span));
 }, { capture: true });
 document.addEventListener("cut", (e) => {
-  if (!liveSpan() || !e.clipboardData) return;
+  if (!spanClip(e) || !e.clipboardData) return;
   e.preventDefault();
   e.stopPropagation();
   e.clipboardData.setData("text/plain", Span.spanCopy(state.doc, span));
   applySpan("");
 }, { capture: true });
 document.addEventListener("paste", (e) => {
-  if (!liveSpan()) return;
+  if (!spanClip(e)) return;
   e.preventDefault();
   e.stopPropagation();
   // Nothing but a picture (a screenshot) to paste: the span stays, as a paste into one paragraph changes nothing.
