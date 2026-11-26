@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import * as Doc from "../public/doc.js";
 import * as Broll from "../public/broll.js";
 import * as Changes from "../public/changes.js";
+import * as Span from "../public/span.js";
 
 // Exercise moveShot itself, including its inverse and its guard on where the shot is, with a queued in-memory sidecar.
 // The browser smoke covers the pointer handlers and real browser storage without exposing another public API.
@@ -701,14 +702,18 @@ test("B-roll span: a shot moved onto a paragraph with no words keeps its Over in
 test("B-roll span: a shot sent on from an emptied paragraph keeps the next paragraph through more typing and a later save", async () => {
   // Whole paragraphs replaced from their very start (Delete, a first key with no letters, composed text): followShots
   // sends the shot to the next paragraph with words. Its Over then quotes those words, so it stays there.
+  // The span's own code picks the paragraph: the first two paragraphs, selected from the very start, typed over with ".
   const m = movement();
-  takeOut(m, 0);
-  m.rewrite(1, "");
-  m.followSpan([{ id: "B1", blockIds: [m.paras[2].id], moved: true }]);
+  const second = Doc.contentOf(Doc.blockById(m.state.doc, m.paras[1].id)).length;
+  const r = Span.replaceSpan(m.state.doc, Span.spanOf(m.state.doc, { id: m.paras[0].id, offset: 0 }, { id: m.paras[1].id, offset: second }), "\"");
+  m.state.doc = r.doc;
+  const moves = Span.followShots(r.doc, m.broll.shots, r);
+  assert.deepEqual(moves, [{ id: "B1", blockIds: [m.paras[2].id], moved: true }], "followShots sends the shot to the third paragraph");
+  m.followSpan(moves);
   for (let i = 0; i < 4; i++) await settle();
   const list = Broll.spokenBlocks(m.state.doc);
   assert.ok(Broll.fitsOver(list, [m.paras[2].id], Broll.parseBroll(m.text).shots[0].over), "the list's Over quotes the next paragraph");
-  m.rewrite(1, "\"New words typed after the quote mark.");
+  Doc.setContent(m.state.doc, r.id, "\"New words typed after the quote mark.");
   await m.describeShot(); await settle();
   assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[2].id], "after more typing and a later save the shot is still there");
 });
