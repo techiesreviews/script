@@ -483,11 +483,13 @@ for (const width of [1280, 390]) {
         assert.ok((await spanState(page)).on, `the span is drawn while the mouse is held (${label})`);
         assert.ok(await page.eval(`window.__scriptEditor.answer(${JSON.stringify(askId)}, { kind: "replace", text: "**blank**" })`), `the agent's change goes in (${label})`);
         await page.until(`window.__scriptEditor.markdown().includes("A **blank** page")`, "the agent's bold");
+        assert.equal(await page.eval(`window.__scriptEditor.spanBusy()`), false, `the drag and its scrolling stopped with the agent's change (${label})`);
         await sleep(100);
         const y0 = await page.eval(`scrollY`);
         for (let i = 1; i <= 4; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: b.x - 10 * i, y: b.y - 2 * i, button: "left", buttons: 1 }); await sleep(25); }
         await sleep(400);
         const moved = await spanState(page), y1 = await page.eval(`scrollY`);
+        assert.equal(await page.eval(`window.__scriptEditor.spanBusy()`), false, `no drag or editor scrolling while the mouse is still held (${label})`);
         await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: b.x - 40, y: b.y - 8, button: "left", buttons: 0, clickCount: 1 });
         await sleep(100);
         const released = await spanState(page);
@@ -500,7 +502,37 @@ for (const width of [1280, 390]) {
       const plain = await held("Today:", "held drag");
       const scrolling = await held(null, "held near the window's end");
       await page.eval(`scrollTo(0, 0)`);
-      results.push(`${width}px agent's change during a held drag: met — the span ended at once; ${plain}; near the window's end ${scrolling}`);
+      results.push(`${width}px agent's change during a held drag: met — the span ended at once and the drag with its scrolling stopped (spanBusy false); ${plain}; near the window's end ${scrolling}`);
+    }
+
+    // 16d. The agent changes the paragraph a held drag started in before the drag left it (no span drawn yet): moving on
+    // into the third paragraph and letting go draw no span from the old offsets (TOOLS-483).
+    {
+      const index = await page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(P1)}))`);
+      const askId = await page.eval(`window.__scriptEditor.ask(${index}, 2, 7, "simpler")`);
+      assert.ok(askId, "an ask on \"blank\"");
+      await page.key("Escape", "Escape", 27);
+      await page.eval(`scrollTo(0, 0)`);
+      const a = await page.eval(pointJs("page. A deadline.", "Why", true));
+      const inside = await page.eval(pointJs("page. A deadline.", "deadline"));
+      await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...a, buttons: 0 });
+      await page.send("Input.dispatchMouseEvent", { type: "mousePressed", ...a, button: "left", buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= 4; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: a.x + (inside.x - a.x) * i / 4, y: a.y + (inside.y - a.y) * i / 4, button: "left", buttons: 1 }); await sleep(25); }
+      assert.ok(!(await spanState(page)).on && await page.eval(`window.__scriptEditor.spanBusy()`), "a drag inside the first paragraph: held, no span yet");
+      assert.ok(await page.eval(`window.__scriptEditor.answer(${JSON.stringify(askId)}, { kind: "replace", text: "**blank**" })`), "the agent's change goes in");
+      await page.until(`window.__scriptEditor.markdown().includes("A **blank** page")`, "the agent's bold");
+      const b = await page.eval(pointJs(P3, "Today:"));
+      for (let i = 1; i <= 8; i++) { await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: inside.x + (b.x - inside.x) * i / 8, y: inside.y + (b.y - inside.y) * i / 8, button: "left", buttons: 1 }); await sleep(25); }
+      const moved = await spanState(page), busy = await page.eval(`window.__scriptEditor.spanBusy()`);
+      await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...b, button: "left", buttons: 0, clickCount: 1 });
+      await sleep(100);
+      const released = await spanState(page);
+      assert.ok(!moved.on && !moved.ranges, `no span while moving into the third paragraph: ${JSON.stringify(moved)}`);
+      assert.equal(busy, false, "the drag stopped at its first move after the change");
+      assert.ok(!released.on && !released.ranges, `no span after letting go: ${JSON.stringify(released)}`);
+      for (let i = 0; i < 4 && (await md(page)) !== original; i++) { await undo(page); await sleep(150); }
+      assert.equal(await md(page), original, "Undo takes the agent's change back");
+      results.push(`${width}px agent's change before the drag left its paragraph: met — moving on into the third paragraph and letting go drew no span; the drag had stopped`);
     }
 
     // 17. A moved shot keeps its orange frame while the mouse is over it (TOOLS-477).
@@ -610,7 +642,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/48 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/50 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);
