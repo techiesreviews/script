@@ -196,6 +196,13 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   const after = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond [two](https://example.com) three\n");
   const at2 = Doc.contentOf(after.blocks[3]).indexOf("](");
   assert.equal(Span.replaceSpan(after, Span.spanOf(after, at(after, 2, 6), at(after, 3, at2)), "", { split: true }).rest, true);
+  // Letters outside the basic range (Adlam, two code units each) are words too: the shot goes with them.
+  const adlam = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond 𞤀𞤣𞤤𞤢𞤥\n");
+  const [, , d1, d2] = ids(adlam);
+  const kept = Span.replaceSpan(adlam, Span.spanOf(adlam, at(adlam, 2, 6), at(adlam, 3, 7)), "", { split: true });
+  assert.equal(kept.rest, true, "the Adlam word is left");
+  assert.deepEqual(Span.followShots(kept.doc, [{ id: "B2", blockIds: [d2] }], kept), [{ id: "B2", blockIds: [kept.caret.id], moved: true }]);
+  assert.notEqual(kept.caret.id, d1);
   // Joined into a section title, nothing settles the link: its literal "](address)" stays in the text, as words left.
   const title = Span.replaceSpan(link, Span.spanOf(link, at(link, 1, 3), at(link, 3, words)), "", { split: true });
   assert.equal(title.doc.blocks[1].type, "heading");
