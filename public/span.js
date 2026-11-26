@@ -152,12 +152,17 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
 }
 
 // True when `content` has words after `end`: when the joined block is a paragraph (`spoken`) only the spoken ones count
-// (no bold marks, no hidden link address); elsewhere marks are literal text.
+// (no bold marks, no hidden link address); elsewhere marks are literal text. Read by whole characters, so a letter
+// outside the basic range (two code units) counts.
 function wordsAfter(content, end, spoken) {
   const word = /[\p{L}\p{N}]/u;
   if (!spoken) return word.test(content.slice(end));
   const { text, map } = Cues.spokenView(content);
-  for (let i = 0; i < text.length; i++) if (map[i] >= end && word.test(text[i])) return true;
+  for (let i = 0; i < text.length;) {
+    const ch = String.fromCodePoint(text.codePointAt(i));
+    if (map[i] >= end && word.test(ch)) return true;
+    i += ch.length;
+  }
   return false;
 }
 
