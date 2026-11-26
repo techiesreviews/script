@@ -525,6 +525,10 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .edit-bar__sr { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
 /* The selected words stay marked while the focus is in the bar: the browser takes the page's own selection away then. */
 ::highlight(bar-selection) { background: color-mix(in oklch, var(--accent) 28%, transparent); }
+/* A selection across paragraphs (TOOLS-470): the editor draws it, the browser's own one inside a block stays unseen. */
+::highlight(span-selection) { background: color-mix(in oklch, var(--accent) 28%, transparent); }
+#script[data-span] ::selection { background: transparent; }
+#script[data-span] .block { caret-color: transparent; }
 @media (hover: hover) and (pointer: fine) {
   .edit-bar__button:enabled:hover, .edit-bar__send:enabled:hover { background: var(--hover); }
   .edit-bar__tab:hover kbd { border-color: var(--muted); color: var(--text); }
@@ -675,7 +679,8 @@ button { font: inherit; color: inherit; user-select: none; -webkit-user-select: 
 .shot-frame__jump { position: relative; display: block; inline-size: 100%; padding: 0; border: 0; border-radius: var(--radius); background: transparent; cursor: pointer; }
 .shot-frame .frame__img { border-radius: var(--radius); }
 .shot-frame__jump:active .frame__img { background: color-mix(in oklch, var(--surface), var(--text) 5%); }
-.shot-frame[data-lit] .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
+.shot-frame[data-lit] .frame__img, .shot-frame[data-moved] .frame__img { box-shadow: inset 0 0 0 2px var(--accent); }
+.moved-note { display: block; margin-block-start: 0.3rem; color: var(--accent-ink); font: 600 0.72rem/1.3 system-ui, sans-serif; }
 .broll-tag {
   position: absolute; inset-block-start: 0.3rem; inset-inline-start: 0.3rem;
   display: inline-flex; align-items: center; gap: 0.25rem; block-size: 1.3rem; padding-inline: 0.4rem;

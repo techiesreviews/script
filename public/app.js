@@ -4,6 +4,7 @@ import { createSaving, createLeftCopies, tabLocks, writeHandle, permitted, sameW
 import * as Changes from "./changes.js";
 import * as Links from "./links.js";
 import * as Cues from "./cues.js";
+import * as Span from "./span.js";
 import { createTogether, parseLink, fitAsks, overlappingAsks, guestMayAct } from "./together-adapter.js";
 import { agentBrand } from "./agent-brand.js";
 import { TOKEN_MAX_AGE_MS as AGENT_MAX_AGE, NO_ASKS } from "./agent-link.js";
@@ -120,6 +121,9 @@ const state = {
 };
 // Working together (step D): set up at the end of this file. A room link in the address makes this tab a guest.
 let together = null;
+// A selection across paragraphs (TOOLS-470, span.js): { from, to } while one is drawn, else null; `spanSaw`: what the
+// blocks it covers said when it was drawn (setSpan).
+let span = null, spanSaw = null;
 const roomLink = parseLink(location.hash);
 // Script or Storyboard (the switch in the top bar), remembered; where the script was scrolled.
 const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 0 };
@@ -677,6 +681,7 @@ function renderBlock(id, caret = null) {
   refreshLinks();
   together?.redraw();
   keepBarSel(id);
+  if (span) paintSpan();
 }
 
 let sectionObserver = null;
@@ -716,6 +721,7 @@ function renderAll(caret = null) {
   refreshLinks();
   together?.redraw();
   if (barSel) keepBarSel(barSel.id);
+  if (span) paintSpan();
 }
 
 function renderToc() {
@@ -920,9 +926,14 @@ function historyStep(undoing) {
 function restore(snap, to) {
   // A step that put the agent's change in (or took it out) says what its ask becomes: undone or kept, unmarked.
   const { back, closed } = Changes.landStep(state.asks, snap.land);
-  to.push({ doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}) });
+  // A step across paragraphs (TOOLS-470) also says which selection shows once it is taken (`span`) and where its shots
+  // go (`shots`, placed in its turn below); the step it leaves for the other list carries the other side of both.
+  const across = snap.span !== undefined || snap.shots ? { span: snap.otherSpan ?? null, otherSpan: snap.span ?? null } : {};
+  const step = { doc: Doc.cloneDoc(state.doc), caret: getCaret(), ...(back ? { land: back } : {}), ...across };
+  to.push(step);
   const was = state.doc;
   state.doc = Doc.cloneDoc(snap.doc);
+  setSpan(null);
   // A step that only moved bold marks: asks follow by their offsets, so one on a repeated word stays on that word.
   for (const b of state.doc.blocks) {
     const old = Doc.blockById(was, b.id), a = old && Doc.contentOf(old), z = Doc.contentOf(b);
@@ -933,6 +944,8 @@ function restore(snap, to) {
   reanchorAll();
   renderAll(snap.caret && byId(snap.caret.id) ? snap.caret : null);
   hideBar();
+  if (snap.shots) step.shots = brollApi?.placeShots(snap.shots) || undefined;
+  if (snap.span) setSpan(spanAt(snap.span.from, snap.span.to));
   changed();
 }
 function undo() {
@@ -1318,13 +1331,244 @@ scriptEl.addEventListener("input", (e) => {
   if (el) syncFromDom(el);
   state.preCaret = null;
 });
-scriptEl.addEventListener("compositionend", (e) => { const el = blockOf(e.target); if (el) syncFromDom(el); });
+scriptEl.addEventListener("compositionend", (e) => {
+  const el = blockOf(e.target);
+  if (el) syncFromDom(el);
+  // Composed text over a span joined the span's Undo step (see the span keys below); what is typed next is its own.
+  if (state.lastStep?.composing) state.lastStep = null;
+});
 scriptEl.addEventListener("paste", (e) => {
   const el = blockOf(e.target);
   if (!el) return;
   e.preventDefault();
   pasteText(el, e.clipboardData?.getData("text/plain") || "");
 });
+
+/* ---------- A selection across paragraphs (TOOLS-470, Lex approved the sketch 2026-11-26) ---------- */
+// Each block is its own editing area, so the browser's selection stops at its edge. A mouse drag that leaves the block
+// it started in becomes the editor's own selection (span.js), drawn as a highlight, up to the whole script. Copy gives
+// its words; cut, delete, typing, Enter and paste replace it in one Undo step; shots on the paragraphs it takes out go
+// to the joined one.
+const canHighlight = () => !!window.CSS?.highlights && typeof Highlight === "function";
+let spanDrag = null, spanPoint = null, spanScroll = 0;
+const COMPOSE_GROUP_MS = 60000;
+// The notes folded away at the top are never part of it, even from a drag that starts on the title.
+const spanAt = (anchor, focus) => Span.spanOf(state.doc, anchor, focus, { hidden: new Set($$("details:not([open]) .block", scriptEl).map((el) => el.dataset.id)) });
+// A change the span did not make (the agent's answer, a shared edit) to a block it covers ends it, so its offsets never
+// point at other words.
+const spanSees = (s) => Span.spanParts(state.doc, s).map((p) => `${p.block.id} ${p.block.type} ${Doc.contentOf(p.block)}`).join("\n");
+function setSpan(next) {
+  span = next;
+  spanSaw = span && state.doc ? spanSees(span) : null;
+  scriptEl.toggleAttribute("data-span", !!span);
+  paintSpan();
+}
+// The span, if the blocks it covers are as they were.
+function liveSpan() {
+  if (span && (!state.doc || spanSees(span) !== spanSaw)) setSpan(null);
+  return span;
+}
+// Drawn again after every render (the blocks' text nodes are new) and kept to the script as it is now.
+function paintSpan() {
+  if (!canHighlight()) return;
+  if (span && state.doc) {
+    const now = spanSees(span) === spanSaw && spanAt(span.from, span.to);
+    if (!now) { span = spanSaw = null; scriptEl.removeAttribute("data-span"); }
+    else if (now !== span) { span = now; spanSaw = spanSees(now); }
+  }
+  if (!span || !state.doc) return void CSS.highlights.delete("span-selection");
+  const ranges = [];
+  for (const p of Span.spanParts(state.doc, span)) {
+    const el = blockNode(p.block.id);
+    if (el && !el.closest("details:not([open])")) ranges.push(rangeAt(el, p.start, p.end));
+  }
+  CSS.highlights.set("span-selection", new Highlight(...ranges));
+}
+// The point in the script's text under (x, y): in a block, or in a gap, a frame or the margin, the nearest visible
+// block's start, end or line there. The front matter folded away is never part of it.
+function spotAt(x, y) {
+  const p = caretFromPoint(x, y), hit = p && blockOf(p[0]);
+  if (hit && !hit.closest("details:not([open])")) return { id: hit.dataset.id, offset: offsetIn(hit, p[0], p[1]) };
+  let best = null;
+  for (const el of $$(".block", scriptEl)) {
+    if (el.closest("details:not([open])")) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.height) continue;
+    const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+    if (!best || d < best.d) best = { el, r, d };
+    if (!d) break;
+  }
+  if (!best) return null;
+  const { el, r } = best, id = el.dataset.id;
+  if (y < r.top) return { id, offset: 0 };
+  if (y > r.bottom) return { id, offset: readContent(el).length };
+  const q = caretFromPoint(Math.min(Math.max(x, r.left + 1), r.right - 1), y);
+  return q && el.contains(q[0]) ? { id, offset: offsetIn(el, q[0], q[1]) } : { id, offset: x < r.left ? 0 : readContent(el).length };
+}
+function spanExtend(x, y) {
+  const focus = spotAt(x, y);
+  if (!focus || !state.doc) return;
+  let next = spanAt(spanDrag.anchor, focus);
+  // In the gap just past the paragraph, no words of the next block are reached yet: the browser's selection stays.
+  if (next && Span.spanFarEmpty(state.doc, next, focus)) next = null;
+  if (next || span) setSpan(next);
+}
+// Near the top bar or the window's end, the page scrolls on while the mouse is held, so a drag reaches the whole script.
+function spanAutoScroll() {
+  cancelAnimationFrame(spanScroll);
+  spanScroll = 0;
+  if (!spanDrag || !spanPoint) return;
+  const top = $(".top").getBoundingClientRect().bottom + 40, end = innerHeight - 40, { x, y } = spanPoint;
+  const over = y < top ? y - top : y > end ? y - end : 0;
+  if (!over) return;
+  scrollBy(0, Math.sign(over) * Math.min(28, 2 + Math.ceil(Math.abs(over) / 3)));
+  spanExtend(x, y);
+  // motion-exception: the page follows the held mouse past the window's edge, one frame at a time, only while dragging
+  spanScroll = requestAnimationFrame(spanAutoScroll);
+}
+// Any press clears it, except a right-click on its own words; a mouse press in a block's text may start the next one.
+document.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) {
+    const el = span && e.button === 2 && blockOf(e.target);
+    if (span && !(el && Span.spanParts(state.doc, span).some((p) => p.block.id === el.dataset.id))) setSpan(null);
+    spanDrag = null;
+    return;
+  }
+  if (span) setSpan(null);
+  spanDrag = null;
+  if (e.pointerType !== "mouse" || e.shiftKey || !canHighlight() || !state.doc || state.pendingDraft || state.locked) return;
+  const el = blockOf(e.target);
+  if (!el || el.closest("details:not([open])")) return;
+  const anchor = spotAt(e.clientX, e.clientY);
+  if (anchor) spanDrag = { anchor };
+}, { capture: true });
+addEventListener("pointermove", (e) => {
+  if (!spanDrag) return;
+  if (!(e.buttons & 1)) { spanDrag = null; return; }
+  spanPoint = { x: e.clientX, y: e.clientY };
+  spanExtend(e.clientX, e.clientY);
+  if (!spanScroll) spanAutoScroll();
+}, { passive: true });
+function spanReleased() {
+  if (!spanDrag) return;
+  spanDrag = spanPoint = null;
+  cancelAnimationFrame(spanScroll);
+  spanScroll = 0;
+  // The browser's own selection, still inside the block the drag started in, steps aside: keys come to the span.
+  if (span) getSelection().collapseToStart();
+}
+for (const t of ["pointerup", "pointercancel"]) addEventListener(t, spanReleased, { capture: true });
+addEventListener("blur", spanReleased);
+// A link opened by the caret (refreshLinks) puts new text nodes in its block.
+document.addEventListener("selectionchange", () => { if (span) paintSpan(); });
+
+// The kind the joined block will be (span.js replaceSpan): the first block's, or the last one's from the very start.
+function spanType() {
+  const parts = Span.spanParts(state.doc, span);
+  return parts[0].start === 0 ? parts.at(-1).block.type : parts[0].block.type;
+}
+// Replace the span with text ("" deletes it; split: Enter). A change whose settled bold would turn the line into
+// another kind of block is refused, quietly, as one-block edits are. Returns where the caret went, or false.
+function applySpan(text, { split = false } = {}) {
+  if (!span || !state.doc || state.locked || state.pendingDraft) return false;
+  const was = span, r = Span.replaceSpan(state.doc, was, text, { split });
+  if (!r) return false;
+  const first = was.from.id, last = was.to.id;
+  state.preCaret = { ...was.from };
+  checkpoint("span", first);
+  state.preCaret = null;
+  const step = together?.active ? null : state.undo.at(-1);
+  if (step) Object.assign(step, { span: was, otherSpan: null });
+  // Open asks and "Sounds like me" marks: those the span covered go, those after it in its last block follow their words
+  // to where they now are, the rest stay.
+  for (const a of state.asks) {
+    if (a.scope === "selection" && a.blockId === first && isOpen(a) && !isBrollAnswer(a) && a.end > was.from.offset) closeAsk(a, "cancelled");
+    if (a.scope === "script" && a.status === "answered") for (const m of a.answer.marks) if (m.state === "open" && m.blockId === first && m.end > was.from.offset) m.state = "gone";
+  }
+  moveAsks(last, r.caret.id, was.to.offset, r.caret.offset - was.to.offset);
+  const shots = Span.followShots(r.doc, brollApi?.shots() || [], r);
+  state.doc = r.doc;
+  boldTyping = linksBefore = null;
+  for (const id of new Set([first, r.caret.id, ...r.removed])) reanchorBlock(id);
+  setSpan(null);
+  renderAll(r.caret);
+  const back = shots.length ? brollApi?.followSpan(shots) : null;
+  if (step && back) step.shots = back;
+  changed();
+  return r.caret;
+}
+function spanCaret(end) {
+  const at = end ? span.to : span.from;
+  setSpan(null);
+  placeCaret(at.id, at.offset);
+}
+// Keys while it is drawn: caught before the block's own handling.
+scriptEl.addEventListener("keydown", (e) => {
+  const composing = e.isComposing || e.keyCode === 229 || e.key === "Process" || e.key === "Dead";
+  // A plain key after a composition that never finished: what is typed now is a step of its own.
+  if (!composing && state.lastStep?.composing) state.lastStep = null;
+  if (!liveSpan()) return;
+  const stop = () => { e.preventDefault(); e.stopPropagation(); };
+  // Composed text (accents, Chinese or Japanese input) is typed into the joined block once the span is gone. The
+  // composed text joins the span's Undo step, so one Undo takes back both; composing may take a while.
+  if (composing) {
+    const caret = applySpan("");
+    if (!caret) setSpan(null);
+    else if (!together?.active) state.lastStep = { kind: "type", id: caret.id, at: Date.now() + COMPOSE_GROUP_MS, composing: true };
+    return;
+  }
+  const mod = e.metaKey || e.ctrlKey, k = e.key;
+  if (k === "Escape" || k === "Tab") return void setSpan(null);
+  if (mod && !e.altKey) {
+    const l = k.toLowerCase();
+    if (l === "z" || l === "y" || l === "a") return void setSpan(null); // Undo, Redo and select all go on as always
+    if (l === "b" || l === "i" || l === "u" || l === "k") return stop(); // bold and links are for one paragraph
+    if (k.length === 1) return; // copy, cut, paste (the events below), saving and the browser's own keys
+  }
+  if (k === "Backspace" || k === "Delete") { stop(); applySpan(""); return; }
+  if (k === "Enter") {
+    stop();
+    const type = spanType();
+    if (type === "raw" || (e.shiftKey && (type === "para" || type === "note"))) applySpan("\n");
+    else applySpan("", { split: true });
+    return;
+  }
+  if (/^(Arrow|Home$|End$|Page)/.test(k)) { stop(); spanCaret(k === "ArrowRight" || k === "ArrowDown" || k === "End" || k === "PageDown"); }
+}, { capture: true });
+scriptEl.addEventListener("beforeinput", (e) => {
+  if (!liveSpan()) return;
+  const t = e.inputType;
+  if (t === "insertCompositionText") return; // started by a key the handler above already turned into a deletion
+  // A spelling fix picked from the right-click menu is for the word it was offered on, not the span.
+  if (t === "insertReplacementText") return void setSpan(null);
+  e.preventDefault();
+  e.stopPropagation();
+  if (t === "historyUndo" || t === "historyRedo") { setSpan(null); t === "historyUndo" ? undo() : redo(); }
+  else if (t === "insertText") applySpan(e.data ?? e.dataTransfer?.getData("text/plain") ?? "");
+  else if (t === "insertParagraph") spanType() === "raw" ? applySpan("\n") : applySpan("", { split: true });
+  else if (t === "insertLineBreak") spanType() === "heading" ? applySpan("", { split: true }) : applySpan("\n");
+  else if (t.startsWith("delete")) applySpan("");
+}, { capture: true });
+document.addEventListener("copy", (e) => {
+  if (!liveSpan() || !e.clipboardData) return;
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", Span.spanCopy(state.doc, span));
+}, { capture: true });
+document.addEventListener("cut", (e) => {
+  if (!liveSpan() || !e.clipboardData) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.clipboardData.setData("text/plain", Span.spanCopy(state.doc, span));
+  applySpan("");
+}, { capture: true });
+document.addEventListener("paste", (e) => {
+  if (!liveSpan()) return;
+  e.preventDefault();
+  e.stopPropagation();
+  // Nothing but a picture (a screenshot) to paste: the span stays, as a paste into one paragraph changes nothing.
+  const text = e.clipboardData?.getData("text/plain") || "";
+  if (text) applySpan(text);
+}, { capture: true });
 
 /* ---------- Cues (fleet issue #14; always on, Lex 2026-11-06) ---------- */
 // The on/off and export settings saved before 2026-11-06 mean nothing now: they go from this browser.
@@ -1574,7 +1818,7 @@ let barSel = null, barSending = 0, askPick = 0, scriptPress = false, pressMoved 
 let popOpenTimer = 0, popCloseTimer = 0, popStuck = false, popTouch = false, popQuietFocus = false, popByHover = false;
 // A selection across blocks is clamped to the first block where it covers at least one word.
 function currentSelection() {
-  if (state.pendingDraft) return null;
+  if (state.pendingDraft || span) return null; // a selection across paragraphs has no edit bar
   const sel = getSelection();
   if (!sel.rangeCount || sel.isCollapsed) return null;
   const r = sel.getRangeAt(0);
@@ -3438,7 +3682,7 @@ $$("#editBar [data-act]").forEach((b) => (b.innerHTML = `${icon(ACT_ICON[b.datas
 // when a script has a linked list or B-roll asks, when the Storyboard opens, or when the agent sends B-roll; opening a
 // script without any of that downloads none of it. Until it is here, the app answers for it below: no list.
 // Bump with createBroll's: a tab opened before a release that loads the module after it stops instead of mixing them.
-const BROLL_SEAM = 4;
+const BROLL_SEAM = 5;
 let brollApi = null, brollLoading = null, brollFailed = false;
 // Before the module is here: the open script (`token`, which only opening another script changes), whether its link
 // is being looked up and the link found, the draft's "Check" flags and, for a guest, the host's list as it came last.
@@ -4359,6 +4603,8 @@ function restoreSelection(sel) {
 }
 // Someone else's change (or an undo on a name tag) is in state.doc: asks follow the text, then the script redraws.
 function afterRoomOps(ops, sel, before = new Map()) {
+  // A selection across paragraphs (TOOLS-470) that another tab's edit reached would point at other words: it ends.
+  if (span && Span.spanTouched(state.doc, span, ops)) { setSpan(null); spanDrag = null; }
   followMarks(ops);
   const touched = new Set();
   let structure = false;

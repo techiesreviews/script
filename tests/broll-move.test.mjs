@@ -15,7 +15,7 @@ function movement() {
   const state = { doc: Doc.parse("# Throwaway\n\nFirst spoken paragraph.\n\nSecond spoken paragraph.\n\nThird spoken paragraph.\n"), undo: [], redo: [], asks: [], lastStep: null };
   const paras = Broll.spokenBlocks(state.doc);
   let text = Broll.addShot(Broll.newList("Throwaway"), { id: "B1", kind: "broll", what: "Throwaway shot", how: "Keep this detail", over: Broll.overFor(state.doc, Broll.wholeParas(state.doc, [paras[0].id])) });
-  const broll = { token: 1, shots: [], flags: {}, status: "ok" };
+  const broll = { token: 1, shots: [], flags: {}, status: "ok", moved: new Set(), placing: new Map(), unsaved: new Map() };
   // The app's own adoptBroll takes a written list in: the shots are matched to the script and keep their Check flags.
   const adopt = () => {
     broll.flags = Object.fromEntries(broll.shots.filter((shot) => shot.check).map((shot) => [shot.id, true]));
@@ -40,14 +40,19 @@ function movement() {
       queue = run.catch(() => {});
       return run;
     },
-    syncFlags() {}, renderBroll() {}, dropGoneSuggestions() {}, openShotCard() {}, shotFrameAnchor() {}, failShotCard() {},
+    syncFlags() {}, renderBroll() {}, renderBrollMarks() {}, dropGoneSuggestions() {}, openShotCard() {}, shotFrameAnchor() {}, failShotCard() {},
+    // A selection across paragraphs (TOOLS-470) is never drawn here.
+    setSpan() {}, brollApi: null, Span: null,
   };
   const app = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
   const history = app.slice(app.indexOf("function checkpoint("), app.indexOf("/* ---------- Ask anchors follow edits"));
   const matchStart = source.indexOf("  function adoptBroll("), matchEnd = source.indexOf("  // A covered line changed", matchStart);
   assert.ok(matchStart >= 0 && matchEnd > matchStart, "adoptBroll's and rematchBroll's source boundaries exist");
   const matching = source.slice(matchStart, matchEnd);
-  runInNewContext(`${history}\n${matching}\n${source.slice(start, end)}\nObject.assign(this, { moveShot, adoptBroll, rematchBroll });`, context);
+  // A selection across paragraphs that took the shot's paragraph out (TOOLS-470) places it with these two.
+  const spanStart = source.indexOf("  function placeShots("), spanEnd = source.indexOf("  /* ---------- Move a shot", spanStart);
+  assert.ok(spanStart >= 0 && spanEnd > spanStart, "placeShots's and followSpan's source boundaries exist");
+  runInNewContext(`${history}\n${matching}\n${source.slice(spanStart, spanEnd)}\n${source.slice(start, end)}\nObject.assign(this, { moveShot, adoptBroll, rematchBroll, placeShots, followSpan });`, context);
   adopt();
   broll.shots[0].check = true;
   const checkpoint = context.checkpointBrollMove;
@@ -71,6 +76,7 @@ function movement() {
     holdNextSave: () => { let release; slow = new Promise((resolve) => { release = resolve; }); return release; },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
     moveShot: (index = 1) => context.moveShot("B1", Broll.wholeParas(state.doc, [paras[index].id])),
+    placeShots: (next) => context.placeShots(next), followSpan: (moves) => context.followSpan(moves),
     replace: (mutate) => { text = mutate(text); adopt(); },
   };
 }
@@ -659,4 +665,183 @@ test("B-roll move history: words added to the target paragraph while a move, its
   await m.moveShot(1);
   m.undo(); await settle();
   await during(m, () => m.redo(), 1);
+});
+
+// TOOLS-470: a selection across paragraphs took the shot's paragraph out, so the shot went to the joined one. Its Undo
+// and Redo write the shot's quote back and forth; each write meets the list as the one before left it.
+const takeOut = (m, index) => {
+  const i = m.state.doc.blocks.findIndex((b) => b.id === m.paras[index].id);
+  return m.state.doc.blocks.splice(i, 1)[0];
+};
+const putBack = (m, block, before) => {
+  m.state.doc.blocks.splice(m.state.doc.blocks.findIndex((b) => b.id === m.paras[before].id), 0, block);
+};
+
+test("B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote", async () => {
+  const m = movement();
+  const old = Broll.parseBroll(m.text).shots[0].over;
+  const gone = takeOut(m, 0);
+  const releaseSpan = m.holdNextWrite();
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  const joined = m.broll.shots[0].over;
+  assert.notEqual(joined, old, "the shot's quote follows it to the paragraph it shows on now");
+  // Undo before the span's save lands, then that save lands, then Redo while the Undo's save still waits.
+  putBack(m, gone, 1);
+  const releaseUndo = m.holdNextWrite();
+  const redoStep = m.placeShots(undoStep);
+  releaseSpan(); await settle(); await settle();
+  takeOut(m, 0);
+  m.placeShots(redoStep);
+  releaseUndo();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, joined, "the last step pressed, Redo, is what the list says");
+});
+
+test("B-roll span: a moved shot whose paragraph is changed while its save waits stays there, with Check", async () => {
+  const m = movement();
+  m.broll.shots[0].check = false;
+  takeOut(m, 0);
+  const release = m.holdNextWrite();
+  m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  // The person changes the words of the paragraph the shot went to before its save lands; it gets "Check".
+  m.rewrite(1, "Other words entirely, typed while the save waited.");
+  Broll.touchShots(m.state.doc, m.broll.shots);
+  release();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[1].id], "the shot stays on the paragraph it was moved to");
+  assert.equal(m.broll.shots[0].check, true, "and keeps its Check");
+});
+
+test("B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same", async () => {
+  const m = movement();
+  m.rewrite(0, "Same words in two places.");
+  m.rewrite(2, "Same words in two places.");
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[1].id])) }));
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id]);
+  const gone = takeOut(m, 1);
+  const releaseSpan = m.holdNextWrite();
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[2].id], moved: true }]);
+  putBack(m, gone, 2);
+  const releaseUndo = m.holdNextWrite();
+  const redoStep = m.placeShots(undoStep);
+  releaseSpan(); await settle(); await settle();
+  takeOut(m, 1);
+  const releaseRedo = m.holdNextWrite();
+  m.placeShots(redoStep);
+  releaseUndo(); await settle(); await settle();
+  releaseRedo();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot shows where Redo put it, not on the first paragraph with the same words");
+});
+
+test("B-roll span: a shot moved on its own after a span edit keeps that place when the span edit is undone", async () => {
+  const m = movement();
+  const gone = takeOut(m, 0);
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  await m.moveShot(2);
+  const newer = Broll.parseBroll(m.text).shots[0].over;
+  putBack(m, gone, 1);
+  m.placeShots(undoStep);
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, newer, "the list keeps the newer move");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "and the shot shows there");
+});
+
+test("B-roll span: a shot changed outside the page while the span edit saves shows where the list says after its Undo", async () => {
+  const m = movement();
+  const gone = takeOut(m, 0);
+  const releaseSpan = m.holdNextWrite();
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  // The agent puts the shot on the third paragraph while the span edit's save waits.
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[2].id])) }));
+  const theirs = Broll.parseBroll(m.text).shots[0].over;
+  putBack(m, gone, 1);
+  m.placeShots(undoStep);
+  releaseSpan();
+  for (let i = 0; i < 8; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, theirs, "neither save writes over the agent's change");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot shows where the list says");
+});
+
+test("B-roll span: after a shot's save failed, the next span edit saves the shot where it shows", async () => {
+  const m = movement();
+  takeOut(m, 0);
+  m.failNextWrite();
+  m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  // Another save of the list in between leaves the shot where it shows.
+  await m.describeShot();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[1].id], "the shot still shows where the failed step put it");
+  takeOut(m, 1);
+  m.followSpan([{ id: "B1", blockIds: [m.paras[2].id], moved: true }]);
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[2].id])), "the list has the second edit's quote");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "and the shot shows there");
+});
+
+test("B-roll span: after a shot's save failed, the agent moving it still wins", async () => {
+  const m = movement();
+  takeOut(m, 0);
+  m.failNextWrite();
+  m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[2].id])) }));
+  const theirs = Broll.parseBroll(m.text).shots[0].over;
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot shows where the agent put it");
+  takeOut(m, 1);
+  m.followSpan([{ id: "B1", blockIds: [m.paras[2].id], moved: false }]);
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, theirs, "the agent's quote stays in the list");
+});
+
+test("B-roll span: Redo that takes out the paragraph a shot was changed onto since puts the shot at the join", async () => {
+  const m = movement();
+  const gone = takeOut(m, 0);
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  putBack(m, gone, 1);
+  const redoStep = m.placeShots(undoStep);
+  for (let i = 0; i < 4; i++) await settle();
+  // The agent gives the shot other words of the paragraph the span takes out.
+  m.replace((text) => Broll.updateShot(text, "B1", { over: "\"First spoken\"" }));
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[0].id]);
+  takeOut(m, 0);
+  m.placeShots(redoStep);
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[1].id], "the shot goes to the join");
+  assert.deepEqual([...Broll.matchOver(Broll.spokenBlocks(m.state.doc), Broll.parseBroll(m.text).shots[0].over)], [m.paras[1].id], "and the list says so");
+  assert.ok(m.broll.moved.has("B1"), "with \"Moved here\"");
+});
+
+test("B-roll span: Redo leaves a shot moved on its own since without \"Moved here\"", async () => {
+  const m = movement();
+  const gone = takeOut(m, 0);
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  putBack(m, gone, 1);
+  const redoStep = m.placeShots(undoStep);
+  for (let i = 0; i < 4; i++) await settle();
+  await m.moveShot(2);
+  takeOut(m, 0);
+  m.placeShots(redoStep);
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot stays where it was moved");
+  assert.ok(!m.broll.moved.has("B1"), "Redo moved nothing");
+});
+
+test("B-roll span: Undo after another list was opened leaves that list's shot alone", async () => {
+  const m = movement();
+  takeOut(m, 0);
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  // Another list for the script, with a shot of the same name.
+  m.broll.token++;
+  m.replace(() => Broll.addShot(Broll.newList("Throwaway"), { id: "B1", kind: "broll", what: "Another list's shot", how: "x", over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[2].id])) }));
+  const theirs = Broll.parseBroll(m.text).shots[0].over, writes = m.writes;
+  assert.equal(m.placeShots(undoStep), null, "nothing to put back in another list");
+  for (let i = 0; i < 4; i++) await settle();
+  assert.equal(m.writes, writes);
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, theirs);
+  assert.equal(m.broll.shots[0].over, theirs);
 });

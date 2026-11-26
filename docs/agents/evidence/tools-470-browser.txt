@@ -1,0 +1,89 @@
+# Select across paragraphs (TOOLS-470): headless Chrome, local Worker, demo script with its B-roll list; 1280 px and 390 px. 2026-11-26T08:09:02Z
+# red run 2026-11-26T07:58:56Z on 629da92 (before the change)
+DIAGNOSTIC 1280px: {"on":false,"ranges":0,"text":"","bar":false} log=[]
+RESULT: fail tools-470-browser a span over three paragraphs is drawn: {"on":false,"ranges":0,"text":"","bar":false}
+# green run 2026-11-26T08:09:02Z on the change
+PROOF 1280px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 1280px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 1280px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 1280px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 1280px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 1280px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 390px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 390px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 390px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 390px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 390px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 390px section title: met — selected and deleted with the text around it; Undo put it back
+RESULT: ok tools-470-browser 12/12 checks at 1280 and 390 px
+
+== Round 1 fixes (second look). Red: the three new browser checks on the code before the fixes (2026-11-26T08:26:04Z)
+RESULT: fail tools-470-browser the folded notes are not copied: "- Channel: a made-up demo channel\n- Status: demo script for script.techies.tools"
+== without step 7 (step 8 on old code)
+RESULT: fail tools-470-browser an image-only paste changes no words
+== step 9 only, on old code
+RESULT: fail tools-470-browser timed out: composed text replaces the span
+== step 9 with its drag, on old code
+RESULT: fail tools-470-browser timed out: one Undo takes back the composed text and the span's delete
+
+== Round 1 fixes. Green on the fixed code (2026-11-26T08:26:04Z)
+PROOF 1280px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 1280px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 1280px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 1280px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 1280px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 1280px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 1280px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 1280px picture paste: met — words unchanged, the span still selected
+PROOF 1280px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 390px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 390px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 390px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 390px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 390px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 390px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 390px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 390px picture paste: met — words unchanged, the span still selected
+PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+RESULT: ok tools-470-browser 18/18 checks at 1280 and 390 px
+
+Review round 1 (2026-11-26): checks 10 to 14 added on 04ff798 and run there before the fixes, each step on its own.
+Red (code before the fixes):
+RESULT: fail tools-470-browser a drag into the gap below its paragraph is no span
+RESULT: fail tools-470-browser a spelling fix does not replace the span
+RESULT: fail tools-470-browser timed out: one Undo takes back only the later typing
+RESULT: fail tools-470-browser timed out: Ctrl+Backspace deletes the span
+Check 14 (cut and Enter) guards what already worked; its first two failures were the check itself (cut is caught by
+the editor, so the check now records what it puts on the clipboard; Enter keeps the space before the break).
+After the fixes, the whole run (the check after 10 first clears the browser's own selection, since a press inside it
+drags that text away; the middle click's own Linux paste is checked to only add text, and Undo takes it back):
+PROOF 1280px gap below: met — a drag 12 px past the paragraph stays the paragraph's own selection
+PROOF 1280px right and middle click: met — a spelling fix and a middle click never replace the span
+PROOF 1280px cancelled composition: met — later typing is its own Undo step
+PROOF 1280px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves it
+PROOF 1280px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo
+(the same five at 390 px, with the first nine of each width as above)
+RESULT: ok tools-470-browser 28/28 checks at 1280 and 390 px
+
+Review round 2 (2026-11-26): check 9 now also types after the composition ended (no key pressed) and takes it back
+with its own Undo. Red, with the line that ends the composition's grouping turned off:
+RESULT: fail tools-470-browser timed out: one Undo takes back only the text after the composition
+New check 15 (a drag held near the window's end) guards the page scrolling that already worked; it passed first.
+After both, the whole run:
+PROOF 1280px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 1280px drag near the window's end: met — the page scrolled 2096 px and the selection grew from 13 to 39 blocks; letting go stopped it
+PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 390px drag near the window's end: met — the page scrolled 2157 px and the selection grew from 7 to 27 blocks; letting go stopped it
+RESULT: ok tools-470-browser 30/30 checks at 1280 and 390 px
+
+Review round 3 (2026-11-26): the fixes are in the B-roll list and the shot rules (unit tests, which failed first); the
+browser run on the fixed code:
+RESULT: ok tools-470-browser 30/30 checks at 1280 and 390 px
+
+Review round 4 (2026-11-26): new check 16 (the agent's answer bolds a word in a paragraph the span covers). Red, on the
+code before the fix:
+RESULT: fail tools-470-browser the agent's change to a block the span covers ends the span
+After the fix, the whole run:
+PROOF 1280px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+PROOF 390px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+RESULT: ok tools-470-browser 32/32 checks at 1280 and 390 px
