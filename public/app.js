@@ -1352,7 +1352,8 @@ scriptEl.addEventListener("paste", (e) => {
 const canHighlight = () => !!window.CSS?.highlights && typeof Highlight === "function";
 // In a shared script the selection stays inside one paragraph, as before (Lex, 2026-11-26, TOOLS-477): the room's
 // Undo is each person's own and records only one-block changes, so an edit across paragraphs could not be taken back.
-const spanShared = () => !!together?.active;
+// From the moment Share is pressed (`sharing`: the host's room may still be waiting for its part) or a guest joins.
+const spanShared = () => !!(together?.active || together?.sharing);
 let spanDrag = null, spanPoint = null, spanScroll = 0;
 const COMPOSE_GROUP_MS = 60000;
 // The notes folded away at the top are never part of it, even from a drag that starts on the title.
@@ -1480,7 +1481,8 @@ function applySpan(text, { split = false } = {}) {
   state.preCaret = { ...was.from };
   checkpoint("span", first);
   state.preCaret = null;
-  const step = together?.active ? null : state.undo.at(-1);
+  // Never in a shared script (spanShared): the step is this tab's own Undo.
+  const step = state.undo.at(-1);
   if (step) Object.assign(step, { span: was, otherSpan: null });
   // Open asks and "Sounds like me" marks: those the span covered go, those after it in its last block follow their words
   // to where they now are, the rest stay.
@@ -1517,7 +1519,7 @@ scriptEl.addEventListener("keydown", (e) => {
   if (composing) {
     const caret = applySpan("");
     if (!caret) setSpan(null);
-    else if (!together?.active) state.lastStep = { kind: "type", id: caret.id, at: Date.now() + COMPOSE_GROUP_MS, composing: true };
+    else state.lastStep = { kind: "type", id: caret.id, at: Date.now() + COMPOSE_GROUP_MS, composing: true };
     return;
   }
   const mod = e.metaKey || e.ctrlKey, k = e.key;

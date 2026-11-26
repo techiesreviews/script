@@ -196,4 +196,8 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   const after = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond [two](https://example.com) three\n");
   const at2 = Doc.contentOf(after.blocks[3]).indexOf("](");
   assert.equal(Span.replaceSpan(after, Span.spanOf(after, at(after, 2, 6), at(after, 3, at2)), "", { split: true }).rest, true);
+  // Joined into a section title, nothing settles the link: its literal "](address)" stays in the text, as words left.
+  const title = Span.replaceSpan(link, Span.spanOf(link, at(link, 1, 3), at(link, 3, words)), "", { split: true });
+  assert.equal(title.doc.blocks[1].type, "heading");
+  assert.equal(title.rest, true, "the address is literal text in a section title");
 });

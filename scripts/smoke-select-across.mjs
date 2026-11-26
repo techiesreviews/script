@@ -403,8 +403,17 @@ for (const width of [1280, 390]) {
     // Undo there could not take back an edit across paragraphs. Host and guest alike.
     {
       await page.eval(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => { window.__link = t; } } }); true`);
-      await page.click("#shareBtn");
+      // A span drawn before the room starts (Share pressed with no pointer press, as from the keyboard) ends there: the
+      // next Delete takes no words of it.
+      await drag(page, [P1, "Why"], [P3, "Today:"]);
+      assert.ok((await spanState(page)).on, "the span is drawn before sharing");
+      await page.eval(`document.querySelector("#shareBtn").click(); true`);
       await page.until(`!!window.__link`, "the share link");
+      await page.key("Delete", "Delete", 46);
+      await sleep(200);
+      const s0 = await spanState(page), t0 = await md(page);
+      assert.ok(!s0.on && s0.ranges === 0, `host: a span from before sharing ends: ${JSON.stringify(s0)}`);
+      assert.ok(t0.includes(P2) && t0.includes(P3), "host: Delete after sharing leaves the other paragraphs");
       const guest = await openPage(width, 1000);
       try {
         await guest.send("Page.navigate", { url: await page.eval(`window.__link`) });
@@ -412,11 +421,11 @@ for (const width of [1280, 390]) {
         await guest.eval(`document.querySelector("#joinName").value = "Guest"; true`);
         await guest.click("#joinForm button");
         await guest.until(`document.querySelector("#script").textContent.includes(${JSON.stringify(P3)})`, "the guest's script", 12000);
-        // The host's Delete takes only the words it selected in the first paragraph ("Why …"), so the guest starts at
-        // another word of it.
-        for (const [who, tab, word] of [["host", page, "Why"], ["guest", guest, "deadline"]]) {
+        // Each Delete takes only words of the first paragraph (the guest's from "deadline" on), so the host finds that
+        // paragraph by its start and starts at an earlier word of it.
+        for (const [who, tab, word] of [["guest", guest, "deadline"], ["host", page, "blank"]]) {
           await tab.send("Page.bringToFront");
-          await drag(tab, [P1, word], [P3, "Today:"]);
+          await drag(tab, ["A blank page.", word], [P3, "Today:"]);
           const s = await spanState(tab);
           assert.ok(!s.on && s.ranges === 0, `${who}: no selection across paragraphs in a shared script: ${JSON.stringify(s)}`);
           await tab.key("Delete", "Delete", 46);
@@ -425,7 +434,7 @@ for (const width of [1280, 390]) {
           assert.ok(text.includes(P2) && text.includes(P3), `${who}: Delete leaves the other paragraphs`);
           assert.deepEqual(tab.log, [], `${who}: no browser errors`);
         }
-        results.push(`${width}px shared script: met — host and guest drags stay inside one paragraph; Delete leaves the other paragraphs`);
+        results.push(`${width}px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs`);
       } finally {
         await guest.close();
       }
