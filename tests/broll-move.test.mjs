@@ -691,9 +691,11 @@ test("B-roll span: a shot moved onto a paragraph with no words keeps its Over in
   const r = movement();
   takeOut(r, 0);
   r.rewrite(1, "");
+  const redoWrites = r.writes;
   r.placeShots({ token: r.broll.token, shots: { B1: { blockIds: [r.paras[1].id], expect: "\"Older words\"", over: "\"Older words\"" } }, moved: ["B1"] });
   for (let i = 0; i < 4; i++) await settle();
   assert.equal(Broll.parseBroll(r.text).shots[0].over, old, "the list keeps the shot's Over after the Redo too");
+  assert.equal(r.writes, redoWrites, "and the Redo writes nothing");
 });
 
 test("B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote", async () => {

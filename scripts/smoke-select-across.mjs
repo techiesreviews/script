@@ -337,10 +337,15 @@ for (const width of [1280, 390]) {
     await page.key("v", "KeyV", 86, { modifiers: 2, commands: ["paste"] });
     await page.until(`document.querySelector("#scWhat").value === "Typed words"`, "Ctrl+V pastes into the field");
     assert.equal(await md(page), original, "Ctrl+V in the shot card leaves the script");
-    await page.eval(`document.querySelector("#shotCard").hidden = true; document.querySelector("#script [contenteditable]").focus(); true`);
+    // Closed with the focus left nowhere (on the page itself), Ctrl+C copies the span again.
+    await page.eval(`document.querySelector("#shotCard").hidden = true; document.activeElement.blur(); window.__copied = null; true`);
+    await page.key("c", "KeyC", 67, { modifiers: 2, commands: ["copy"] });
+    await page.until(`window.__copied !== null`, "copy event after the shot card closed");
+    assert.equal(await page.eval(`window.__copied`), COPIED, "Ctrl+C after the shot card closed copies the span");
+    await page.eval(`document.querySelector("#script [contenteditable]").focus(); true`);
     await page.key("Escape", "Escape", 27);
     assert.ok(!(await spanState(page)).on, "Escape in the script ends the span");
-    results.push(`${width}px copy, cut and paste in the shot card: met — the field got them, the script stayed as it was`);
+    results.push(`${width}px copy, cut and paste in the shot card: met — the field got them, the script stayed as it was; once the card closed, Ctrl+C copied the span again`);
 
     // 15. Held near the window's end, a drag scrolls the page on and the selection grows with it; letting go stops both.
     await page.key("Escape", "Escape", 27);
