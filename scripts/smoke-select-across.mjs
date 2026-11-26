@@ -153,7 +153,7 @@ for (const width of [1280, 390]) {
     const moved = await shot(page, "B2");
     const note = await page.eval(`(() => { const f = [...document.querySelectorAll(".shot-frame[data-moved]")]; return f.map((x) => x.querySelector(".moved-note")?.textContent).join(); })()`);
     assert.equal(note, "Moved here", "the moved shot says so");
-    const where = await page.eval(`(() => { const f = document.querySelector(".shot-frame[data-moved]"); return f?.closest(".block")?.textContent.includes("A blank page"); })()`);
+    const where = await page.eval(`(() => { const f = document.querySelector(".shot-frame[data-moved]"); return f?.closest(".line")?.querySelector(".block")?.textContent.includes("A blank page"); })()`); // a frame sits beside its block, in the line
     assert.ok(where, "the moved shot shows on the joined paragraph");
     results.push(`${width}px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over ${JSON.stringify(b2.over)} → ${JSON.stringify(moved.over)}`);
 

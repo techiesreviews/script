@@ -6,7 +6,7 @@ import { startPress, HOLD_MS } from "./press.js";
 
 // Bump with any change to the host createBroll takes or the interface it returns: app.js checks it, so a tab opened
 // before a release that loads this file after it never mixes the two.
-export const SEAM = 4;
+export const SEAM = 5;
 
 /**
  * createBroll(host) → the B-roll part, frozen. `host` is what it may use of the app (app.js brollHost): its state,
@@ -25,6 +25,7 @@ export function createBroll(host) {
     token: 0, link: null, status: "none", err: "", text: "",
     shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {},
     marked: {}, // step K2: pictures put in at once, per shot { prev, pic, askId }, with Undo until the list changes
+    moved: new Set(), // TOOLS-470: shots a cross-paragraph edit moved, "Moved here" until the next change that moves shots
   };
 
   /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
@@ -53,7 +54,7 @@ export function createBroll(host) {
     broll.token++;
     endDrag();
     closeShotCard();
-    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
+    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {}, moved: new Set() });
     renderBroll();
   }
   async function loadBroll() {
@@ -205,9 +206,10 @@ export function createBroll(host) {
       const sug = suggestionsFor(s.id);
       // It can be dragged to other lines (steps L, L2), unless a change to it waits for Keep or Undo.
       const drag = !state.guest && !sug.length && !pendingSketch(s.id) && !markedSketch(s.id);
-      box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${drag ? " data-drag" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
+      const moved = broll.moved.has(s.id);
+      box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${moved ? " data-moved" : ""}${drag ? " data-drag" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
         + `<button class="shot-frame__jump" type="button" data-b="${esc(s.id)}" aria-pressed="${lit}" aria-label="${esc(label)}" title="${esc(s.what)}">${frameImg(s, false)}`
-        + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${keepBar(s)}${sug.map((x) => suggestBlock(x, s)).join("")}</div>`);
+        + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${moved ? '<span class="moved-note">Moved here</span>' : ""}${keepBar(s)}${sug.map((x) => suggestBlock(x, s)).join("")}</div>`);
     }
     const adds = suggestedAdds();
     addsSig = adds.map((x) => `${x.key}=${x.blockIds.join()}`).join("|");
@@ -863,6 +865,46 @@ export function createBroll(host) {
   }, true);
   const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
 
+  /* ---------- A selection across paragraphs took some out (TOOLS-470) ---------- */
+  // Shots on the paragraphs it took out show on the joined one at once, with "Moved here" until the next change that
+  // moves shots. Their Over is written again only where it no longer fits where they show now.
+  // `next`: { shots: { id: { over, blockIds } }, moved: [ids] }. Returns the same for the shots as they were (Undo).
+  function placeShots(next) {
+    if (broll.status !== "ok" || !state.doc || state.guest) return null;
+    const ids = Object.keys(next.shots || {}).filter((id) => shotById(id));
+    const was = { shots: Object.fromEntries(ids.map((id) => { const s = shotById(id); return [id, { over: s.over, blockIds: [...(s.blockIds || [])] }]; })), moved: [...broll.moved] };
+    const writes = {};
+    for (const id of ids) {
+      const s = shotById(id), want = next.shots[id];
+      if (want.over !== s.over) writes[id] = want.over;
+      // The new Over is kept here at once too, so an Undo before the write lands writes the old one back after it.
+      Object.assign(s, { over: want.over, blockIds: want.blockIds, sig: Broll.coverText(state.doc, want.blockIds) });
+    }
+    broll.moved = new Set((next.moved || []).filter((id) => shotById(id)));
+    renderBroll();
+    if (Object.keys(writes).length) {
+      changeList((md) => Object.entries(writes).reduce((text, [id, over]) => Broll.updateShot(text, id, { over }), md)).catch((err) => {
+        const id = Object.keys(writes).find((x) => shotById(x));
+        if (!id) return;
+        openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
+        failShotCard(err);
+      });
+    }
+    return was;
+  }
+  // `moves`: span.js followShots ([{ id, blockIds, moved }]).
+  function followSpan(moves) {
+    if (broll.status !== "ok" || !state.doc || state.guest || !moves?.length) return null;
+    const list = Broll.spokenBlocks(state.doc), shots = {};
+    for (const m of moves) {
+      const s = shotById(m.id);
+      if (!s) continue;
+      const fits = m.blockIds.length && Broll.fitsOver(list, m.blockIds, s.over);
+      shots[m.id] = { blockIds: m.blockIds, over: fits || !m.blockIds.length ? s.over : Broll.overFor(state.doc, Broll.wholeParas(state.doc, m.blockIds)) };
+    }
+    return placeShots({ shots, moved: moves.filter((m) => m.moved && shots[m.id]).map((m) => m.id) });
+  }
+
   /* ---------- Move a shot to other paragraphs (steps L, L2): drag it ---------- */
   // The whole shot in the margin, its picture or line drawing and its tag, can be dragged at once: a mouse or a pen after
   // a few pixels, a finger after a hold (a quick swipe still scrolls, a tap still opens the card). While dragging, its
@@ -888,6 +930,7 @@ export function createBroll(host) {
     const destination = sel.map((part) => part.id);
     const source = { over: s.over, ids: covered(s) }, atDrop = new Set(Broll.spokenBlocks(state.doc).map((b) => b.id));
     if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
+    if (broll.moved.size) { broll.moved.clear(); renderBrollMarks(); } // a change that moves shots ends "Moved here"
     const token = broll.token;
     let origin, before, over, checked, words, invalid = false;
     const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
@@ -1665,6 +1708,8 @@ export function createBroll(host) {
     closeCard: closeShotCard,
     endDrag,
     escape: () => { closeShotCard(); if (broll.lit) lightShot(broll.lit, false); },
+    followSpan,
+    placeShots,
     requestSketches,
     requestPlan,
     answerBroll,
