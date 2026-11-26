@@ -176,3 +176,45 @@ PROOF 390px agent's change: met — bolding a word in the first paragraph ended 
 PROOF 390px moved shot on mouse-over: met — the orange frame stays (oklch(0.704 0.1915 37.1) 0px 0px 0px 2px inset)
 PROOF 390px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs
 RESULT: ok tools-470-browser 36/36 checks at 1280 and 390 px
+
+TOOLS-477 review round 2 (2026-11-26): a span drawn before sharing goes off the screen inside the Share click.
+Red D, with the shared-script part of paintSpan turned off:
+RESULT: fail tools-470-browser host: the span goes off the screen when Share is pressed: {"on":true,"ranges":3,"text":"Why does it sound so stiff on camera? | Most of us write a video like a blog post. Long sentences. Big words. Then we wonder why nobody stays past the first minute. | Hi, I'm Sam, and on this demo channel we make video a little less scary. ","bar":false}
+With it back, the whole run:
+PROOF 1280px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 1280px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 1280px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 1280px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 1280px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 1280px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 1280px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 1280px picture paste: met — words unchanged, the span still selected
+PROOF 1280px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 1280px gap below: met — a drag 12 px past the paragraph stays the paragraph's own selection
+PROOF 1280px right and middle click: met — a spelling fix and a middle click never replace the span
+PROOF 1280px cancelled composition: met — later typing is its own Undo step
+PROOF 1280px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves it
+PROOF 1280px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo
+PROOF 1280px drag near the window's end: met — the page scrolled 2096 px and the selection grew from 13 to 39 blocks; letting go stopped it
+PROOF 1280px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+PROOF 1280px moved shot on mouse-over: met — the orange frame stays (oklch(0.704 0.1915 37.1) 0px 0px 0px 2px inset)
+PROOF 1280px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs
+PROOF 390px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 390px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 390px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 390px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 390px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 390px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 390px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 390px picture paste: met — words unchanged, the span still selected
+PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 390px gap below: met — a drag 12 px past the paragraph stays the paragraph's own selection
+PROOF 390px right and middle click: met — a spelling fix and a middle click never replace the span
+PROOF 390px cancelled composition: met — later typing is its own Undo step
+PROOF 390px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves it
+PROOF 390px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo
+PROOF 390px drag near the window's end: met — the page scrolled 2165 px and the selection grew from 7 to 26 blocks; letting go stopped it
+PROOF 390px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+PROOF 390px moved shot on mouse-over: met — the orange frame stays (oklch(0.704 0.1915 37.1) 0px 0px 0px 2px inset)
+PROOF 390px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs
+RESULT: ok tools-470-browser 36/36 checks at 1280 and 390 px
