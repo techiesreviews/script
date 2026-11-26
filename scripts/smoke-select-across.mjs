@@ -186,7 +186,43 @@ for (const width of [1280, 390]) {
     await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "Undo puts the section title back");
     results.push(`${width}px section title: met — selected and deleted with the text around it; Undo put it back`);
 
-    // 7. A click ends the span; the editor goes on as before.
+    // 7. From the title: the notes folded away under it are never part of the span (copy leaves them out).
+    await page.key("Escape", "Escape", 27);
+    await page.eval(`window.__copied = null`);
+    await drag(page, ["DEMO ·", "How"], [P1, "Why"]);
+    assert.ok((await spanState(page)).on, "a span from the title");
+    await page.key("c", "KeyC", 67, { modifiers: 2, commands: ["copy"] });
+    await page.until(`window.__copied !== null`, "copy event");
+    const fromTitle = await page.eval(`window.__copied`);
+    assert.ok(!/Channel|How to read this/.test(fromTitle), `the folded notes are not copied: ${JSON.stringify(fromTitle.slice(0, 80))}`);
+    assert.match(fromTitle, /^1 · Hook[^]*until you say it out loud\. $/, "the copy starts at the first section and ends where the drag did (before \"Why\")");
+    results.push(`${width}px from the title: met — folded notes left out, copy ${JSON.stringify(fromTitle.slice(0, 40))}…`);
+
+    // 8. A paste with only a picture on the clipboard (a screenshot) leaves the span and the words as they were.
+    await page.key("Escape", "Escape", 27);
+    await drag(page, [P1, "Why"], [P3, "Today:"]);
+    await page.eval(`(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], "screenshot.png", { type: "image/png" }));
+      (document.activeElement || document.body).dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    })()`);
+    await sleep(200);
+    assert.equal(await md(page), original, "an image-only paste changes no words");
+    assert.ok((await spanState(page)).on, "the span is still selected after an image-only paste");
+    results.push(`${width}px picture paste: met — words unchanged, the span still selected`);
+
+    // 9. Composed text (an accent typed with a dead key or an input method) over the span: one Undo takes it all back.
+    await page.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Process", code: "KeyE", windowsVirtualKeyCode: 229 });
+    await page.send("Input.imeSetComposition", { text: "é", selectionStart: 1, selectionEnd: 1 });
+    await page.send("Input.insertText", { text: "é" });
+    await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "e", code: "KeyE", windowsVirtualKeyCode: 69 });
+    await page.until(`window.__scriptEditor.markdown().includes("out loud. éToday:")`, "composed text replaces the span");
+    await undo(page);
+    await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(original)}`, "one Undo takes back the composed text and the span's delete");
+    assert.ok((await spanState(page)).on, "the span is selected again");
+    results.push(`${width}px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back`);
+
+    // 10. A click ends the span; the editor goes on as before.
     await page.click("#script .block[data-type=para]");
     assert.ok(!(await spanState(page)).on, "a click clears the span");
     assert.deepEqual(page.log, [], "no browser errors");
@@ -202,7 +238,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/12 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/18 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);

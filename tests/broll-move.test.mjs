@@ -49,7 +49,10 @@ function movement() {
   const matchStart = source.indexOf("  function adoptBroll("), matchEnd = source.indexOf("  // A covered line changed", matchStart);
   assert.ok(matchStart >= 0 && matchEnd > matchStart, "adoptBroll's and rematchBroll's source boundaries exist");
   const matching = source.slice(matchStart, matchEnd);
-  runInNewContext(`${history}\n${matching}\n${source.slice(start, end)}\nObject.assign(this, { moveShot, adoptBroll, rematchBroll });`, context);
+  // A selection across paragraphs that took the shot's paragraph out (TOOLS-470) places it with these two.
+  const spanStart = source.indexOf("  function placeShots("), spanEnd = source.indexOf("  /* ---------- Move a shot", spanStart);
+  assert.ok(spanStart >= 0 && spanEnd > spanStart, "placeShots's and followSpan's source boundaries exist");
+  runInNewContext(`${history}\n${matching}\n${source.slice(spanStart, spanEnd)}\n${source.slice(start, end)}\nObject.assign(this, { moveShot, adoptBroll, rematchBroll, placeShots, followSpan });`, context);
   adopt();
   broll.shots[0].check = true;
   const checkpoint = context.checkpointBrollMove;
@@ -73,6 +76,7 @@ function movement() {
     holdNextSave: () => { let release; slow = new Promise((resolve) => { release = resolve; }); return release; },
     holdNextWrite: () => { let release; hold = new Promise((resolve) => { release = resolve; }); return release; },
     moveShot: (index = 1) => context.moveShot("B1", Broll.wholeParas(state.doc, [paras[index].id])),
+    placeShots: (next) => context.placeShots(next), followSpan: (moves) => context.followSpan(moves),
     replace: (mutate) => { text = mutate(text); adopt(); },
   };
 }
@@ -661,4 +665,50 @@ test("B-roll move history: words added to the target paragraph while a move, its
   await m.moveShot(1);
   m.undo(); await settle();
   await during(m, () => m.redo(), 1);
+});
+
+// TOOLS-470: a selection across paragraphs took the shot's paragraph out, so the shot went to the joined one. Its Undo
+// and Redo write the shot's quote back and forth; each write meets the list as the one before left it.
+const takeOut = (m, index) => {
+  const i = m.state.doc.blocks.findIndex((b) => b.id === m.paras[index].id);
+  return m.state.doc.blocks.splice(i, 1)[0];
+};
+const putBack = (m, block, before) => {
+  m.state.doc.blocks.splice(m.state.doc.blocks.findIndex((b) => b.id === m.paras[before].id), 0, block);
+};
+
+test("B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote", async () => {
+  const m = movement();
+  const old = Broll.parseBroll(m.text).shots[0].over;
+  const gone = takeOut(m, 0);
+  const releaseSpan = m.holdNextWrite();
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  const joined = m.broll.shots[0].over;
+  assert.notEqual(joined, old, "the shot's quote follows it to the paragraph it shows on now");
+  // Undo before the span's save lands, then that save lands, then Redo while the Undo's save still waits.
+  putBack(m, gone, 1);
+  const releaseUndo = m.holdNextWrite();
+  const redoStep = m.placeShots(undoStep);
+  releaseSpan(); await settle(); await settle();
+  takeOut(m, 0);
+  m.placeShots(redoStep);
+  releaseUndo();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, joined, "the last step pressed, Redo, is what the list says");
+});
+
+test("B-roll span: Undo after another list was opened leaves that list's shot alone", async () => {
+  const m = movement();
+  takeOut(m, 0);
+  const undoStep = m.followSpan([{ id: "B1", blockIds: [m.paras[1].id], moved: true }]);
+  for (let i = 0; i < 4; i++) await settle();
+  // Another list for the script, with a shot of the same name.
+  m.broll.token++;
+  m.replace(() => Broll.addShot(Broll.newList("Throwaway"), { id: "B1", kind: "broll", what: "Another list's shot", how: "x", over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[2].id])) }));
+  const theirs = Broll.parseBroll(m.text).shots[0].over, writes = m.writes;
+  assert.equal(m.placeShots(undoStep), null, "nothing to put back in another list");
+  for (let i = 0; i < 4; i++) await settle();
+  assert.equal(m.writes, writes);
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, theirs);
+  assert.equal(m.broll.shots[0].over, theirs);
 });

@@ -868,22 +868,34 @@ export function createBroll(host) {
   /* ---------- A selection across paragraphs took some out (TOOLS-470) ---------- */
   // Shots on the paragraphs it took out show on the joined one at once, with "Moved here" until the next change that
   // moves shots. Their Over is written again only where it no longer fits where they show now.
-  // `next`: { shots: { id: { over, blockIds } }, moved: [ids] }. Returns the same for the shots as they were (Undo).
+  // `next`: { token, shots: { id: { over, blockIds, expect } }, moved: [ids] }, where `expect` is the Over the list
+  // holds before this step. Returns the same for the shots as they were (Undo), or null when the list is another one now.
   function placeShots(next) {
     if (broll.status !== "ok" || !state.doc || state.guest) return null;
+    if (next.token !== undefined && next.token !== broll.token) return null;
+    const token = broll.token;
     const ids = Object.keys(next.shots || {}).filter((id) => shotById(id));
-    const was = { shots: Object.fromEntries(ids.map((id) => { const s = shotById(id); return [id, { over: s.over, blockIds: [...(s.blockIds || [])] }]; })), moved: [...broll.moved] };
+    const was = { token, moved: [...broll.moved], shots: Object.fromEntries(ids.map((id) => {
+      const s = shotById(id), want = next.shots[id];
+      return [id, { over: want.expect ?? s.over, blockIds: [...(s.blockIds || [])], expect: want.over }];
+    })) };
     const writes = {};
     for (const id of ids) {
-      const s = shotById(id), want = next.shots[id];
-      if (want.over !== s.over) writes[id] = want.over;
-      // The new Over is kept here at once too, so an Undo before the write lands writes the old one back after it.
+      const s = shotById(id), want = next.shots[id], expect = want.expect ?? s.over;
+      if (want.over !== expect) writes[id] = { over: want.over, expect };
+      // Shown here at once; the list itself is written in its turn behind any save still waiting.
       Object.assign(s, { over: want.over, blockIds: want.blockIds, sig: Broll.coverText(state.doc, want.blockIds) });
     }
     broll.moved = new Set((next.moved || []).filter((id) => shotById(id)));
     renderBroll();
     if (Object.keys(writes).length) {
-      changeList((md) => Object.entries(writes).reduce((text, [id, over]) => Broll.updateShot(text, id, { over }), md)).catch((err) => {
+      // When its turn comes, each shot is written only if the list still holds the Over this step started from:
+      // an Undo or Redo pressed while an earlier save waited then meets the list as that save left it.
+      changeList((md) => {
+        const saved = new Map(Broll.parseBroll(md).shots.map((s) => [s.id, s.over]));
+        return Object.entries(writes).reduce((text, [id, w]) => (saved.get(id) === w.expect ? Broll.updateShot(text, id, { over: w.over }) : text), md);
+      }).catch((err) => {
+        if (token !== broll.token) return;
         const id = Object.keys(writes).find((x) => shotById(x));
         if (!id) return;
         openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
@@ -900,9 +912,9 @@ export function createBroll(host) {
       const s = shotById(m.id);
       if (!s) continue;
       const fits = m.blockIds.length && Broll.fitsOver(list, m.blockIds, s.over);
-      shots[m.id] = { blockIds: m.blockIds, over: fits || !m.blockIds.length ? s.over : Broll.overFor(state.doc, Broll.wholeParas(state.doc, m.blockIds)) };
+      shots[m.id] = { blockIds: m.blockIds, expect: s.over, over: fits || !m.blockIds.length ? s.over : Broll.overFor(state.doc, Broll.wholeParas(state.doc, m.blockIds)) };
     }
-    return placeShots({ shots, moved: moves.filter((m) => m.moved && shots[m.id]).map((m) => m.id) });
+    return placeShots({ token: broll.token, shots, moved: moves.filter((m) => m.moved && shots[m.id]).map((m) => m.id) });
   }
 
   /* ---------- Move a shot to other paragraphs (steps L, L2): drag it ---------- */

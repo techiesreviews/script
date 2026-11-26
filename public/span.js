@@ -13,14 +13,15 @@ const clampTo = (doc, i, offset) => Math.max(0, Math.min(offset, Doc.contentOf(d
 const fold = (text) => text.replace(/\s*\n\s*/g, " ");
 
 /** The span between two points, in reading order, or null when it stays inside one block (the browser's own selection
- *  does that). The script's title is never part of it: a point on the title is the start of the block after it. */
-export function spanOf(doc, anchor, focus) {
+ *  does that). The script's title is never part of it: a point on the title is the start of the block after it.
+ *  `hidden`: ids of blocks folded away (the notes at the top); they are skipped the same way. */
+export function spanOf(doc, anchor, focus, { hidden } = {}) {
   let a = indexOf(doc, anchor?.id), z = indexOf(doc, focus?.id);
   if (a < 0 || z < 0) return null;
   let ao = clampTo(doc, a, anchor.offset), zo = clampTo(doc, z, focus.offset);
   if (a > z || (a === z && ao > zo)) [a, z, ao, zo] = [z, a, zo, ao];
-  const skip = (i) => doc.blocks[i]?.type === "title";
-  if (skip(a)) { a++; ao = 0; }
+  const skip = (i) => doc.blocks[i]?.type === "title" || !!hidden?.has(doc.blocks[i]?.id);
+  while (a < z && skip(a)) { a++; ao = 0; }
   if (skip(z)) return null;
   if (a >= z) return null;
   return { from: { id: doc.blocks[a].id, offset: ao }, to: { id: doc.blocks[z].id, offset: zo } };
@@ -35,6 +36,14 @@ export function spanParts(doc, span) {
     start: k === 0 ? span.from.offset : 0,
     end: a + k === z ? span.to.offset : Doc.contentOf(block).length,
   }));
+}
+
+/** True when shared edits from another tab reach the span: words changed in a block it touches, or blocks added,
+ *  joined or moved. Its offsets would then point at other words, so it ends. */
+export function spanTouched(doc, span, ops) {
+  if (!span) return false;
+  const touched = new Set(spanParts(doc, span).map((p) => p.block.id));
+  return ops.some((op) => op.type !== "text" || touched.has(op.blockId));
 }
 
 /** What copy gives: the words only (no bold marks, a link as its words), a blank line between blocks. */

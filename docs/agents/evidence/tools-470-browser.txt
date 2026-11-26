@@ -16,3 +16,33 @@ PROOF 390px undo: met — words and B2's Over back as they were, the span select
 PROOF 390px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
 PROOF 390px section title: met — selected and deleted with the text around it; Undo put it back
 RESULT: ok tools-470-browser 12/12 checks at 1280 and 390 px
+
+== Round 1 fixes (second look). Red: the three new browser checks on the code before the fixes (2026-11-26T08:26:04Z)
+RESULT: fail tools-470-browser the folded notes are not copied: "- Channel: a made-up demo channel\n- Status: demo script for script.techies.tools"
+== without step 7 (step 8 on old code)
+RESULT: fail tools-470-browser an image-only paste changes no words
+== step 9 only, on old code
+RESULT: fail tools-470-browser timed out: composed text replaces the span
+== step 9 with its drag, on old code
+RESULT: fail tools-470-browser timed out: one Undo takes back the composed text and the span's delete
+
+== Round 1 fixes. Green on the fixed code (2026-11-26T08:26:04Z)
+PROOF 1280px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 1280px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 1280px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 1280px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 1280px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 1280px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 1280px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 1280px picture paste: met — words unchanged, the span still selected
+PROOF 1280px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 390px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 390px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 390px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 390px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 390px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 390px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 390px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 390px picture paste: met — words unchanged, the span still selected
+PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+RESULT: ok tools-470-browser 18/18 checks at 1280 and 390 px

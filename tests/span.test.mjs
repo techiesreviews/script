@@ -107,3 +107,27 @@ test("shots on removed blocks follow to the join, or to the next spoken paragrap
     { id: "B3", blockIds: [p3], moved: true },
   ]);
 });
+
+test("lines folded away at the top are never part of a span: from the title it starts after them", () => {
+  const doc = Doc.parse("# Title\n\n- Private production notes.\n\n---\n\n## 1 · Hook\n\nFirst para one.\n");
+  const hidden = new Set([doc.blocks[1].id, doc.blocks[2].id]);
+  const span = Span.spanOf(doc, at(doc, 0, 2), at(doc, 4, 5), { hidden });
+  assert.deepEqual(span, { from: at(doc, 3, 0), to: at(doc, 4, 5) });
+  assert.equal(Span.spanCopy(doc, span), "1 · Hook\n\nFirst");
+  assert.equal(Span.spanOf(doc, at(doc, 0, 2), at(doc, 3, 0), { hidden }), null, "nothing left but the start of the next block");
+  // Unfolded, they are text like any other.
+  assert.deepEqual(Span.spanOf(doc, at(doc, 0, 2), at(doc, 4, 5)).from, at(doc, 1, 0));
+});
+
+test("a shared edit in a block the span touches, or one that adds or joins blocks, ends it; others leave it", () => {
+  const doc = Doc.parse(SCRIPT);
+  const span = Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, 3));
+  const text = (i) => ({ type: "text", blockId: doc.blocks[i].id, at: 0, del: 0, ins: "New " });
+  assert.equal(Span.spanTouched(doc, span, [text(2)]), true, "words put in before the span in its first block");
+  assert.equal(Span.spanTouched(doc, span, [text(3)]), true, "inside it");
+  assert.equal(Span.spanTouched(doc, span, [text(4)]), true, "in its last block");
+  assert.equal(Span.spanTouched(doc, span, [text(6)]), false, "a block after it");
+  assert.equal(Span.spanTouched(doc, span, [text(1)]), false, "a block before it");
+  assert.equal(Span.spanTouched(doc, span, [{ type: "split", blockId: doc.blocks[6].id, at: 2, newId: "x" }]), true, "blocks added or joined");
+  assert.equal(Span.spanTouched(doc, null, [text(2)]), false);
+});

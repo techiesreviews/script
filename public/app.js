@@ -944,7 +944,7 @@ function restore(snap, to) {
   renderAll(snap.caret && byId(snap.caret.id) ? snap.caret : null);
   hideBar();
   if (snap.shots) step.shots = brollApi?.placeShots(snap.shots) || undefined;
-  if (snap.span) setSpan(Span.spanOf(state.doc, snap.span.from, snap.span.to));
+  if (snap.span) setSpan(spanAt(snap.span.from, snap.span.to));
   changed();
 }
 function undo() {
@@ -1345,6 +1345,9 @@ scriptEl.addEventListener("paste", (e) => {
 // to the joined one.
 const canHighlight = () => !!window.CSS?.highlights && typeof Highlight === "function";
 let spanDrag = null, spanPoint = null, spanScroll = 0;
+const COMPOSE_GROUP_MS = 60000;
+// The notes folded away at the top are never part of it, even from a drag that starts on the title.
+const spanAt = (anchor, focus) => Span.spanOf(state.doc, anchor, focus, { hidden: new Set($$("details:not([open]) .block", scriptEl).map((el) => el.dataset.id)) });
 function setSpan(next) {
   span = next;
   scriptEl.toggleAttribute("data-span", !!span);
@@ -1354,7 +1357,7 @@ function setSpan(next) {
 function paintSpan() {
   if (!canHighlight()) return;
   if (span && state.doc) {
-    const now = Span.spanOf(state.doc, span.from, span.to);
+    const now = spanAt(span.from, span.to);
     if (!now) { span = null; scriptEl.removeAttribute("data-span"); }
     else span = now;
   }
@@ -1390,7 +1393,7 @@ function spotAt(x, y) {
 function spanExtend(x, y) {
   const focus = spotAt(x, y);
   if (!focus || !state.doc) return;
-  const next = Span.spanOf(state.doc, spanDrag.anchor, focus);
+  const next = spanAt(spanDrag.anchor, focus);
   if (next || span) setSpan(next);
 }
 // Near the top bar or the window's end, the page scrolls on while the mouse is held, so a drag reaches the whole script.
@@ -1443,7 +1446,7 @@ function spanType() {
   return parts[0].start === 0 ? parts.at(-1).block.type : parts[0].block.type;
 }
 // Replace the span with text ("" deletes it; split: Enter). A change whose settled bold would turn the line into
-// another kind of block is refused, quietly, as one-block edits are.
+// another kind of block is refused, quietly, as one-block edits are. Returns where the caret went, or false.
 function applySpan(text, { split = false } = {}) {
   if (!span || !state.doc || state.locked || state.pendingDraft) return false;
   const was = span, r = Span.replaceSpan(state.doc, was, text, { split });
@@ -1470,7 +1473,7 @@ function applySpan(text, { split = false } = {}) {
   const back = shots.length ? brollApi?.followSpan(shots) : null;
   if (step && back) step.shots = back;
   changed();
-  return true;
+  return r.caret;
 }
 function spanCaret(end) {
   const at = end ? span.to : span.from;
@@ -1481,8 +1484,14 @@ function spanCaret(end) {
 scriptEl.addEventListener("keydown", (e) => {
   if (!span) return;
   const stop = () => { e.preventDefault(); e.stopPropagation(); };
-  // Composed text (accents, Chinese or Japanese input) is typed into the joined block once the span is gone.
-  if (e.isComposing || e.keyCode === 229 || e.key === "Process" || e.key === "Dead") { if (!applySpan("")) setSpan(null); return; }
+  // Composed text (accents, Chinese or Japanese input) is typed into the joined block once the span is gone. The
+  // typing that follows joins the span's Undo step, so one Undo takes back both; composing may take a while.
+  if (e.isComposing || e.keyCode === 229 || e.key === "Process" || e.key === "Dead") {
+    const caret = applySpan("");
+    if (!caret) setSpan(null);
+    else if (!together?.active) state.lastStep = { kind: "type", id: caret.id, at: Date.now() + COMPOSE_GROUP_MS };
+    return;
+  }
   const mod = e.metaKey || e.ctrlKey, k = e.key;
   if (k === "Escape" || k === "Tab") return void setSpan(null);
   if (mod && !e.altKey) {
@@ -1529,7 +1538,9 @@ document.addEventListener("paste", (e) => {
   if (!span || !state.doc) return;
   e.preventDefault();
   e.stopPropagation();
-  applySpan(e.clipboardData?.getData("text/plain") || "");
+  // Nothing but a picture (a screenshot) to paste: the span stays, as a paste into one paragraph changes nothing.
+  const text = e.clipboardData?.getData("text/plain") || "";
+  if (text) applySpan(text);
 }, { capture: true });
 
 /* ---------- Cues (fleet issue #14; always on, Lex 2026-11-06) ---------- */
@@ -4565,6 +4576,8 @@ function restoreSelection(sel) {
 }
 // Someone else's change (or an undo on a name tag) is in state.doc: asks follow the text, then the script redraws.
 function afterRoomOps(ops, sel, before = new Map()) {
+  // A selection across paragraphs (TOOLS-470) that another tab's edit reached would point at other words: it ends.
+  if (span && Span.spanTouched(state.doc, span, ops)) { setSpan(null); spanDrag = null; }
   followMarks(ops);
   const touched = new Set();
   let structure = false;

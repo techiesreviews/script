@@ -15,6 +15,14 @@ Each block of the script is its own editing area (`contenteditable="plaintext-on
 
 The sketch's bottom status line is not built: the project has no explainer text or toasts.
 
+After the second look (round 1):
+
+- The notes folded away at the top are never part of a span, even from a drag that starts on the title (`spanOf(..., { hidden })`).
+- A paste with no text (only a picture) leaves the span and the words as they were.
+- Each shot write checks, in its turn in the list's queue, that the list still holds the Over its step started from (`expect`), so Undo and Redo pressed while earlier saves wait end with the last step's Over. Each step records the list it belongs to (`token`); after another list is opened, Undo leaves that list's shots alone.
+- An edit from another tab that reaches a block of the span, or adds or joins blocks, ends the span (`spanTouched`), so its offsets never point at other words.
+- Composed text (an accent or an input method) joins the span's Undo step: one Undo takes back both.
+
 ## Limits
 
 - In a shared script Undo is each person's own (the room's), so the span step there has no shots or span to put back; a guest's span edit moves no shots (the host's list is the host's).
@@ -22,8 +30,9 @@ The sketch's bottom status line is not built: the project has no explainer text 
 
 ## Tests first
 
-- `tests/span.test.mjs` (11 tests) failed first with the module missing, then passed.
+- `tests/span.test.mjs` (11 tests at first) failed first with the module missing, then passed.
 - `scripts/smoke-select-across.mjs` failed first on 629da92 (`a span over three paragraphs is drawn: {"on":false,...}`), then passed 12/12 at 1280 and 390 px: `docs/agents/evidence/tools-470-browser.txt`. One check in it pointed at the wrong element (a shot frame sits beside its block, in the line, not inside it) and was corrected before the green run.
+- Round 1: two `span.test.mjs` tests (folded notes, shared edits) and two `broll-move.test.mjs` tests (Undo and Redo while saves wait; Undo after another list was opened) failed first, then passed. Three browser checks (from the title, a picture paste, composed text) failed on the code before the fixes, then all passed 18/18 at 1280 and 390 px.
 
 ## Done
 
