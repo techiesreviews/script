@@ -577,6 +577,25 @@ test("moveAsks returns its moves; unmoveAsks puts open anchors back and gives th
   assert.deepEqual(asks[1], k2, "an ask the moves do not name stays");
 });
 
+test("a \"# \" line in a script that has its title stays plain text: locate counts its \"# \" as text (TOOLS-484)", () => {
+  const doc = parse("# T\n\ngo go");
+  const p = doc.blocks[1];
+  const r = setContent(doc, p.id, "# go go");
+  assert.deepEqual(doc.blocks.map((b) => [b.type, contentOf(b)]), [["title", "T"], ["raw", "# go go"]]);
+  assert.deepEqual(r.pieces, [{ id: p.id, start: 0, prefix: 0 }]);
+  assert.deepEqual(locate(r, 5), { id: p.id, offset: 5 }, "the second \"go\"");
+  // Pasted with a blank line: the same for the piece that reads "# …".
+  const two = parse("# T\n\nx");
+  const q = two.blocks[1];
+  const s = setContent(two, q.id, "One\n\n# go go");
+  assert.deepEqual(two.blocks.map((b) => [b.type, contentOf(b)]), [["title", "T"], ["para", "One"], ["raw", "# go go"]]);
+  assert.deepEqual(locate(s, "One\n\n# go ".length), { id: two.blocks[2].id, offset: 5 });
+  // A section title still hides its "## ".
+  const three = parse("# T\n\nx");
+  const t = setContent(three, three.blocks[1].id, "## go go");
+  assert.deepEqual(locate(t, 6), { id: three.blocks[1].id, offset: 3 });
+});
+
 test("placeAsks puts open anchors where their words went, with their quote; unmoveAsks takes them back, quote too (TOOLS-484)", () => {
   const asks = [
     { id: "k1", scope: "selection", blockId: "first", status: "waiting", start: 2, end: 4, quote: "go" },

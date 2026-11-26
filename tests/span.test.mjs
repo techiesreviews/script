@@ -413,16 +413,17 @@ test("follow: a paragraph joined into a section title keeps its words on one lin
   assert.equal(r.follow("last", 7, 13), null, "\"go\\ntwo\" reads \"go two\" now");
 });
 
-test("follow: every word outside the span keeps the words around it, wherever the span is and whatever replaces it", (t) => {
+// Every span from each first block to each last one, five edits, every word outside the span: where `follow` puts it.
+// The blocks are given as Markdown; the offsets are in their content (a section title's "## " is not part of it).
+const sweepFollow = (firsts, lasts) => {
   const plain = (s) => s.replaceAll("**", "");
-  const firsts = ["**go go go live**", "go **go** go live now", "Say go, go and go", "**go** go **go** end"];
-  const lasts = ["Other paragraph.", "**live go** go go end", "Other **go go** go", "go go **go** go", "Other go go end."];
   const edits = [["", {}], ["X", {}], [" ", {}], ["", { split: true }], ["A\n\nB", {}]];
   const inMark = (s, i) => (s[i - 1] === "*" && s[i] === "*") && (s.slice(0, i).match(/\*+$/)[0].length % 2 === 1);
   let placed = 0, gone = 0;
-  for (const head of firsts) for (const tail of lasts) {
-    const doc = Doc.parse(`# T\n\n${head}\n\n${tail}\n`);
+  for (const first of firsts) for (const last of lasts) {
+    const doc = Doc.parse(`# T\n\n${first}\n\n${last}\n`);
     const [, a] = ids(doc);
+    const head = Doc.contentOf(doc.blocks[1]), tail = Doc.contentOf(doc.blocks[2]);
     for (let from = 0; from <= head.length; from++) for (let to = 0; to <= tail.length; to++) {
       if (inMark(head, from) || inMark(tail, to)) continue;
       for (const [put, how] of edits) {
@@ -434,7 +435,7 @@ test("follow: every word outside the span keeps the words around it, wherever th
             const start = m.index, end = start + m[0].length;
             if (side === "first" ? end > from : start < to) { assert.equal(r.follow(side, start, end), null, `${where}: "${m[0]}" at ${start} of the ${side} is not outside the span`); continue; }
             const now = r.follow(side, start, end);
-            if (!now) { gone++; assert.ok(/\*/.test(head + tail), `${where}: with no bold anywhere, "${m[0]}" at ${start} of the ${side} has a place`); continue; }
+            if (!now) { gone++; continue; }
             placed++;
             const content = Doc.contentOf(Doc.blockById(r.doc, now.id));
             assert.equal(now.quote, m[0], `${where}: the quote of "${m[0]}" at ${start} of the ${side}`);
@@ -449,8 +450,65 @@ test("follow: every word outside the span keeps the words around it, wherever th
       }
     }
   }
+  return { placed, gone };
+};
+
+test("follow: every word outside the span keeps the words around it, wherever the span is and whatever replaces it", (t) => {
+  const { placed, gone } = sweepFollow(
+    ["**go go go live**", "go **go** go live now", "Say go, go and go", "**go** go **go** end"],
+    ["Other paragraph.", "**live go** go go end", "Other **go go** go", "go go **go** go", "Other go go end."],
+  );
   t.diagnostic(`${placed} words placed, ${gone} gone`);
-  assert.ok(placed > 20000 && gone < placed / 20, `most words have a place: ${placed} placed, ${gone} gone`);
+  assert.ok(placed > 100000, `the sweep ran: ${placed} words placed`);
+  assert.equal(gone, 0, "no word outside the span is lost");
+});
+
+test("follow: the same in a list item, a section title and a reminder, and when Enter's new paragraph starts as a section title or a list item", (t) => {
+  const { placed, gone } = sweepFollow(
+    ["- go **go** go", "## go go end", "[ON SCREEN: go go]", "Say go, go and go"],
+    ["## go go end", "- go **go** go", "x ## go go end", "x - go **go** go", "[ON SCREEN: go go]"],
+  );
+  t.diagnostic(`${placed} words placed, ${gone} gone`);
+  assert.ok(placed > 20000, `the sweep ran: ${placed} words placed`);
+  assert.equal(gone, 0, "no word outside the span is lost");
+});
+
+test("follow: a span from a paragraph's start into a section title leaves the title without blanks at its start; its words and the caret are where they read", () => {
+  const doc = Doc.parse("# T\n\nIntro go\n\n## go go end\n");
+  const [, a] = ids(doc);
+  // What is left of the title starts with a blank, and so does a typed space: the "## " takes both.
+  for (const [put, how, blocks, caret] of [
+    ["", {}, ["heading:go end"], 0],
+    [" ", {}, ["heading:go end"], 0],
+    ["X", {}, ["heading:X go end"], 1],
+    ["", { split: true }, ["para:", "heading:go end"], 0],
+  ]) {
+    const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 0), at(doc, 2, 2)), put, how);
+    const what = `${JSON.stringify(put)}${how.split ? " Enter" : ""}`;
+    assert.deepEqual(contents(r.doc).slice(1), blocks, what);
+    assert.deepEqual(r.caret, { id: a, offset: caret }, `${what}: the caret`);
+    assert.deepEqual(followed(r, "last", 3, 5), { id: a, start: caret + (put === "X" ? 1 : 0), end: caret + (put === "X" ? 3 : 2), quote: "go", reads: "go" }, `${what}: the second "go"`);
+    assert.equal(r.follow("last", 6, 9).quote, "end", what);
+  }
+});
+
+test("follow: a line left as \"# …\" in a script that has its title is plain text; the words after its \"# \" are where they read", () => {
+  const doc = Doc.parse("# T\n\nIntro go\n\nx # go go end\n");
+  const [, a] = ids(doc);
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 0), at(doc, 2, 2)), "");
+  assert.deepEqual(contents(r.doc).slice(1), ["raw:# go go end"]);
+  assert.deepEqual(followed(r, "last", 4, 6), { id: a, start: 2, end: 4, quote: "go", reads: "go" }, "the first \"go\"");
+  assert.deepEqual(followed(r, "last", 7, 9), { id: a, start: 5, end: 7, quote: "go", reads: "go" }, "the second \"go\"");
+});
+
+test("follow: Enter before \"## \" makes the rest a section title, and an ask after it goes to its own copy there", () => {
+  const doc = Doc.parse("# T\n\nIntro words\n\nx ## go go end\n");
+  const r = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 1, 6), at(doc, 2, 2)), "", { split: true });
+  assert.deepEqual(contents(r.doc).slice(1), ["para:Intro ", "heading:go go end"]);
+  const h = ids(r.doc)[2];
+  assert.deepEqual(followed(r, "last", 5, 7), { id: h, start: 0, end: 2, quote: "go", reads: "go" }, "the first \"go\"");
+  assert.deepEqual(followed(r, "last", 8, 10), { id: h, start: 3, end: 5, quote: "go", reads: "go" }, "the second \"go\"");
+  assert.deepEqual(followed(r, "last", 11, 14), { id: h, start: 6, end: 9, quote: "end", reads: "end" });
 });
 
 test("follow: a link cut by the span keeps the words that are left; an ask before it stays on its own copy", () => {

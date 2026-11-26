@@ -130,6 +130,13 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
     content = before + fold(content.slice(caret));
     caret = before.length;
   }
+  // A section title and the script's title have no blanks at their start: the "## " takes them.
+  const blanks = heading || type === "title" ? content.match(/^[ \t]*/)[0].length : 0;
+  if (blanks) {
+    steps.push(through(content, [{ at: 0, del: blanks }]));
+    content = content.slice(blanks);
+    caret = Math.max(0, caret - blanks);
+  }
 
   // Enter: the line breaks at the caret, settled so no lone marks are left in either part.
   let breakAt = null;

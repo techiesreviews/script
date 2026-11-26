@@ -855,7 +855,9 @@ for (const width of [1280, 390]) {
       assert.deepEqual(now, second, `after Redo the ask is on the second "go" of the joined paragraph: ${JSON.stringify(now)}`);
       await undo(page);
       await page.until(`window.__scriptEditor.markdown() === ${JSON.stringify(withLater)}`, "Undo again (after it)");
-      results.push(`${width}px ask on a repeated word after the span (TOOLS-484): met — "Intro words" + "**live go** go go end", an ask on the second "go", the span from "words" through "**live " deleted: the ask was on the second "go" of "Intro go go go end" (9–11), back on it after Undo (12–14), on it again after Redo`);
+      now = await where(later);
+      assert.deepEqual(now, there, `after Undo again the ask is on the second "go" of its paragraph: ${JSON.stringify(now)}`);
+      results.push(`${width}px ask on a repeated word after the span (TOOLS-484): met — "Intro words" + "**live go** go go end", an ask on the second "go", the span from "words" through "**live " deleted: the ask was on the second "go" of "Intro go go go end" (9–11), back on it after Undo (12–14), on it again after Redo and after Undo again`);
       await back("a repeated word after the span");
     }
 

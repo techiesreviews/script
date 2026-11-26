@@ -1526,7 +1526,7 @@ function applySpan(text, { split = false } = {}) {
   const shots = Span.followShots(r.doc, brollApi?.shots() || [], r);
   state.doc = r.doc;
   boldTyping = linksBefore = null;
-  // Asks in the paragraphs between are gone with them.
+  // Asks still in the paragraphs the span removed (those between, and what is left in the last one) close.
   for (const id of r.removed) reanchorBlock(id);
   setSpan(null);
   renderAll(r.caret);
