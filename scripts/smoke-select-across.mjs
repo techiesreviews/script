@@ -341,7 +341,34 @@ for (const width of [1280, 390]) {
       await page.eval(`scrollTo(0, 0)`);
     }
 
-    // 16. A click ends the span; the editor goes on as before.
+    // 16. The agent changes a block the span covers (bolds an earlier word of its first paragraph): the span ends, so
+    // Copy and Delete never reach words it did not cover.
+    {
+      const index = await page.eval(`[...document.querySelectorAll("#script .block")].findIndex((el) => el.textContent.startsWith(${JSON.stringify(P1)}))`);
+      const askId = await page.eval(`window.__scriptEditor.ask(${index}, 2, 7, "simpler")`);
+      assert.ok(askId, "an ask on the first paragraph's second word");
+      assert.equal(await page.eval(`window.__scriptEditor.asks().find((a) => a.id === ${JSON.stringify(askId)}).quote`), "blank", "the ask is on \"blank\"");
+      await page.key("Escape", "Escape", 27);
+      // The ask's label shows inside the paragraph, after "blank": the drag finds the paragraph by its later words.
+      await drag(page, ["page. A deadline.", "Why"], [P3, "Today:"]);
+      assert.ok((await spanState(page)).on, "the span is drawn before the agent's change");
+      assert.ok(await page.eval(`window.__scriptEditor.answer(${JSON.stringify(askId)}, { kind: "replace", text: "**blank**" })`), "the agent's change goes in");
+      await page.until(`window.__scriptEditor.markdown().includes("A **blank** page")`, "the agent's bold");
+      assert.ok(!(await spanState(page)).on, "the agent's change to a block the span covers ends the span");
+      await page.eval(`window.__copied = null`);
+      await page.key("c", "KeyC", 67, { modifiers: 2, commands: ["copy"] });
+      await sleep(150);
+      assert.ok(!(await page.eval(`window.__copied`)), "Copy gives no words of the old span");
+      await page.key("Delete", "Delete", 46);
+      await sleep(150);
+      const after = await md(page);
+      assert.ok(after.includes(P2) && after.includes("A **blank** page. A deadline."), "Delete takes no words of the old span");
+      for (let i = 0; i < 4 && (await md(page)) !== original; i++) { await undo(page); await sleep(150); }
+      assert.equal(await md(page), original, "Undo takes the agent's change back");
+      results.push(`${width}px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it`);
+    }
+
+    // 17. A click ends the span; the editor goes on as before.
     await page.click("#script .block[data-type=para]");
     assert.ok(!(await spanState(page)).on, "a click clears the span");
     assert.deepEqual(page.log, [], "no browser errors");
@@ -357,7 +384,7 @@ for (const width of [1280, 390]) {
   }
 }
 for (const line of results) console.log(`PROOF ${line}`);
-console.log(`RESULT: ok tools-470-browser ${results.length}/30 checks at 1280 and 390 px`);
+console.log(`RESULT: ok tools-470-browser ${results.length}/32 checks at 1280 and 390 px`);
 } catch (error) {
   for (const line of results) console.log(`PROOF ${line}`);
   console.log(`RESULT: fail tools-470-browser ${error.message.split("\n")[0]}`);

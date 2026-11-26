@@ -180,4 +180,10 @@ test("Enter over a span: shots on the last block go with its words to the new bl
   assert.deepEqual(Span.followShots(whole.doc, shots, whole)[1], { id: "B2", blockIds: [p1], moved: true });
   const wholePaste = Span.replaceSpan(doc, Span.spanOf(doc, at(doc, 2, 6), at(doc, 4, end)), "one\n\ntwo");
   assert.deepEqual(Span.followShots(wholePaste.doc, shots, wholePaste)[1], { id: "B2", blockIds: [p1], moved: true }, "pasted words are not the last block's");
+  // A last block that ends in bold, selected up to its closing marks: only the marks are left, no words.
+  const bold = Doc.parse("# Title\n\n## 1 · Hook\n\nFirst para one.\n\nSecond para **two**\n");
+  const [, , b1, b2] = ids(bold), len = Doc.contentOf(Doc.blockById(bold, b2)).length;
+  const marks = Span.replaceSpan(bold, Span.spanOf(bold, at(bold, 2, 6), at(bold, 3, len - 2)), "", { split: true });
+  assert.equal(marks.rest, false, "no words of the last block are left");
+  assert.deepEqual(Span.followShots(marks.doc, [{ id: "B2", blockIds: [b2] }], marks), [{ id: "B2", blockIds: [b1], moved: true }]);
 });

@@ -121,8 +121,9 @@ const state = {
 };
 // Working together (step D): set up at the end of this file. A room link in the address makes this tab a guest.
 let together = null;
-// A selection across paragraphs (TOOLS-470, span.js): { from, to } while one is drawn, else null.
-let span = null;
+// A selection across paragraphs (TOOLS-470, span.js): { from, to } while one is drawn, else null; `spanSaw`: what the
+// blocks it covers said when it was drawn (setSpan).
+let span = null, spanSaw = null;
 const roomLink = parseLink(location.hash);
 // Script or Storyboard (the switch in the top bar), remembered; where the script was scrolled.
 const ui = { view: store.get("view") === "board" ? "board" : "script", scriptY: 0 };
@@ -1353,18 +1354,27 @@ let spanDrag = null, spanPoint = null, spanScroll = 0;
 const COMPOSE_GROUP_MS = 60000;
 // The notes folded away at the top are never part of it, even from a drag that starts on the title.
 const spanAt = (anchor, focus) => Span.spanOf(state.doc, anchor, focus, { hidden: new Set($$("details:not([open]) .block", scriptEl).map((el) => el.dataset.id)) });
+// A change the span did not make (the agent's answer, a shared edit) to a block it covers ends it, so its offsets never
+// point at other words.
+const spanSees = (s) => Span.spanParts(state.doc, s).map((p) => `${p.block.id} ${p.block.type} ${Doc.contentOf(p.block)}`).join("\n");
 function setSpan(next) {
   span = next;
+  spanSaw = span && state.doc ? spanSees(span) : null;
   scriptEl.toggleAttribute("data-span", !!span);
   paintSpan();
+}
+// The span, if the blocks it covers are as they were.
+function liveSpan() {
+  if (span && (!state.doc || spanSees(span) !== spanSaw)) setSpan(null);
+  return span;
 }
 // Drawn again after every render (the blocks' text nodes are new) and kept to the script as it is now.
 function paintSpan() {
   if (!canHighlight()) return;
   if (span && state.doc) {
-    const now = spanAt(span.from, span.to);
-    if (!now) { span = null; scriptEl.removeAttribute("data-span"); }
-    else span = now;
+    const now = spanSees(span) === spanSaw && spanAt(span.from, span.to);
+    if (!now) { span = spanSaw = null; scriptEl.removeAttribute("data-span"); }
+    else if (now !== span) { span = now; spanSaw = spanSees(now); }
   }
   if (!span || !state.doc) return void CSS.highlights.delete("span-selection");
   const ranges = [];
@@ -1497,7 +1507,7 @@ scriptEl.addEventListener("keydown", (e) => {
   const composing = e.isComposing || e.keyCode === 229 || e.key === "Process" || e.key === "Dead";
   // A plain key after a composition that never finished: what is typed now is a step of its own.
   if (!composing && state.lastStep?.composing) state.lastStep = null;
-  if (!span) return;
+  if (!liveSpan()) return;
   const stop = () => { e.preventDefault(); e.stopPropagation(); };
   // Composed text (accents, Chinese or Japanese input) is typed into the joined block once the span is gone. The
   // composed text joins the span's Undo step, so one Undo takes back both; composing may take a while.
@@ -1526,7 +1536,7 @@ scriptEl.addEventListener("keydown", (e) => {
   if (/^(Arrow|Home$|End$|Page)/.test(k)) { stop(); spanCaret(k === "ArrowRight" || k === "ArrowDown" || k === "End" || k === "PageDown"); }
 }, { capture: true });
 scriptEl.addEventListener("beforeinput", (e) => {
-  if (!span) return;
+  if (!liveSpan()) return;
   const t = e.inputType;
   if (t === "insertCompositionText") return; // started by a key the handler above already turned into a deletion
   // A spelling fix picked from the right-click menu is for the word it was offered on, not the span.
@@ -1540,19 +1550,19 @@ scriptEl.addEventListener("beforeinput", (e) => {
   else if (t.startsWith("delete")) applySpan("");
 }, { capture: true });
 document.addEventListener("copy", (e) => {
-  if (!span || !state.doc || !e.clipboardData) return;
+  if (!liveSpan() || !e.clipboardData) return;
   e.preventDefault();
   e.clipboardData.setData("text/plain", Span.spanCopy(state.doc, span));
 }, { capture: true });
 document.addEventListener("cut", (e) => {
-  if (!span || !state.doc || !e.clipboardData) return;
+  if (!liveSpan() || !e.clipboardData) return;
   e.preventDefault();
   e.stopPropagation();
   e.clipboardData.setData("text/plain", Span.spanCopy(state.doc, span));
   applySpan("");
 }, { capture: true });
 document.addEventListener("paste", (e) => {
-  if (!span || !state.doc) return;
+  if (!liveSpan()) return;
   e.preventDefault();
   e.stopPropagation();
   // Nothing but a picture (a screenshot) to paste: the span stays, as a paste into one paragraph changes nothing.

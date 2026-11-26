@@ -27,6 +27,7 @@ export function createBroll(host) {
     marked: {}, // step K2: pictures put in at once, per shot { prev, pic, askId }, with Undo until the list changes
     moved: new Set(), // TOOLS-470: shots a cross-paragraph edit moved, "Moved here" until the next change that moves shots
     placing: new Map(), // TOOLS-470: id → where a waiting save of placeShots put the shot { token, over, blockIds }
+    unsaved: new Map(), // TOOLS-470: id → the Overs the list may still hold for a shot placeShots moved { token, overs }
   };
 
   /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
@@ -115,6 +116,14 @@ export function createBroll(host) {
       else if (p.blockIds.every((id) => Doc.blockById(state.doc, id))) {
         Object.assign(s, { blockIds: p.blockIds, sig: (now.blockIds || []).join() === p.blockIds.join() ? now.sig : Broll.coverText(state.doc, p.blockIds) });
       }
+    }
+    // A shot whose save failed stays where it shows while the list still holds an Over from before; another Over in the
+    // list (saved, or changed outside this page) ends that.
+    for (const s of state.doc ? shots : []) {
+      const u = broll.unsaved.get(s.id), now = shotById(s.id);
+      if (!u || broll.placing.has(s.id)) continue;
+      if (u.token !== broll.token || !now || !u.overs.has(s.over)) broll.unsaved.delete(s.id);
+      else if (now.over !== s.over) Object.assign(s, { over: now.over, blockIds: now.blockIds, sig: now.sig });
     }
     for (const s of shots) s.check = !!broll.flags[s.id];
     Object.assign(broll, { text, shots, sketches, status: "ok", err: "", shown: broll.token });
@@ -887,17 +896,33 @@ export function createBroll(host) {
     if (next.token !== undefined && next.token !== broll.token) return null;
     const token = broll.token;
     // A shot whose Over is no longer the one this step expects was changed since (moved on its own, or by the agent):
-    // it stays where that newer change put it.
-    const ids = Object.keys(next.shots || {}).filter((id) => shotById(id) && (next.shots[id].expect === undefined || shotById(id).over === next.shots[id].expect));
+    // it stays where that newer change put it, unless this step's text no longer has those paragraphs (a Redo that takes
+    // out again the paragraph it was moved onto): then it goes where this step puts it, with its Over kept if it fits.
+    const plan = {};
+    for (const [id, want] of Object.entries(next.shots || {})) {
+      const s = shotById(id);
+      if (!s) continue;
+      if (want.expect === undefined || s.over === want.expect) { plan[id] = want; continue; }
+      if (!(s.blockIds || []).some((b) => !Doc.blockById(state.doc, b))) continue;
+      const at = want.blockIds.filter((b) => Doc.blockById(state.doc, b));
+      const fits = at.length && Broll.fitsOver(Broll.spokenBlocks(state.doc), at, s.over);
+      plan[id] = { blockIds: at, expect: s.over, over: fits || !at.length ? s.over : Broll.overFor(state.doc, Broll.wholeParas(state.doc, at)) };
+    }
+    const ids = Object.keys(plan);
     const was = { token, moved: [...broll.moved], shots: Object.fromEntries(ids.map((id) => {
-      const s = shotById(id), want = next.shots[id];
+      const s = shotById(id), want = plan[id];
       return [id, { over: want.expect ?? s.over, blockIds: [...(s.blockIds || [])], expect: want.over }];
     })) };
     const writes = {}, marks = [];
     for (const id of ids) {
-      const s = shotById(id), want = next.shots[id], expect = want.expect ?? s.over;
+      const s = shotById(id), want = plan[id], expect = want.expect ?? s.over;
       if (want.over !== expect) {
-        writes[id] = { over: want.over, expect };
+        // The Overs the list may hold for the shot while saves wait or after one failed: the one this step expects, and
+        // any an earlier unsaved step expected.
+        const prev = broll.unsaved.get(id);
+        const unsaved = { token, overs: new Set([...(prev?.token === token ? prev.overs : []), expect]) };
+        broll.unsaved.set(id, unsaved);
+        writes[id] = { over: want.over, expect, unsaved };
         // Where this step put the shot, kept until its save has landed (adoptBroll).
         const mark = { token, over: want.over, blockIds: want.blockIds };
         broll.placing.set(id, mark);
@@ -906,21 +931,25 @@ export function createBroll(host) {
       // Shown here at once; the list itself is written in its turn behind any save still waiting.
       Object.assign(s, { over: want.over, blockIds: want.blockIds, sig: Broll.coverText(state.doc, want.blockIds) });
     }
-    broll.moved = new Set((next.moved || []).filter((id) => shotById(id)));
+    // "Moved here" only on shots this step moved; one left where a newer change put it shows none.
+    broll.moved = new Set((next.moved || []).filter((id) => shotById(id) && (!(id in (next.shots || {})) || id in plan)));
     renderBroll();
     if (Object.keys(writes).length) {
       // When its turn comes, each shot is written only if the list still holds the Over this step started from:
       // an Undo or Redo pressed while an earlier save waited then meets the list as that save left it. A shot the list
       // says another Over for (changed meanwhile) is shown where the list puts it.
-      const mine = new Map(marks);
+      // A save that failed before leaves the list with an Over from before it (`unsaved`), which this one still replaces.
+      const mine = new Map(marks), written = [];
+      const forget = (id) => { if (broll.unsaved.get(id) === writes[id].unsaved) broll.unsaved.delete(id); };
       changeList((md) => {
         const saved = new Map(Broll.parseBroll(md).shots.map((s) => [s.id, s.over]));
         return Object.entries(writes).reduce((text, [id, w]) => {
-          if (saved.get(id) === w.expect) return Broll.updateShot(text, id, { over: w.over });
+          if (w.unsaved.overs.has(saved.get(id))) { written.push(id); return Broll.updateShot(text, id, { over: w.over }); }
           if (broll.placing.get(id) === mine.get(id)) broll.placing.delete(id);
+          forget(id);
           return text;
         }, md);
-      }).finally(() => {
+      }).then(() => written.forEach(forget)).finally(() => {
         for (const [id, mark] of marks) if (broll.placing.get(id) === mark) broll.placing.delete(id);
       }).catch((err) => {
         if (token !== broll.token) return;

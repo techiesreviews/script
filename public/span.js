@@ -148,7 +148,7 @@ export function replaceSpan(doc, span, text = "", { split = false } = {}) {
       at = { id: made.id, offset: 0 };
     }
   }
-  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest: !!right.trim() };
+  return { doc: next, id: block.id, caret: at, removed, left: kept, typed: caret - kept, rest: /[\p{L}\p{N}]/u.test(right) };
 }
 
 /**

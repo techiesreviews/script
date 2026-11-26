@@ -41,6 +41,13 @@ After the review (round 3):
 - Undo or Redo of a span edit leaves alone a shot that was changed since (moved on its own, or by the agent): it stays where that newer change put it, on screen and in the list. A save that finds the list holding another Over for the shot shows the shot where the list puts it.
 - A paragraph selected from its very start into a section title becomes that title; its own shots go to the next spoken paragraph, as the shots of the removed blocks do, and Undo puts them back.
 
+After the review (round 4):
+
+- A change the span did not make (the agent's answer, an edit from another tab) to a block it covers ends the span before any key, copy, cut or paste acts on it, so its offsets never point at other words.
+- After a shot's save failed, the shot stays where it shows while the list still holds its Over from before (`broll.unsaved`), and the next span edit's save replaces that Over; another Over in the list (saved, or changed by the agent) wins.
+- A Redo that takes out again the paragraph a shot was moved onto since puts the shot at the join with "Moved here" instead of leaving it on no paragraph. A shot that Undo or Redo leaves where a newer change put it shows no "Moved here".
+- A last paragraph selected up to its closing bold marks has no words left, so its shots stay at the join.
+
 ## Limits
 
 - In a shared script Undo is each person's own (the room's), so the span step there has no shots or span to put back; a guest's span edit moves no shots (the host's list is the host's).
@@ -54,6 +61,7 @@ After the review (round 3):
 - Review round 1: three `span.test.mjs` tests (the gap past a paragraph, marks only in a paragraph, shots after Enter) and four browser checks (the gap below, a spelling fix, a cancelled composition, Ctrl keys) failed first, then passed; the browser run is 28/28 at 1280 and 390 px.
 - Review round 2: two `broll-move.test.mjs` tests (a moved shot's paragraph changed while its save waits; Undo and Redo with a repeated paragraph) and one `span.test.mjs` case (Enter or a paste over a span to the very end) failed first, then passed. A browser check for text after a finished composition failed with that line turned off, then passed; a check that a drag held near the window's end scrolls on and stops on release guards what already worked. The browser run is 30/30 at 1280 and 390 px.
 - Review round 3: two `broll-move.test.mjs` tests (a shot moved on its own after a span edit, then the span edit undone; a shot changed by the agent while the span edit saves, then undone) and one `span.test.mjs` test (a paragraph selected from its start into a section title) failed first, then passed. The first version of the `span.test.mjs` test cut the number off the next section title, which makes that part unspoken; it was corrected to a title that keeps its number. The browser run is still 30/30.
+- Review round 4: three `broll-move.test.mjs` tests (the next span edit after a failed save; a Redo that takes out the paragraph a shot was changed onto; no "Moved here" on a shot Redo leaves alone) and one `span.test.mjs` case (a last paragraph ending in bold) failed first, then passed; a fourth `broll-move.test.mjs` test (the agent's move after a failed save still wins) guards what already worked. A browser check (the agent's answer to a block the span covers ends the span) failed first, then passed. The browser run is 32/32 at 1280 and 390 px.
 
 ## Done
 

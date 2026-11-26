@@ -79,3 +79,11 @@ RESULT: ok tools-470-browser 30/30 checks at 1280 and 390 px
 Review round 3 (2026-11-26): the fixes are in the B-roll list and the shot rules (unit tests, which failed first); the
 browser run on the fixed code:
 RESULT: ok tools-470-browser 30/30 checks at 1280 and 390 px
+
+Review round 4 (2026-11-26): new check 16 (the agent's answer bolds a word in a paragraph the span covers). Red, on the
+code before the fix:
+RESULT: fail tools-470-browser the agent's change to a block the span covers ends the span
+After the fix, the whole run:
+PROOF 1280px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+PROOF 390px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+RESULT: ok tools-470-browser 32/32 checks at 1280 and 390 px
