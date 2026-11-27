@@ -873,6 +873,62 @@ test("B-roll span: a shot a second change left on no paragraph, found by its quo
   assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "and after another save of the list");
 });
 
+test("B-roll span: when the waiting save fails after a second change moved the shot on, the shot stays where it shows", async () => {
+  // A guard (review round 1; this passed before TOOLS-485 too): the note the second change brought up to date belongs
+  // to a save that then fails. Nothing is kept for it, and the shot stays beside its words through another list save.
+  const m = leadOriginal();
+  const release = m.holdNextWrite();
+  m.failNextWrite();
+  across(m, { id: m.paras[0].id, offset: 5 }, { id: m.paras[1].id, offset: 5 });
+  const joined = m.broll.shots[0].over, listed = Broll.parseBroll(m.text).shots[0].over;
+  const { r } = across(m, { id: m.paras[0].id, offset: 0 }, { id: m.paras[2].id, offset: 5 }, "", { split: true });
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "the shot follows its words to the new paragraph");
+  release();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, listed, "the save failed: the list holds the quote from before");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "the shot stays beside \"Lead original\"");
+  assert.equal(m.broll.placing.size, 0, "nothing is kept for the save that failed");
+  await m.describeShot(); await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "and after another save of the list");
+  assert.equal(m.broll.shots[0].over, joined, "with the quote of the words it shows beside");
+});
+
+test("B-roll span: with two saves waiting, a third change that keeps the shot's quote keeps the shot there as each save lands", async () => {
+  // TOOLS-485, review round 1. Two changes each give the shot a new quote and both saves wait; a third moves the shot
+  // on to a paragraph that says the same. Only the newest save's note follows the shot, and neither save moves it.
+  const m = leadOriginal();
+  m.rewrite(2, "Gone Intro original");
+  const intro = m.insertPara(0);
+  m.rewrite(intro, "Intro gone");
+  const first = m.holdNextWrite();
+  across(m, { id: m.paras[0].id, offset: 5 }, { id: m.paras[1].id, offset: 5 });
+  const one = m.broll.shots[0].over;
+  // Delete from "gone" in the paragraph before through "Lead " in the joined one: they join as "Intro original".
+  const second = m.holdNextWrite();
+  across(m, { id: m.paras[intro].id, offset: 6 }, { id: m.paras[0].id, offset: 5 });
+  assert.equal(wordsOf(m, m.paras[intro].id), "Intro original");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[intro].id], "the shot follows to the second joined paragraph");
+  const two = m.broll.shots[0].over;
+  assert.notEqual(two, one, "with a new quote: a second save waits");
+  // Enter over a selection from that paragraph's start through the last "Gone ": it is left empty.
+  const { r } = across(m, { id: m.paras[intro].id, offset: 0 }, { id: m.paras[2].id, offset: 5 }, "", { split: true });
+  assert.equal(wordsOf(m, m.paras[intro].id), "");
+  assert.equal(wordsOf(m, r.caret.id), "Intro original");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "the shot follows its words to the new paragraph");
+  assert.equal(m.broll.shots[0].over, two, "with the quote it had: nothing more to write");
+  first();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, one, "the first save wrote its quote");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "the shot stays there when the first save lands");
+  second();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, two, "the list ends with the second quote");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "and when the second lands");
+  assert.equal(m.broll.placing.size, 0);
+  await m.describeShot(); await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "and after another save of the list");
+});
+
 test("B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same", async () => {
   const m = movement();
   m.rewrite(0, "Same words in two places.");
