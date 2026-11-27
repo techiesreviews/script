@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 19 files, 549104 bytes; on first use: broll-app.js + broll.js, 164248 bytes
+ℹ startup: 19 files, 549104 bytes; on first use: broll-app.js + broll.js, 164824 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -90,6 +90,10 @@
 ✔ B-roll span: a shot sent on from an emptied paragraph keeps the next paragraph through more typing and a later save
 ✔ B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote
 ✔ B-roll span: a moved shot whose paragraph is changed while its save waits stays there, with Check
+✔ B-roll span: a second change across paragraphs that keeps the shot's quote keeps the shot there when the first one's save lands
+✔ B-roll span: Undo and Redo of a change that kept the shot's quote, pressed while an earlier save waits, leave the shot where Redo put it
+✔ B-roll span: Undo of a change that sent the shot to a paragraph that stays, pressed while an earlier save waits, puts the shot back for good
+✔ B-roll span: a shot a second change left on no paragraph, found by its quote since, stays there when the first one's save lands
 ✔ B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same
 ✔ B-roll span: a shot moved on its own after a span edit keeps that place when the span edit is undone
 ✔ B-roll span: a shot changed outside the page while the span edit saves shows where the list says after its Undo
@@ -722,9 +726,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 720
+ℹ tests 724
 ℹ suites 0
-ℹ pass 720
+ℹ pass 724
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

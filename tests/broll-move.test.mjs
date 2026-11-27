@@ -753,6 +753,126 @@ test("B-roll span: a moved shot whose paragraph is changed while its save waits 
   assert.equal(m.broll.shots[0].check, true, "and keeps its Check");
 });
 
+// A change across paragraphs as the app makes it (applySpan): the span's own code changes the script and says where the
+// shots go, and followSpan places them. Returns replaceSpan's result and the shots' step for Undo.
+const across = (m, from, to, text = "", options = {}) => {
+  const r = Span.replaceSpan(m.state.doc, Span.spanOf(m.state.doc, from, to), text, options);
+  const moves = Span.followShots(r.doc, m.broll.shots, r);
+  m.state.doc = r.doc;
+  return { r, undoStep: moves.length ? m.followSpan(moves) : null };
+};
+// Three paragraphs where the second and the third end in the same words, with the shot on the second.
+const leadOriginal = () => {
+  const m = movement();
+  m.rewrite(0, "Lead gone");
+  m.rewrite(1, "Gone original");
+  m.rewrite(2, "Gone Lead original");
+  m.replace((text) => Broll.updateShot(text, "B1", { over: Broll.overFor(m.state.doc, Broll.wholeParas(m.state.doc, [m.paras[1].id])) }));
+  assert.deepEqual(m.broll.shots[0].blockIds, [m.paras[1].id], "the shot starts on the second paragraph");
+  return m;
+};
+const wordsOf = (m, id) => Doc.contentOf(Doc.blockById(m.state.doc, id));
+
+test("B-roll span: a second change across paragraphs that keeps the shot's quote keeps the shot there when the first one's save lands", async () => {
+  // TOOLS-485. The first change gives the shot a new quote, whose save waits. The second moves the shot to another
+  // paragraph that says the same, so its quote needs no write: the waiting save must not put it back.
+  const m = leadOriginal();
+  const release = m.holdNextWrite();
+  // Delete from "gone" through "Gone ": the first two paragraphs join as "Lead original".
+  across(m, { id: m.paras[0].id, offset: 5 }, { id: m.paras[1].id, offset: 5 });
+  assert.equal(wordsOf(m, m.paras[0].id), "Lead original");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[0].id], "the shot follows to the joined paragraph");
+  const joined = m.broll.shots[0].over;
+  // Enter over a selection from the joined paragraph's start through the last "Gone ": the first paragraph is left
+  // empty and "Lead original" starts a new one.
+  const { r } = across(m, { id: m.paras[0].id, offset: 0 }, { id: m.paras[2].id, offset: 5 }, "", { split: true });
+  const beside = r.caret.id;
+  assert.equal(wordsOf(m, m.paras[0].id), "", "the first paragraph is empty");
+  assert.equal(wordsOf(m, beside), "Lead original");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [beside], "the shot follows its words to the new paragraph");
+  assert.equal(m.broll.shots[0].over, joined, "with the quote it had: nothing more to write");
+  release();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, joined, "the held save wrote the quote");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [beside], "the shot stays beside \"Lead original\" when the held save lands");
+  assert.ok(m.broll.moved.has("B1"), "still with \"Moved here\"");
+  assert.equal(m.broll.placing.size, 0, "and nothing is kept for a save that has landed");
+  await m.describeShot(); await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [beside], "and after another save of the list");
+});
+
+test("B-roll span: Undo and Redo of a change that kept the shot's quote, pressed while an earlier save waits, leave the shot where Redo put it", async () => {
+  // The same two changes, then Undo and Redo of the second while the first one's save still waits: neither writes, and
+  // the shot is where each shows it, also once that save lands.
+  const m = leadOriginal();
+  const release = m.holdNextWrite();
+  across(m, { id: m.paras[0].id, offset: 5 }, { id: m.paras[1].id, offset: 5 });
+  const before = Doc.cloneDoc(m.state.doc);
+  const { r, undoStep } = across(m, { id: m.paras[0].id, offset: 0 }, { id: m.paras[2].id, offset: 5 }, "", { split: true });
+  const after = Doc.cloneDoc(m.state.doc), writes = m.writes;
+  // As the app's Undo and Redo do (restore): the script as the step left it, then the shots of that step.
+  m.state.doc = before;
+  const redoStep = m.placeShots(undoStep);
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[0].id], "Undo shows the shot on the joined paragraph");
+  m.state.doc = after;
+  m.placeShots(redoStep);
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "Redo shows it beside \"Lead original\" again");
+  release();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(m.writes, writes + 1, "only the held save writes");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "and the shot stays there when the held save lands");
+  assert.equal(m.broll.placing.size, 0);
+});
+
+test("B-roll span: Undo of a change that sent the shot to a paragraph that stays, pressed while an earlier save waits, puts the shot back for good", async () => {
+  // A guard for the note that follows the shot since TOOLS-485 (this passed before it): the second change sends the
+  // shot to a paragraph that is still there after its Undo, so a note left on it would take the shot along again.
+  const m = leadOriginal();
+  m.rewrite(2, "Lead original");
+  const intro = m.insertPara(0);
+  const release = m.holdNextWrite();
+  across(m, { id: m.paras[0].id, offset: 5 }, { id: m.paras[1].id, offset: 5 });
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[0].id], "the shot follows to the joined paragraph");
+  const before = Doc.cloneDoc(m.state.doc);
+  // Delete from the very start of the paragraph before through the joined one: the shot goes to the next paragraph
+  // with words, which says "Lead original" too.
+  const { undoStep } = across(m, { id: m.paras[intro].id, offset: 0 }, { id: m.paras[0].id, offset: "Lead original".length });
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[2].id], "the shot goes on to the third paragraph");
+  m.state.doc = before;
+  m.placeShots(undoStep);
+  release();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[0].id], "after the Undo the shot is on the joined paragraph when the held save lands");
+  await m.describeShot(); await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [m.paras[0].id], "and after another save of the list");
+  assert.equal(m.broll.placing.size, 0);
+});
+
+test("B-roll span: a shot a second change left on no paragraph, found by its quote since, stays there when the first one's save lands", async () => {
+  // TOOLS-485, found by sweeping this path. The second change leaves no paragraph with words, so the shot shows on
+  // none and its quote needs no write. Its words are typed again and the shot is found beside them: the waiting save
+  // must neither put it back on the paragraph its own step showed (now empty) nor take it off the script.
+  const m = leadOriginal();
+  const release = m.holdNextWrite();
+  across(m, { id: m.paras[0].id, offset: 5 }, { id: m.paras[1].id, offset: 5 });
+  const joined = m.broll.shots[0].over;
+  // Enter over everything from the joined paragraph's start to the script's end: two empty paragraphs are left.
+  const { r } = across(m, { id: m.paras[0].id, offset: 0 }, { id: m.paras[2].id, offset: "Gone Lead original".length }, "", { split: true });
+  assert.equal(wordsOf(m, m.paras[0].id), "", "the first paragraph is empty");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [], "the shot shows on no paragraph");
+  assert.equal(m.broll.shots[0].over, joined, "with the quote it had: nothing more to write");
+  Doc.setContent(m.state.doc, r.caret.id, "Lead original");
+  m.rematch();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "typed again, its words have the shot beside them");
+  release();
+  for (let i = 0; i < 6; i++) await settle();
+  assert.equal(Broll.parseBroll(m.text).shots[0].over, joined, "the held save wrote the quote");
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "the shot stays beside its words when the held save lands");
+  assert.equal(m.broll.placing.size, 0);
+  await m.describeShot(); await settle();
+  assert.deepEqual([...m.broll.shots[0].blockIds], [r.caret.id], "and after another save of the list");
+});
+
 test("B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same", async () => {
   const m = movement();
   m.rewrite(0, "Same words in two places.");
