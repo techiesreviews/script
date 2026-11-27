@@ -108,12 +108,13 @@ export function createBroll(host) {
     if (state.doc) Broll.matchShots(state.doc, shots, broll.shown === broll.token ? broll.shots : []);
     // A shot a selection across paragraphs, or its Undo or Redo, placed (placeShots) stays where that step put it until
     // the step's save has landed: a save before it leaves the shot as it shows, and its own keeps its paragraph even if
-    // the words changed meanwhile or an earlier paragraph says the same.
+    // the words changed meanwhile or an earlier paragraph says the same. A step that left the shot on no paragraph
+    // decides nothing here: the shot is found by its quote, as it is a moment after any change (rematchBroll).
     for (const s of state.doc ? shots : []) {
       const p = broll.placing.get(s.id), now = shotById(s.id);
       if (!p || p.token !== broll.token || !now) continue;
       if (s.over !== p.over) Object.assign(s, { over: now.over, blockIds: now.blockIds, sig: now.sig });
-      else if (p.blockIds.every((id) => Doc.blockById(state.doc, id))) {
+      else if (p.blockIds.length && p.blockIds.every((id) => Doc.blockById(state.doc, id))) {
         Object.assign(s, { blockIds: p.blockIds, sig: (now.blockIds || []).join() === p.blockIds.join() ? now.sig : Broll.coverText(state.doc, p.blockIds) });
       }
     }
@@ -927,6 +928,11 @@ export function createBroll(host) {
         const mark = { token, over: want.over, blockIds: want.blockIds };
         broll.placing.set(id, mark);
         marks.push([id, mark]);
+      } else {
+        // Nothing to write, but a save from an earlier step may still wait with this Over: its note follows the shot,
+        // or that save would put the shot back where its own step showed it (TOOLS-485). The note stays that save's.
+        const waiting = broll.placing.get(id);
+        if (waiting?.token === token && waiting.over === want.over) waiting.blockIds = want.blockIds;
       }
       // Shown here at once; the list itself is written in its turn behind any save still waiting.
       Object.assign(s, { over: want.over, blockIds: want.blockIds, sig: Broll.coverText(state.doc, want.blockIds) });
