@@ -94,6 +94,8 @@
 ✔ B-roll span: Undo and Redo of a change that kept the shot's quote, pressed while an earlier save waits, leave the shot where Redo put it
 ✔ B-roll span: Undo of a change that sent the shot to a paragraph that stays, pressed while an earlier save waits, puts the shot back for good
 ✔ B-roll span: a shot a second change left on no paragraph, found by its quote since, stays there when the first one's save lands
+✔ B-roll span: when the waiting save fails after a second change moved the shot on, the shot stays where it shows
+✔ B-roll span: with two saves waiting, a third change that keeps the shot's quote keeps the shot there as each save lands
 ✔ B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same
 ✔ B-roll span: a shot moved on its own after a span edit keeps that place when the span edit is undone
 ✔ B-roll span: a shot changed outside the page while the span edit saves shows where the list says after its Undo
@@ -726,9 +728,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 724
+ℹ tests 726
 ℹ suites 0
-ℹ pass 724
+ℹ pass 726
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
