@@ -1,0 +1,75 @@
+# Select across: asks after the span survive Undo and Redo; an agent edit during a held drag ends the drag (TOOLS-483): headless Chrome 158.0.8127.88, local Worker (wrangler dev), demo script with its B-roll list; 1280 px and 390 px. 2026-11-26T20:44:04Z
+# red run: public/app.js and public/doc.js from 44e0090 (origin/dev, before the change), new step 16b
+DIAGNOSTIC 1280px: {"on":true,"ranges":3,"text":"Why does it sound so stiff on camera? | Most of us write a video like a blog post. Long sentences. Big words. Then we wonder why nobody stays past the first minute. | Hi, I'm Sam, and on this demo channel we make video a little less scary. ","bar":false} log=[]
+RESULT: fail tools-470-browser after Undo the ask is still open and both are back on the third paragraph
+# red run: public/app.js from 44e0090 with only the Undo fix (P1) applied, new step 16c
+DIAGNOSTIC 1280px: {"on":true,"ranges":3,"text":"ud. Why does it sound so stiff on camera? | Most of us write a video like a blog post. Long sentences. Big words. Then we wonder why nobody stays past the first minute. | Hi, I'm Sam, and on this demo channel we make video a little less scary. ","bar":false} log=[]
+RESULT: fail tools-470-browser no span comes back while the mouse moves on (held drag): {"on":true,"ranges":3,"text":"ud. Why does it sound so stiff on camera? | Most of us write a video like a blog post. Long sentences. Big words. Then we wonder why nobody stays past the first minute. | Hi, I'm Sam, and on this demo channel we make video a little less scary. ","bar":false}
+# red run (review round 1): the change without the start-paragraph check in spanExtend, new step 16d
+DIAGNOSTIC 1280px: {"on":true,"ranges":3,"text":"ud. Why does it sound so stiff on camera? | Most of us write a video like a blog post. Long sentences. Big words. Then we wonder why nobody stays past the first minute. | Hi, I'm Sam, and on this demo channel we make video a little less scary. ","bar":false} log=[]
+RESULT: fail tools-470-browser no span while moving into the third paragraph: {"on":true,"ranges":3,"text":"ud. Why does it sound so stiff on camera? | Most of us write a video like a blog post. Long sentences. Big words. Then we wonder why nobody stays past the first minute. | Hi, I'm Sam, and on this demo channel we make video a little less scary. ","bar":false}
+# red run (review round 2): fc52543's change before the skip in restore, new step 16e
+DIAGNOSTIC 1280px: {"on":false,"ranges":0,"text":"","bar":false} log=[]
+RESULT: fail tools-470-browser after Redo both are open on their words in the joined paragraph: {"ask":"waiting","askIn":"**ze","askWords":"ka wom","askAt":[14,20],"mark":"open","markIn":"**ze","markWords":"at","markAt":[21,23]}
+# red run (fix round 3, second look on PR #110): public/app.js and public/doc.js from 621bda1 (before the fix), new step 16g
+RESULT: fail tools-470-browser after Redo the ask is on the second "keep" after the composed text: {"ask":"waiting","in":"Lead","words":"keep","at":[15,19]}
+# green run on the change (review round 3 added step 16f and the middle-paragraph case of 16c, both passing on their first run; fix round 3 added step 16g)
+PROOF 1280px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 1280px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 1280px scrollbar press: met — a left and a middle press at innerWidth-4 (on the 15px scrollbar) kept the span, and so did dragging it (the page scrolled 1006 → 1205); Ctrl+C still copied it
+PROOF 1280px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 1280px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 1280px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 1280px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 1280px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 1280px picture paste: met — words unchanged, the span still selected
+PROOF 1280px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 1280px gap below: met — a drag 12 px past the paragraph stays the paragraph's own selection
+PROOF 1280px right and middle click: met — a spelling fix and a middle click never replace the span
+PROOF 1280px cancelled composition: met — later typing is its own Undo step
+PROOF 1280px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves it
+PROOF 1280px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo
+PROOF 1280px copy, cut and paste in the shot card: met — the field got them, the script stayed as it was; once the card closed, Ctrl+C copied the span again
+PROOF 1280px drag near the window's end: met — the page scrolled 2096 px and the selection grew from 13 to 39 blocks; letting go stopped it
+PROOF 1280px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+PROOF 1280px asks after the span: met — an ask on "sounds like you" and a Sounds like me mark stayed open through Delete, Undo, Redo and Undo, each time on its words
+PROOF 1280px asks after the span, Enter (review round 3): met — Enter took the ask and the Sounds like me mark to the new paragraph; Undo, Redo and Undo kept both open, each time on their words
+PROOF 1280px agent's change during a held drag: met — the span ended at once and the drag with its scrolling stopped (spanBusy false); moving on and letting go drew no span; near the window's end held there 0.5 s more (the page went 308 → 556, the browser's own scrolling of its selection in the first paragraph) and let go, no span came back
+PROOF 1280px agent's change to the middle paragraph during a held drag (review round 3): met — the span ended and the drag stopped (spanBusy false); moving on and letting go drew no span
+PROOF 1280px agent's change before the drag left its paragraph: met — moving on into the third paragraph and letting go drew no span; the drag had stopped
+PROOF 1280px asks after a span whose join only adds bold: met — an ask on "quokka" and a Sounds like me mark on "wombat" stayed open through Delete, Undo, Redo and Undo, each time on their words at the same place
+PROOF 1280px composed text over the span with an ask after it (fix round 3): met — "你好你好你好你好" over the span moved the ask on the second "keep" to 20–24; Undo, Redo and Undo kept it open on that "keep" each time
+PROOF 1280px moved shot on mouse-over: met — the orange frame stays (oklch(0.704 0.1915 37.1) 0px 0px 0px 2px inset)
+PROOF 1280px list linked again: met — after a span delete moved B2 ("Moved here"), the demo's list was linked through the file field and Undo put the words back: B2 shows on its paragraph with no "Moved here"
+PROOF 1280px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs
+PROOF 1280px after sharing: met — once sharing stops, a drag selects across paragraphs again
+PROOF 390px drag-select: met — three paragraphs highlighted ("Why does it sound so stiff on camera? | …")
+PROOF 390px copy: met — "Why does it sound so stiff on camera?\n\nMost of us "… with blank lines, no shot labels
+PROOF 390px scrollbar press: met — a left and a middle press at innerWidth-4 (on the 15px scrollbar) kept the span, and so did dragging it (the page scrolled 2008 → 2304); Ctrl+C still copied it
+PROOF 390px delete: met — ends joined, B2 moved to the joined paragraph ("Moved here"), Over "\"Most of us write a video like a blog post.\"" → "\"A blank page. A deadline. And a script…\""
+PROOF 390px undo: met — words and B2's Over back as they were, the span selected again
+PROOF 390px type-over: met — "Short. " replaced three paragraphs, the caret went on at the join, Undo took it back
+PROOF 390px section title: met — selected and deleted with the text around it; Undo put it back
+PROOF 390px from the title: met — folded notes left out, copy "1 · Hook (0:00–0:20)\n\n[ON SCREEN: a neat"…
+PROOF 390px picture paste: met — words unchanged, the span still selected
+PROOF 390px composed text: met — "é" replaced three paragraphs; one Undo put the words and the span back
+PROOF 390px gap below: met — a drag 12 px past the paragraph stays the paragraph's own selection
+PROOF 390px right and middle click: met — a spelling fix and a middle click never replace the span
+PROOF 390px cancelled composition: met — later typing is its own Undo step
+PROOF 390px Ctrl keys: met — Ctrl+Backspace deletes the span, Ctrl+B leaves it
+PROOF 390px cut and Enter: met — cut copied and deleted, Enter split at the join, each one Undo
+PROOF 390px copy, cut and paste in the shot card: met — the field got them, the script stayed as it was; once the card closed, Ctrl+C copied the span again
+PROOF 390px drag near the window's end: met — the page scrolled 2165 px and the selection grew from 7 to 26 blocks; letting go stopped it
+PROOF 390px agent's change: met — bolding a word in the first paragraph ended the span; Copy and Delete took nothing of it
+PROOF 390px asks after the span: met — an ask on "sounds like you" and a Sounds like me mark stayed open through Delete, Undo, Redo and Undo, each time on its words
+PROOF 390px asks after the span, Enter (review round 3): met — Enter took the ask and the Sounds like me mark to the new paragraph; Undo, Redo and Undo kept both open, each time on their words
+PROOF 390px agent's change during a held drag: met — the span ended at once and the drag with its scrolling stopped (spanBusy false); moving on and letting go drew no span; near the window's end held there 0.5 s more (the page went 487 → 742, the browser's own scrolling of its selection in the first paragraph) and let go, no span came back
+PROOF 390px agent's change to the middle paragraph during a held drag (review round 3): met — the span ended and the drag stopped (spanBusy false); moving on and letting go drew no span
+PROOF 390px agent's change before the drag left its paragraph: met — moving on into the third paragraph and letting go drew no span; the drag had stopped
+PROOF 390px asks after a span whose join only adds bold: met — an ask on "quokka" and a Sounds like me mark on "wombat" stayed open through Delete, Undo, Redo and Undo, each time on their words at the same place
+PROOF 390px composed text over the span with an ask after it (fix round 3): met — "你好你好你好你好" over the span moved the ask on the second "keep" to 20–24; Undo, Redo and Undo kept it open on that "keep" each time
+PROOF 390px moved shot on mouse-over: met — the orange frame stays (oklch(0.704 0.1915 37.1) 0px 0px 0px 2px inset)
+PROOF 390px list linked again: met — after a span delete moved B2 ("Moved here"), the demo's list was linked through the file field and Undo put the words back: B2 shows on its paragraph with no "Moved here"
+PROOF 390px shared script: met — a span from before sharing ends; guest and host drags stay inside one paragraph; Delete leaves the other paragraphs
+PROOF 390px after sharing: met — once sharing stops, a drag selects across paragraphs again
+RESULT: ok tools-470-browser 58/58 checks at 1280 and 390 px

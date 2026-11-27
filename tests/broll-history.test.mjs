@@ -16,6 +16,7 @@ function history(limit = 300) {
   const context = { state, Doc, Changes, together: null, Date, UNDO_LIMIT: limit, TYPING_GROUP_MS: 1000,
     getCaret: () => null, byId: (id) => Doc.blockById(state.doc, id),
     followAnchors() {}, reanchorAll() {}, renderAll() {}, hideBar() {}, changed() {}, emit() {},
+    setSpan() {}, brollApi: null, Span: null, // a selection across paragraphs (TOOLS-470) is never drawn here
   };
   runInNewContext(`${section}\nthis.api = { checkpoint, undo, redo, checkpointBrollMove, queueBrollHistory };`, context);
   const type = (text) => {

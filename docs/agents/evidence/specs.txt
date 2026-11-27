@@ -33,7 +33,7 @@
 ✔ agent rewrites: bold around and inside links survives when its words do; a rewrite never leaves a lone **
 ✔ edits around bold links: typing inside a bold link or a link in bold keeps the marks
 ✔ first load: no B-roll code is among the files the page needs to start
-ℹ startup: 18 files, 514135 bytes; on first use: broll-app.js + broll.js, 156260 bytes
+ℹ startup: 19 files, 549104 bytes; on first use: broll-app.js + broll.js, 164824 bytes
 ✔ first load: the app loads the B-roll module with import() and checks its seam version
 ✔ ask helpers the startup needs live in doc.js; broll.js passes the same functions on
 ✔ createBroll: app.js hands the module exactly what it takes, and the stand-in page here does too
@@ -86,6 +86,24 @@
 ✔ B-roll move history: words typed into the target paragraph while a move or its Undo saves keep the shot there, with Check
 ✔ B-roll move history: words typed into the target paragraph while a Redo saves keep the shot there, with Check
 ✔ B-roll move history: words added to the target paragraph while a move, its Undo or its Redo saves give the shot Check
+✔ B-roll span: a shot moved onto a paragraph with no words keeps its Over in the list, never an empty one
+✔ B-roll span: a shot sent on from an emptied paragraph keeps the next paragraph through more typing and a later save
+✔ B-roll span: Undo and Redo pressed while the shot's saves wait leave the list with the Redo's quote
+✔ B-roll span: a moved shot whose paragraph is changed while its save waits stays there, with Check
+✔ B-roll span: a second change across paragraphs that keeps the shot's quote keeps the shot there when the first one's save lands
+✔ B-roll span: Undo and Redo of a change that kept the shot's quote, pressed while an earlier save waits, leave the shot where Redo put it
+✔ B-roll span: Undo of a change that sent the shot to a paragraph that stays, pressed while an earlier save waits, puts the shot back for good
+✔ B-roll span: a shot a second change left on no paragraph, found by its quote since, stays there when the first one's save lands
+✔ B-roll span: when the waiting save fails after a second change moved the shot on, the shot stays where it shows
+✔ B-roll span: with two saves waiting, a third change that keeps the shot's quote keeps the shot there as each save lands
+✔ B-roll span: Undo and Redo while saves wait never move a shot to an earlier paragraph that says the same
+✔ B-roll span: a shot moved on its own after a span edit keeps that place when the span edit is undone
+✔ B-roll span: a shot changed outside the page while the span edit saves shows where the list says after its Undo
+✔ B-roll span: after a shot's save failed, the next span edit saves the shot where it shows
+✔ B-roll span: after a shot's save failed, the agent moving it still wins
+✔ B-roll span: Redo that takes out the paragraph a shot was changed onto since puts the shot at the join
+✔ B-roll span: Redo leaves a shot moved on its own since without "Moved here"
+✔ B-roll span: Undo after another list was opened leaves that list's shot alone
 ✔ B-roll names: a failed read, or an open that fails while site storage still works, never approves a new or renamed script name; the queue recovers
 ✔ New script: an unread reservation leaves the current script alone instead of opening a colliding fallback
 ✔ New script: a file-creation failure still falls back to an unsaved script, using its checked name
@@ -279,6 +297,9 @@
 ✔ applyAnswer add: quote at the very end, and text that already starts with a space
 ✔ moveAsks: anchors after a Keep keep their quote (replace that changes length, and add)
 ✔ moveAsks: a paste before an anchor shifts it; a split moves it to the new block
+✔ moveAsks returns its moves; unmoveAsks puts open anchors back and gives the moves for the Redo (TOOLS-483)
+✔ a "# " line in a script that has its title stays plain text: locate counts its "# " as text (TOOLS-484)
+✔ placeAsks puts open anchors where their words went, with their quote; unmoveAsks takes them back, quote too (TOOLS-484)
 ✔ checkAnswer refuses unknown or finished asks and kinds that do not fit
 ✔ checkAnswer: marks must quote the script word for word, within the limits
 ✔ a CRLF file keeps CRLF when one block is split in two
@@ -388,7 +409,7 @@
 ✔ press: onEnd runs after the listeners are gone, so it may start a new press
 ✔ press: a lift that ends the press itself (the shot re-rendered away) gets no move after it
 ✔ first load: the share room, the zip maker and the video-folder writer are not among the startup files
-ℹ startup: 18 files, 514135 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
+ℹ startup: 19 files, 549104 bytes; on first use: together/room.js 34578, export-pack.js 1503, video-folder.js 8786, zip.js 3123
 ✔ first load: the app loads the export pack with import() and the adapter loads the room with import(), each checking its seam version
 ✔ what the startup needs of them lives in small files; room.js and video-folder.js pass the same functions on
 ✔ export pack: one small interface; Export all packs the files it is given into a zip
@@ -587,6 +608,51 @@
 ✔ hand-over: a list still in local storage from before is handed over and goes with the name; one that can't be read stops it; the demo keeps its own
 ✔ site: pages may be indexed, with a description and the canonical address
 ✔ site: robots.txt keeps /api/ and /mcp out and allows the rest
+✔ a selection inside one block is not a span; across blocks it is, in reading order
+✔ the script's title is never part of a span: it starts at the next block
+✔ copy gives the words only, with a blank line between blocks
+✔ delete joins the ends into the first block; the blocks between go, section titles too
+✔ typing over the span puts the text at the join
+✔ the joined block keeps the first block's kind; selected from its very start it takes the last block's
+✔ a heading that takes in text keeps it on one line; text with blank lines makes paragraphs
+✔ Enter over a span splits at the join
+✔ bold and links cut by the span are settled: no lone marks, a link keeps its words that are left
+✔ an edit whose settled marks would turn the line into another kind of block is refused
+✔ shots on removed blocks follow to the join, or to the next spoken paragraph when the join is not spoken
+✔ a paragraph selected from its very start into a section title becomes that title: its shots go to the next spoken paragraph
+✔ lines folded away at the top are never part of a span: from the title it starts after them
+✔ a shared edit in a block the span touches, or one that adds or joins blocks, ends it; others leave it
+✔ a drag whose far end has no words of the next block (the gap after its paragraph) is no span
+✔ marks are settled only when the joined block is a paragraph, as one-block edits do
+✔ whole paragraphs deleted or cut from their very start: their shots go to the next paragraph with words, never the emptied one
+✔ typing over whole paragraphs from their very start, first key with no letters: the shots go to the next paragraph with words, as for Delete
+✔ Enter over a span from a paragraph's very start: its shots go with the words to the new block, never the emptied one
+✔ Enter over a span: shots on the last block go with its words to the new block
+✔ Enter over a span: pasted text with a blank line makes a new block too; the last block's words end up there
+✔ Enter over a span to the very end of its last block leaves no words of it: the new block is empty, the shot stays at the join
+✔ Enter over a span: a last block that ends in bold, selected up to its closing marks, leaves only the marks, no words
+✔ Enter over a span: a last block that ends in a link, selected up to the end of its words, leaves no words (the hidden address is none)
+✔ Enter over a span: words after a link are still words left
+✔ Enter over a span: letters outside the basic range (Adlam, two code units each) are words too; the shot goes with them
+✔ Enter over a span: a reference line cut at its "- " leaves spoken words, so the shot goes with them
+✔ Enter over a span: words that would sit inside a reference's address when joined are a paragraph of their own, with the shot
+✔ Enter over a span: a bare address that would follow "- Source: " when joined is spoken words after Enter
+✔ Enter over a span: joined into a section title, nothing settles the link; its literal address is words left
+✔ Enter over a span: a list item that ends in a link, joined into a paragraph, leaves no words; its shot stays at the join
+✔ follow: an ask on a repeated word before the span stays on that copy when the delete takes the bold marks
+✔ follow: an ask on a repeated word after the span stays on that copy when the delete takes the bold marks before it
+✔ follow: bold words that stay bold keep their marks in the quote; typed text goes between the two sides
+✔ follow: Enter over the span takes the last block's words to the new block; the first block's stay
+✔ follow: pasted text with a blank line makes paragraphs; each side's words are found in the block they went to
+✔ follow: a paragraph joined into a section title keeps its words on one line; words across a line break have no place
+✔ follow: every word outside the span keeps the words around it, wherever the span is and whatever replaces it
+ℹ 117425 words placed, 0 gone
+✔ follow: the same in a list item, a section title and a reminder, and when Enter's new paragraph starts as a section title or a list item
+ℹ 73860 words placed, 0 gone
+✔ follow: a span from a paragraph's start into a section title leaves the title without blanks at its start; its words and the caret are where they read
+✔ follow: a line left as "# …" in a script that has its title is plain text; the words after its "# " are where they read
+✔ follow: Enter before "## " makes the rest a section title, and an ask after it goes to its own copy there
+✔ follow: a link cut by the span keeps the words that are left; an ask before it stays on its own copy
 ✔ kit specs: the evidence has no times, so two runs in a row give the same file, also when a test fails
 ✔ kit specs: --affected (what kit pr runs) takes an optional --base REF and runs every test; other words are refused
 ✔ adapter: a snapshot rebuilds the script exactly, LF and CRLF
@@ -662,9 +728,9 @@
 ✔ zip: crc32 matches the standard check value
 ✔ zip: Export all's file opens in a zip tool with every file, UTF-8 names and text intact
 ✔ zip: the layout is right without a zip tool (entries, offsets, names, sizes)
-ℹ tests 662
+ℹ tests 726
 ℹ suites 0
-ℹ pass 662
+ℹ pass 726
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0

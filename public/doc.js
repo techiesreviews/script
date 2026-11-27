@@ -222,6 +222,8 @@ export function setContent(doc, id, content) {
     void made;
   }
   normalizeTitles(doc);
+  // A script has one title: a "# " line that stays plain text (or became the title) hides what it hides now.
+  for (const p of result.pieces) p.prefix = prefixOf(blockById(doc, p.id)).length;
   result.changed = block.type !== before;
   return result;
 }
@@ -559,18 +561,62 @@ export function applyAnswer(content, ask) {
 }
 
 // Anchors that sit at or after `fromStart` in block `fromId` move to `toId`, shifted by `shift`.
-// Used after Keep (the text after the quote moves), paste, split and merge.
+// Used after Keep (the text after the quote moves), paste, split and merge. Returns the moves, for an Undo step that
+// has to take them back (unmoveAsks): `mark` is the index of a "Sounds like me" mark in its answer, -1 for an ask.
 export function moveAsks(asks, fromId, toId, fromStart, shift) {
+  const moves = [];
+  const move = (x, askId, mark) => {
+    const from = { blockId: x.blockId, start: x.start, end: x.end };
+    x.blockId = toId; x.start += shift; x.end += shift;
+    moves.push({ askId, mark, from, to: { blockId: x.blockId, start: x.start, end: x.end } });
+  };
   for (const a of asks) {
-    if (a.scope === "selection" && a.blockId === fromId && OPEN_STATUSES.includes(a.status) && a.start >= fromStart) {
-      a.blockId = toId; a.start += shift; a.end += shift;
-    }
+    if (a.scope === "selection" && a.blockId === fromId && OPEN_STATUSES.includes(a.status) && a.start >= fromStart) move(a, a.id, -1);
     if (a.scope === "script" && a.status === "answered") {
-      for (const m of a.answer.marks) {
-        if (m.state === "open" && m.blockId === fromId && m.start >= fromStart) { m.blockId = toId; m.start += shift; m.end += shift; }
-      }
+      a.answer.marks.forEach((m, i) => { if (m.state === "open" && m.blockId === fromId && m.start >= fromStart) move(m, a.id, i); });
     }
   }
+  return moves;
+}
+// Open asks and "Sounds like me" marks go where `at(anchor, ask)` says their words went: { blockId, start, end, quote },
+// null when the words are gone, undefined to leave the anchor alone. Used by an edit that knows where every word went
+// (a change across paragraphs, TOOLS-484), so no anchor is searched for by its quote: a repeated word has other copies.
+// Returns the moves, with the quote on both sides, for the Undo step (unmoveAsks), and the anchors whose words are
+// gone (`gone`: [{ ask, mark }], for the caller to close).
+export function placeAsks(asks, at) {
+  const moves = [], gone = [];
+  const place = (x, ask, mark) => {
+    const to = at(x, ask);
+    if (to === undefined) return;
+    if (!to) return void gone.push({ ask, mark });
+    const from = { blockId: x.blockId, start: x.start, end: x.end, quote: x.quote };
+    if (from.blockId === to.blockId && from.start === to.start && from.end === to.end && from.quote === to.quote) return;
+    Object.assign(x, to);
+    moves.push({ askId: ask.id, mark, from, to: { ...to } });
+  };
+  for (const a of asks) {
+    if (a.scope === "selection" && OPEN_STATUSES.includes(a.status)) place(a, a, -1);
+    if (a.scope === "script" && a.status === "answered") (a.answer?.marks || []).forEach((m, i) => { if (m.state === "open") place(m, a, i); });
+  }
+  return { moves, gone };
+}
+// Puts the anchors that moves took elsewhere back where they were, for the asks and marks still open and still in the
+// block they were taken to (TOOLS-483: an Undo restores the blocks the anchors came from). Returns the anchors it put
+// back (`back`: they are where they belong already, so nothing else moves them in that step) and the moves for the
+// opposite step (`redo`), made from where they were just before: text typed after the move (composed text) shifted them
+// since. A move that carries the quote (placeAsks) puts it back too, and leaves it on the opposite step.
+export function unmoveAsks(asks, moves) {
+  const back = new Set(), redo = [];
+  for (const { askId, mark, from, to } of moves) {
+    const a = asks.find((x) => x.id === askId);
+    const x = !a ? null : mark < 0 ? (a.scope === "selection" && OPEN_STATUSES.includes(a.status) ? a : null)
+      : (a.scope === "script" && a.status === "answered" && a.answer.marks[mark]?.state === "open" ? a.answer.marks[mark] : null);
+    if (!x || x.blockId !== to.blockId) continue;
+    redo.push({ askId, mark, from: { blockId: x.blockId, start: x.start, end: x.end, ...(from.quote === undefined ? {} : { quote: x.quote }) }, to: from });
+    Object.assign(x, from);
+    back.add(x);
+  }
+  return { back, redo };
 }
 
 // Check an agent's answer_ask arguments against the ask and the script.

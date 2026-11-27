@@ -6,7 +6,7 @@ import { startPress, HOLD_MS } from "./press.js";
 
 // Bump with any change to the host createBroll takes or the interface it returns: app.js checks it, so a tab opened
 // before a release that loads this file after it never mixes the two.
-export const SEAM = 4;
+export const SEAM = 5;
 
 /**
  * createBroll(host) → the B-roll part, frozen. `host` is what it may use of the app (app.js brollHost): its state,
@@ -25,6 +25,9 @@ export function createBroll(host) {
     token: 0, link: null, status: "none", err: "", text: "",
     shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {},
     marked: {}, // step K2: pictures put in at once, per shot { prev, pic, askId }, with Undo until the list changes
+    moved: new Set(), // TOOLS-470: shots a cross-paragraph edit moved, "Moved here" until the next change that moves shots
+    placing: new Map(), // TOOLS-470: id → where a waiting save of placeShots put the shot { token, over, blockIds }
+    unsaved: new Map(), // TOOLS-470: id → the Overs the list may still hold for a shot placeShots moved { token, overs }
   };
 
   /* ---------- B-roll: sketch frames beside the lines, the storyboard view ---------- */
@@ -53,7 +56,7 @@ export function createBroll(host) {
     broll.token++;
     endDrag();
     closeShotCard();
-    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
+    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {}, moved: new Set() });
     renderBroll();
   }
   async function loadBroll() {
@@ -103,6 +106,26 @@ export function createBroll(host) {
     // A shot whose quote is as it was stays where it shows (one moved onto a paragraph that repeats an earlier one).
     // Only within the list those shots came from (`shown`: its token): another list's start from their quotes.
     if (state.doc) Broll.matchShots(state.doc, shots, broll.shown === broll.token ? broll.shots : []);
+    // A shot a selection across paragraphs, or its Undo or Redo, placed (placeShots) stays where that step put it until
+    // the step's save has landed: a save before it leaves the shot as it shows, and its own keeps its paragraph even if
+    // the words changed meanwhile or an earlier paragraph says the same. A step that left the shot on no paragraph
+    // decides nothing here: the shot is found by its quote, as it is a moment after any change (rematchBroll).
+    for (const s of state.doc ? shots : []) {
+      const p = broll.placing.get(s.id), now = shotById(s.id);
+      if (!p || p.token !== broll.token || !now) continue;
+      if (s.over !== p.over) Object.assign(s, { over: now.over, blockIds: now.blockIds, sig: now.sig });
+      else if (p.blockIds.length && p.blockIds.every((id) => Doc.blockById(state.doc, id))) {
+        Object.assign(s, { blockIds: p.blockIds, sig: (now.blockIds || []).join() === p.blockIds.join() ? now.sig : Broll.coverText(state.doc, p.blockIds) });
+      }
+    }
+    // A shot whose save failed stays where it shows while the list still holds an Over from before; another Over in the
+    // list (saved, or changed outside this page) ends that.
+    for (const s of state.doc ? shots : []) {
+      const u = broll.unsaved.get(s.id), now = shotById(s.id);
+      if (!u || broll.placing.has(s.id)) continue;
+      if (u.token !== broll.token || !now || !u.overs.has(s.over)) broll.unsaved.delete(s.id);
+      else if (now.over !== s.over) Object.assign(s, { over: now.over, blockIds: now.blockIds, sig: now.sig });
+    }
     for (const s of shots) s.check = !!broll.flags[s.id];
     Object.assign(broll, { text, shots, sketches, status: "ok", err: "", shown: broll.token });
     if (broll.lit && !shotById(broll.lit)) broll.lit = null;
@@ -205,9 +228,10 @@ export function createBroll(host) {
       const sug = suggestionsFor(s.id);
       // It can be dragged to other lines (steps L, L2), unless a change to it waits for Keep or Undo.
       const drag = !state.guest && !sug.length && !pendingSketch(s.id) && !markedSketch(s.id);
-      box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${drag ? " data-drag" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
+      const moved = broll.moved.has(s.id);
+      box.insertAdjacentHTML("beforeend", `<div class="shot-frame" data-kind="${s.kind}"${lit ? " data-lit" : ""}${moved ? " data-moved" : ""}${drag ? " data-drag" : ""}${sug.some((x) => x.c.op === "remove") ? " data-remove" : ""}>`
         + `<button class="shot-frame__jump" type="button" data-b="${esc(s.id)}" aria-pressed="${lit}" aria-label="${esc(label)}" title="${esc(s.what)}">${frameImg(s, false)}`
-        + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${keepBar(s)}${sug.map((x) => suggestBlock(x, s)).join("")}</div>`);
+        + `<span class="broll-tag"${s.check ? " data-check" : ""}>${icon(KIND_ICON[s.kind])}<b>${esc(s.id)}</b></span></button>${moved ? '<span class="moved-note">Moved here</span>' : ""}${keepBar(s)}${sug.map((x) => suggestBlock(x, s)).join("")}</div>`);
     }
     const adds = suggestedAdds();
     addsSig = adds.map((x) => `${x.key}=${x.blockIds.join()}`).join("|");
@@ -318,6 +342,7 @@ export function createBroll(host) {
     broll.lit = null;
     broll.saving = {};
     broll.problem = {};
+    broll.moved = new Set(); // another list places every shot again: that ends "Moved here"
     setLinkKey(link);
     await readBroll(token, true);
     if (token === broll.token) { syncFlags(); renderBroll(); }
@@ -329,7 +354,7 @@ export function createBroll(host) {
     delKept();
     const ask = sketchAsk();
     if (ask) { closeAsk(ask, ask.status === "answered" ? "undone" : "cancelled"); changed(); }
-    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {} });
+    Object.assign(broll, { link: null, status: "none", err: "", text: "", shots: [], sketches: {}, flags: {}, lit: null, filter: "all", saving: {}, problem: {}, marked: {}, moved: new Set() });
     dropGoneSuggestions();
     syncFlags();
     renderBroll();
@@ -863,6 +888,105 @@ export function createBroll(host) {
   }, true);
   const shotFrameAnchor = (id) => () => scriptEl.querySelector(`.shot-frame__jump[data-b="${CSS.escape(id)}"]`);
 
+  /* ---------- A selection across paragraphs took some out (TOOLS-470) ---------- */
+  // Shots on the paragraphs it took out show on the joined one at once, with "Moved here" until the next change that
+  // moves shots. Their Over is written again only where it no longer fits where they show now.
+  // `next`: { token, shots: { id: { over, blockIds, expect } }, moved: [ids] }, where `expect` is the Over the list
+  // holds before this step. Returns the same for the shots as they were (Undo), or null when the list is another one now.
+  function placeShots(next) {
+    if (broll.status !== "ok" || !state.doc || state.guest) return null;
+    if (next.token !== undefined && next.token !== broll.token) return null;
+    const token = broll.token;
+    // A shot whose Over is no longer the one this step expects was changed since (moved on its own, or by the agent):
+    // it stays where that newer change put it, unless this step's text no longer has those paragraphs (a Redo that takes
+    // out again the paragraph it was moved onto): then it goes where this step puts it, with its Over kept if it fits.
+    const plan = {};
+    for (const [id, want] of Object.entries(next.shots || {})) {
+      const s = shotById(id);
+      if (!s) continue;
+      if (want.expect === undefined || s.over === want.expect) { plan[id] = want; continue; }
+      if (!(s.blockIds || []).some((b) => !Doc.blockById(state.doc, b))) continue;
+      const at = want.blockIds.filter((b) => Doc.blockById(state.doc, b));
+      plan[id] = { blockIds: at, expect: s.over, over: overOn(at, s.over) };
+    }
+    const ids = Object.keys(plan);
+    const was = { token, moved: [...broll.moved], shots: Object.fromEntries(ids.map((id) => {
+      const s = shotById(id), want = plan[id];
+      return [id, { over: want.expect ?? s.over, blockIds: [...(s.blockIds || [])], expect: want.over }];
+    })) };
+    const writes = {}, marks = [];
+    for (const id of ids) {
+      const s = shotById(id), want = plan[id], expect = want.expect ?? s.over;
+      if (want.over !== expect) {
+        // The Overs the list may hold for the shot while saves wait or after one failed: the one this step expects, and
+        // any an earlier unsaved step expected.
+        const prev = broll.unsaved.get(id);
+        const unsaved = { token, overs: new Set([...(prev?.token === token ? prev.overs : []), expect]) };
+        broll.unsaved.set(id, unsaved);
+        writes[id] = { over: want.over, expect, unsaved };
+        // Where this step put the shot, kept until its save has landed (adoptBroll).
+        const mark = { token, over: want.over, blockIds: want.blockIds };
+        broll.placing.set(id, mark);
+        marks.push([id, mark]);
+      } else {
+        // Nothing to write, but a save from an earlier step may still wait with this Over: its note follows the shot,
+        // or that save would put the shot back where its own step showed it (TOOLS-485). The note stays that save's.
+        const waiting = broll.placing.get(id);
+        if (waiting?.token === token && waiting.over === want.over) waiting.blockIds = want.blockIds;
+      }
+      // Shown here at once; the list itself is written in its turn behind any save still waiting.
+      Object.assign(s, { over: want.over, blockIds: want.blockIds, sig: Broll.coverText(state.doc, want.blockIds) });
+    }
+    // "Moved here" only on shots this step moved; one left where a newer change put it shows none.
+    broll.moved = new Set((next.moved || []).filter((id) => shotById(id) && (!(id in (next.shots || {})) || id in plan)));
+    renderBroll();
+    if (Object.keys(writes).length) {
+      // When its turn comes, each shot is written only if the list still holds the Over this step started from:
+      // an Undo or Redo pressed while an earlier save waited then meets the list as that save left it. A shot the list
+      // says another Over for (changed meanwhile) is shown where the list puts it.
+      // A save that failed before leaves the list with an Over from before it (`unsaved`), which this one still replaces.
+      const mine = new Map(marks), written = [];
+      const forget = (id) => { if (broll.unsaved.get(id) === writes[id].unsaved) broll.unsaved.delete(id); };
+      changeList((md) => {
+        const saved = new Map(Broll.parseBroll(md).shots.map((s) => [s.id, s.over]));
+        return Object.entries(writes).reduce((text, [id, w]) => {
+          if (w.unsaved.overs.has(saved.get(id))) { written.push(id); return Broll.updateShot(text, id, { over: w.over }); }
+          if (broll.placing.get(id) === mine.get(id)) broll.placing.delete(id);
+          forget(id);
+          return text;
+        }, md);
+      }).then(() => written.forEach(forget)).finally(() => {
+        for (const [id, mark] of marks) if (broll.placing.get(id) === mark) broll.placing.delete(id);
+      }).catch((err) => {
+        if (token !== broll.token) return;
+        const id = Object.keys(writes).find((x) => shotById(x));
+        if (!id) return;
+        openShotCard({ mode: "edit", id, anchor: shotFrameAnchor(id) });
+        failShotCard(err);
+      });
+    }
+    return was;
+  }
+  // The Over for a shot that shows on the paragraphs `ids` now: its own (`over`) when that still fits them, else one
+  // that quotes them. Never one that matches no words (a paragraph left empty): read again, it would take the shot off
+  // the script and its place would be lost, so it keeps its own.
+  function overOn(ids, over) {
+    const list = Broll.spokenBlocks(state.doc);
+    if (!ids.length || Broll.fitsOver(list, ids, over)) return over;
+    const quote = Broll.overFor(state.doc, Broll.wholeParas(state.doc, ids));
+    return Broll.matchOver(list, quote).length ? quote : over;
+  }
+  // `moves`: span.js followShots ([{ id, blockIds, moved }]).
+  function followSpan(moves) {
+    if (broll.status !== "ok" || !state.doc || state.guest || !moves?.length) return null;
+    const shots = {};
+    for (const m of moves) {
+      const s = shotById(m.id);
+      if (s) shots[m.id] = { blockIds: m.blockIds, expect: s.over, over: overOn(m.blockIds, s.over) };
+    }
+    return placeShots({ token: broll.token, shots, moved: moves.filter((m) => m.moved && shots[m.id]).map((m) => m.id) });
+  }
+
   /* ---------- Move a shot to other paragraphs (steps L, L2): drag it ---------- */
   // The whole shot in the margin, its picture or line drawing and its tag, can be dragged at once: a mouse or a pen after
   // a few pixels, a finger after a hold (a quick swipe still scrolls, a tap still opens the card). While dragging, its
@@ -888,6 +1012,7 @@ export function createBroll(host) {
     const destination = sel.map((part) => part.id);
     const source = { over: s.over, ids: covered(s) }, atDrop = new Set(Broll.spokenBlocks(state.doc).map((b) => b.id));
     if (!Broll.moveOver(state.doc, covered(s), sel)) return; // onto the lines it covers already
+    if (broll.moved.size) { broll.moved.clear(); renderBrollMarks(); } // a change that moves shots ends "Moved here"
     const token = broll.token;
     let origin, before, over, checked, words, invalid = false;
     const gone = (ids, spoken) => !ids.length || ids.some((pid) => !spoken.some((b) => b.id === pid));
@@ -1665,6 +1790,8 @@ export function createBroll(host) {
     closeCard: closeShotCard,
     endDrag,
     escape: () => { closeShotCard(); if (broll.lit) lightShot(broll.lit, false); },
+    followSpan,
+    placeShots,
     requestSketches,
     requestPlan,
     answerBroll,

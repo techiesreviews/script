@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   ACTIONS, parse, serialize, contentOf, setContent, splitBlock, mergeWithPrevious, removeBlock, insertBlock,
   outline, parseHeading, exportCamera, exportPrompter, sentences, stats, countWords, snapToWords, reanchor,
-  makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, locate, checkAnswer,
+  makeAsk, findQuote, cleanAnswer, applyAnswer, cloneDoc, titleOf, moveAsks, unmoveAsks, placeAsks, locate, checkAnswer,
   prompterLink, PROMPTER_SITE, PROMPTER_MAX_CHARS, scriptFileName, titleFileName, keepIds, wholeText,
   PARTS, matchParts, slashCommand, shiftHeadings, numberAt, insertPart,
   slashAllowed, cutCommand, withoutCommand, lineToReplace,
@@ -533,6 +533,111 @@ test("moveAsks: a paste before an anchor shifts it; a split moves it to the new 
   const marks = [{ scope: "script", status: "answered", answer: { marks: [{ state: "open", blockId: "a", start: 3, end: 5 }] } }];
   moveAsks(marks, "a", "a", 0, 2);
   assert.equal(marks[0].answer.marks[0].start, 5);
+});
+
+test("moveAsks returns its moves; unmoveAsks puts open anchors back and gives the moves for the Redo (TOOLS-483)", () => {
+  const asks = [
+    { id: "k1", scope: "selection", blockId: "last", status: "waiting", start: 12, end: 16, quote: "keep" },
+    { id: "k2", scope: "selection", blockId: "last", status: "waiting", start: 0, end: 4, quote: "Gone" },
+    { id: "v1", scope: "script", status: "answered", answer: { marks: [{ state: "open", blockId: "last", start: 20, end: 25 }, { state: "open", blockId: "other", start: 0, end: 3 }] } },
+  ];
+  // A span ended at offset 5 of "last"; its rest joined "first" at offset 9.
+  const moves = moveAsks(asks, "last", "first", 5, 4);
+  assert.deepEqual(moves, [
+    { askId: "k1", mark: -1, from: { blockId: "last", start: 12, end: 16 }, to: { blockId: "first", start: 16, end: 20 } },
+    { askId: "v1", mark: 0, from: { blockId: "last", start: 20, end: 25 }, to: { blockId: "first", start: 24, end: 29 } },
+  ]);
+  assert.deepEqual([asks[1].blockId, asks[1].start], ["last", 0], "an anchor before fromStart stays");
+  // Text typed in after the move (composed text over the span) shifted the ask 3 places on.
+  Object.assign(asks[0], { start: 19, end: 23 });
+  // Undo: the anchors go back to where they were, so they are found in the restored blocks.
+  const { back, redo } = unmoveAsks(asks, moves);
+  assert.deepEqual([...back], [asks[0], asks[2].answer.marks[0]], "it returns the anchors it put back");
+  assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end], ["last", 12, 16]);
+  assert.deepEqual([asks[2].answer.marks[0].blockId, asks[2].answer.marks[0].start], ["last", 20]);
+  assert.deepEqual(asks[2].answer.marks[1], { state: "open", blockId: "other", start: 0, end: 3 }, "a mark that did not move stays");
+  // Redo: the moves it gave take them to the joined block again, where they were just before the Undo.
+  assert.deepEqual(redo, [
+    { askId: "k1", mark: -1, from: { blockId: "first", start: 19, end: 23 }, to: { blockId: "last", start: 12, end: 16 } },
+    { askId: "v1", mark: 0, from: { blockId: "first", start: 24, end: 29 }, to: { blockId: "last", start: 20, end: 25 } },
+  ]);
+  const again = unmoveAsks(asks, redo);
+  assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end], ["first", 19, 23]);
+  assert.deepEqual([asks[2].answer.marks[0].blockId, asks[2].answer.marks[0].start], ["first", 24]);
+  assert.deepEqual(again.redo, moves.map((m, i) => (i === 0 ? { ...m, to: { blockId: "first", start: 19, end: 23 } } : m)), "and the next Undo has its moves");
+  // A finished ask, or a mark moved to another block since, is left as it is; asks no longer in the list are skipped.
+  asks[0].status = "kept";
+  asks[2].answer.marks[0].blockId = "elsewhere";
+  const none = unmoveAsks(asks, moves);
+  assert.deepEqual([none.back.size, none.redo.length], [0, 0]);
+  assert.equal(asks[0].blockId, "first");
+  assert.equal(asks[2].answer.marks[0].blockId, "elsewhere");
+  const k2 = { ...asks[1] };
+  unmoveAsks([asks[1]], moves);
+  assert.deepEqual(asks[1], k2, "an ask the moves do not name stays");
+});
+
+test("a \"# \" line in a script that has its title stays plain text: locate counts its \"# \" as text (TOOLS-484)", () => {
+  const doc = parse("# T\n\ngo go");
+  const p = doc.blocks[1];
+  const r = setContent(doc, p.id, "# go go");
+  assert.deepEqual(doc.blocks.map((b) => [b.type, contentOf(b)]), [["title", "T"], ["raw", "# go go"]]);
+  assert.deepEqual(r.pieces, [{ id: p.id, start: 0, prefix: 0 }]);
+  assert.deepEqual(locate(r, 5), { id: p.id, offset: 5 }, "the second \"go\"");
+  // Pasted with a blank line: the same for the piece that reads "# …".
+  const two = parse("# T\n\nx");
+  const q = two.blocks[1];
+  const s = setContent(two, q.id, "One\n\n# go go");
+  assert.deepEqual(two.blocks.map((b) => [b.type, contentOf(b)]), [["title", "T"], ["para", "One"], ["raw", "# go go"]]);
+  assert.deepEqual(locate(s, "One\n\n# go ".length), { id: two.blocks[2].id, offset: 5 });
+  // A section title still hides its "## ".
+  const three = parse("# T\n\nx");
+  const t = setContent(three, three.blocks[1].id, "## go go");
+  assert.deepEqual(locate(t, 6), { id: three.blocks[1].id, offset: 3 });
+});
+
+test("placeAsks puts open anchors where their words went, with their quote; unmoveAsks takes them back, quote too (TOOLS-484)", () => {
+  const asks = [
+    { id: "k1", scope: "selection", blockId: "first", status: "waiting", start: 2, end: 4, quote: "go" },
+    { id: "k2", scope: "selection", blockId: "first", status: "waiting", start: 8, end: 16, quote: "go live*" },
+    { id: "k3", scope: "selection", blockId: "last", status: "answered", start: 6, end: 18, quote: "**paragraph**" },
+    { id: "k4", scope: "selection", blockId: "first", status: "kept", start: 2, end: 4, quote: "go" },
+    { id: "k5", scope: "selection", blockId: "other", status: "waiting", start: 0, end: 2, quote: "go" },
+    { id: "k6", scope: "selection", blockId: "first", status: "waiting", start: 0, end: 1, quote: "x" },
+    { id: "v1", scope: "script", status: "answered", answer: { marks: [
+      { state: "open", blockId: "first", start: 5, end: 7, quote: "go" },
+      { state: "kept", blockId: "first", start: 2, end: 4, quote: "go" },
+      { state: "open", blockId: "last", start: 0, end: 5, quote: "Other" },
+    ] } },
+  ];
+  const seen = [];
+  const { moves, gone } = placeAsks(asks, (x, ask) => {
+    seen.push(ask.id);
+    if (x.blockId === "other") return undefined; // not its block: left alone
+    if (x.quote === "x") return { blockId: x.blockId, start: x.start, end: x.end, quote: x.quote }; // where it is already
+    if (x.quote === "go") return { blockId: "first", start: x.start - 2, end: x.end - 2, quote: "go" };
+    if (x.quote === "**paragraph**") return { blockId: "first", start: 9, end: 18, quote: "paragraph" };
+    return null; // its words went
+  });
+  assert.deepEqual(seen, ["k1", "k2", "k3", "k5", "k6", "v1", "v1"], "only open asks and open marks are asked about");
+  assert.deepEqual(moves, [
+    { askId: "k1", mark: -1, from: { blockId: "first", start: 2, end: 4, quote: "go" }, to: { blockId: "first", start: 0, end: 2, quote: "go" } },
+    { askId: "k3", mark: -1, from: { blockId: "last", start: 6, end: 18, quote: "**paragraph**" }, to: { blockId: "first", start: 9, end: 18, quote: "paragraph" } },
+    { askId: "v1", mark: 0, from: { blockId: "first", start: 5, end: 7, quote: "go" }, to: { blockId: "first", start: 3, end: 5, quote: "go" } },
+  ], "one that stays where it is leaves no move");
+  assert.deepEqual(gone.map((g) => [g.ask.id, g.mark]), [["k2", -1], ["v1", 2]], "the ones with no place are returned, not changed");
+  assert.deepEqual([asks[1].start, asks[1].status, asks[6].answer.marks[2].state], [8, "waiting", "open"]);
+  assert.deepEqual([asks[0].start, asks[0].end, asks[2].blockId, asks[2].start, asks[2].end, asks[2].quote], [0, 2, "first", 9, 18, "paragraph"]);
+  // Undo: back to their block, offsets and quote, also for a move inside one block.
+  const { back, redo } = unmoveAsks(asks, moves);
+  assert.equal(back.size, 3);
+  assert.deepEqual([asks[0].blockId, asks[0].start, asks[0].end, asks[0].quote], ["first", 2, 4, "go"]);
+  assert.deepEqual([asks[2].blockId, asks[2].start, asks[2].end, asks[2].quote], ["last", 6, 18, "**paragraph**"]);
+  assert.deepEqual(asks[6].answer.marks[0], { state: "open", blockId: "first", start: 5, end: 7, quote: "go" });
+  // Redo: the moves it gave take them to the joined block again, with the quote they had there.
+  assert.deepEqual(redo, moves.map((m) => ({ ...m, from: m.to, to: m.from })));
+  unmoveAsks(asks, redo);
+  assert.deepEqual([asks[0].start, asks[2].blockId, asks[2].start, asks[2].quote, asks[6].answer.marks[0].start], [0, "first", 9, "paragraph", 3]);
 });
 
 /* ---------- Tab-side answer checks (answer_ask) ---------- */
